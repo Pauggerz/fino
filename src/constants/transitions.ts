@@ -13,3 +13,5 @@ export const transitions = {
   CHIP_SELECT: { duration: 160 },
   BALANCE_UPDATE: { duration: 400 },
 };
+
+export default transitions;
