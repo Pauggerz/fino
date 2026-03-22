@@ -1,4 +1,4 @@
-export const transitions = {
+const transitions = {
   SHEET_OPEN: { duration: 340 },
   SHEET_DISMISS_SAVE: { duration: 280 },
   SHEET_DISMISS_SWIPE: { duration: 220 },
@@ -13,3 +13,5 @@ export const transitions = {
   CHIP_SELECT: { duration: 160 },
   BALANCE_UPDATE: { duration: 400 },
 };
+
+export default transitions;
