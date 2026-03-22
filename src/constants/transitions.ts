@@ -1,0 +1,15 @@
+export const transitions = {
+  SHEET_OPEN: { duration: 340 },
+  SHEET_DISMISS_SAVE: { duration: 280 },
+  SHEET_DISMISS_SWIPE: { duration: 220 },
+  SLIDE_IN: { duration: 320 },
+  SLIDE_OUT: { duration: 280 },
+  TOAST_ENTER: { duration: 220 },
+  TOAST_AUTO_DISMISS: 3500,
+  AI_MAPPING_DEBOUNCE: 300,
+  AI_MAPPING_CONFIRM: { duration: 200 },
+  PARSING_OVERLAY_HIDE: 2200,
+  PARSING_REVEAL: { duration: 300 },
+  CHIP_SELECT: { duration: 160 },
+  BALANCE_UPDATE: { duration: 400 },
+};
