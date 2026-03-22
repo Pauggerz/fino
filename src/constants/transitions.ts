@@ -1,4 +1,4 @@
-const transitions = {
+export const transitions = {
   SHEET_OPEN: { duration: 340 },
   SHEET_DISMISS_SAVE: { duration: 280 },
   SHEET_DISMISS_SWIPE: { duration: 220 },
