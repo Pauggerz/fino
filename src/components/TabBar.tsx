@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  Animated,
   Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,9 +23,28 @@ export default function TabBar({
   onTabPress,
   onFabPress,
 }: TabBarProps) {
+  // FAB bounce animation
+  const fabScale = useRef(new Animated.Value(1)).current;
+
+  const handleFabPress = () => {
+    Animated.sequence([
+      Animated.timing(fabScale, {
+        toValue: 0.88,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+      Animated.spring(fabScale, {
+        toValue: 1,
+        friction: 4,
+        tension: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    onFabPress();
+  };
+
   const renderTab = (id: TabRoute, icon: string, label: string) => {
     const isActive = activeTab === id;
-
     return (
       <TouchableOpacity
         key={id}
@@ -45,21 +65,21 @@ export default function TabBar({
       {renderTab('home', '🏠', 'Home')}
       {renderTab('feed', '📋', 'Txns')}
 
-      {/* ── FAB (ADD BUTTON) ── */}
-      <TouchableOpacity
-        activeOpacity={0.8}
-        onPress={onFabPress}
-        style={styles.fabContainer}
+      {/* ── FAB ── */}
+      <Animated.View
+        style={[styles.fabContainer, { transform: [{ scale: fabScale }] }]}
       >
-        <LinearGradient
-          colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.fab}
-        >
-          <Text style={styles.fabIcon}>+</Text>
-        </LinearGradient>
-      </TouchableOpacity>
+        <TouchableOpacity activeOpacity={1} onPress={handleFabPress}>
+          <LinearGradient
+            colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.fab}
+          >
+            <Text style={styles.fabIcon}>+</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </Animated.View>
 
       {renderTab('stats', '📊', 'Stats')}
       {renderTab('more', '⋯', 'More')}
@@ -74,12 +94,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 82,
-    backgroundColor: colors.white,
+    // spec: rgba(255,255,255,0.95)
+    backgroundColor: 'rgba(255,255,255,0.95)',
     borderTopWidth: 1,
     borderTopColor: 'rgba(30,30,46,0.08)',
+    // spec: borderRadius 0 0 50px 50px (bottom corners only)
+    borderBottomLeftRadius: 50,
+    borderBottomRightRadius: 50,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12, // Slight adjustment for device safe areas
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
     paddingHorizontal: 8,
     shadowColor: '#1E1E2E',
     shadowOffset: { width: 0, height: -4 },
@@ -97,7 +121,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   tabItemActive: {
-    backgroundColor: colors.primaryLight, // #EBF2EE
+    backgroundColor: colors.primaryLight,
   },
   tabIcon: {
     fontSize: 20,
@@ -105,14 +129,14 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 10,
-    color: colors.textSecondary, // #8A8A9A
+    color: colors.textSecondary,
   },
   tabLabelActive: {
-    fontFamily: 'Inter_700Bold', // using 700 as the closest loaded font to prototype's 800
-    color: colors.primary, // #5B8C6E
+    // spec: Nunito 700 for active label
+    fontFamily: 'Nunito_700Bold',
+    color: colors.primary,
   },
   fabContainer: {
-    // We wrap the gradient in a container to cleanly apply the green shadow
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
@@ -121,12 +145,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    // spec: 58px circle
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    borderTopWidth: 1, // Simulates the inset white box-shadow from the HTML
+    borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.25)',
   },
   fabIcon: {
@@ -134,6 +159,6 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     color: colors.white,
     lineHeight: 28,
-    marginTop: Platform.OS === 'ios' ? -2 : 0, // Visual centering adjustment
+    marginTop: Platform.OS === 'ios' ? -2 : 0,
   },
 });

@@ -21,6 +21,7 @@ export const colors = {
   expenseRed: '#C0503A',
   incomeGreen: '#3f6b52',
   insightPurple: '#4B2DA3',
+  greetingPurple: '#7B5EA7', // two-tone name: "[Name]!" colour
   // Account brand colours (from prototype acct-card-icon backgrounds)
   accountCash: '#1C9E4B',
   accountGCash: '#007DFF',

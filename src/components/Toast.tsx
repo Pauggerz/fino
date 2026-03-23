@@ -8,6 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { colors } from '../constants/theme';
+import { transitions } from '../constants/transitions';
 
 export type ToastType = 'success' | 'undo';
 
@@ -17,6 +18,8 @@ interface ToastProps {
   subtitle: string;
   type?: ToastType;
   onUndo?: () => void;
+  /** Called after the 3500 ms auto-dismiss timer fires. Parent should set visible=false. */
+  onDismiss?: () => void;
 }
 
 export default function Toast({
@@ -25,14 +28,15 @@ export default function Toast({
   subtitle,
   type = 'success',
   onUndo,
+  onDismiss,
 }: ToastProps) {
-  // Animation values
-  const translateY = useRef(new Animated.Value(-80)).current;
+  // spec: entry slides from translateY(-40) → 0, 220ms spring overshoot
+  const translateY = useRef(new Animated.Value(-40)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
+  // ── Enter / exit animation ──
   useEffect(() => {
     if (visible) {
-      // Replicates: cubic-bezier(0.34, 1.56, 0.64, 1) ease-in animation
       Animated.parallel([
         Animated.spring(translateY, {
           toValue: 0,
@@ -42,14 +46,14 @@ export default function Toast({
         }),
         Animated.timing(opacity, {
           toValue: 1,
-          duration: 220,
+          duration: transitions.TOAST_ENTER.duration, // 220 ms
           useNativeDriver: true,
         }),
       ]).start();
     } else {
       Animated.parallel([
         Animated.timing(translateY, {
-          toValue: -80,
+          toValue: -40,
           duration: 200,
           useNativeDriver: true,
         }),
@@ -62,6 +66,18 @@ export default function Toast({
     }
   }, [visible, translateY, opacity]);
 
+  // ── Auto-dismiss after 3500 ms ──
+  useEffect(() => {
+    const timer = visible
+      ? setTimeout(() => {
+          onDismiss?.();
+        }, transitions.TOAST_AUTO_DISMISS) // 3500 ms
+      : null;
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [visible, onDismiss]);
+
   const isSuccess = type === 'success';
 
   return (
@@ -71,12 +87,11 @@ export default function Toast({
         {
           opacity,
           transform: [{ translateY }],
-          // Ensure it doesn't block touches when invisible
           pointerEvents: visible ? 'auto' : 'none',
         },
       ]}
     >
-      {/* ── ICON ── */}
+      {/* ── Icon ── */}
       <View
         style={[
           styles.toastIcon,
@@ -86,20 +101,20 @@ export default function Toast({
         <Text
           style={[
             styles.toastIconText,
-            isSuccess ? { color: colors.primary } : { color: colors.coral },
+            { color: isSuccess ? colors.primary : colors.coral },
           ]}
         >
           {isSuccess ? '✓' : '↩'}
         </Text>
       </View>
 
-      {/* ── CONTENT ── */}
+      {/* ── Content ── */}
       <View style={styles.content}>
         <Text style={styles.toastTitle}>{title}</Text>
         <Text style={styles.toastSub}>{subtitle}</Text>
       </View>
 
-      {/* ── UNDO ACTION ── */}
+      {/* ── Undo action — hidden on undo-variant toast ── */}
       {onUndo && (
         <TouchableOpacity
           activeOpacity={0.6}
@@ -116,7 +131,8 @@ export default function Toast({
 const styles = StyleSheet.create({
   toastContainer: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 56, // Adjust for iOS notch/safe area
+    // spec: top:56 — using platform offset for safe area
+    top: Platform.OS === 'ios' ? 56 : 56,
     left: 12,
     right: 12,
     backgroundColor: colors.textPrimary, // #1E1E2E
@@ -142,12 +158,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   toastIconSuccess: {
-    backgroundColor: colors.primaryLight, // #EBF2EE
-    borderColor: colors.primary, // #5B8C6E
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
   },
   toastIconUndo: {
-    backgroundColor: colors.coralLight, // #FBF0EC
-    borderColor: colors.coral, // #E8856A
+    backgroundColor: colors.coralLight,
+    borderColor: colors.coral,
   },
   toastIconText: {
     fontFamily: 'Inter_700Bold',
