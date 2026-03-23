@@ -1,43 +1,74 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../constants/theme';
 
 export default function HomeScreen() {
   return (
     <View style={styles.container}>
-      <ScrollView 
-        style={styles.screenContent} 
+      <ScrollView
+        style={styles.screenContent}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 90 }}
       >
         {/* ── GREETING ── */}
         <View style={styles.greeting}>
           <View style={styles.greetingPillContainer}>
-            <LinearGradient 
-              colors={['#FBF0EC', '#FFF3E0']} 
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            <LinearGradient
+              colors={['#FBF0EC', '#FFF3E0']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={styles.greetingPill}
             >
               <Text style={styles.greetingPillText}>Good morning ☀️</Text>
             </LinearGradient>
           </View>
           <Text style={styles.greetingName}>Hey, Christian! 👋</Text>
-          <Text style={styles.greetingDate}>Sunday, March 22 · Here's your picture</Text>
-          
+          <Text style={styles.greetingDate}>
+            Sunday, March 22 · Here&apos;s your picture
+          </Text>
+
           <View style={styles.statChips}>
             <View style={styles.statChipWrapper}>
-              <LinearGradient colors={['#EFF8F2', '#d4eddf']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.statChip}>
-                <Text style={[styles.statChipLabel, { color: '#3f6b52' }]}>Saved</Text>
-                <Text style={[styles.statChipVal, { color: '#3f6b52' }]}>₱450</Text>
-                <Text style={[styles.statChipSub, { color: '#3f6b52' }]}>vs last week</Text>
+              <LinearGradient
+                colors={['#EFF8F2', '#d4eddf']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statChip}
+              >
+                <Text style={[styles.statChipLabel, { color: '#3f6b52' }]}>
+                  Saved
+                </Text>
+                <Text style={[styles.statChipVal, { color: '#3f6b52' }]}>
+                  ₱450
+                </Text>
+                <Text style={[styles.statChipSub, { color: '#3f6b52' }]}>
+                  vs last week
+                </Text>
               </LinearGradient>
             </View>
             <View style={styles.statChipWrapper}>
-              <LinearGradient colors={['#FBF0EC', '#ffe4d4']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.statChip}>
-                <Text style={[styles.statChipLabel, { color: '#A83A1A' }]}>Food</Text>
-                <Text style={[styles.statChipVal, { color: '#A83A1A' }]}>80%</Text>
-                <Text style={[styles.statChipSub, { color: '#A83A1A' }]}>of budget</Text>
+              <LinearGradient
+                colors={['#FBF0EC', '#ffe4d4']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statChip}
+              >
+                <Text style={[styles.statChipLabel, { color: '#A83A1A' }]}>
+                  Food
+                </Text>
+                <Text style={[styles.statChipVal, { color: '#A83A1A' }]}>
+                  80%
+                </Text>
+                <Text style={[styles.statChipSub, { color: '#A83A1A' }]}>
+                  of budget
+                </Text>
               </LinearGradient>
             </View>
           </View>
@@ -45,20 +76,21 @@ export default function HomeScreen() {
 
         {/* ── HERO CARD ── */}
         <TouchableOpacity activeOpacity={0.9}>
-          <LinearGradient 
-            colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']} 
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          <LinearGradient
+            colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
             style={styles.heroCard}
           >
             {/* Note: React Native doesn't support radial gradients natively without SVG, so we use a subtle overlay for the 'hero-light' effect */}
             <View style={styles.heroLight} />
-            
+
             <View style={styles.heroChip}>
               <Text style={styles.heroChipText}>March 2026</Text>
             </View>
             <Text style={styles.heroLabel}>Total balance</Text>
             <Text style={styles.heroAmount}>₱12,450.00</Text>
-            
+
             <View style={styles.heroRow}>
               <View style={[styles.heroCol, styles.heroColBorder]}>
                 <Text style={styles.heroColLabel}>Income</Text>
@@ -76,7 +108,12 @@ export default function HomeScreen() {
         <Text style={styles.sectionLabel}>ACCOUNTS</Text>
         <TouchableOpacity activeOpacity={0.8}>
           <View style={styles.acctChip}>
-            <LinearGradient colors={['#EFF8F2', '#d4eddf']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.acctIcon}>
+            <LinearGradient
+              colors={['#EFF8F2', '#d4eddf']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.acctIcon}
+            >
               <Text style={styles.acctIconEmoji}>💵</Text>
             </LinearGradient>
             <View style={styles.acctInfo}>
@@ -89,7 +126,12 @@ export default function HomeScreen() {
 
         <TouchableOpacity activeOpacity={0.8}>
           <View style={styles.acctChip}>
-            <LinearGradient colors={['#E8F4FD', '#c8e4f8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.acctIcon}>
+            <LinearGradient
+              colors={['#E8F4FD', '#c8e4f8']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.acctIcon}
+            >
               <Text style={styles.acctIconEmoji}>📱</Text>
             </LinearGradient>
             <View style={styles.acctInfo}>
@@ -105,49 +147,114 @@ export default function HomeScreen() {
         <View style={styles.catGrid}>
           {/* Food */}
           <TouchableOpacity activeOpacity={0.8} style={styles.catTileWrapper}>
-            <LinearGradient colors={['#FFF8EE', '#FFF3E0']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.catTile}>
+            <LinearGradient
+              colors={['#FFF8EE', '#FFF3E0']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.catTile}
+            >
               <Text style={styles.catEmoji}>🍔</Text>
               <Text style={[styles.catName, { color: '#9B6B1A' }]}>Food</Text>
               <Text style={[styles.catAmt, { color: '#9B6B1A' }]}>₱1,200</Text>
-              <View style={styles.catBar}><View style={[styles.catFill, { width: '80%', backgroundColor: '#E8856A' }]} /></View>
+              <View style={styles.catBar}>
+                <View
+                  style={[
+                    styles.catFill,
+                    { width: '80%', backgroundColor: '#E8856A' },
+                  ]}
+                />
+              </View>
             </LinearGradient>
           </TouchableOpacity>
           {/* Transport */}
           <TouchableOpacity activeOpacity={0.8} style={styles.catTileWrapper}>
-            <LinearGradient colors={['#EEF6FF', '#E8F4FD']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.catTile}>
+            <LinearGradient
+              colors={['#EEF6FF', '#E8F4FD']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.catTile}
+            >
               <Text style={styles.catEmoji}>🚌</Text>
-              <Text style={[styles.catName, { color: '#1A5C9B' }]}>Transport</Text>
+              <Text style={[styles.catName, { color: '#1A5C9B' }]}>
+                Transport
+              </Text>
               <Text style={[styles.catAmt, { color: '#1A5C9B' }]}>₱350</Text>
-              <View style={styles.catBar}><View style={[styles.catFill, { width: '35%', backgroundColor: '#5B8C6E' }]} /></View>
+              <View style={styles.catBar}>
+                <View
+                  style={[
+                    styles.catFill,
+                    { width: '35%', backgroundColor: '#5B8C6E' },
+                  ]}
+                />
+              </View>
             </LinearGradient>
           </TouchableOpacity>
           {/* Shopping */}
           <TouchableOpacity activeOpacity={0.8} style={styles.catTileWrapper}>
-            <LinearGradient colors={['#FFF0F8', '#FDE8F0']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.catTile}>
+            <LinearGradient
+              colors={['#FFF0F8', '#FDE8F0']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.catTile}
+            >
               <Text style={styles.catEmoji}>🛍</Text>
-              <Text style={[styles.catName, { color: '#9B1A5C' }]}>Shopping</Text>
-              <Text style={[styles.catAmt, { color: '#C0503A', fontFamily: 'DMMono_500Medium' }]}>Over!</Text>
-              <View style={styles.catBar}><View style={[styles.catFill, { width: '100%', backgroundColor: '#E8856A' }]} /></View>
+              <Text style={[styles.catName, { color: '#9B1A5C' }]}>
+                Shopping
+              </Text>
+              <Text
+                style={[
+                  styles.catAmt,
+                  { color: '#C0503A', fontFamily: 'DMMono_500Medium' },
+                ]}
+              >
+                Over!
+              </Text>
+              <View style={styles.catBar}>
+                <View
+                  style={[
+                    styles.catFill,
+                    { width: '100%', backgroundColor: '#E8856A' },
+                  ]}
+                />
+              </View>
             </LinearGradient>
           </TouchableOpacity>
           {/* Bills */}
           <TouchableOpacity activeOpacity={0.8} style={styles.catTileWrapper}>
-            <LinearGradient colors={['#F4F0FF', '#EDE8FD']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.catTile}>
+            <LinearGradient
+              colors={['#F4F0FF', '#EDE8FD']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.catTile}
+            >
               <Text style={styles.catEmoji}>⚡</Text>
               <Text style={[styles.catName, { color: '#5C1A9B' }]}>Bills</Text>
               <Text style={[styles.catAmt, { color: '#5C1A9B' }]}>₱800</Text>
-              <View style={styles.catBar}><View style={[styles.catFill, { width: '55%', backgroundColor: '#C9B8F5' }]} /></View>
+              <View style={styles.catBar}>
+                <View
+                  style={[
+                    styles.catFill,
+                    { width: '55%', backgroundColor: '#C9B8F5' },
+                  ]}
+                />
+              </View>
             </LinearGradient>
           </TouchableOpacity>
         </View>
 
         {/* ── INSIGHT CARD ── */}
-        <LinearGradient colors={['#F0ECFD', '#EBF2EE']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.insightCard}>
+        <LinearGradient
+          colors={['#F0ECFD', '#EBF2EE']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.insightCard}
+        >
           <Text style={styles.insightHd}>✦ SPENDING INSIGHT</Text>
           <Text style={styles.insightBody}>You spend most on Tuesdays 🍜</Text>
-          <Text style={styles.insightSub}>Food is 42% of weekly spend. Want to set a lower limit?</Text>
+          <Text style={styles.insightSub}>
+            Food is 42% of weekly spend. Want to set a lower limit?
+          </Text>
         </LinearGradient>
-
       </ScrollView>
     </View>
   );

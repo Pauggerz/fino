@@ -1,5 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Platform,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../constants/theme';
 
@@ -11,10 +17,14 @@ interface TabBarProps {
   onFabPress: () => void;
 }
 
-export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProps) {
+export default function TabBar({
+  activeTab,
+  onTabPress,
+  onFabPress,
+}: TabBarProps) {
   const renderTab = (id: TabRoute, icon: string, label: string) => {
     const isActive = activeTab === id;
-    
+
     return (
       <TouchableOpacity
         key={id}
@@ -36,8 +46,8 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
       {renderTab('feed', '📋', 'Txns')}
 
       {/* ── FAB (ADD BUTTON) ── */}
-      <TouchableOpacity 
-        activeOpacity={0.8} 
+      <TouchableOpacity
+        activeOpacity={0.8}
         onPress={onFabPress}
         style={styles.fabContainer}
       >

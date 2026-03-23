@@ -10,11 +10,17 @@ const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-export const requireAuth = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const requireAuth = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Unauthorized: Missing or invalid Bearer token' });
+    res
+      .status(401)
+      .json({ error: 'Unauthorized: Missing or invalid Bearer token' });
     return;
   }
 

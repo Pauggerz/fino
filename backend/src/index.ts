@@ -13,18 +13,18 @@ app.use(express.json());
 
 // Public Route: Health Check
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
-    message: 'Fino API is running smoothly'
+    message: 'Fino API is running smoothly',
   });
 });
 
 // Protected Route: Test
 app.get('/api/protected-test', requireAuth, (req, res) => {
-  res.json({ 
-    message: 'Success! You have a valid Supabase JWT.', 
-    user: (req as any).user 
+  res.json({
+    message: 'Success! You have a valid Supabase JWT.',
+    user: (req as any).user,
   });
 });
 

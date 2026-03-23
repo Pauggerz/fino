@@ -6,30 +6,31 @@
 
 ## 📋 Project Overview
 
-| | |
-|---|---|
-| **Repo** | `github.com/Pauggerz/fino` |
-| **Stack** | Expo (React Native) + TypeScript + PostgreSQL (Railway) |
-| **Node Version** | v20 LTS (required) |
-| **Expo SDK** | 54 |
+|                  |                                                         |
+| ---------------- | ------------------------------------------------------- |
+| **Repo**         | `github.com/Pauggerz/fino`                              |
+| **Stack**        | Expo (React Native) + TypeScript + PostgreSQL (Railway) |
+| **Node Version** | v20 LTS (required)                                      |
+| **Expo SDK**     | 54                                                      |
 
 ---
 
 ## 1. 🐙 GitHub Repository
 
 ### Repository Details
+
 - Visibility: **Private**
 - Branch protection on `main` — all changes require a pull request
 - Minimum **1 approval** required before merging
 
 ### Team Roles
 
-| Team Member | GitHub Role | Access Level |
-|---|---|---|
-| Christian | Admin | Full repository control |
-| Backend Dev | Write | Push code, create branches |
-| Frontend Dev | Write | Push code, create branches |
-| Designer | Read | View and clone repository |
+| Team Member  | GitHub Role | Access Level               |
+| ------------ | ----------- | -------------------------- |
+| Christian    | Admin       | Full repository control    |
+| Backend Dev  | Write       | Push code, create branches |
+| Frontend Dev | Write       | Push code, create branches |
+| Designer     | Read        | View and clone repository  |
 
 ### Clone the Repository
 
@@ -43,6 +44,7 @@ cd fino
 ## 2. 📱 Expo Project Setup
 
 ### Prerequisites
+
 - **Node.js v20 LTS** — download from [nodejs.org](https://nodejs.org)
 - **npm** (comes with Node)
 - **Expo Go** app on your phone ([iOS](https://apps.apple.com/app/expo-go/id982107779) / [Android](https://play.google.com/store/apps/details?id=host.exp.exponent))
@@ -62,6 +64,7 @@ npx expo start
 Scan the QR code with your phone using the Expo Go app. The default screen should appear.
 
 ### ⚠️ Expo SDK Version Note
+
 This project uses **Expo SDK 54**. If you encounter version mismatch errors, run:
 
 ```bash
@@ -82,13 +85,14 @@ npm run lint
 
 ### Config Files
 
-| File | Purpose |
-|---|---|
-| `.eslintrc.js` | ESLint rules (Airbnb + React Native overrides) |
-| `.prettierrc` | Prettier formatting rules |
-| `.husky/pre-commit` | Blocks commit if lint fails |
+| File                | Purpose                                        |
+| ------------------- | ---------------------------------------------- |
+| `.eslintrc.js`      | ESLint rules (Airbnb + React Native overrides) |
+| `.prettierrc`       | Prettier formatting rules                      |
+| `.husky/pre-commit` | Blocks commit if lint fails                    |
 
 ### Prettier Settings
+
 - Single quotes
 - Semicolons
 - 2-space indent
@@ -103,6 +107,7 @@ npm run lint
 ### Setup Steps
 
 1. Copy the template file:
+
 ```bash
 cp .env.example .env.local
 ```
@@ -113,14 +118,15 @@ cp .env.example .env.local
 
 ### Required Variables
 
-| Variable | Description |
-|---|---|
-| `SUPABASE_URL` | Supabase project URL |
+| Variable            | Description                                           |
+| ------------------- | ----------------------------------------------------- |
+| `SUPABASE_URL`      | Supabase project URL                                  |
 | `SUPABASE_ANON_KEY` | Supabase anonymous/public key (also used for Storage) |
-| `VISION_API_KEY` | Vision API key for image processing |
-| `RAILWAY_DB_URL` | PostgreSQL connection string (public URL) |
+| `VISION_API_KEY`    | Vision API key for image processing                   |
+| `RAILWAY_DB_URL`    | PostgreSQL connection string (public URL)             |
 
 ### ⚠️ Security Rules
+
 - **NEVER** share `.env.local` over Slack or email in plaintext
 - **NEVER** commit `.env.local` to GitHub
 - Share real values via encrypted message or password manager only
@@ -132,6 +138,7 @@ cp .env.example .env.local
 The project uses a **PostgreSQL** database hosted on Railway. The database is already provisioned — you just need the connection string.
 
 ### Get the Connection String
+
 - Ask **Christian** for the `RAILWAY_DB_URL` value
 - Add it to your `.env.local` file
 
@@ -146,6 +153,7 @@ psql $RAILWAY_DB_URL
 If you see a `railway=#` prompt, you are connected successfully. Type `\q` to exit.
 
 ### Windows Users — Add psql to PATH
+
 After installing PostgreSQL, add this to your system PATH:
 
 ```

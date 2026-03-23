@@ -1,220 +1,23 @@
+import { useNavigation } from '@react-navigation/native';
 import React, { useState } from 'react';
-import { 
-  View, Text, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, 
-  Dimensions, ScrollView, Platform
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  Dimensions,
+  ScrollView,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, radius, spacing } from '../constants/theme';
-import { useNavigation } from '@react-navigation/native';
+import { colors } from '../constants/theme';
 
 const { height } = Dimensions.get('window');
 
 type TxType = 'exp' | 'inc';
 type Account = 'gcash' | 'cash' | 'bdo';
 type Category = 'food' | 'transport' | 'shopping' | 'bills' | 'health';
-
-export default function AddTransactionSheet() {
-  const navigation = useNavigation();
-  
-  const [type, setType] = useState<TxType>('exp');
-  const [amount, setAmount] = useState<string>('');
-  const [account, setAccount] = useState<Account>('gcash');
-  const [category, setCategory] = useState<Category>('food');
-  const [aiText, setAiText] = useState<string>('');
-
-  // ── NUMPAD LOGIC ──
-  const handleNumTap = (key: string) => {
-    if (key === 'back') {
-      setAmount(prev => prev.slice(0, -1));
-    } else if (key === '.' && amount.includes('.')) {
-      return;
-    } else if (amount.replace('.', '').length >= 7) {
-      return; // Max digits
-    } else {
-      setAmount(prev => prev + key);
-    }
-  };
-
-  const handleSimulateAI = () => {
-    // Matches the simulateAIMap() from HTML prototype
-    setAiText('lunch');
-    setTimeout(() => {
-      setCategory('food');
-      // In a full app, we'd trigger the Toast here upon saving
-    }, 400);
-  };
-
-  const displayAmount = amount ? `₱ ${amount}` : '₱ 0';
-  const isSaveDisabled = !amount || amount === '0';
-
-  return (
-    <View style={styles.container}>
-      {/* ── BACKGROUND OVERLAY ── */}
-      <TouchableWithoutFeedback onPress={() => navigation.goBack()}>
-        <View style={styles.overlay} />
-      </TouchableWithoutFeedback>
-
-      {/* ── SHEET PANEL ── */}
-      <View style={styles.sheetPanel}>
-        <View style={styles.sheetHandle} />
-        
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.sheetTitle}>Add transaction</Text>
-          <Text style={styles.sheetSub}>Log expense or income</Text>
-
-          {/* ── TYPE TOGGLE ── */}
-          <View style={styles.typeToggle}>
-            <TouchableOpacity 
-              activeOpacity={0.8} 
-              onPress={() => setType('exp')}
-              style={[styles.typeBtn, type === 'exp' && styles.typeBtnActiveExp]}
-            >
-              {type === 'exp' && (
-                <LinearGradient 
-                  colors={['#FBF0EC', '#ffe4d4']} 
-                  start={{x:0,y:0}} end={{x:1,y:1}} 
-                  style={[StyleSheet.absoluteFill, { borderRadius: 12 }]} 
-                />
-              )}
-              <Text style={[styles.typeBtnText, type === 'exp' ? { color: colors.coralDark } : {}]}>Expense ↓</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              activeOpacity={0.8} 
-              onPress={() => setType('inc')}
-              style={[styles.typeBtn, type === 'inc' && styles.typeBtnActiveInc]}
-            >
-              {type === 'inc' && (
-                <LinearGradient 
-                  colors={['#EFF8F2', '#d4eddf']} 
-                  start={{x:0,y:0}} end={{x:1,y:1}} 
-                  style={[StyleSheet.absoluteFill, { borderRadius: 12 }]} 
-                />
-              )}
-              <Text style={[styles.typeBtnText, type === 'inc' ? { color: colors.incomeGreen } : {}]}>Income ↑</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ── AMOUNT DISPLAY ── */}
-          <View style={styles.amountDisplay}>
-            <Text style={styles.amountVal}>{displayAmount}</Text>
-            <Text style={styles.amountSub}>Tap a number to enter amount</Text>
-          </View>
-
-          {/* ── NUMPAD ── */}
-          <View style={styles.numpad}>
-            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'back'].map((key) => (
-              <TouchableOpacity 
-                key={key} 
-                activeOpacity={0.7}
-                onPress={() => handleNumTap(key)}
-                style={[styles.numKey, key === 'back' && styles.numKeyDark]}
-              >
-                <Text style={[styles.numKeyText, key === 'back' && styles.numKeyTextDark]}>
-                  {key === 'back' ? '⌫' : key}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ── ACCOUNT SELECTOR ── */}
-          <View style={styles.section}>
-            <Text style={styles.fieldLabel}>FROM ACCOUNT</Text>
-            <View style={styles.acctOpts}>
-              <TouchableOpacity onPress={() => setAccount('gcash')} style={[styles.acctOpt, account === 'gcash' && styles.acctOptSel]}>
-                {account === 'gcash' && <LinearGradient colors={['#EFF8F2', '#d4eddf']} style={[StyleSheet.absoluteFill, { borderRadius: 12 }]} />}
-                <Text style={styles.acctOptIcon}>📱</Text>
-                <Text style={[styles.acctOptName, account === 'gcash' && { color: colors.primary }]}>GCash</Text>
-                {account === 'gcash' && <Text style={styles.acctOptLast}>last used</Text>}
-              </TouchableOpacity>
-              
-              <TouchableOpacity onPress={() => setAccount('cash')} style={[styles.acctOpt, account === 'cash' && styles.acctOptSel]}>
-                {account === 'cash' && <LinearGradient colors={['#EFF8F2', '#d4eddf']} style={[StyleSheet.absoluteFill, { borderRadius: 12 }]} />}
-                <Text style={styles.acctOptIcon}>💵</Text>
-                <Text style={[styles.acctOptName, account === 'cash' && { color: colors.primary }]}>Cash</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={() => setAccount('bdo')} style={[styles.acctOpt, account === 'bdo' && styles.acctOptSel]}>
-                {account === 'bdo' && <LinearGradient colors={['#EFF8F2', '#d4eddf']} style={[StyleSheet.absoluteFill, { borderRadius: 12 }]} />}
-                <Text style={styles.acctOptIcon}>🏦</Text>
-                <Text style={[styles.acctOptName, account === 'bdo' && { color: colors.primary }]}>BDO</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* ── CATEGORY PILLS ── */}
-          <View style={styles.section}>
-            <Text style={styles.fieldLabel}>
-              CATEGORY <Text style={{ color: '#4B2DA3', fontSize: 10, fontWeight: '700' }}>✦ AI suggested</Text>
-            </Text>
-            <View style={styles.pillsRow}>
-              {[
-                { id: 'food', icon: '🍔', name: 'Food', color: '#9B6B1A' },
-                { id: 'transport', icon: '🚌', name: 'Transport', color: '#1A5C9B' },
-                { id: 'shopping', icon: '🛍', name: 'Shopping', color: '#9B1A5C' },
-                { id: 'bills', icon: '⚡', name: 'Bills', color: '#5C1A9B' },
-                { id: 'health', icon: '❤️', name: 'Health', color: '#C0503A' }
-              ].map((c) => {
-                const isSel = category === c.id;
-                return (
-                  <TouchableOpacity 
-                    key={c.id} 
-                    onPress={() => setCategory(c.id as Category)}
-                    style={[styles.catPill, isSel ? { backgroundColor: c.color, borderColor: c.color } : {}]}
-                  >
-                    <Text style={[styles.catPillText, isSel && { color: 'white' }]}>
-                      {c.icon} {c.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* ── AI DESCRIPTION FIELD ── */}
-          <View style={styles.aiFieldWrap}>
-            <View style={styles.orDivider}>
-              <View style={styles.orLine} />
-              <Text style={styles.orText}>OR DESCRIBE</Text>
-              <View style={styles.orLine} />
-            </View>
-            
-            <TouchableOpacity activeOpacity={0.8} onPress={handleSimulateAI} style={styles.aiField}>
-              <View style={[styles.aiFieldIcon, aiText ? styles.aiFieldIconMapped : {}]} />
-              <Text style={[styles.aiFieldText, aiText ? styles.aiFieldTextHasText : {}]}>
-                {aiText || 'e.g. "lunch", "grab ride", "gamot"'}
-              </Text>
-            </TouchableOpacity>
-            
-            {!!aiText && (
-              <View style={styles.aiConfirm}>
-                <View style={styles.aiConfirmDot} />
-                <Text style={styles.aiConfirmText}>"{aiText}" → Food ✓</Text>
-              </View>
-            )}
-          </View>
-
-          {/* ── ACTIONS ── */}
-          <TouchableOpacity 
-            activeOpacity={0.8} 
-            disabled={isSaveDisabled}
-            onPress={() => navigation.goBack()}
-            style={[styles.saveBtnWrap, isSaveDisabled && { opacity: 0.4 }]}
-          >
-            <LinearGradient colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']} style={styles.saveBtn}>
-              <Text style={styles.saveBtnText}>Save expense</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-          
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.cancelBtn}>
-            <Text style={styles.cancelBtnText}>Cancel</Text>
-          </TouchableOpacity>
-
-        </ScrollView>
-      </View>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   container: {
@@ -256,8 +59,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: 20,
   },
-
-  // Type Toggle
   typeToggle: {
     flexDirection: 'row',
     gap: 8,
@@ -271,6 +72,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(30,30,46,0.08)',
     alignItems: 'center',
     backgroundColor: colors.background,
+    overflow: 'hidden',
   },
   typeBtnActiveExp: {
     borderColor: 'rgba(232,133,106,0.4)',
@@ -282,10 +84,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Nunito_700Bold',
     fontSize: 14,
     color: colors.textSecondary,
-    zIndex: 1, // To appear above absolute gradient
+    zIndex: 1,
   },
-
-  // Amount Display
   amountDisplay: {
     backgroundColor: 'white',
     borderWidth: 2,
@@ -312,8 +112,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
-
-  // Numpad
   numpad: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -322,7 +120,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   numKey: {
-    width: '31%', // 3 columns with gap
+    width: '31%',
     height: 52,
     backgroundColor: 'white',
     borderRadius: 12,
@@ -347,8 +145,6 @@ const styles = StyleSheet.create({
   numKeyTextDark: {
     color: 'white',
   },
-
-  // Shared
   section: {
     marginBottom: 18,
   },
@@ -360,8 +156,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 8,
   },
-
-  // Account Selector
   acctOpts: {
     flexDirection: 'row',
     gap: 8,
@@ -396,8 +190,6 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
     zIndex: 1,
   },
-
-  // Category Pills
   pillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -416,8 +208,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
   },
-
-  // AI Field
   aiFieldWrap: {
     marginBottom: 24,
   },
@@ -492,8 +282,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.primaryDark,
   },
-
-  // Actions
   saveBtnWrap: {
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 6 },
@@ -525,3 +313,212 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 });
+
+export default function AddTransactionSheet() {
+  const navigation = useNavigation();
+
+  const [type, setType] = useState<TxType>('exp');
+  const [amount, setAmount] = useState<string>('');
+  const [account, setAccount] = useState<Account>('gcash');
+  const [category, setCategory] = useState<Category>('food');
+  const [aiText, setAiText] = useState<string>('');
+
+  const handleNumTap = (key: string) => {
+    if (key === 'back') {
+      setAmount((prev) => prev.slice(0, -1));
+    } else if (key === '.' && !amount.includes('.')) {
+      setAmount((prev) => prev + key);
+    } else if (key !== '.' && amount.replace('.', '').length < 7) {
+      setAmount((prev) => prev + key);
+    }
+  };
+
+  const handleSimulateAI = () => {
+    setAiText('lunch');
+    setTimeout(() => {
+      setCategory('food');
+    }, 400);
+  };
+
+  const displayAmount = amount ? `₱ ${amount}` : '₱ 0';
+  const isSaveDisabled = !amount || amount === '0';
+
+  return (
+    <View style={styles.container}>
+      <TouchableWithoutFeedback onPress={() => navigation.goBack()}>
+        <View style={styles.overlay} />
+      </TouchableWithoutFeedback>
+
+      <View style={styles.sheetPanel}>
+        <View style={styles.sheetHandle} />
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <Text style={styles.sheetTitle}>Add transaction</Text>
+          <Text style={styles.sheetSub}>Log expense or income</Text>
+
+          <View style={styles.typeToggle}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setType('exp')}
+              style={[styles.typeBtn, type === 'exp' && styles.typeBtnActiveExp]}
+            >
+              {type === 'exp' && (
+                <LinearGradient
+                  colors={['#FBF0EC', '#ffe4d4']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[StyleSheet.absoluteFill, { borderRadius: 12 }]}
+                />
+              )}
+              <Text style={[styles.typeBtnText, type === 'exp' ? { color: colors.coralDark } : {}]}>Expense ↓</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setType('inc')}
+              style={[styles.typeBtn, type === 'inc' && styles.typeBtnActiveInc]}
+            >
+              {type === 'inc' && (
+                <LinearGradient
+                  colors={['#EFF8F2', '#d4eddf']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[StyleSheet.absoluteFill, { borderRadius: 12 }]}
+                />
+              )}
+              <Text style={[styles.typeBtnText, type === 'inc' ? { color: colors.incomeGreen } : {}]}>Income ↑</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.amountDisplay}>
+            <Text style={styles.amountVal}>{displayAmount}</Text>
+            <Text style={styles.amountSub}>Tap a number to enter amount</Text>
+          </View>
+
+          <View style={styles.numpad}>
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'back'].map((key) => (
+              <TouchableOpacity
+                key={key}
+                activeOpacity={0.7}
+                onPress={() => handleNumTap(key)}
+                style={[styles.numKey, key === 'back' && styles.numKeyDark]}
+              >
+                <Text style={[styles.numKeyText, key === 'back' && styles.numKeyTextDark]}>
+                  {key === 'back' ? '⌫' : key}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.fieldLabel}>FROM ACCOUNT</Text>
+            <View style={styles.acctOpts}>
+              <TouchableOpacity onPress={() => setAccount('gcash')} style={[styles.acctOpt, account === 'gcash' && styles.acctOptSel]}>
+                {account === 'gcash' && <LinearGradient colors={['#EFF8F2', '#d4eddf']} style={[StyleSheet.absoluteFill, { borderRadius: 12 }]} />}
+                <Text style={styles.acctOptIcon}>📱</Text>
+                <Text style={[styles.acctOptName, account === 'gcash' && { color: colors.primary }]}>GCash</Text>
+                {account === 'gcash' && <Text style={styles.acctOptLast}>last used</Text>}
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => setAccount('cash')} style={[styles.acctOpt, account === 'cash' && styles.acctOptSel]}>
+                {account === 'cash' && <LinearGradient colors={['#EFF8F2', '#d4eddf']} style={[StyleSheet.absoluteFill, { borderRadius: 12 }]} />}
+                <Text style={styles.acctOptIcon}>💵</Text>
+                <Text style={[styles.acctOptName, account === 'cash' && { color: colors.primary }]}>Cash</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => setAccount('bdo')} style={[styles.acctOpt, account === 'bdo' && styles.acctOptSel]}>
+                {account === 'bdo' && <LinearGradient colors={['#EFF8F2', '#d4eddf']} style={[StyleSheet.absoluteFill, { borderRadius: 12 }]} />}
+                <Text style={styles.acctOptIcon}>🏦</Text>
+                <Text style={[styles.acctOptName, account === 'bdo' && { color: colors.primary }]}>BDO</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.fieldLabel}>
+              CATEGORY
+              {' '}
+              <Text style={{ color: '#4B2DA3', fontSize: 10, fontWeight: '700' }}>✦ AI suggested</Text>
+            </Text>
+            <View style={styles.pillsRow}>
+              {[
+                {
+                  id: 'food', icon: '🍔', name: 'Food', color: '#9B6B1A',
+                },
+                {
+                  id: 'transport', icon: '🚌', name: 'Transport', color: '#1A5C9B',
+                },
+                {
+                  id: 'shopping', icon: '🛍', name: 'Shopping', color: '#9B1A5C',
+                },
+                {
+                  id: 'bills', icon: '⚡', name: 'Bills', color: '#5C1A9B',
+                },
+                {
+                  id: 'health', icon: '❤️', name: 'Health', color: '#C0503A',
+                },
+              ].map((c) => {
+                const isSel = category === c.id;
+                return (
+                  <TouchableOpacity
+                    key={c.id}
+                    onPress={() => setCategory(c.id as Category)}
+                    style={[styles.catPill, isSel ? { backgroundColor: c.color, borderColor: c.color } : {}]}
+                  >
+                    <Text style={[styles.catPillText, isSel && { color: 'white' }]}>
+                      {c.icon}
+                      {' '}
+                      {c.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.aiFieldWrap}>
+            <View style={styles.orDivider}>
+              <View style={styles.orLine} />
+              <Text style={styles.orText}>OR DESCRIBE</Text>
+              <View style={styles.orLine} />
+            </View>
+
+            <TouchableOpacity activeOpacity={0.8} onPress={handleSimulateAI} style={styles.aiField}>
+              <View style={[styles.aiFieldIcon, aiText ? styles.aiFieldIconMapped : {}]} />
+              <Text style={[styles.aiFieldText, aiText ? styles.aiFieldTextHasText : {}]}>
+                {aiText || 'e.g. "lunch", "grab ride", "gamot"'}
+              </Text>
+            </TouchableOpacity>
+
+            {!!aiText && (
+              <View style={styles.aiConfirm}>
+                <View style={styles.aiConfirmDot} />
+                <Text style={styles.aiConfirmText}>
+                  &quot;
+                  {aiText}
+                  &quot; → Food ✓
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            disabled={isSaveDisabled}
+            onPress={() => navigation.goBack()}
+            style={[styles.saveBtnWrap, isSaveDisabled && { opacity: 0.4 }]}
+          >
+            <LinearGradient colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']} style={styles.saveBtn}>
+              <Text style={styles.saveBtnText}>Save expense</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.cancelBtn}>
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
+
+        </ScrollView>
+      </View>
+    </View>
+  );
+}

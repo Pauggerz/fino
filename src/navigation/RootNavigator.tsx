@@ -11,9 +11,21 @@ import TabBar, { TabRoute } from '../components/TabBar';
 import AddTransactionSheet from '../screens/AddTransactionSheet';
 
 // Temporary placeholder screens for the other tabs
-const FeedScreen = () => <View style={styles.placeholder}><Text>Txns Feed Screen</Text></View>;
-const StatsScreen = () => <View style={styles.placeholder}><Text>Stats Screen</Text></View>;
-const MoreScreen = () => <View style={styles.placeholder}><Text>More Screen</Text></View>;
+const FeedScreen = () => (
+  <View style={styles.placeholder}>
+    <Text>Txns Feed Screen</Text>
+  </View>
+);
+const StatsScreen = () => (
+  <View style={styles.placeholder}>
+    <Text>Stats Screen</Text>
+  </View>
+);
+const MoreScreen = () => (
+  <View style={styles.placeholder}>
+    <Text>More Screen</Text>
+  </View>
+);
 
 // Types
 export type TabStackParamList = {
@@ -59,16 +71,16 @@ export default function RootNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {/* Main Tabs */}
         <Stack.Screen name="Tabs" component={TabNavigator} />
-        
+
         {/* Modal / Bottom Sheet Screens */}
-        <Stack.Screen 
-          name="AddTransaction" 
-          component={AddTransactionSheet} 
+        <Stack.Screen
+          name="AddTransaction"
+          component={AddTransactionSheet}
           options={{
             presentation: 'transparentModal', // Allows the sheet to slide over the dimmed background
             animation: 'slide_from_bottom',
-            contentStyle: { backgroundColor: 'transparent' }
-          }} 
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>

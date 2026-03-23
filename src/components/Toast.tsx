@@ -1,5 +1,12 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Animated,
+  Platform,
+} from 'react-native';
 import { colors } from '../constants/theme';
 
 export type ToastType = 'success' | 'undo';
@@ -12,12 +19,12 @@ interface ToastProps {
   onUndo?: () => void;
 }
 
-export default function Toast({ 
-  visible, 
-  title, 
-  subtitle, 
-  type = 'success', 
-  onUndo 
+export default function Toast({
+  visible,
+  title,
+  subtitle,
+  type = 'success',
+  onUndo,
 }: ToastProps) {
   // Animation values
   const translateY = useRef(new Animated.Value(-80)).current;
@@ -58,26 +65,30 @@ export default function Toast({
   const isSuccess = type === 'success';
 
   return (
-    <Animated.View 
+    <Animated.View
       style={[
-        styles.toastContainer, 
-        { 
-          opacity, 
+        styles.toastContainer,
+        {
+          opacity,
           transform: [{ translateY }],
           // Ensure it doesn't block touches when invisible
-          pointerEvents: visible ? 'auto' : 'none' 
-        }
+          pointerEvents: visible ? 'auto' : 'none',
+        },
       ]}
     >
       {/* ── ICON ── */}
-      <View style={[
-        styles.toastIcon, 
-        isSuccess ? styles.toastIconSuccess : styles.toastIconUndo
-      ]}>
-        <Text style={[
-          styles.toastIconText, 
-          isSuccess ? { color: colors.primary } : { color: colors.coral }
-        ]}>
+      <View
+        style={[
+          styles.toastIcon,
+          isSuccess ? styles.toastIconSuccess : styles.toastIconUndo,
+        ]}
+      >
+        <Text
+          style={[
+            styles.toastIconText,
+            isSuccess ? { color: colors.primary } : { color: colors.coral },
+          ]}
+        >
           {isSuccess ? '✓' : '↩'}
         </Text>
       </View>
@@ -90,7 +101,11 @@ export default function Toast({
 
       {/* ── UNDO ACTION ── */}
       {onUndo && (
-        <TouchableOpacity activeOpacity={0.6} onPress={onUndo} style={styles.undoBtn}>
+        <TouchableOpacity
+          activeOpacity={0.6}
+          onPress={onUndo}
+          style={styles.undoBtn}
+        >
           <Text style={styles.toastUndoText}>Undo</Text>
         </TouchableOpacity>
       )}

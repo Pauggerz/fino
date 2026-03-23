@@ -30,15 +30,18 @@ export interface AccountSummary {
 }
 
 /**
- * Calculates Total Balance, Total Income, and Total Expenses 
+ * Calculates Total Balance, Total Income, and Total Expenses
  * for a given set of transactions within a specific timeframe.
  */
 export function calculateBalanceSummary(
-  transactions: Transaction[], 
+  transactions: Transaction[],
   startingBalances: Record<Account, number> = { gcash: 0, cash: 0, bdo: 0 }
 ): BalanceSummary {
   // 1. Start with base account balances (simulating the onboarding setup)
-  const initialTotal = Object.values(startingBalances).reduce((sum, val) => sum + val, 0);
+  const initialTotal = Object.values(startingBalances).reduce(
+    (sum, val) => sum + val,
+    0
+  );
 
   // 2. Aggregate transactions
   return transactions.reduce(
@@ -60,9 +63,16 @@ export function calculateBalanceSummary(
  * Aggregates expenses by category to power the "Spending this month" UI
  * and the progress bars on the Stats screen.
  */
-export function calculateCategorySpend(transactions: Transaction[]): Record<Category, number> {
+export function calculateCategorySpend(
+  transactions: Transaction[]
+): Record<Category, number> {
   const defaultCategories: Record<Category, number> = {
-    food: 0, transport: 0, shopping: 0, bills: 0, health: 0, other: 0
+    food: 0,
+    transport: 0,
+    shopping: 0,
+    bills: 0,
+    health: 0,
+    other: 0,
   };
 
   return transactions.reduce((acc, tx) => {
