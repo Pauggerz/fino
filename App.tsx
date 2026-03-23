@@ -1,75 +1,58 @@
-/* eslint-disable camelcase */
-import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
+import React, { useCallback } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
-import {
-  useFonts,
-  Nunito_400Regular,
-  Nunito_700Bold,
-  Nunito_800ExtraBold,
-  Nunito_900Black,
-} from '@expo-google-fonts/nunito';
-import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-} from '@expo-google-fonts/inter';
-import {
-  DMMono_400Regular,
-  DMMono_500Medium,
-} from '@expo-google-fonts/dm-mono';
+import { useFonts } from 'expo-font';
 
+// Pulling in the exact fonts you have installed in package.json
+import { Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
+import { DMMono_500Medium } from '@expo-google-fonts/dm-mono';
+import { Nunito_700Bold, Nunito_800ExtraBold } from '@expo-google-fonts/nunito';
+
+import RootNavigator from './src/navigation/RootNavigator';
+import Toast from './src/components/Toast';
+
+// Keep the splash screen visible while we fetch resources (fonts)
 SplashScreen.preventAutoHideAsync();
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
-    Nunito_400Regular,
-    Nunito_700Bold,
-    Nunito_800ExtraBold,
-    Nunito_900Black,
+  const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
-    Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
-    DMMono_400Regular,
     DMMono_500Medium,
+    Nunito_700Bold,
+    Nunito_800ExtraBold,
   });
 
-  useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
+  // Hides the splash screen only after fonts are fully loaded to prevent UI flickering
+  const onLayoutRootView = useCallback(async () => {
+    if (fontsLoaded || fontError) {
+      await SplashScreen.hideAsync();
     }
-  }, [fontsLoaded]);
+  }, [fontsLoaded, fontError]);
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded && !fontError) {
+    return null; // Render nothing until fonts are ready
+  }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.greeting}>Kamusta, Christian! 👋</Text>
-      <Text style={styles.balance}>12,450</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaProvider onLayout={onLayoutRootView}>
+      <NavigationContainer>
+        {/* The entire app navigation tree lives here */}
+        <RootNavigator />
+        
+        {/* Global Toast Placeholder. 
+          Because it sits outside the navigator, it will smoothly float over 
+          modals, tabs, and regular screens without getting cut off. 
+        */}
+        <Toast 
+          visible={false} 
+          message="Expense added!" 
+          type="success" 
+          onHide={() => {}} 
+        />
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F7F5F2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  greeting: {
-    fontFamily: 'Nunito_800ExtraBold',
-    fontSize: 24,
-    color: '#1E1E2E',
-  },
-  balance: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 32,
-    color: '#1E1E2E',
-  },
-});
