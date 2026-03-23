@@ -116,8 +116,7 @@ cp .env.example .env.local
 | Variable | Description |
 |---|---|
 | `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_ANON_KEY` | Supabase anonymous/public key |
-| `CLOUDINARY_URL` | Cloudinary media upload URL |
+| `SUPABASE_ANON_KEY` | Supabase anonymous/public key (also used for Storage) |
 | `VISION_API_KEY` | Vision API key for image processing |
 | `RAILWAY_DB_URL` | PostgreSQL connection string (public URL) |
 
