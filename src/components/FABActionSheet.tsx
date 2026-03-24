@@ -79,9 +79,11 @@ export default function FABActionSheet() {
       }).start(() => {
         navigation.replace('AddTransaction', { mode: key });
       });
-    } else {
-      // scan receipt: dismiss (ScreenshotScreen navigated in a future phase)
-      dismiss();
+    } else if (key === 'scan') {
+      // Dismiss the sheet, then smoothly transition to the AI scanning screen
+      dismiss(() => {
+        navigation.navigate('ScreenshotScreen');
+      });
     }
   };
 

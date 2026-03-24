@@ -11,6 +11,7 @@ import HomeScreen from '../screens/HomeScreen';
 import AddTransactionSheet from '../screens/AddTransactionSheet';
 import FABActionSheet from '../components/FABActionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
+import ScreenshotScreen from '../screens/ScreenshotScreen';
 
 // ─── Placeholder screens ────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ export type RootStackParamList = {
   Tabs: undefined;
   FABActionSheet: undefined;
   AddTransaction: { mode: 'expense' | 'income' };
+  ScreenshotScreen: undefined;
 };
 
 /** Composite type so tab-level components can also navigate to root modals. */
@@ -158,6 +160,16 @@ export default function RootNavigator() {
             presentation: 'transparentModal',
             animation: 'none',
             contentStyle: { backgroundColor: 'transparent' },
+          }}
+        />
+
+        <Stack.Screen
+          name="ScreenshotScreen"
+          component={ScreenshotScreen}
+          options={{
+            headerShown: false,
+            // Optional: makes it slide up from the bottom like a native iOS card
+            presentation: 'modal',
           }}
         />
       </Stack.Navigator>
