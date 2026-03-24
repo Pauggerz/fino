@@ -1,8 +1,8 @@
-/* eslint-disable camelcase */
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import { SafeAreaProvider } from 'react-native-safe-area-context'; // 👈 Add this import
+
 import {
   useFonts,
   Nunito_400Regular,
@@ -20,6 +20,8 @@ import {
   DMMono_400Regular,
   DMMono_500Medium,
 } from '@expo-google-fonts/dm-mono';
+
+import RootNavigator from './src/navigation/RootNavigator';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -46,30 +48,10 @@ export default function App() {
   if (!fontsLoaded) return null;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.greeting}>Kamusta, Christian! 👋</Text>
-      <Text style={styles.balance}>12,450</Text>
+    // 👇 Wrap the app in SafeAreaProvider
+    <SafeAreaProvider>
+      <RootNavigator />
       <StatusBar style="auto" />
-    </View>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F7F5F2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  greeting: {
-    fontFamily: 'Nunito_800ExtraBold',
-    fontSize: 24,
-    color: '#1E1E2E',
-  },
-  balance: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 32,
-    color: '#1E1E2E',
-  },
-});
