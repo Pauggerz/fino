@@ -12,16 +12,26 @@ import AddTransactionSheet from '../screens/AddTransactionSheet';
 const FeedScreen = ({ navigation }: any) => (
   <View style={styles.placeholder}>
     <Text>Txns Feed Screen</Text>
-    <Text style={styles.link} onPress={() => navigation.navigate('TransactionDetail')}>
+    <Text
+      style={styles.link}
+      onPress={() => navigation.navigate('TransactionDetail')}
+    >
       Tap to test Push to TransactionDetail →
     </Text>
   </View>
 );
-const StatsScreen = () => <View style={styles.placeholder}><Text>Stats Screen</Text></View>;
+const StatsScreen = () => (
+  <View style={styles.placeholder}>
+    <Text>Stats Screen</Text>
+  </View>
+);
 const MoreScreen = ({ navigation }: any) => (
   <View style={styles.placeholder}>
     <Text>More Screen</Text>
-    <Text style={styles.link} onPress={() => navigation.navigate('AccountDetail')}>
+    <Text
+      style={styles.link}
+      onPress={() => navigation.navigate('AccountDetail')}
+    >
       Tap to test Push to AccountDetail →
     </Text>
     <Text style={styles.link} onPress={() => navigation.navigate('AIScreen')}>
@@ -30,9 +40,21 @@ const MoreScreen = ({ navigation }: any) => (
   </View>
 );
 
-const TransactionDetail = () => <View style={styles.placeholder}><Text>Transaction Detail</Text></View>;
-const AccountDetail = () => <View style={styles.placeholder}><Text>Account Detail</Text></View>;
-const AIScreen = () => <View style={styles.placeholder}><Text>✨ Fino AI Assistant</Text></View>;
+const TransactionDetail = () => (
+  <View style={styles.placeholder}>
+    <Text>Transaction Detail</Text>
+  </View>
+);
+const AccountDetail = () => (
+  <View style={styles.placeholder}>
+    <Text>Account Detail</Text>
+  </View>
+);
+const AIScreen = () => (
+  <View style={styles.placeholder}>
+    <Text>✨ Fino AI Assistant</Text>
+  </View>
+);
 
 // ── TYPES ──
 export type FeedStackParamList = {
@@ -67,7 +89,10 @@ function FeedNavigator() {
   return (
     <FeedStack.Navigator screenOptions={{ headerShown: false }}>
       <FeedStack.Screen name="FeedMain" component={FeedScreen} />
-      <FeedStack.Screen name="TransactionDetail" component={TransactionDetail} />
+      <FeedStack.Screen
+        name="TransactionDetail"
+        component={TransactionDetail}
+      />
     </FeedStack.Navigator>
   );
 }
@@ -114,16 +139,16 @@ export default function RootNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {/* Main Tabs */}
         <Stack.Screen name="Tabs" component={TabNavigator} />
-        
+
         {/* Modal / Bottom Sheet Screens */}
-        <Stack.Screen 
-          name="AddTransaction" 
-          component={AddTransactionSheet} 
+        <Stack.Screen
+          name="AddTransaction"
+          component={AddTransactionSheet}
           options={{
             presentation: 'transparentModal',
             animation: 'slide_from_bottom',
-            contentStyle: { backgroundColor: 'transparent' }
-          }} 
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>
@@ -142,5 +167,5 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     marginTop: 16,
     textDecorationLine: 'underline',
-  }
+  },
 });
