@@ -163,14 +163,23 @@ export default function HomeScreen() {
   const accountSummaries = store.getAccountSummaries();
   const categorySpend = store.getCategorySpend();
 
-  // ── Balance animation — 400ms Animated.timing after each store change ──
+// ── Balance animation — 400ms count up/down ──
   const animBalance = useRef(new Animated.Value(totalBalance)).current;
+  const [displayBalance, setDisplayBalance] = useState(totalBalance);
+
   useEffect(() => {
+    // Listen to the animation frame-by-frame and update the display state
+    const listenerId = animBalance.addListener(({ value }) => {
+      setDisplayBalance(value);
+    });
+
     Animated.timing(animBalance, {
       toValue: totalBalance,
       duration: BALANCE_ANIMATE_MS,
-      useNativeDriver: false,
+      useNativeDriver: false, // Must be false to animate text values
     }).start();
+
+    return () => animBalance.removeListener(listenerId);
   }, [totalBalance, animBalance]);
 
   // ── Toast state ──
@@ -387,11 +396,12 @@ export default function HomeScreen() {
               {/* Split peso + amount */}
               <View style={styles.heroAmountRow}>
                 <Text style={styles.heroCurr}>₱</Text>
-                <Text style={styles.heroAmount}>
-                  {totalBalance.toLocaleString('en-PH', {
-                    minimumFractionDigits: 2,
-                  })}
-                </Text>
+                    <Text style={styles.heroAmount}>
+                        {displayBalance.toLocaleString('en-PH', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2, 
+                        })}
+                      </Text>
               </View>
 
               {/* Trend badge */}
