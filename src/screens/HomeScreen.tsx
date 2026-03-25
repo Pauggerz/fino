@@ -163,7 +163,7 @@ export default function HomeScreen() {
   const accountSummaries = store.getAccountSummaries();
   const categorySpend = store.getCategorySpend();
 
-// ── Balance animation — 400ms count up/down ──
+  // ── Balance animation — 400ms count up/down ──
   const animBalance = useRef(new Animated.Value(totalBalance)).current;
   const [displayBalance, setDisplayBalance] = useState(totalBalance);
 
@@ -396,12 +396,12 @@ export default function HomeScreen() {
               {/* Split peso + amount */}
               <View style={styles.heroAmountRow}>
                 <Text style={styles.heroCurr}>₱</Text>
-                    <Text style={styles.heroAmount}>
-                        {displayBalance.toLocaleString('en-PH', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2, 
-                        })}
-                      </Text>
+                <Text style={styles.heroAmount}>
+                  {displayBalance.toLocaleString('en-PH', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </Text>
               </View>
 
               {/* Trend badge */}
