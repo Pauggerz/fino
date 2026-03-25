@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import FABActionSheet from '../components/FABActionSheet';
 import HomeScreen from '../screens/HomeScreen';
 import TabBar, { TabRoute } from '../components/TabBar';
 import AddTransactionSheet from '../screens/AddTransactionSheet';
@@ -77,7 +78,9 @@ export type TabStackParamList = {
 
 export type RootStackParamList = {
   Tabs: undefined;
-  AddTransaction: undefined;
+  AddTransaction: { mode?: 'expense' | 'income' };
+  ScreenshotScreen: undefined;
+  FABActionSheet: undefined;
 };
 
 const Tab = createBottomTabNavigator<TabStackParamList>();
@@ -117,7 +120,7 @@ function TabNavigator() {
         <TabBar
           activeTab={props.state.routeNames[props.state.index] as TabRoute}
           onTabPress={(tab) => props.navigation.navigate(tab)}
-          onFabPress={() => props.navigation.navigate('AddTransaction')}
+          onFabPress={() => props.navigation.navigate('FABActionSheet')}
         />
       )}
       screenOptions={{
@@ -141,6 +144,15 @@ export default function RootNavigator() {
         <Stack.Screen name="Tabs" component={TabNavigator} />
 
         {/* Modal / Bottom Sheet Screens */}
+        <Stack.Screen
+          name="FABActionSheet"
+          component={FABActionSheet}
+          options={{
+            presentation: 'transparentModal',
+            animation: 'none', // Use 'none' because FABActionSheet has its own Animated.timing slide-up
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
+        />
         <Stack.Screen
           name="AddTransaction"
           component={AddTransactionSheet}
