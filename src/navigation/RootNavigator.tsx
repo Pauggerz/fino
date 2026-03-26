@@ -3,69 +3,47 @@ import { View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import HomeScreen from '../screens/HomeScreen';
-import TabBar, { TabRoute } from '../components/TabBar';
+import FeedScreen from '../screens/FeedScreen'; // <-- Added real FeedScreen import
 import AddTransactionSheet from '../screens/AddTransactionSheet';
+import FABActionSheet from '../components/FABActionSheet';
+import TabBar, { TabRoute } from '../components/TabBar';
 
-// ── TEMPORARY PLACEHOLDERS ──
-const FeedScreen = ({ navigation }: any) => (
+// ─── Placeholder screens ────────────────────────────────────────────────────
+
+// (The dummy FeedScreen was deleted from here!)
+
+const TransactionDetailScreen = () => (
   <View style={styles.placeholder}>
-    <Text>Txns Feed Screen</Text>
-    <Text
-      style={styles.link}
-      onPress={() => navigation.navigate('TransactionDetail')}
-    >
-      Tap to test Push to TransactionDetail →
-    </Text>
+    <Text style={styles.placeholderText}>Transaction Detail</Text>
   </View>
 );
+
 const StatsScreen = () => (
   <View style={styles.placeholder}>
-    <Text>Stats Screen</Text>
-  </View>
-);
-const MoreScreen = ({ navigation }: any) => (
-  <View style={styles.placeholder}>
-    <Text>More Screen</Text>
-    <Text
-      style={styles.link}
-      onPress={() => navigation.navigate('AccountDetail')}
-    >
-      Tap to test Push to AccountDetail →
-    </Text>
-    <Text style={styles.link} onPress={() => navigation.navigate('AIScreen')}>
-      Ask Fino (AI Screen) →
-    </Text>
+    <Text style={styles.placeholderText}>Stats Screen</Text>
   </View>
 );
 
-const TransactionDetail = () => (
+const MoreScreen = () => (
   <View style={styles.placeholder}>
-    <Text>Transaction Detail</Text>
-  </View>
-);
-const AccountDetail = () => (
-  <View style={styles.placeholder}>
-    <Text>Account Detail</Text>
-  </View>
-);
-const AIScreen = () => (
-  <View style={styles.placeholder}>
-    <Text>✨ Fino AI Assistant</Text>
+    <Text style={styles.placeholderText}>More Screen</Text>
   </View>
 );
 
-// ── TYPES ──
+// ─── Types ──────────────────────────────────────────────────────────────────
+
 export type FeedStackParamList = {
   FeedMain: undefined;
-  TransactionDetail: undefined;
+  TransactionDetail: { id: string }; // <-- Updated to accept the transaction ID from FeedScreen
 };
 
 export type MoreStackParamList = {
   MoreMain: undefined;
-  AccountDetail: undefined;
-  AIScreen: undefined;
 };
 
 export type TabStackParamList = {
@@ -77,13 +55,12 @@ export type TabStackParamList = {
 
 export type RootStackParamList = {
   Tabs: undefined;
-  AddTransaction: undefined;
+  FABActionSheet: undefined;
+  AddTransaction: { mode: 'expense' | 'income' };
 };
 
-const Tab = createBottomTabNavigator<TabStackParamList>();
-const Stack = createNativeStackNavigator<RootStackParamList>();
+// ─── Navigators ─────────────────────────────────────────────────────────────
 
-// ── PER-TAB STACK NAVIGATORS ──
 const FeedStack = createNativeStackNavigator<FeedStackParamList>();
 function FeedNavigator() {
   return (
@@ -91,7 +68,7 @@ function FeedNavigator() {
       <FeedStack.Screen name="FeedMain" component={FeedScreen} />
       <FeedStack.Screen
         name="TransactionDetail"
-        component={TransactionDetail}
+        component={TransactionDetailScreen}
       />
     </FeedStack.Navigator>
   );
@@ -102,14 +79,11 @@ function MoreNavigator() {
   return (
     <MoreStack.Navigator screenOptions={{ headerShown: false }}>
       <MoreStack.Screen name="MoreMain" component={MoreScreen} />
-      <MoreStack.Screen name="AccountDetail" component={AccountDetail} />
-      {/* AI Screen lives inside the More stack so the Tab Bar stays visible */}
-      <MoreStack.Screen name="AIScreen" component={AIScreen} />
     </MoreStack.Navigator>
   );
 }
 
-// ── MAIN TAB NAVIGATOR ──
+const Tab = createBottomTabNavigator<TabStackParamList>();
 function TabNavigator() {
   return (
     <Tab.Navigator
@@ -117,7 +91,7 @@ function TabNavigator() {
         <TabBar
           activeTab={props.state.routeNames[props.state.index] as TabRoute}
           onTabPress={(tab) => props.navigation.navigate(tab)}
-          onFabPress={() => props.navigation.navigate('AddTransaction')}
+          onFabPress={() => props.navigation.navigate('FABActionSheet')}
         />
       )}
       screenOptions={{
@@ -132,21 +106,34 @@ function TabNavigator() {
   );
 }
 
-// ── ROOT NAVIGATOR ──
+// ─── Root Stack ─────────────────────────────────────────────────────────────
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
 export default function RootNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {/* Main Tabs */}
         <Stack.Screen name="Tabs" component={TabNavigator} />
 
-        {/* Modal / Bottom Sheet Screens */}
+        {/* FAB action sheet — custom JS animation, so navigator animation is none */}
+        <Stack.Screen
+          name="FABActionSheet"
+          component={FABActionSheet}
+          options={{
+            presentation: 'transparentModal',
+            animation: 'none',
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
+        />
+
+        {/* Add transaction sheet — self-animates with 340 ms bezier */}
         <Stack.Screen
           name="AddTransaction"
           component={AddTransactionSheet}
           options={{
             presentation: 'transparentModal',
-            animation: 'slide_from_bottom',
+            animation: 'none',
             contentStyle: { backgroundColor: 'transparent' },
           }}
         />
@@ -155,6 +142,8 @@ export default function RootNavigator() {
   );
 }
 
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   placeholder: {
     flex: 1,
@@ -162,10 +151,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  link: {
-    color: '#5B8C6E',
-    fontFamily: 'Inter_600SemiBold',
-    marginTop: 16,
-    textDecorationLine: 'underline',
+  placeholderText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: '#1E1E2E',
   },
 });
