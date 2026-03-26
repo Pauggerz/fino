@@ -209,10 +209,23 @@ export default function HomeScreen() {
 
   const handleUndo = useCallback(() => {
     if (!undoTxId) return;
+
+    // 1. Grab the transaction details BEFORE removing it from the store
+    const txToUndo = transactionStore.getAll().find((t) => t.id === undoTxId);
+
+    // 2. Remove it (this instantly restores the balance reactively)
     transactionStore.remove(undoTxId);
     setUndoTxId(null);
+
+    // 3. Format the exact prototype string: "₱[Amount] [type] undone"
+    if (txToUndo) {
+      const typeLabel = txToUndo.type === 'exp' ? 'expense' : 'income';
+      setToastSubtitle(`₱${txToUndo.amount} ${typeLabel} undone`);
+    } else {
+      setToastSubtitle('Transaction undone'); // Fallback
+    }
+
     setToastTitle('Removed');
-    setToastSubtitle('Transaction undone');
     setToastIsUndo(true);
     setToastVisible(true);
   }, [undoTxId]);
