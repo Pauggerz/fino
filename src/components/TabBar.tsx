@@ -1,6 +1,5 @@
 import React, { useRef } from 'react';
 import {
-  View,
   Text,
   StyleSheet,
   TouchableOpacity,
@@ -8,8 +7,8 @@ import {
   Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors } from '../constants/theme';
 import { BlurView } from 'expo-blur';
+import { colors } from '../constants/theme';
 
 export type TabRoute = 'home' | 'feed' | 'stats' | 'more';
 
@@ -64,7 +63,7 @@ export default function TabBar({
   return (
     <BlurView intensity={20} tint="light" style={styles.tabBar}>
       {renderTab('home', '🏠', 'Home')}
-      {renderTab('feed', '📋', 'Txns')} 
+      {renderTab('feed', '📋', 'Txns')}
       {/* ── FAB ── */}
       <Animated.View
         style={[styles.fabContainer, { transform: [{ scale: fabScale }] }]}
