@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { requireAuth } from './middleware/auth';
+import receiptRoutes from './routes/receipt.routes';
 
 dotenv.config({ path: '../.env.local' });
 
@@ -27,6 +28,9 @@ app.get('/api/protected-test', requireAuth, (req, res) => {
     user: (req as any).user,
   });
 });
+
+// Register grouped routes
+app.use('/api', receiptRoutes);
 
 app.listen(port, () => {
   console.log(`🚀 Fino API listening on port ${port}`);
