@@ -8,6 +8,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import HomeScreen from '../screens/HomeScreen';
+import FeedScreen from '../screens/FeedScreen'; // <-- Added real FeedScreen import
 import AddTransactionSheet from '../screens/AddTransactionSheet';
 import FABActionSheet from '../components/FABActionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
@@ -15,11 +16,7 @@ import ScreenshotScreen from '../screens/ScreenshotScreen';
 
 // ─── Placeholder screens ────────────────────────────────────────────────────
 
-const FeedScreen = () => (
-  <View style={styles.placeholder}>
-    <Text style={styles.placeholderText}>Txns Feed Screen</Text>
-  </View>
-);
+// (The dummy FeedScreen was deleted from here!)
 
 const TransactionDetailScreen = () => (
   <View style={styles.placeholder}>
@@ -39,22 +36,15 @@ const MoreScreen = () => (
   </View>
 );
 
-const AccountDetailScreen = () => (
-  <View style={styles.placeholder}>
-    <Text style={styles.placeholderText}>Account Detail</Text>
-  </View>
-);
-
-// ─── Type definitions ────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 export type FeedStackParamList = {
-  FeedScreen: undefined;
-  TransactionDetail: { id?: string };
+  FeedMain: undefined;
+  TransactionDetail: { id: string }; // <-- Updated to accept the transaction ID from FeedScreen
 };
 
 export type MoreStackParamList = {
-  MoreScreen: undefined;
-  AccountDetail: { id?: string };
+  MoreMain: undefined;
 };
 
 export type TabStackParamList = {
@@ -71,20 +61,13 @@ export type RootStackParamList = {
   ScreenshotScreen: undefined;
 };
 
-/** Composite type so tab-level components can also navigate to root modals. */
-export type RootTabNavigation = CompositeNavigationProp<
-  BottomTabNavigationProp<TabStackParamList>,
-  NativeStackNavigationProp<RootStackParamList>
->;
-
-// ─── Per-tab nested stacks ───────────────────────────────────────────────────
+// ─── Navigators ─────────────────────────────────────────────────────────────
 
 const FeedStack = createNativeStackNavigator<FeedStackParamList>();
-
 function FeedNavigator() {
   return (
     <FeedStack.Navigator screenOptions={{ headerShown: false }}>
-      <FeedStack.Screen name="FeedScreen" component={FeedScreen} />
+      <FeedStack.Screen name="FeedMain" component={FeedScreen} />
       <FeedStack.Screen
         name="TransactionDetail"
         component={TransactionDetailScreen}
@@ -94,34 +77,28 @@ function FeedNavigator() {
 }
 
 const MoreStack = createNativeStackNavigator<MoreStackParamList>();
-
 function MoreNavigator() {
   return (
     <MoreStack.Navigator screenOptions={{ headerShown: false }}>
-      <MoreStack.Screen name="MoreScreen" component={MoreScreen} />
-      <MoreStack.Screen name="AccountDetail" component={AccountDetailScreen} />
+      <MoreStack.Screen name="MoreMain" component={MoreScreen} />
     </MoreStack.Navigator>
   );
 }
 
-// ─── Tab navigator ───────────────────────────────────────────────────────────
-
 const Tab = createBottomTabNavigator<TabStackParamList>();
-
 function TabNavigator() {
   return (
     <Tab.Navigator
-      tabBar={(props) => {
-        const nav = props.navigation as unknown as RootTabNavigation;
-        return (
-          <TabBar
-            activeTab={props.state.routeNames[props.state.index] as TabRoute}
-            onTabPress={(tab) => nav.navigate(tab)}
-            onFabPress={() => nav.navigate('FABActionSheet')}
-          />
-        );
+      tabBar={(props) => (
+        <TabBar
+          activeTab={props.state.routeNames[props.state.index] as TabRoute}
+          onTabPress={(tab) => props.navigation.navigate(tab)}
+          onFabPress={() => props.navigation.navigate('FABActionSheet')}
+        />
+      )}
+      screenOptions={{
+        headerShown: false,
       }}
-      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="home" component={HomeScreen} />
       <Tab.Screen name="feed" component={FeedNavigator} />
@@ -131,7 +108,7 @@ function TabNavigator() {
   );
 }
 
-// ─── Root stack ──────────────────────────────────────────────────────────────
+// ─── Root Stack ─────────────────────────────────────────────────────────────
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -189,6 +166,6 @@ const styles = StyleSheet.create({
   placeholderText: {
     fontFamily: 'Inter_400Regular',
     fontSize: 14,
-    color: '#8A8A9A',
+    color: '#1E1E2E',
   },
 });
