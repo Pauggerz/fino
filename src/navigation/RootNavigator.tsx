@@ -8,21 +8,14 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import HomeScreen from '../screens/HomeScreen';
-import FeedScreen from '../screens/FeedScreen'; // <-- Added real FeedScreen import
+import FeedScreen from '../screens/FeedScreen';
+import TransactionDetailScreen from '../screens/TransactionDetailScreen';
 import AddTransactionSheet from '../screens/AddTransactionSheet';
 import FABActionSheet from '../components/FABActionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
 import ScreenshotScreen from '../screens/ScreenshotScreen';
 
 // ─── Placeholder screens ────────────────────────────────────────────────────
-
-// (The dummy FeedScreen was deleted from here!)
-
-const TransactionDetailScreen = () => (
-  <View style={styles.placeholder}>
-    <Text style={styles.placeholderText}>Transaction Detail</Text>
-  </View>
-);
 
 const StatsScreen = () => (
   <View style={styles.placeholder}>
@@ -118,7 +111,6 @@ export default function RootNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Tabs" component={TabNavigator} />
 
-        {/* FAB action sheet — custom JS animation, so navigator animation is none */}
         <Stack.Screen
           name="FABActionSheet"
           component={FABActionSheet}
@@ -129,7 +121,6 @@ export default function RootNavigator() {
           }}
         />
 
-        {/* Add transaction sheet — self-animates with 340 ms bezier */}
         <Stack.Screen
           name="AddTransaction"
           component={AddTransactionSheet}
