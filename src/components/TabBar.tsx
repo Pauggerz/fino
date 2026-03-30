@@ -6,8 +6,8 @@ import {
   Animated,
   Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../constants/theme';
 
 export type TabRoute = 'home' | 'feed' | 'stats' | 'more';
