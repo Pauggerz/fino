@@ -9,7 +9,6 @@ import HomeScreen from '../screens/HomeScreen';
 import FeedScreen from '../screens/FeedScreen';
 import TransactionDetailScreen from '../screens/TransactionDetailScreen';
 import AddTransactionSheet from '../screens/AddTransactionSheet';
-import FABActionSheet from '../components/FABActionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
 import ScreenshotScreen from '../screens/ScreenshotScreen';
 
@@ -108,16 +107,6 @@ export default function RootNavigator() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Tabs" component={TabNavigator} />
-
-        <Stack.Screen
-          name="FABActionSheet"
-          component={FABActionSheet}
-          options={{
-            presentation: 'transparentModal',
-            animation: 'none',
-            contentStyle: { backgroundColor: 'transparent' },
-          }}
-        />
 
         <Stack.Screen
           name="FABActionSheet"

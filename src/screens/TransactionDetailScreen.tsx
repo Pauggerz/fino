@@ -248,11 +248,7 @@ export default function TransactionDetailScreen() {
         </View>
       </Modal>
 
-      <Modal
-        visible={isDeleteConfirmVisible}
-        transparent
-        animationType="slide"
-      >
+      <Modal visible={isDeleteConfirmVisible} transparent animationType="slide">
         <View style={styles.sheetOverlay}>
           <Pressable
             style={styles.sheetDismissArea}
