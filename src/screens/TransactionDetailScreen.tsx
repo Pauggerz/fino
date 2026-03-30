@@ -13,7 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { colors, radius, spacing } from '../constants/theme';
+import { colors, spacing } from '../constants/theme';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
 
 // ─── MOCK DATABASE WITH ICONS ───────────────────────────────────────────────
@@ -232,7 +232,7 @@ export default function TransactionDetailScreen() {
       </ScrollView>
 
       {/* ─── MODALS ─── */}
-      <Modal visible={isReceiptVisible} transparent={true} animationType="fade">
+      <Modal visible={isReceiptVisible} transparent animationType="fade">
         <View style={styles.receiptModalBg}>
           <TouchableOpacity
             style={styles.receiptModalClose}
@@ -250,7 +250,7 @@ export default function TransactionDetailScreen() {
 
       <Modal
         visible={isDeleteConfirmVisible}
-        transparent={true}
+        transparent
         animationType="slide"
       >
         <View style={styles.sheetOverlay}>

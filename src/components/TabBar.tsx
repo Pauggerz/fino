@@ -1,15 +1,14 @@
 import React, { useRef } from 'react';
 import {
-  View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Animated,
   Platform,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../constants/theme';
-import { BlurView } from 'expo-blur';
 
 export type TabRoute = 'home' | 'feed' | 'stats' | 'more';
 
