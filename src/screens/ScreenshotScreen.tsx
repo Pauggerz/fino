@@ -15,7 +15,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { LinearGradient } from 'expo-linear-gradient';
 import { colors, radius, spacing } from '../constants/theme';
 
 const CATEGORIES = [
@@ -87,10 +86,10 @@ export default function ScreenshotScreen() {
       setIsParsing(false);
       setHasParsedData(true);
 
-      // Fade in the parsed card
+      // Fade in the parsed data
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 300,
+        duration: 400,
         useNativeDriver: true,
       }).start();
 
@@ -114,12 +113,10 @@ export default function ScreenshotScreen() {
     }
   };
 
-  // The form is ready to save as soon as we have data and a category!
   const isFormValid = hasParsedData && selectedCategory !== null;
 
   const handleConfirm = () => {
     if (!isFormValid) return;
-    // TODO: Trigger global toast and update Home balance
     navigation.goBack();
   };
 
@@ -143,38 +140,33 @@ export default function ScreenshotScreen() {
       >
         {/* --- Dynamic Image Source Area --- */}
         {!imageUri ? (
-          <View style={styles.uploadPromptContainer}>
-            <LinearGradient
-              colors={['#e0ddd8', '#cccac4']}
-              style={styles.uploadPromptGradient}
-            />
-            <View style={styles.uploadPromptContent}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="receipt" size={28} color={colors.primary} />
-              </View>
-              <Text style={styles.uploadPromptTitle}>Upload Receipt</Text>
-              <Text style={styles.uploadPromptSub}>
-                Snap a photo or choose from your gallery to auto-fill details.
-              </Text>
+          <View style={styles.emptyStateContainer}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="scan" size={32} color={colors.primary} />
+            </View>
+            <Text style={styles.emptyStateTitle}>Upload a Receipt</Text>
+            <Text style={styles.emptyStateSub}>
+              Snap a photo or choose from your gallery and let AI do the heavy
+              lifting.
+            </Text>
 
-              <View style={styles.uploadButtonsRow}>
-                <TouchableOpacity
-                  style={styles.uploadPromptBtn}
-                  onPress={() => pickImage('camera')}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="camera" size={20} color={colors.white} />
-                  <Text style={styles.uploadPromptBtnText}>Camera</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.uploadPromptBtn}
-                  onPress={() => pickImage('upload')}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="image" size={20} color={colors.white} />
-                  <Text style={styles.uploadPromptBtnText}>Gallery</Text>
-                </TouchableOpacity>
-              </View>
+            <View style={styles.uploadButtonsRow}>
+              <TouchableOpacity
+                style={styles.uploadBtn}
+                onPress={() => pickImage('camera')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="camera" size={20} color={colors.white} />
+                <Text style={styles.uploadBtnText}>Camera</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.uploadBtnSecondary}
+                onPress={() => pickImage('upload')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="image" size={20} color={colors.primary} />
+                <Text style={styles.uploadBtnTextSecondary}>Gallery</Text>
+              </TouchableOpacity>
             </View>
           </View>
         ) : (
@@ -185,8 +177,8 @@ export default function ScreenshotScreen() {
           >
             <Image source={{ uri: imageUri }} style={styles.previewImage} />
             <View style={styles.expandOverlay}>
-              <Ionicons name="expand" size={16} color={colors.white} />
-              <Text style={styles.expandText}>expand</Text>
+              <Ionicons name="expand" size={14} color={colors.white} />
+              <Text style={styles.expandText}>View</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -195,87 +187,105 @@ export default function ScreenshotScreen() {
         {isParsing && (
           <View style={styles.parsingOverlay}>
             <ActivityIndicator
-              size="small"
+              size="large"
               color={colors.primary}
-              style={{ marginBottom: 12 }}
+              style={{ marginBottom: 16 }}
             />
             <Text style={styles.parsingTitle}>Extracting details...</Text>
             <Text style={styles.parsingSubtitle}>Usually under 3 seconds</Text>
           </View>
         )}
 
-        {/* --- Parsed Card (Animated) --- */}
+        {/* --- Parsed Data (Animated & Box-less) --- */}
         {hasParsedData && (
-          <Animated.View style={[styles.parsedCard, { opacity: fadeAnim }]}>
-            {/* Legend */}
-            <View style={styles.legendRow}>
-              <View style={styles.legendItem}>
-                <View style={[styles.dot, { backgroundColor: '#A0BCA0' }]} />
-                <Text style={styles.legendText}>AI Confirmed</Text>
+          <Animated.View style={{ opacity: fadeAnim, marginTop: 16 }}>
+            <View style={styles.aiBadgeRow}>
+              <Ionicons name="sparkles" size={14} color="#A0BCA0" />
+              <Text style={styles.aiBadgeText}>AI Extracted Details</Text>
+            </View>
+
+            {/* Seamless Form Rows */}
+            <View style={styles.formSection}>
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Merchant</Text>
+                <Text style={styles.rowValue}>{merchant}</Text>
+              </View>
+
+              <View style={styles.formRow}>
+                <Text style={styles.rowLabel}>Amount</Text>
+                <Text style={[styles.rowValue, styles.amountValue]}>
+                  ₱{amount}
+                </Text>
+              </View>
+
+              <View style={[styles.formRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.rowLabel}>Date & Time</Text>
+                {isEditingDate ? (
+                  <TextInput
+                    style={styles.inlineInput}
+                    value={date}
+                    onChangeText={setDate}
+                    onBlur={() => setIsEditingDate(false)}
+                    onSubmitEditing={() => setIsEditingDate(false)}
+                    autoFocus
+                  />
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => setIsEditingDate(true)}
+                    style={styles.dateEditBtn}
+                  >
+                    <Text style={styles.rowValue}>{date}</Text>
+                    <Ionicons
+                      name="pencil"
+                      size={14}
+                      color={colors.textSecondary}
+                      style={{ marginLeft: 6 }}
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
 
-            {/* High Confidence Field: Merchant */}
-            <Text style={styles.fieldLabel}>Merchant</Text>
-            <View style={[styles.fieldBox, styles.confHiField]}>
-              <Text style={styles.confHiText}>{merchant}</Text>
-            </View>
-
-            {/* High Confidence Field: Amount */}
-            <Text style={styles.fieldLabel}>Amount</Text>
-            <View style={[styles.fieldBox, styles.confHiField]}>
-              <Text
-                style={[styles.confHiText, { fontSize: 20, fontWeight: '700' }]}
-              >
-                ₱{amount}
-              </Text>
-            </View>
-
-            {/* Auto-detected Date Field */}
-            <Text style={styles.fieldLabel}>Date & Time</Text>
-            <View style={[styles.fieldBox, styles.confHiField]}>
-              {isEditingDate ? (
-                <TextInput
-                  style={styles.inlineInput}
-                  value={date}
-                  onChangeText={setDate}
-                  onBlur={() => setIsEditingDate(false)}
-                  onSubmitEditing={() => setIsEditingDate(false)}
-                  autoFocus
-                />
-              ) : (
-                <Text style={styles.confHiText}>{date}</Text>
-              )}
-
-              {!isEditingDate && (
-                <TouchableOpacity
-                  onPress={() => setIsEditingDate(true)}
-                  style={styles.fixButton}
-                >
-                  <Text style={styles.editButtonText}>Edit ›</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
             {/* Category Selection */}
-            <Text style={[styles.fieldLabel, { marginTop: 8 }]}>Category</Text>
+            <Text style={styles.categoryHeader}>Select Category</Text>
             <View style={styles.categoriesGrid}>
               {CATEGORIES.map((cat) => (
                 <TouchableOpacity
                   key={cat.id}
                   style={[
                     styles.categoryPill,
-                    { backgroundColor: cat.bg },
+                    {
+                      backgroundColor:
+                        selectedCategory === cat.id ? cat.bg : colors.white,
+                    },
                     selectedCategory === cat.id && {
                       borderColor: cat.border,
-                      borderWidth: 2,
-                      backgroundColor: colors.white,
+                      borderWidth: 1,
                     },
                   ]}
                   onPress={() => setSelectedCategory(cat.id)}
+                  activeOpacity={0.7}
                 >
-                  <Ionicons name={cat.icon as any} size={16} color={cat.text} />
-                  <Text style={[styles.categoryText, { color: cat.text }]}>
+                  <Ionicons
+                    name={cat.icon as any}
+                    size={18}
+                    color={
+                      selectedCategory === cat.id
+                        ? cat.text
+                        : colors.textSecondary
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.categoryText,
+                      {
+                        color:
+                          selectedCategory === cat.id
+                            ? cat.text
+                            : colors.textSecondary,
+                      },
+                    ]}
+                  >
                     {cat.label}
                   </Text>
                 </TouchableOpacity>
@@ -322,17 +332,18 @@ export default function ScreenshotScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background, // #F7F5F2
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.screenPadding,
-    paddingBottom: 16,
+    paddingBottom: 24,
   },
   headerTitle: {
     fontSize: 18,
+    fontFamily: 'Nunito_700Bold',
     fontWeight: '700',
     color: colors.textPrimary,
   },
@@ -345,76 +356,80 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
-  /* --- NEW UPLOAD PROMPT STYLES --- */
-  uploadPromptContainer: {
-    borderRadius: radius.card,
-    overflow: 'hidden',
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  uploadPromptGradient: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.5,
-  },
-  uploadPromptContent: {
-    padding: 32,
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.7)',
-  },
-  iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.primaryLight,
+  /* --- CLEAN UPLOAD EMPTY STATE --- */
+  emptyStateContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    paddingVertical: 60,
   },
-  uploadPromptTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(45, 106, 79, 0.08)', // Faint primary color
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontFamily: 'Nunito_700Bold',
     color: colors.textPrimary,
     marginBottom: 8,
   },
-  uploadPromptSub: {
-    fontSize: 13,
+  emptyStateSub: {
+    fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 18,
+    marginBottom: 32,
+    lineHeight: 20,
+    paddingHorizontal: 20,
   },
   uploadButtonsRow: {
     flexDirection: 'row',
     gap: 12,
     width: '100%',
   },
-  uploadPromptBtn: {
+  uploadBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
-    paddingVertical: 14,
-    borderRadius: radius.pill20,
+    paddingVertical: 16,
+    borderRadius: 16,
     gap: 8,
   },
-  uploadPromptBtnText: {
+  uploadBtnText: {
     color: colors.white,
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: 15,
+  },
+  uploadBtnSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+    paddingVertical: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+    gap: 8,
+  },
+  uploadBtnTextSecondary: {
+    color: colors.primary,
+    fontWeight: '600',
+    fontSize: 15,
   },
 
-  /* --- EXISTING STYLES --- */
+  /* --- IMAGE PREVIEW --- */
   previewContainer: {
-    height: 140,
-    borderRadius: radius.card,
+    height: 180,
+    borderRadius: 20,
     overflow: 'hidden',
-    marginBottom: 24,
-    backgroundColor: '#cccac4',
+    backgroundColor: '#EAE8E3',
+    marginBottom: 16,
   },
   previewImage: {
     ...StyleSheet.absoluteFillObject,
@@ -428,131 +443,140 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: radius.pill,
-    gap: 4,
+    borderRadius: 20,
+    gap: 6,
   },
   expandText: {
     color: colors.white,
     fontSize: 12,
     fontWeight: '600',
   },
+
+  /* --- PARSING STATE --- */
   parsingOverlay: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 60,
   },
   parsingTitle: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 4,
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
   },
   parsingSubtitle: {
     color: colors.textSecondary,
-    fontSize: 11,
+    fontSize: 13,
   },
-  parsedCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.card,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  legendRow: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 20,
-    justifyContent: 'flex-end',
-  },
-  legendItem: {
+
+  /* --- SLEEK FORM SECTION --- */
+  aiBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
     gap: 6,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  legendText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  fieldLabel: {
+  aiBadgeText: {
     fontSize: 13,
+    color: '#8CA68C',
     fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  fieldBox: {
+  formSection: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    marginBottom: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  formRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0EFEA',
+  },
+  rowLabel: {
+    fontSize: 15,
+    color: colors.textSecondary,
+  },
+  rowValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    fontFamily: 'Inter_600SemiBold',
+    textAlign: 'right',
+    maxWidth: '65%',
+  },
+  amountValue: {
+    fontSize: 18,
+    fontFamily: 'DMMono_500Medium',
+    color: colors.primary,
+  },
+  dateEditBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 16,
-  },
-  confHiField: {
-    backgroundColor: '#E8E6E2',
-    borderColor: '#A0BCA0',
-  },
-  confHiText: {
-    fontSize: 15,
-    color: colors.textPrimary,
-    fontFamily: 'DMMono_500Medium',
   },
   inlineInput: {
     flex: 1,
     fontSize: 15,
-    color: colors.textPrimary,
-    fontFamily: 'DMMono_500Medium',
+    fontWeight: '600',
+    color: colors.primary,
+    textAlign: 'right',
     padding: 0,
   },
-  fixButton: {
-    paddingLeft: 12,
-  },
-  editButtonText: {
-    color: '#8E8E93',
-    fontWeight: '700',
-    fontSize: 14,
+
+  /* --- CATEGORIES --- */
+  categoryHeader: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 16,
+    marginLeft: 4,
   },
   categoriesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 12,
   },
   categoryPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: radius.pill20,
-    gap: 6,
-    borderWidth: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    gap: 8,
+    borderWidth: 1,
     borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   categoryText: {
     fontSize: 14,
     fontWeight: '600',
   },
+
+  /* --- FOOTER & MODAL --- */
   footer: {
     paddingHorizontal: spacing.screenPadding,
     backgroundColor: colors.background,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
     paddingTop: 16,
   },
   saveButton: {
     backgroundColor: colors.primary,
     paddingVertical: 18,
-    borderRadius: radius.button,
+    borderRadius: 16,
     alignItems: 'center',
   },
   saveButtonDisabled: {
@@ -565,7 +589,7 @@ const styles = StyleSheet.create({
   },
   modalBg: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.9)',
+    backgroundColor: 'rgba(0,0,0,0.95)',
     justifyContent: 'center',
   },
   modalClose: {
