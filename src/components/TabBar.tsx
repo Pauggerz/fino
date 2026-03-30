@@ -63,7 +63,7 @@ export default function TabBar({
   return (
     <BlurView intensity={20} tint="light" style={styles.tabBar}>
       {renderTab('home', '🏠', 'Home')}
-      {renderTab('feed', '📋', 'Txns')} 
+      {renderTab('feed', '📋', 'Txns')}
       {/* ── FAB ── */}
       <Animated.View
         style={[styles.fabContainer, { transform: [{ scale: fabScale }] }]}

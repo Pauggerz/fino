@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import FABActionSheet from '../components/FABActionSheet';
 import HomeScreen from '../screens/HomeScreen';
 import FeedScreen from '../screens/FeedScreen';
 import TransactionDetailScreen from '../screens/TransactionDetailScreen';
@@ -118,6 +119,15 @@ export default function RootNavigator() {
           }}
         />
 
+        <Stack.Screen
+          name="FABActionSheet"
+          component={FABActionSheet}
+          options={{
+            presentation: 'transparentModal',
+            animation: 'none', // Use 'none' because FABActionSheet has its own Animated.timing slide-up
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
+        />
         <Stack.Screen
           name="AddTransaction"
           component={AddTransactionSheet}

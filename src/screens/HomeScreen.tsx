@@ -7,8 +7,9 @@ import {
   TouchableOpacity,
   Animated,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors } from '../constants/theme';
 import {
@@ -153,6 +154,41 @@ const ringStyles = StyleSheet.create({
   },
 });
 
+function getCategoryIcon(id: string, color: string) {
+  switch (id) {
+    case 'food': // Fork & Knife
+      return (
+        <Path
+          d="M11 2V9C11 10.1 10.1 11 9 11V20H7V11C5.9 11 5 10.1 5 9V2H6V7H7V2H8V7H9V2H11ZM15 2C16.1 2 17 2.9 17 4V10H14V20H12V2H15Z"
+          fill={color}
+        />
+      );
+    case 'transport': // Bus
+      return (
+        <Path
+          d="M4 16C4 17.1 4.9 18 6 18H6.5L6 20H8L8.5 18H15.5L16 20H18L17.5 18H18C19.1 18 20 17.1 20 16V6C20 3.8 18.2 2 16 2H8C5.8 2 4 3.8 4 6V16ZM7.5 14C6.7 14 6 13.3 6 12.5C6 11.7 6.7 11 7.5 11C8.3 11 9 11.7 9 12.5C9 13.3 8.3 14 7.5 14ZM16.5 14C15.7 14 15 13.3 15 12.5C15 11.7 15.7 11 16.5 11C17.3 11 18 11.7 18 12.5C18 13.3 17.3 14 16.5 14ZM6 9V6H18V9H6Z"
+          fill={color}
+        />
+      );
+    case 'shopping': // Bag
+      return (
+        <Path
+          d="M16 6V4C16 1.8 14.2 0 12 0C9.8 0 8 1.8 8 4V6H2V22C2 23.1 2.9 24 4 24H20C21.1 24 22 23.1 22 22V6H16ZM10 4C10 2.9 10.9 2 12 2C13.1 2 14 2.9 14 4V6H10V4ZM20 22H4V8H8V10C8 10.6 8.4 11 9 11C9.6 11 10 10.6 10 10V8H14V10C14 10.6 14.4 11 15 11C15.6 11 16 10.6 16 10V8H20V22Z"
+          fill={color}
+        />
+      );
+    case 'bills': // Document
+      return (
+        <Path
+          d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM13 9V3.5L18.5 9H13Z"
+          fill={color}
+        />
+      );
+    default:
+      return null;
+  }
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -163,14 +199,23 @@ export default function HomeScreen() {
   const accountSummaries = store.getAccountSummaries();
   const categorySpend = store.getCategorySpend();
 
-  // ── Balance animation — 400ms Animated.timing after each store change ──
+  // ── Balance animation — 400ms count up/down ──
   const animBalance = useRef(new Animated.Value(totalBalance)).current;
+  const [displayBalance, setDisplayBalance] = useState(totalBalance);
+
   useEffect(() => {
+    // Listen to the animation frame-by-frame and update the display state
+    const listenerId = animBalance.addListener(({ value }) => {
+      setDisplayBalance(value);
+    });
+
     Animated.timing(animBalance, {
       toValue: totalBalance,
       duration: BALANCE_ANIMATE_MS,
-      useNativeDriver: false,
+      useNativeDriver: false, // Must be false to animate text values
     }).start();
+
+    return () => animBalance.removeListener(listenerId);
   }, [totalBalance, animBalance]);
 
   // ── Toast state ──
@@ -253,10 +298,15 @@ export default function HomeScreen() {
               </Text>
               {/* Two-tone name */}
               <Text style={styles.greetingName}>
-                <Text style={{ color: colors.primary }}>Kamusta, </Text>
-                <Text style={{ color: colors.greetingPurple }}>
-                  {USER_NAME}!
+                <Text
+                  style={{
+                    color: colors.primary,
+                    fontFamily: 'Nunito_700Bold',
+                  }}
+                >
+                  Kamusta,{' '}
                 </Text>
+                <Text style={{ color: '#7B5EA7' }}>{USER_NAME}!</Text>
               </Text>
             </View>
             {/* Avatar: 36px green gradient circle */}
@@ -338,37 +388,35 @@ export default function HomeScreen() {
         >
           {/* Dark base */}
           <View style={styles.heroCard}>
-            {/* Blob overlays */}
-            <View
-              style={[
-                styles.blob,
-                {
-                  top: -40,
-                  right: -30,
-                  width: 140,
-                  height: 140,
-                  opacity: 0.18,
-                },
-              ]}
-            />
-            <View
-              style={[
-                styles.blob,
-                {
-                  bottom: -20,
-                  left: -20,
-                  width: 100,
-                  height: 100,
-                  opacity: 0.12,
-                },
-              ]}
-            />
-            <View
-              style={[
-                styles.blob,
-                { top: 20, left: '45%', width: 80, height: 80, opacity: 0.09 },
-              ]}
-            />
+            {/* Radial Blob Overlays + BlurView */}
+            <View style={StyleSheet.absoluteFill}>
+              <LinearGradient
+                colors={['rgba(168,213,181,0.6)', 'transparent']}
+                style={[
+                  styles.blob,
+                  { top: -40, right: -30, width: 140, height: 140 },
+                ]}
+              />
+              <LinearGradient
+                colors={['rgba(255,255,255,0.3)', 'transparent']}
+                style={[
+                  styles.blob,
+                  { bottom: -20, left: -20, width: 100, height: 100 },
+                ]}
+              />
+              <LinearGradient
+                colors={['rgba(91,140,110,0.5)', 'transparent']}
+                style={[
+                  styles.blob,
+                  { top: 20, left: '45%', width: 80, height: 80 },
+                ]}
+              />
+              <BlurView
+                intensity={60}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+              />
+            </View>
 
             {/* Glass panel */}
             <View style={styles.glassPanel}>
@@ -388,8 +436,9 @@ export default function HomeScreen() {
               <View style={styles.heroAmountRow}>
                 <Text style={styles.heroCurr}>₱</Text>
                 <Text style={styles.heroAmount}>
-                  {totalBalance.toLocaleString('en-PH', {
+                  {displayBalance.toLocaleString('en-PH', {
                     minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
                   })}
                 </Text>
               </View>
@@ -496,7 +545,9 @@ export default function HomeScreen() {
 
                   {/* Icon in white circle */}
                   <View style={styles.catIconCircle}>
-                    <Text style={styles.catIconEmoji}>{tile.icon}</Text>
+                    <Svg width={20} height={20} viewBox="0 0 24 24">
+                      {getCategoryIcon(tile.id, tile.textColor)}
+                    </Svg>
                   </View>
 
                   <Text style={[styles.catName, { color: tile.textColor }]}>
@@ -529,9 +580,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             activeOpacity={0.9}
             style={styles.insightWrap}
-            onPress={() => {
-              /* navigate to AI screen in Phase 4 */
-            }}
+            onPress={() => navigation.navigate('more', { screen: 'AIScreen' })}
           >
             <LinearGradient
               colors={['#F0ECFD', '#EBF2EE']}
@@ -589,7 +638,6 @@ const ACCOUNT_CONFIG: Record<
 const CATEGORY_TILES: {
   id: Category;
   label: string;
-  icon: string;
   gradient: [string, string];
   textColor: string;
   barColor: string;
@@ -597,7 +645,6 @@ const CATEGORY_TILES: {
   {
     id: 'food',
     label: 'Food',
-    icon: '🍔',
     gradient: [colors.catFoodBg, '#FFF3E0'],
     textColor: colors.catFoodText,
     barColor: colors.coral,
@@ -605,7 +652,6 @@ const CATEGORY_TILES: {
   {
     id: 'transport',
     label: 'Transport',
-    icon: '🚌',
     gradient: [colors.catTransportBg, '#E8F4FD'],
     textColor: colors.catTransportText,
     barColor: colors.primary,
@@ -613,7 +659,6 @@ const CATEGORY_TILES: {
   {
     id: 'shopping',
     label: 'Shopping',
-    icon: '🛍',
     gradient: [colors.catShoppingBg, '#FDE8F0'],
     textColor: colors.catShoppingText,
     barColor: colors.coral,
@@ -621,7 +666,6 @@ const CATEGORY_TILES: {
   {
     id: 'bills',
     label: 'Bills',
-    icon: '⚡',
     gradient: [colors.catBillsBg, colors.catBillsBg2],
     textColor: colors.catBillsText,
     barColor: colors.lavender,
@@ -645,13 +689,13 @@ const styles = StyleSheet.create({
   greetingLeft: { flex: 1 },
   // spec: background:transparent, border:none, Inter 500, textSecondary
   greetingPill: {
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     fontSize: 13,
     color: colors.textSecondary,
     marginBottom: 6,
   },
   greetingName: {
-    fontFamily: 'Nunito_800ExtraBold',
+    fontFamily: 'Nunito_400Regular',
     fontSize: 26,
     lineHeight: 32,
   },
@@ -941,7 +985,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  catIconEmoji: { fontSize: 16 },
   catName: {
     fontFamily: 'Nunito_800ExtraBold',
     fontSize: 12,
