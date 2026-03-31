@@ -7,9 +7,11 @@ import {
   Pressable,
   FlatList,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { colors, radius, spacing } from '../constants/theme';
+import { colors, gradients, radius, spacing } from '../constants/theme';
 
 // ─── MOCK DATA & TYPES ──────────────────────────────────────────────────────
 
@@ -224,17 +226,23 @@ export default function FeedScreen() {
 
             return (
               <TouchableOpacity
-                style={isActive ? styles.chipActive : styles.chipInactive}
                 onPress={() => setActiveCategory(item)}
                 activeOpacity={0.8}
               >
-                <Text
-                  style={
-                    isActive ? styles.chipTextActive : styles.chipTextInactive
-                  }
-                >
-                  {item}
-                </Text>
+                {isActive ? (
+                  <LinearGradient
+                    colors={gradients.primaryHero as [string, string, string]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.chipActive}
+                  >
+                    <Text style={styles.chipTextActive}>{item}</Text>
+                  </LinearGradient>
+                ) : (
+                  <View style={styles.chipInactive}>
+                    <Text style={styles.chipTextInactive}>{item}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             );
           }}
@@ -243,13 +251,14 @@ export default function FeedScreen() {
 
       {/* ─── TRANSACTION LIST ─── */}
       <View style={{ flex: 1 }}>
-        <FlatList
+        <FlashList
           data={listData}
           renderItem={renderItem}
+          estimatedItemSize={64}
           keyExtractor={(item, index) =>
             item.type === 'header'
               ? `header-${item.title}`
-              : `tx-${item.data.id}-${index}`
+              : `tx-${(item as { type: 'transaction'; data: Transaction }).data.id}-${index}`
           }
           contentContainerStyle={{ paddingBottom: 120 }}
           ListFooterComponent={() =>
@@ -315,7 +324,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
-    backgroundColor: colors.primary, // Standard color instead of gradient
   },
   chipInactive: {
     paddingHorizontal: 16,
@@ -370,7 +378,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   txTitle: {
-    fontFamily: 'Nunito_700Bold',
+    fontFamily: 'Nunito_600SemiBold',
     fontSize: 15,
     color: colors.textPrimary,
     marginBottom: 4,

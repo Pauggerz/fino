@@ -306,7 +306,9 @@ export default function HomeScreen() {
                 >
                   Kamusta,{' '}
                 </Text>
-                <Text style={{ color: '#7B5EA7' }}>{USER_NAME}!</Text>
+                <Text style={{ color: colors.greetingPurple }}>
+                  {USER_NAME}!
+                </Text>
               </Text>
             </View>
             {/* Avatar: 36px green gradient circle */}
@@ -580,7 +582,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             activeOpacity={0.9}
             style={styles.insightWrap}
-            onPress={() => navigation.navigate('more', { screen: 'AIScreen' })}
+            onPress={() => navigation.navigate('AIScreen')}
           >
             <LinearGradient
               colors={['#F0ECFD', '#EBF2EE']}

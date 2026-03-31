@@ -11,6 +11,8 @@ import TransactionDetailScreen from '../screens/TransactionDetailScreen';
 import AddTransactionSheet from '../screens/AddTransactionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
 import ScreenshotScreen from '../screens/ScreenshotScreen';
+import AccountDetailScreen from '../screens/AccountDetailScreen';
+import AIScreen from '../screens/AIScreen';
 
 // ─── Placeholder screens ────────────────────────────────────────────────────
 
@@ -35,6 +37,7 @@ export type FeedStackParamList = {
 
 export type MoreStackParamList = {
   MoreMain: undefined;
+  AccountDetail: { id: string };
 };
 
 export type TabStackParamList = {
@@ -47,8 +50,18 @@ export type TabStackParamList = {
 export type RootStackParamList = {
   Tabs: undefined;
   FABActionSheet: undefined;
-  AddTransaction: { mode: 'expense' | 'income' };
+  AddTransaction: {
+    mode: 'expense' | 'income';
+    prefill?: {
+      merchant: string;
+      amount: string;
+      account: string;
+      category: string;
+      note?: string;
+    };
+  };
   ScreenshotScreen: undefined;
+  AIScreen: undefined;
 };
 
 // ─── Navigators ─────────────────────────────────────────────────────────────
@@ -71,6 +84,7 @@ function MoreNavigator() {
   return (
     <MoreStack.Navigator screenOptions={{ headerShown: false }}>
       <MoreStack.Screen name="MoreMain" component={MoreScreen} />
+      <MoreStack.Screen name="AccountDetail" component={AccountDetailScreen} />
     </MoreStack.Navigator>
   );
 }
@@ -132,7 +146,15 @@ export default function RootNavigator() {
           component={ScreenshotScreen}
           options={{
             headerShown: false,
-            // Optional: makes it slide up from the bottom like a native iOS card
+            presentation: 'modal',
+          }}
+        />
+
+        <Stack.Screen
+          name="AIScreen"
+          component={AIScreen}
+          options={{
+            headerShown: false,
             presentation: 'modal',
           }}
         />

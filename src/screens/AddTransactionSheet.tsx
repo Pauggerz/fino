@@ -25,12 +25,11 @@ import {
   type Category,
 } from '../services/aiCategoryMap';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { transactionStore } from '../services/balanceCalc';
+import { transactionStore, type Account } from '../services/balanceCalc';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type TxType = 'exp' | 'inc';
-type Account = 'gcash' | 'cash' | 'bdo';
 
 type Props = {
   route: RouteProp<RootStackParamList, 'AddTransaction'>;
@@ -122,18 +121,31 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+const ACCOUNT_ID_MAP: Record<string, Account> = {
+  GCash: 'gcash', Cash: 'cash', BDO: 'bdo', Maya: 'maya',
+};
+const CATEGORY_ID_MAP: Record<string, Category> = {
+  Food: 'food', Transport: 'transport', Shopping: 'shopping',
+  Bills: 'bills', Health: 'health',
+};
+
 export default function AddTransactionSheet({ route }: Props) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const initialMode = route.params?.mode ?? 'expense';
+  const prefill = route.params?.prefill;
 
   const [type, setType] = useState<TxType>(
     initialMode === 'income' ? 'inc' : 'exp'
   );
-  const [amount, setAmount] = useState<string>('');
-  const [account, setAccount] = useState<Account>('gcash');
-  const [category, setCategory] = useState<Category>('food');
-  const [aiText, setAiText] = useState<string>('');
+  const [amount, setAmount] = useState<string>(prefill?.amount ?? '');
+  const [account, setAccount] = useState<Account>(
+    prefill ? (ACCOUNT_ID_MAP[prefill.account] ?? 'gcash') : 'gcash'
+  );
+  const [category, setCategory] = useState<Category>(
+    prefill ? (CATEGORY_ID_MAP[prefill.category] ?? 'food') : 'food'
+  );
+  const [aiText, setAiText] = useState<string>(prefill?.merchant ?? '');
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
   const [aiInputFocused, setAiInputFocused] = useState(false);
   /** signal_source tracks how the category was determined — persisted with each save. */
@@ -401,7 +413,7 @@ export default function AddTransactionSheet({ route }: Props) {
                       >
                         {acc.label}
                       </Text>
-                      {acc.isDefault && account === acc.id && (
+                      {acc.isDefault && (
                         <Text style={styles.acctOptLast}>last used</Text>
                       )}
                     </TouchableOpacity>
