@@ -1,12 +1,16 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  NavigatorScreenParams,
+} from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import FABActionSheet from '../components/FABActionSheet';
 import HomeScreen from '../screens/HomeScreen';
 import FeedScreen from '../screens/FeedScreen';
+import StatsScreen from '../screens/StatsScreen';
 import TransactionDetailScreen from '../screens/TransactionDetailScreen';
 import AddTransactionSheet from '../screens/AddTransactionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
@@ -15,12 +19,6 @@ import AccountDetailScreen from '../screens/AccountDetailScreen';
 import AIScreen from '../screens/AIScreen';
 
 // ─── Placeholder screens ────────────────────────────────────────────────────
-
-const StatsScreen = () => (
-  <View style={styles.placeholder}>
-    <Text style={styles.placeholderText}>Stats Screen</Text>
-  </View>
-);
 
 const MoreScreen = () => (
   <View style={styles.placeholder}>
@@ -31,8 +29,8 @@ const MoreScreen = () => (
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type FeedStackParamList = {
-  FeedMain: undefined;
-  TransactionDetail: { id: string }; // <-- Updated to accept the transaction ID from FeedScreen
+  FeedMain: { filterCategory?: string } | undefined;
+  TransactionDetail: { id: string };
 };
 
 export type MoreStackParamList = {
@@ -42,13 +40,14 @@ export type MoreStackParamList = {
 
 export type TabStackParamList = {
   home: undefined;
-  feed: undefined;
+  // 👇 This tells React Navigation that 'feed' has nested screens that accept params
+  feed: NavigatorScreenParams<FeedStackParamList>;
   stats: undefined;
   more: undefined;
 };
 
 export type RootStackParamList = {
-  Tabs: undefined;
+  Tabs: NavigatorScreenParams<TabStackParamList>;
   FABActionSheet: undefined;
   AddTransaction: {
     mode: 'expense' | 'income';
@@ -127,7 +126,7 @@ export default function RootNavigator() {
           component={FABActionSheet}
           options={{
             presentation: 'transparentModal',
-            animation: 'none', // Use 'none' because FABActionSheet has its own Animated.timing slide-up
+            animation: 'none',
             contentStyle: { backgroundColor: 'transparent' },
           }}
         />
