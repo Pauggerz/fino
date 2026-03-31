@@ -25,12 +25,11 @@ import {
   type Category,
 } from '../services/aiCategoryMap';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { transactionStore } from '../services/balanceCalc';
+import { transactionStore, type Account } from '../services/balanceCalc';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type TxType = 'exp' | 'inc';
-type Account = 'gcash' | 'cash' | 'bdo';
 
 type Props = {
   route: RouteProp<RootStackParamList, 'AddTransaction'>;
@@ -401,7 +400,7 @@ export default function AddTransactionSheet({ route }: Props) {
                       >
                         {acc.label}
                       </Text>
-                      {acc.isDefault && account === acc.id && (
+                      {acc.isDefault && (
                         <Text style={styles.acctOptLast}>last used</Text>
                       )}
                     </TouchableOpacity>

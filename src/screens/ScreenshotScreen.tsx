@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,52 +13,79 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors, spacing } from '../constants/theme';
+import { transitions } from '../constants/transitions';
+import { transactionStore } from '../services/balanceCalc';
+import {
+  createDebouncedAnalyzer,
+  type AIAnalysisResult,
+  type Category,
+} from '../services/aiCategoryMap';
 
-const CATEGORIES = [
+// ─── Data ─────────────────────────────────────────────────────────────────────
+
+const CATEGORIES: {
+  id: Category;
+  label: string;
+  bg: string;
+  text: string;
+  border: string;
+}[] = [
   {
     id: 'food',
-    label: 'Food',
-    icon: 'fast-food',
+    label: '🍔 Food',
     bg: colors.pillFoodBg,
     text: colors.pillFoodText,
     border: colors.pillFoodBorder,
   },
   {
     id: 'transport',
-    label: 'Transport',
-    icon: 'car',
+    label: '🚌 Transport',
     bg: colors.pillTransportBg,
     text: colors.pillTransportText,
     border: colors.pillTransportBorder,
   },
   {
     id: 'shopping',
-    label: 'Shopping',
-    icon: 'bag-handle',
+    label: '🛍 Shopping',
     bg: colors.pillShoppingBg,
     text: colors.pillShoppingText,
     border: colors.pillShoppingBorder,
   },
+  {
+    id: 'bills',
+    label: '⚡ Bills',
+    bg: colors.pillBillsBg,
+    text: colors.pillBillsText,
+    border: colors.pillBillsBorder,
+  },
+  {
+    id: 'health',
+    label: '❤️ Health',
+    bg: colors.pillHealthBg,
+    text: colors.pillHealthText,
+    border: colors.pillHealthBorder,
+  },
 ];
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ScreenshotScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
 
-  // State
+  // ── Image + parse state ──
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
+  const [hasParsedData, setHasParsedData] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Parsed Data State
-  const [hasParsedData, setHasParsedData] = useState(false);
+  // ── Parsed fields (mocked — high vs low confidence) ──
   const [merchant] = useState('Jollibee Drive Thru');
   const [amount] = useState('185.00');
-
-  // Auto-detect the current date and time as a fallback for the AI
   const [date, setDate] = useState(
     new Date().toLocaleDateString('en-US', {
       month: 'short',
@@ -69,33 +96,47 @@ export default function ScreenshotScreen() {
     })
   );
 
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  // ── Low-confidence field tracking ──
   const [isEditingDate, setIsEditingDate] = useState(false);
+  const [isDateConfirmed, setIsDateConfirmed] = useState(false);
 
-  // Animation
+  // ── Category + AI description ──
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(
+    null
+  );
+  const [aiText, setAiText] = useState('');
+  const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
+  const [aiInputFocused, setAiInputFocused] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const analyzer = useRef(createDebouncedAnalyzer()).current;
 
+  useEffect(() => () => analyzer.cancel(), [analyzer]);
+
+  // ── Image selection ──
   const handleImageSelection = (uri: string) => {
     setImageUri(uri);
     setIsParsing(true);
     setHasParsedData(false);
+    setIsDateConfirmed(false);
+    setSelectedCategory(null);
+    setAiText('');
+    setAiResult(null);
     fadeAnim.setValue(0);
 
-    // Simulate the 2200ms OCR / AI processing delay
+    // Simulate 2200ms OCR delay (matches prototype PARSING_OVERLAY_HIDE)
     setTimeout(() => {
       setIsParsing(false);
       setHasParsedData(true);
+      setSelectedCategory('food');
 
-      // Fade in the parsed data
+      // Parsed card fades in over 300ms
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 400,
+        duration: transitions.PARSING_REVEAL.duration, // 300ms
         useNativeDriver: true,
       }).start();
-
-      // Auto-categorize based on simulateAIMap logic
-      setSelectedCategory('food');
-    }, 2200);
+    }, transitions.PARSING_OVERLAY_HIDE); // 2200ms
   };
 
   const pickImage = async (source: 'camera' | 'upload') => {
@@ -107,22 +148,53 @@ export default function ScreenshotScreen() {
     } else {
       result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
     }
-
-    if (!result.canceled && result.assets && result.assets.length > 0) {
+    if (!result.canceled && result.assets?.length) {
       handleImageSelection(result.assets[0].uri);
     }
   };
 
-  const isFormValid = hasParsedData && selectedCategory !== null;
+  // ── AI description ──
+  const handleAiTextChange = (text: string) => {
+    setAiText(text);
+    setAiResult(null);
+    if (text.trim()) {
+      analyzer.analyze(text, (result) => {
+        setAiResult(result);
+        if (result.suggestedCategory) {
+          setSelectedCategory(result.suggestedCategory as Category);
+        }
+      });
+    } else {
+      analyzer.cancel();
+    }
+  };
+
+  // ── Low-confidence date confirmation ──
+  const confirmDate = () => {
+    setIsEditingDate(false);
+    setIsDateConfirmed(true);
+  };
+
+  // ── Save — disabled until low-conf fields confirmed + category picked ──
+  const isFormValid =
+    hasParsedData && selectedCategory !== null && isDateConfirmed;
 
   const handleConfirm = () => {
     if (!isFormValid) return;
+    transactionStore.add({
+      type: 'exp',
+      amount: parseFloat(amount),
+      account: 'gcash',
+      category: selectedCategory!,
+      note: aiText || merchant,
+      signal_source: 'ai_description',
+    });
     navigation.goBack();
   };
 
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 16) }]}>
-      {/* --- Header --- */}
+      {/* ── Header ── */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -137,9 +209,10 @@ export default function ScreenshotScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* --- Dynamic Image Source Area --- */}
-        {!imageUri ? (
+        {/* ── Empty state (no image yet) ── */}
+        {!imageUri && (
           <View style={styles.emptyStateContainer}>
             <View style={styles.iconCircle}>
               <Ionicons name="scan" size={32} color={colors.primary} />
@@ -149,7 +222,6 @@ export default function ScreenshotScreen() {
               Snap a photo or choose from your gallery and let AI do the heavy
               lifting.
             </Text>
-
             <View style={styles.uploadButtonsRow}>
               <TouchableOpacity
                 style={styles.uploadBtn}
@@ -169,21 +241,27 @@ export default function ScreenshotScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        ) : (
+        )}
+
+        {/* ── Receipt preview — 140px, borderRadius:16, gradient bg ── */}
+        {!!imageUri && (
           <TouchableOpacity
             style={styles.previewContainer}
             activeOpacity={0.9}
             onPress={() => setIsExpanded(true)}
           >
+            <LinearGradient
+              colors={['#e0ddd8', '#cccac4']}
+              style={StyleSheet.absoluteFill}
+            />
             <Image source={{ uri: imageUri }} style={styles.previewImage} />
             <View style={styles.expandOverlay}>
-              <Ionicons name="expand" size={14} color={colors.white} />
-              <Text style={styles.expandText}>View</Text>
+              <Text style={styles.expandText}>⤢ expand</Text>
             </View>
           </TouchableOpacity>
         )}
 
-        {/* --- Parsing Overlay --- */}
+        {/* ── Parsing overlay ── */}
         {isParsing && (
           <View style={styles.parsingOverlay}>
             <ActivityIndicator
@@ -191,125 +269,202 @@ export default function ScreenshotScreen() {
               color={colors.primary}
               style={{ marginBottom: 16 }}
             />
-            <Text style={styles.parsingTitle}>Extracting details...</Text>
+            {/* spec: "Parsing receipt…", colors.primary, 13px Inter 700 */}
+            <Text style={styles.parsingTitle}>Parsing receipt…</Text>
+            {/* spec: 11px textSecondary */}
             <Text style={styles.parsingSubtitle}>Usually under 3 seconds</Text>
           </View>
         )}
 
-        {/* --- Parsed Data (Animated & Box-less) --- */}
+        {/* ── Parsed card ── */}
         {hasParsedData && (
           <Animated.View style={{ opacity: fadeAnim, marginTop: 16 }}>
-            <View style={styles.aiBadgeRow}>
-              <Ionicons name="sparkles" size={14} color="#A0BCA0" />
-              <Text style={styles.aiBadgeText}>AI Extracted Details</Text>
-            </View>
-
-            {/* Seamless Form Rows */}
-            <View style={styles.formSection}>
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Merchant</Text>
-                <Text style={styles.rowValue}>{merchant}</Text>
+            {/* Confidence legend */}
+            <View style={styles.legendRow}>
+              <View style={styles.legendItem}>
+                <View
+                  style={[styles.legendDot, { backgroundColor: '#A0BCA0' }]}
+                />
+                <Text style={styles.legendText}>Confirmed</Text>
               </View>
-
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Amount</Text>
-                <Text style={[styles.rowValue, styles.amountValue]}>
-                  ₱{amount}
-                </Text>
-              </View>
-
-              <View style={[styles.formRow, { borderBottomWidth: 0 }]}>
-                <Text style={styles.rowLabel}>Date & Time</Text>
-                {isEditingDate ? (
-                  <TextInput
-                    style={styles.inlineInput}
-                    value={date}
-                    onChangeText={setDate}
-                    onBlur={() => setIsEditingDate(false)}
-                    onSubmitEditing={() => setIsEditingDate(false)}
-                    autoFocus
-                  />
-                ) : (
-                  <TouchableOpacity
-                    onPress={() => setIsEditingDate(true)}
-                    style={styles.dateEditBtn}
-                  >
-                    <Text style={styles.rowValue}>{date}</Text>
-                    <Ionicons
-                      name="pencil"
-                      size={14}
-                      color={colors.textSecondary}
-                      style={{ marginLeft: 6 }}
-                    />
-                  </TouchableOpacity>
-                )}
+              <View style={styles.legendItem}>
+                <View
+                  style={[styles.legendDot, { backgroundColor: colors.coral }]}
+                />
+                <Text style={styles.legendText}>Check</Text>
               </View>
             </View>
 
-            {/* Category Selection */}
-            <Text style={styles.categoryHeader}>Select Category</Text>
-            <View style={styles.categoriesGrid}>
-              {CATEGORIES.map((cat) => (
+            {/* High-confidence: Merchant */}
+            <View style={[styles.confField, styles.confHiField]}>
+              <Text style={styles.confFieldLabel}>Merchant</Text>
+              <Text style={styles.confHiValue}>{merchant}</Text>
+            </View>
+
+            {/* High-confidence: Amount */}
+            <View
+              style={[styles.confField, styles.confHiField, { marginTop: 8 }]}
+            >
+              <Text style={styles.confFieldLabel}>Amount</Text>
+              <Text style={[styles.confHiValue, styles.confHiAmountValue]}>
+                ₱{amount}
+              </Text>
+            </View>
+
+            {/* Low-confidence: Date (requires Fix ›) */}
+            <View
+              style={[styles.confField, styles.confLoField, { marginTop: 8 }]}
+            >
+              <Text style={styles.confFieldLabel}>Date & Time</Text>
+              {isEditingDate ? (
+                <TextInput
+                  style={styles.confLoInput}
+                  value={date}
+                  onChangeText={setDate}
+                  onBlur={confirmDate}
+                  onSubmitEditing={confirmDate}
+                  autoFocus
+                  returnKeyType="done"
+                />
+              ) : (
                 <TouchableOpacity
-                  key={cat.id}
-                  style={[
-                    styles.categoryPill,
-                    {
-                      backgroundColor:
-                        selectedCategory === cat.id ? cat.bg : colors.white,
-                    },
-                    selectedCategory === cat.id && {
-                      borderColor: cat.border,
-                      borderWidth: 1,
-                    },
-                  ]}
-                  onPress={() => setSelectedCategory(cat.id)}
-                  activeOpacity={0.7}
+                  style={styles.fixRow}
+                  onPress={() => setIsEditingDate(true)}
                 >
-                  <Ionicons
-                    name={cat.icon as any}
-                    size={18}
-                    color={
-                      selectedCategory === cat.id
-                        ? cat.text
-                        : colors.textSecondary
-                    }
-                  />
                   <Text
                     style={[
-                      styles.categoryText,
-                      {
-                        color:
-                          selectedCategory === cat.id
-                            ? cat.text
-                            : colors.textSecondary,
-                      },
+                      styles.confLoValue,
+                      isDateConfirmed && styles.confLoValueConfirmed,
                     ]}
                   >
-                    {cat.label}
+                    {date}
                   </Text>
+                  {!isDateConfirmed && (
+                    <Text style={styles.fixChevron}>Fix ›</Text>
+                  )}
                 </TouchableOpacity>
-              ))}
+              )}
+            </View>
+
+            {/* ── Category pills ── */}
+            <View style={styles.section}>
+              <Text style={styles.fieldLabel}>
+                CATEGORY <Text style={styles.aiLabel}>✦ AI suggested</Text>
+              </Text>
+              <View style={styles.pillsRow}>
+                {CATEGORIES.map((cat) => {
+                  const isSel = selectedCategory === cat.id;
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      onPress={() => setSelectedCategory(cat.id)}
+                      style={[
+                        styles.catPill,
+                        isSel
+                          ? {
+                              backgroundColor: cat.bg,
+                              borderColor: cat.border,
+                            }
+                          : {},
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.catPillText,
+                          isSel && { color: cat.text },
+                        ]}
+                      >
+                        {cat.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* ── "or describe" divider + AI field ── */}
+            <View style={styles.aiFieldWrap}>
+              <View style={styles.orDivider}>
+                <View style={styles.orLine} />
+                <Text style={styles.orText}>or describe</Text>
+                <View style={styles.orLine} />
+              </View>
+
+              <View
+                style={[
+                  styles.aiField,
+                  aiInputFocused && { borderColor: colors.primary },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.aiFieldIcon,
+                    aiText ? styles.aiFieldIconMapped : {},
+                  ]}
+                />
+                <TextInput
+                  style={[
+                    styles.aiFieldText,
+                    aiText ? styles.aiFieldTextHasText : {},
+                  ]}
+                  placeholder='e.g. "lunch", "grab ride", "gamot"'
+                  placeholderTextColor={colors.textSecondary}
+                  value={aiText}
+                  onChangeText={handleAiTextChange}
+                  onFocus={() => setAiInputFocused(true)}
+                  onBlur={() => setAiInputFocused(false)}
+                  returnKeyType="done"
+                />
+              </View>
+
+              {!!aiResult && aiResult.suggestedCategory && (
+                <View style={styles.aiConfirm}>
+                  <View style={styles.aiConfirmDot} />
+                  <Text style={styles.aiConfirmText}>
+                    &quot;{aiResult.matchedKeyword}&quot; →{' '}
+                    {aiResult.suggestedCategory.charAt(0).toUpperCase() +
+                      aiResult.suggestedCategory.slice(1)}{' '}
+                    ✓
+                  </Text>
+                </View>
+              )}
+
+              {!!aiText && !!aiResult && !aiResult.suggestedCategory && (
+                <View style={styles.aiNudge}>
+                  <View style={styles.aiNudgeDot} />
+                  <Text style={styles.aiNudgeText}>
+                    Not sure about that one — pick a category?
+                  </Text>
+                </View>
+              )}
             </View>
           </Animated.View>
         )}
       </ScrollView>
 
-      {/* --- Footer Action --- */}
+      {/* ── Footer ── */}
       <View
         style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 24) }]}
       >
         <TouchableOpacity
-          style={[styles.saveButton, !isFormValid && styles.saveButtonDisabled]}
-          onPress={handleConfirm}
-          disabled={!isFormValid}
           activeOpacity={0.8}
+          disabled={!isFormValid}
+          onPress={handleConfirm}
+          style={[
+            styles.saveBtnWrap,
+            !isFormValid && { opacity: 0.4, shadowOpacity: 0, elevation: 0 },
+          ]}
         >
-          <Text style={styles.saveButtonText}>Confirm & Save</Text>
+          <LinearGradient
+            colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']}
+            style={styles.saveBtn}
+          >
+            <Text style={styles.saveBtnText}>Confirm & save</Text>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
 
-      {/* --- Fullscreen Image Modal --- */}
+      {/* ── Fullscreen image modal ── */}
       <Modal visible={isExpanded} transparent animationType="fade">
         <View style={styles.modalBg}>
           <TouchableOpacity
@@ -329,11 +484,15 @@ export default function ScreenshotScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
+
+  // ── Header ──
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -342,21 +501,21 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   headerTitle: {
-    fontSize: 18,
     fontFamily: 'Nunito_700Bold',
-    fontWeight: '700',
+    fontSize: 18,
     color: colors.textPrimary,
   },
   backButton: {
     width: 40,
     alignItems: 'flex-start',
   },
+
   scrollContent: {
     paddingHorizontal: spacing.screenPadding,
     paddingBottom: 40,
   },
 
-  /* --- CLEAN UPLOAD EMPTY STATE --- */
+  // ── Empty state ──
   emptyStateContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -366,18 +525,19 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(45, 106, 79, 0.08)', // Faint primary color
+    backgroundColor: 'rgba(45,106,79,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 24,
   },
   emptyStateTitle: {
-    fontSize: 20,
     fontFamily: 'Nunito_700Bold',
+    fontSize: 20,
     color: colors.textPrimary,
     marginBottom: 8,
   },
   emptyStateSub: {
+    fontFamily: 'Inter_400Regular',
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
@@ -401,9 +561,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   uploadBtnText: {
-    color: colors.white,
-    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
+    color: colors.white,
   },
   uploadBtnSecondary: {
     flex: 1,
@@ -418,17 +578,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   uploadBtnTextSecondary: {
-    color: colors.primary,
-    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
+    color: colors.primary,
   },
 
-  /* --- IMAGE PREVIEW --- */
+  // ── Receipt preview — spec: 140px, borderRadius:16, gradient bg ──
   previewContainer: {
-    height: 180,
-    borderRadius: 20,
+    height: 140,
+    borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#EAE8E3',
     marginBottom: 16,
   },
   previewImage: {
@@ -438,155 +597,295 @@ const styles = StyleSheet.create({
   },
   expandOverlay: {
     position: 'absolute',
-    bottom: 12,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 20,
-    gap: 6,
   },
   expandText: {
-    color: colors.white,
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
-    fontWeight: '600',
+    color: colors.white,
   },
 
-  /* --- PARSING STATE --- */
+  // ── Parsing overlay — spec: colors.primary 13px 700, subtitle 11px textSecondary ──
   parsingOverlay: {
     alignItems: 'center',
     paddingVertical: 60,
   },
   parsingTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    color: colors.primary,
     marginBottom: 6,
   },
   parsingSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
     color: colors.textSecondary,
-    fontSize: 13,
   },
 
-  /* --- SLEEK FORM SECTION --- */
-  aiBadgeRow: {
+  // ── Confidence legend ──
+  legendRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 12,
+  },
+  legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    gap: 6,
+    gap: 5,
   },
-  aiBadgeText: {
-    fontSize: 13,
-    color: '#8CA68C',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  legendDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
-  formSection: {
-    backgroundColor: colors.white,
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    marginBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
+  legendText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    color: colors.textSecondary,
   },
-  formRow: {
+
+  // ── Confidence fields ──
+  confField: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0EFEA',
   },
-  rowLabel: {
-    fontSize: 15,
+  // High-confidence: #E8E6E2 bg, #A0BCA0 border
+  confHiField: {
+    backgroundColor: '#E8E6E2',
+    borderColor: '#A0BCA0',
+  },
+  // Low-confidence: #FBF0EC bg, #C8A09A border
+  confLoField: {
+    backgroundColor: '#FBF0EC',
+    borderColor: '#C8A09A',
+  },
+  confFieldLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
     color: colors.textSecondary,
   },
-  rowValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    fontFamily: 'Inter_600SemiBold',
-    textAlign: 'right',
-    maxWidth: '65%',
-  },
-  amountValue: {
-    fontSize: 18,
+  // High-conf value: DM Mono, read-only
+  confHiValue: {
     fontFamily: 'DMMono_500Medium',
+    fontSize: 13,
+    color: colors.textPrimary,
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: 8,
+  },
+  confHiAmountValue: {
+    fontSize: 16,
     color: colors.primary,
   },
-  dateEditBtn: {
+  // Low-conf value + Fix › row
+  fixRow: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  inlineInput: {
+    gap: 6,
     flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
+    justifyContent: 'flex-end',
+  },
+  confLoValue: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    color: colors.coralDark,
+    textAlign: 'right',
+  },
+  confLoValueConfirmed: {
+    fontFamily: 'DMMono_500Medium',
+    color: colors.textPrimary,
+  },
+  fixChevron: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    color: colors.coralDark,
+  },
+  confLoInput: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 13,
     color: colors.primary,
+    flex: 1,
     textAlign: 'right',
     padding: 0,
   },
 
-  /* --- CATEGORIES --- */
-  categoryHeader: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 16,
-    marginLeft: 4,
+  // ── Section + category pills (borderRadius:12 per spec) ──
+  section: {
+    marginTop: 20,
+    marginBottom: 4,
   },
-  categoriesGrid: {
+  fieldLabel: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  aiLabel: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    color: colors.lavenderDark,
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
+  pillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 7,
   },
-  categoryPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
+  catPill: {
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(30,30,46,0.08)',
+    backgroundColor: colors.background,
   },
-  categoryText: {
-    fontSize: 14,
-    fontWeight: '600',
+  catPillText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: colors.textSecondary,
   },
 
-  /* --- FOOTER & MODAL --- */
+  // ── "or describe" + AI field (identical to AddTransactionSheet) ──
+  aiFieldWrap: {
+    marginTop: 4,
+    marginBottom: 24,
+  },
+  orDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 12,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(30,30,46,0.08)',
+  },
+  orText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 9,
+    color: colors.textSecondary,
+    letterSpacing: 0.5,
+  },
+  aiField: {
+    backgroundColor: colors.lavenderLight,
+    borderWidth: 1.5,
+    borderColor: colors.lavender,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  aiFieldIcon: {
+    width: 10,
+    height: 10,
+    borderRadius: 3,
+    backgroundColor: '#B8B4D8',
+  },
+  aiFieldIconMapped: {
+    backgroundColor: colors.primary,
+  },
+  aiFieldText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  aiFieldTextHasText: {
+    fontFamily: 'Inter_600SemiBold',
+    color: colors.textPrimary,
+  },
+  aiConfirm: {
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: 'rgba(91,140,110,0.3)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 7,
+    alignSelf: 'flex-start',
+  },
+  aiConfirmDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  aiConfirmText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    color: colors.primaryDark,
+  },
+  aiNudge: {
+    backgroundColor: '#FBF0EC',
+    borderWidth: 1,
+    borderColor: 'rgba(232,133,106,0.4)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 7,
+    alignSelf: 'flex-start',
+  },
+  aiNudgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.coral,
+  },
+  aiNudgeText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: colors.coralDark,
+  },
+
+  // ── Footer + save button (gradient, opacity:0.4 disabled pattern) ──
   footer: {
     paddingHorizontal: spacing.screenPadding,
     backgroundColor: colors.background,
     paddingTop: 16,
   },
-  saveButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 18,
+  saveBtnWrap: {
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 4,
+  },
+  saveBtn: {
     borderRadius: 16,
+    paddingVertical: 16,
     alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.2)',
   },
-  saveButtonDisabled: {
-    backgroundColor: '#D1D1D6',
-  },
-  saveButtonText: {
-    color: colors.white,
+  saveBtnText: {
+    fontFamily: 'Nunito_700Bold',
     fontSize: 16,
-    fontWeight: '700',
+    color: colors.white,
   },
+
+  // ── Fullscreen modal ──
   modalBg: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.95)',
