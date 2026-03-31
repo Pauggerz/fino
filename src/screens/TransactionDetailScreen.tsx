@@ -8,7 +8,6 @@ import {
   Image,
   Modal,
   ScrollView,
-  TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,6 +51,15 @@ const MOCK_DB: Record<string, any> = {
 
 type DetailRouteProp = RouteProp<FeedStackParamList, 'TransactionDetail'>;
 
+const CATEGORY_EMOJI: Record<string, string> = {
+  Food: '🍔',
+  Transport: '🚌',
+  Shopping: '🛍',
+  Bills: '⚡',
+  Health: '❤️',
+  Income: '💵',
+};
+
 export default function TransactionDetailScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
@@ -60,18 +68,11 @@ export default function TransactionDetailScreen() {
   const transactionId = route.params?.id || '1';
   const initialTx = MOCK_DB[transactionId];
 
-  // Modals & Edit States
   const [isReceiptVisible, setIsReceiptVisible] = useState(false);
   const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [tx] = useState(initialTx);
 
-  // Editable Form State
-  const [tx, setTx] = useState(initialTx);
-  const [editedMerchant, setEditedMerchant] = useState(initialTx?.merchant);
-  const [editedAmount, setEditedAmount] = useState(initialTx?.amount);
-  const [editedNote, setEditedNote] = useState(initialTx?.note);
-
-  if (!tx) {
+  if (!tx || !initialTx) {
     return (
       <View
         style={[
@@ -89,16 +90,6 @@ export default function TransactionDetailScreen() {
       </View>
     );
   }
-
-  const handleSave = () => {
-    setTx({
-      ...tx,
-      merchant: editedMerchant,
-      amount: editedAmount,
-      note: editedNote,
-    });
-    setIsEditing(false);
-  };
 
   return (
     <View style={styles.container}>
@@ -120,37 +111,13 @@ export default function TransactionDetailScreen() {
         </View>
 
         <View style={styles.heroContent}>
-          <View style={[styles.heroIconBox, { backgroundColor: colors.white }]}>
-            <Ionicons name={tx.icon} size={32} color={tx.iconColor} />
-          </View>
-
-          {isEditing ? (
-            <View style={styles.editAmountRow}>
-              <Text style={styles.txAmount}>{tx.isExpense ? '-' : '+'}₱</Text>
-              <TextInput
-                style={[styles.txAmount, styles.heroInput, { flex: 0 }]}
-                value={editedAmount}
-                onChangeText={setEditedAmount}
-                keyboardType="decimal-pad"
-                autoFocus
-              />
-            </View>
-          ) : (
-            <Text style={styles.txAmount}>
-              {tx.isExpense ? '-' : '+'}₱{parseFloat(tx.amount).toFixed(2)}
-            </Text>
-          )}
-
-          {isEditing ? (
-            <TextInput
-              style={[styles.merchantName, styles.heroInput]}
-              value={editedMerchant}
-              onChangeText={setEditedMerchant}
-            />
-          ) : (
-            <Text style={styles.merchantName}>{tx.merchant}</Text>
-          )}
-
+          <Text style={styles.heroEmoji}>
+            {CATEGORY_EMOJI[tx.category] ?? '📋'}
+          </Text>
+          <Text style={styles.txAmount}>
+            {tx.isExpense ? '-' : '+'}₱{parseFloat(tx.amount).toFixed(2)}
+          </Text>
+          <Text style={styles.merchantName}>{tx.merchant}</Text>
           <Text style={styles.heroMeta}>
             {tx.date} at {tx.time}
           </Text>
@@ -172,17 +139,7 @@ export default function TransactionDetailScreen() {
 
           <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
             <Text style={styles.rowLabel}>Note</Text>
-            {isEditing ? (
-              <TextInput
-                style={styles.rowInput}
-                value={editedNote}
-                onChangeText={setEditedNote}
-                placeholder="Add a note..."
-                placeholderTextColor={colors.textSecondary}
-              />
-            ) : (
-              <Text style={styles.rowValue}>{tx.note || '—'}</Text>
-            )}
+            <Text style={styles.rowValue}>{tx.note || '—'}</Text>
           </View>
         </View>
 
@@ -202,31 +159,31 @@ export default function TransactionDetailScreen() {
         ) : null}
 
         <View style={styles.actionsContainer}>
-          {isEditing ? (
-            <TouchableOpacity
-              style={styles.saveBtn}
-              activeOpacity={0.8}
-              onPress={handleSave}
-            >
-              <Text style={styles.saveBtnText}>Save Changes</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.editBtn}
-              activeOpacity={0.8}
-              onPress={() => setIsEditing(true)}
-            >
-              <Text style={styles.editBtnText}>Edit Transaction</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.editBtn}
+            activeOpacity={0.8}
+            onPress={() =>
+              navigation.navigate('AddTransaction', {
+                mode: tx.isExpense ? 'expense' : 'income',
+                prefill: {
+                  merchant: tx.merchant,
+                  amount: tx.amount,
+                  account: tx.account,
+                  category: tx.category,
+                  note: tx.note,
+                },
+              })
+            }
+          >
+            <Text style={styles.editBtnText}>Edit Transaction</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.deleteBtnBox}
+            style={styles.deleteBtn}
             activeOpacity={0.7}
             onPress={() => setIsDeleteConfirmVisible(true)}
           >
-            <Ionicons name="trash-outline" size={18} color="#E57373" />
-            <Text style={styles.deleteBtnBoxText}>Delete transaction</Text>
+            <Text style={styles.deleteBtnText}>Delete transaction</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -336,23 +293,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.screenPadding,
   },
-  heroIconBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+  heroEmoji: {
+    fontSize: 40,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  editAmountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   txAmount: {
     fontFamily: 'DMMono_500Medium',
@@ -365,13 +308,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.textPrimary,
     marginBottom: 4,
-  },
-  heroInput: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.2)',
-    paddingVertical: 0,
-    minWidth: 100,
-    textAlign: 'center',
   },
   heroMeta: {
     fontFamily: 'Inter_400Regular',
@@ -408,14 +344,6 @@ const styles = StyleSheet.create({
     maxWidth: '65%',
     textAlign: 'right',
   },
-  rowInput: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: colors.primary,
-    flex: 1,
-    textAlign: 'right',
-    padding: 0,
-  },
   receiptContainer: { marginBottom: 32 },
   sectionLabel: {
     fontFamily: 'Inter_600SemiBold',
@@ -443,35 +371,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#4B2DA3',
   },
-  saveBtn: {
-    backgroundColor: colors.primary,
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: 16,
+  deleteBtn: {
+    marginTop: 28,
     alignItems: 'center',
+    paddingVertical: 8,
   },
-  saveBtnText: {
+  deleteBtnText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
-    color: colors.white,
-  },
-  deleteBtnBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#FFCDD2',
-    backgroundColor: '#FFF5F5',
-    marginTop: 16,
-    gap: 6,
-  },
-  deleteBtnBoxText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    color: '#E57373',
+    color: colors.coral,
+    textDecorationLine: 'underline',
   },
   receiptModalBg: {
     flex: 1,

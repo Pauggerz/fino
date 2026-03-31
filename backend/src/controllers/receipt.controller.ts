@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { analyzeReceiptImage } from '../services/receipt.service';
 
 export const parseReceipt = async (req: Request, res: Response) => {
-  const { imageBase64 } = req.body;
+  const { imageBase64, mimeType: _mimeType = 'image/jpeg' } = req.body;
 
   if (!imageBase64) {
     return res.status(400).json({ error: 'imageBase64 is required' });

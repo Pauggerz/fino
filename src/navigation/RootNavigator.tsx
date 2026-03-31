@@ -50,7 +50,16 @@ export type TabStackParamList = {
 export type RootStackParamList = {
   Tabs: undefined;
   FABActionSheet: undefined;
-  AddTransaction: { mode: 'expense' | 'income' };
+  AddTransaction: {
+    mode: 'expense' | 'income';
+    prefill?: {
+      merchant: string;
+      amount: string;
+      account: string;
+      category: string;
+      note?: string;
+    };
+  };
   ScreenshotScreen: undefined;
   AIScreen: undefined;
 };
