@@ -6,32 +6,24 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
+  Button,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors } from '../constants/theme';
-import {
-  useTransactionStore,
-  transactionStore,
-  isNegativeBalance,
-  BALANCE_ANIMATE_MS,
-} from '../services/balanceCalc';
-import type { Category } from '../services/aiCategoryMap';
+import { isNegativeBalance, BALANCE_ANIMATE_MS } from '../services/balanceCalc';
+import { useAccounts } from '@/hooks/useAccounts';
+import { useCategories } from '@/hooks/useCategories';
+import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
+import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
+import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const USER_NAME = 'Christian';
-const MONTHLY_BUDGET = 12_000;
-const CATEGORY_BUDGETS: Partial<Record<Category, number>> = {
-  food: 3000,
-  transport: 1000,
-  shopping: 2000,
-  bills: 2000,
-  health: 1500,
-};
 // 7 mock daily-spend percentages for the sparkline (last 7 days)
 const SPARKLINE = [
   { id: 'day0', val: 0.38 },
@@ -154,54 +146,26 @@ const ringStyles = StyleSheet.create({
   },
 });
 
-function getCategoryIcon(id: string, color: string) {
-  switch (id) {
-    case 'food': // Fork & Knife
-      return (
-        <Path
-          d="M11 2V9C11 10.1 10.1 11 9 11V20H7V11C5.9 11 5 10.1 5 9V2H6V7H7V2H8V7H9V2H11ZM15 2C16.1 2 17 2.9 17 4V10H14V20H12V2H15Z"
-          fill={color}
-        />
-      );
-    case 'transport': // Bus
-      return (
-        <Path
-          d="M4 16C4 17.1 4.9 18 6 18H6.5L6 20H8L8.5 18H15.5L16 20H18L17.5 18H18C19.1 18 20 17.1 20 16V6C20 3.8 18.2 2 16 2H8C5.8 2 4 3.8 4 6V16ZM7.5 14C6.7 14 6 13.3 6 12.5C6 11.7 6.7 11 7.5 11C8.3 11 9 11.7 9 12.5C9 13.3 8.3 14 7.5 14ZM16.5 14C15.7 14 15 13.3 15 12.5C15 11.7 15.7 11 16.5 11C17.3 11 18 11.7 18 12.5C18 13.3 17.3 14 16.5 14ZM6 9V6H18V9H6Z"
-          fill={color}
-        />
-      );
-    case 'shopping': // Bag
-      return (
-        <Path
-          d="M16 6V4C16 1.8 14.2 0 12 0C9.8 0 8 1.8 8 4V6H2V22C2 23.1 2.9 24 4 24H20C21.1 24 22 23.1 22 22V6H16ZM10 4C10 2.9 10.9 2 12 2C13.1 2 14 2.9 14 4V6H10V4ZM20 22H4V8H8V10C8 10.6 8.4 11 9 11C9.6 11 10 10.6 10 10V8H14V10C14 10.6 14.4 11 15 11C15.6 11 16 10.6 16 10V8H20V22Z"
-          fill={color}
-        />
-      );
-    case 'bills': // Document
-      return (
-        <Path
-          d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM13 9V3.5L18.5 9H13Z"
-          fill={color}
-        />
-      );
-    default:
-      return null;
-  }
-}
-
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
-  const store = useTransactionStore();
 
-  const { totalBalance, totalIncome, totalExpense } = store.getBalanceSummary();
-  const accountSummaries = store.getAccountSummaries();
-  const categorySpend = store.getCategorySpend();
+  const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
+  const { categories, refetch: refetchCategories } = useCategories();
+  const { totalIncome, totalExpense: monthlyExpense, refetch: refetchTotals } = useMonthlyTotals();
 
   // ── Balance animation — 400ms count up/down ──
   const animBalance = useRef(new Animated.Value(totalBalance)).current;
   const [displayBalance, setDisplayBalance] = useState(totalBalance);
+
+  useEffect(() => {
+  const getMyId = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    console.log("MY USER ID IS:", user?.id);
+  };
+  getMyId();
+}, []);
 
   useEffect(() => {
     // Listen to the animation frame-by-frame and update the display state
@@ -224,50 +188,64 @@ export default function HomeScreen() {
   const [toastSubtitle, setToastSubtitle] = useState('');
   const [toastIsUndo, setToastIsUndo] = useState(false);
   const [undoTxId, setUndoTxId] = useState<string | null>(null);
+  const [undoAccountId, setUndoAccountId] = useState<string | null>(null);
+  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(null);
 
-  // Show toast whenever screen regains focus after a save
+  // Show toast whenever screen regains focus after a save; also refresh data
   useFocusEffect(
     useCallback(() => {
-      const last = transactionStore.getLastSaved();
+      refetchAccounts();
+      refetchCategories();
+      refetchTotals();
+      const last = getLastSaved();
       if (!last) return;
-      transactionStore.clearLastSaved();
-      const typeLabel = last.type === 'exp' ? 'Expense' : 'Income';
-      const cat =
-        last.category.charAt(0).toUpperCase() + last.category.slice(1);
-      const acctLabel = ACCOUNT_CONFIG[last.account]?.label ?? last.account;
+      clearLastSaved();
+      const typeLabel = last.type === 'expense' ? 'Expense' : 'Income';
       setToastTitle(`${typeLabel} saved`);
-      setToastSubtitle(`${fmtPeso(last.amount)} · ${cat} · ${acctLabel}`);
+      setToastSubtitle(`${fmtPeso(last.amount)} · ${last.categoryName} · ${last.accountName}`);
       setToastIsUndo(false);
       setUndoTxId(last.id);
+      setUndoAccountId(last.accountId);
+      setUndoPreviousBalance(last.previousBalance);
       setToastVisible(true);
-    }, [])
+    }, [refetchAccounts, refetchCategories, refetchTotals])
   );
 
-  const handleUndo = useCallback(() => {
+  const handleUndo = useCallback(async () => {
     if (!undoTxId) return;
-    transactionStore.remove(undoTxId);
+    await supabase.from('transactions').delete().eq('id', undoTxId);
+    if (undoAccountId !== null && undoPreviousBalance !== null) {
+      await supabase
+        .from('accounts')
+        .update({ balance: undoPreviousBalance })
+        .eq('id', undoAccountId);
+    }
+    refetchAccounts();
+    refetchCategories();
+    refetchTotals();
     setUndoTxId(null);
+    setUndoAccountId(null);
+    setUndoPreviousBalance(null);
     setToastTitle('Removed');
     setToastSubtitle('Transaction undone');
     setToastIsUndo(true);
     setToastVisible(true);
-  }, [undoTxId]);
+  }, [undoTxId, undoAccountId, undoPreviousBalance, refetchAccounts, refetchCategories, refetchTotals]);
 
   // ── Derived values ──
   const { text: greetText, emoji: greetEmoji } = getGreeting();
   const daysLeft = getDaysLeftInMonth();
-  const pctSpent = MONTHLY_BUDGET > 0 ? totalExpense / MONTHLY_BUDGET : 0;
+  const totalBudget = categories.reduce((s, c) => s + (c.budget_limit ?? 0), 0);
+  const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
 
   // Saved ring: budget remaining / budget
   const savedPct = Math.max(0, 1 - pctSpent);
   // Top over-budget category for ring 2
-  const foodPct = CATEGORY_BUDGETS.food
-    ? categorySpend.food / CATEGORY_BUDGETS.food
-    : 0;
-  const shoppingPct = CATEGORY_BUDGETS.shopping
-    ? categorySpend.shopping / CATEGORY_BUDGETS.shopping
-    : 0;
+  const foodCat = categories.find((c) => c.name.toLowerCase() === 'food');
+  const shoppingCat = categories.find((c) => c.name.toLowerCase() === 'shopping');
+  const foodPct = foodCat?.pct ?? 0;
+  const shoppingPct = shoppingCat?.pct ?? 0;
   const isShoppingOver = shoppingPct >= 1;
 
   // Mock last-month delta for trend badge
@@ -290,6 +268,20 @@ export default function HomeScreen() {
       >
         {/* ════════════════ GREETING ════════════════ */}
         <View style={styles.greeting}>
+          <View style={{ marginBottom: 20, backgroundColor: '#fff', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#eee' }}>
+          <Text style={{ fontSize: 10, color: '#999', marginBottom: 5 }}>DEV TOOLS</Text>
+          <Button 
+  title="Final Sign In Test" 
+  onPress={async () => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: 'testuser@gmail.com',
+      password: 'Password123',
+    });
+    if (error) console.log("Error:", error.message);
+    else console.log("SUCCESS! ID:", data.user?.id);
+  }} 
+/>
+        </View>
           <View style={styles.greetingTop}>
             <View style={styles.greetingLeft}>
               {/* Time-based pill: transparent bg, no border per spec */}
@@ -349,7 +341,7 @@ export default function HomeScreen() {
             <View style={styles.onTrackText}>
               <Text style={styles.onTrackTitle}>{statusLabel}</Text>
               <Text style={styles.onTrackSub}>
-                {daysLeft} days left · {fmtPeso(totalExpense)} spent
+                {daysLeft} days left · {fmtPeso(monthlyExpense)} spent
               </Text>
             </View>
           </LinearGradient>
@@ -457,7 +449,7 @@ export default function HomeScreen() {
                 <View style={styles.heroCol}>
                   <Text style={styles.heroColLabel}>Spent</Text>
                   <Text style={styles.heroColVal}>
-                    −{fmtPeso(totalExpense)}
+                    −{fmtPeso(monthlyExpense)}
                   </Text>
                 </View>
               </View>
@@ -472,23 +464,21 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.acctGrid}>
-          {accountSummaries.map((acc) => {
-            const cfg = ACCOUNT_CONFIG[acc.accountId];
-            if (!cfg) return null;
+          {accounts.map((acc) => {
             const neg = isNegativeBalance(acc.balance);
             return (
               <TouchableOpacity
-                key={acc.accountId}
+                key={acc.id}
                 activeOpacity={0.8}
                 style={styles.acctCard}
                 onPress={() => navigation.navigate('more')}
               >
                 <View
-                  style={[styles.acctAvatar, { backgroundColor: cfg.color }]}
+                  style={[styles.acctAvatar, { backgroundColor: acc.brand_colour }]}
                 >
-                  <Text style={styles.acctAvatarLetter}>{cfg.letter}</Text>
+                  <Text style={styles.acctAvatarLetter}>{acc.letter_avatar}</Text>
                 </View>
-                <Text style={styles.acctName}>{cfg.label}</Text>
+                <Text style={styles.acctName}>{acc.name}</Text>
                 <Text
                   style={[
                     styles.acctBalance,
@@ -510,20 +500,19 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.catGrid}>
-          {CATEGORY_TILES.map((tile) => {
-            const spent = categorySpend[tile.id] ?? 0;
-            const budget = CATEGORY_BUDGETS[tile.id] ?? 1;
-            const pct = Math.min(1, spent / budget);
-            const isOver = pct >= 1;
+          {categories.map((cat) => {
+            const bgColor = cat.tile_bg_colour ?? '#F5F5F5';
+            const textColor = cat.text_colour ?? colors.textPrimary;
+            const isOver = cat.state === 'over';
             return (
               <TouchableOpacity
-                key={tile.id}
+                key={cat.id}
                 activeOpacity={0.8}
                 style={styles.catTileWrap}
                 onPress={() => navigation.navigate('stats')}
               >
                 <LinearGradient
-                  colors={tile.gradient}
+                  colors={[bgColor, bgColor]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.catTile}
@@ -536,25 +525,23 @@ export default function HomeScreen() {
                       </View>
                     ) : (
                       <Text
-                        style={[styles.catPctBadge, { color: tile.textColor }]}
+                        style={[styles.catPctBadge, { color: textColor }]}
                       >
-                        {Math.round(pct * 100)}%
+                        {Math.round(cat.pct * 100)}%
                       </Text>
                     )}
                   </View>
 
-                  {/* Icon in white circle */}
+                  {/* Emoji icon in white circle */}
                   <View style={styles.catIconCircle}>
-                    <Svg width={20} height={20} viewBox="0 0 24 24">
-                      {getCategoryIcon(tile.id, tile.textColor)}
-                    </Svg>
+                    <Text style={{ fontSize: 14 }}>{cat.emoji ?? '📦'}</Text>
                   </View>
 
-                  <Text style={[styles.catName, { color: tile.textColor }]}>
-                    {tile.label}
+                  <Text style={[styles.catName, { color: textColor }]}>
+                    {cat.name}
                   </Text>
-                  <Text style={[styles.catAmt, { color: tile.textColor }]}>
-                    {fmtPeso(spent)}
+                  <Text style={[styles.catAmt, { color: textColor }]}>
+                    {fmtPeso(cat.spent)}
                   </Text>
 
                   {/* Progress bar: rgba(255,255,255,0.8) track */}
@@ -563,8 +550,8 @@ export default function HomeScreen() {
                       style={[
                         styles.catBarFill,
                         {
-                          width: `${pct * 100}%` as any,
-                          backgroundColor: tile.barColor,
+                          width: `${cat.pct * 100}%` as any,
+                          backgroundColor: textColor,
                         },
                       ]}
                     />
@@ -620,57 +607,6 @@ export default function HomeScreen() {
     </View>
   );
 }
-
-// ─── Account display config (module-level so toast callback can reference it) ──
-
-const ACCOUNT_CONFIG: Record<
-  string,
-  { letter: string; color: string; label: string }
-> = {
-  gcash: { letter: 'G', color: colors.accountGCash, label: 'GCash' },
-  cash: { letter: '₱', color: colors.accountCash, label: 'Cash' },
-  bdo: { letter: 'B', color: colors.accountBDO, label: 'BDO' },
-  maya: { letter: 'M', color: colors.accountMaya, label: 'Maya' },
-};
-
-// ─── Category tile data ───────────────────────────────────────────────────────
-
-const CATEGORY_TILES: {
-  id: Category;
-  label: string;
-  gradient: [string, string];
-  textColor: string;
-  barColor: string;
-}[] = [
-  {
-    id: 'food',
-    label: 'Food',
-    gradient: [colors.catFoodBg, '#FFF3E0'],
-    textColor: colors.catFoodText,
-    barColor: colors.coral,
-  },
-  {
-    id: 'transport',
-    label: 'Transport',
-    gradient: [colors.catTransportBg, '#E8F4FD'],
-    textColor: colors.catTransportText,
-    barColor: colors.primary,
-  },
-  {
-    id: 'shopping',
-    label: 'Shopping',
-    gradient: [colors.catShoppingBg, '#FDE8F0'],
-    textColor: colors.catShoppingText,
-    barColor: colors.coral,
-  },
-  {
-    id: 'bills',
-    label: 'Bills',
-    gradient: [colors.catBillsBg, colors.catBillsBg2],
-    textColor: colors.catBillsText,
-    barColor: colors.lavender,
-  },
-];
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,150 +6,63 @@ import {
   TouchableOpacity,
   Pressable,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors, radius, spacing } from '../constants/theme';
+import { useTransactions, FeedTransaction } from '@/hooks/useTransactions';
+import { useCategories } from '@/hooks/useCategories';
 
-// ─── MOCK DATA & TYPES ──────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-type Transaction = {
-  id: string;
-  dateStr: string;
-  title: string;
-  category: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  iconBg: string;
-  iconColor: string;
-  account: 'GCash' | 'Cash' | 'BDO' | 'Maya';
-  amount: number;
-  isExpense: boolean;
-  time: string;
-};
+function fmtPeso(n: number): string {
+  return `₱${n.toLocaleString('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
 
-const MOCK_TRANSACTIONS: Transaction[] = [
-  {
-    id: '1',
-    dateStr: 'Today',
-    title: 'Jollibee Drive Thru',
-    category: 'Food',
-    icon: 'fast-food',
-    iconBg: colors.pillFoodBg,
-    iconColor: colors.pillFoodText,
-    account: 'GCash',
-    amount: 185.0,
-    isExpense: true,
-    time: '12:30 PM',
-  },
-  {
-    id: '2',
-    dateStr: 'Today',
-    title: 'Freelance Payout',
-    category: 'Income',
-    icon: 'cash',
-    iconBg: '#E8F5EE',
-    iconColor: '#27500A',
-    account: 'BDO',
-    amount: 25000.0,
-    isExpense: false,
-    time: '09:00 AM',
-  },
-  {
-    id: '3',
-    dateStr: 'Yesterday',
-    title: 'Veco Bill',
-    category: 'Bills',
-    icon: 'bulb',
-    iconBg: '#EEEDFE',
-    iconColor: '#4B2DA3',
-    account: 'Maya',
-    amount: 1450.0,
-    isExpense: true,
-    time: '08:15 PM',
-  },
-  {
-    id: '4',
-    dateStr: 'Yesterday',
-    title: 'Angkas',
-    category: 'Transport',
-    icon: 'car',
-    iconBg: colors.pillTransportBg,
-    iconColor: colors.pillTransportText,
-    account: 'Cash',
-    amount: 80.0,
-    isExpense: true,
-    time: '06:00 PM',
-  },
-  {
-    id: '5',
-    dateStr: 'Mar 24',
-    title: 'SM Supermarket',
-    category: 'Shopping',
-    icon: 'cart',
-    iconBg: colors.pillShoppingBg,
-    iconColor: colors.pillShoppingText,
-    account: 'BDO',
-    amount: 3200.5,
-    isExpense: true,
-    time: '04:20 PM',
-  },
-  {
-    id: '6',
-    dateStr: 'Mar 24',
-    title: 'Spotify Premium',
-    category: 'Bills',
-    icon: 'musical-notes',
-    iconBg: '#EEEDFE',
-    iconColor: '#4B2DA3',
-    account: 'GCash',
-    amount: 149.0,
-    isExpense: true,
-    time: '10:00 AM',
-  },
-];
-
-const CATEGORIES = ['All', 'Food', 'Transport', 'Shopping', 'Bills', 'Income'];
-
-const ACCOUNT_TAG_STYLES = {
-  GCash: { bg: '#E5F1FF', text: '#007DFF' },
-  Cash: { bg: '#F0F0F0', text: '#555555' },
-  BDO: { bg: '#E5EFF9', text: '#0038A8' },
-  Maya: { bg: '#E6F7EC', text: '#000000' },
-};
+/** Returns a light bg derived from a hex brand colour (12% opacity). */
+function tagBg(hex: string): string {
+  return hex + '20';
+}
 
 type ListItem =
   | { type: 'header'; title: string }
-  | { type: 'transaction'; data: Transaction };
+  | { type: 'transaction'; data: FeedTransaction };
 
-// ─── MAIN COMPONENT ─────────────────────────────────────────────────────────
+// ─── Main component ──────────────────────────────────────────────────────────
 
 export default function FeedScreen() {
   const navigation = useNavigation<any>();
   const [activeCategory, setActiveCategory] = useState('All');
 
-  const listData = useMemo(() => {
-    const filtered =
-      activeCategory === 'All'
-        ? MOCK_TRANSACTIONS
-        : MOCK_TRANSACTIONS.filter((t) => t.category === activeCategory);
+  const { sections, loading, loadMore, hasMore, loadingMore, refetch } =
+    useTransactions(activeCategory);
 
-    const grouped: Record<string, Transaction[]> = {};
-    filtered.forEach((t) => {
-      if (!grouped[t.dateStr]) grouped[t.dateStr] = [];
-      grouped[t.dateStr].push(t);
-    });
+  const { categories } = useCategories();
 
-    const flattened: ListItem[] = [];
-    Object.keys(grouped).forEach((date) => {
-      flattened.push({ type: 'header', title: date });
-      grouped[date].forEach((t) =>
-        flattened.push({ type: 'transaction', data: t })
-      );
-    });
+  // Refresh when screen regains focus (e.g. after adding a transaction)
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
 
-    return flattened;
-  }, [activeCategory]);
+  // ── Filter options ──
+  const filterOptions = [
+    'All',
+    ...categories.map((c) => c.name),
+    'Income',
+  ];
 
+  // ── Flatten sections → FlatList items ──
+  const listData: ListItem[] = sections.flatMap((s) => [
+    { type: 'header', title: s.title },
+    ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
+  ]);
+
+  // ── Render row ──
   const renderItem = ({ item }: { item: ListItem }) => {
     if (item.type === 'header') {
       return (
@@ -160,41 +73,76 @@ export default function FeedScreen() {
     }
 
     const tx = item.data;
-    const acctStyle = ACCOUNT_TAG_STYLES[tx.account];
+    const isExpense = tx.type === 'expense';
+    const catData = categories.find(
+      (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
+    );
+    const iconBg = isExpense
+      ? (catData?.tile_bg_colour ?? '#F5F5F5')
+      : '#E8F5EE';
+    const emoji = isExpense ? (catData?.emoji ?? '📦') : '💵';
+    const time = new Date(tx.date).toLocaleTimeString('en-PH', {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
 
     return (
       <Pressable
-        onPress={() => navigation.navigate('TransactionDetail', { id: tx.id })}
+        onPress={() =>
+          navigation.navigate('TransactionDetail', { id: tx.id })
+        }
         style={({ pressed }) => [
           styles.transactionItem,
           pressed && { backgroundColor: colors.primaryLight },
         ]}
       >
-        <View style={[styles.iconBox, { backgroundColor: tx.iconBg }]}>
-          <Ionicons name={tx.icon} size={20} color={tx.iconColor} />
+        <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
+          <Text style={styles.iconEmoji}>{emoji}</Text>
         </View>
 
         <View style={styles.txContent}>
           <Text style={styles.txTitle} numberOfLines={1}>
-            {tx.title}
+            {tx.display_name ?? tx.merchant_name ?? tx.category ?? '—'}
           </Text>
           <View style={styles.txSubtitleRow}>
-            <Text style={styles.txTime}>{tx.time}</Text>
+            <Text style={styles.txTime}>{time}</Text>
             <View style={styles.metaDot} />
-            <View style={[styles.acctTag, { backgroundColor: acctStyle.bg }]}>
-              <Text style={[styles.acctTagText, { color: acctStyle.text }]}>
-                {tx.account}
+            <View
+              style={[
+                styles.acctTag,
+                { backgroundColor: tagBg(tx.account_brand_colour) },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.acctTagText,
+                  { color: tx.account_brand_colour },
+                ]}
+              >
+                {tx.account_name}
               </Text>
             </View>
           </View>
         </View>
 
-        <Text style={[styles.txAmount, tx.isExpense ? styles.neg : styles.pos]}>
-          {tx.isExpense ? '-' : '+'}₱{tx.amount.toFixed(2)}
+        <Text
+          style={[
+            styles.txAmount,
+            isExpense ? styles.neg : styles.pos,
+          ]}
+        >
+          {isExpense ? '-' : '+'}
+          {fmtPeso(tx.amount)}
         </Text>
       </Pressable>
     );
   };
+
+  const now = new Date();
+  const monthLabel = now.toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
 
   return (
     <View style={styles.container}>
@@ -203,25 +151,24 @@ export default function FeedScreen() {
         <View>
           <Text style={styles.headerTitle}>Transactions</Text>
           <Text style={styles.headerSubtitle}>
-            March 2026 · {MOCK_TRANSACTIONS.length} entries
+            {monthLabel} · {sections.reduce((s, sec) => s + sec.data.length, 0)} entries
           </Text>
         </View>
         <TouchableOpacity style={styles.monthPill} activeOpacity={0.7}>
-          <Text style={styles.monthPillText}>March 2026 ▾</Text>
+          <Text style={styles.monthPillText}>{monthLabel} ▾</Text>
         </TouchableOpacity>
       </View>
 
       {/* ─── FILTER ROW ─── */}
       <View style={styles.filterWrapper}>
         <FlatList
-          data={CATEGORIES}
+          data={filterOptions}
           horizontal
           showsHorizontalScrollIndicator={false}
           keyExtractor={(item) => item}
           contentContainerStyle={{ paddingHorizontal: spacing.screenPadding }}
           renderItem={({ item }) => {
             const isActive = activeCategory === item;
-
             return (
               <TouchableOpacity
                 style={isActive ? styles.chipActive : styles.chipInactive}
@@ -243,23 +190,42 @@ export default function FeedScreen() {
 
       {/* ─── TRANSACTION LIST ─── */}
       <View style={{ flex: 1 }}>
-        <FlatList
-          data={listData}
-          renderItem={renderItem}
-          keyExtractor={(item, index) =>
-            item.type === 'header'
-              ? `header-${item.title}`
-              : `tx-${item.data.id}-${index}`
-          }
-          contentContainerStyle={{ paddingBottom: 120 }}
-          ListFooterComponent={() =>
-            listData.length > 0 ? (
-              <TouchableOpacity style={styles.loadMoreBtn} activeOpacity={0.7}>
-                <Text style={styles.loadMoreText}>Load 20 more</Text>
-              </TouchableOpacity>
-            ) : null
-          }
-        />
+        {loading ? (
+          <ActivityIndicator
+            color={colors.primary}
+            style={{ marginTop: 40 }}
+          />
+        ) : (
+          <FlatList
+            data={listData}
+            renderItem={renderItem}
+            keyExtractor={(item, index) =>
+              item.type === 'header'
+                ? `header-${item.title}`
+                : `tx-${item.data.id}-${index}`
+            }
+            contentContainerStyle={{ paddingBottom: 120 }}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>No transactions found.</Text>
+            }
+            ListFooterComponent={() =>
+              listData.length > 0 && hasMore ? (
+                <TouchableOpacity
+                  style={styles.loadMoreBtn}
+                  activeOpacity={0.7}
+                  onPress={loadMore}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <Text style={styles.loadMoreText}>Load 20 more</Text>
+                  )}
+                </TouchableOpacity>
+              ) : null
+            }
+          />
+        )}
       </View>
     </View>
   );
@@ -271,7 +237,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingTop: 60, // Hardcoded top padding to bypass safe-area-context
+    paddingTop: 60,
   },
   header: {
     flexDirection: 'row',
@@ -315,7 +281,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
-    backgroundColor: colors.primary, // Standard color instead of gradient
+    backgroundColor: colors.primary,
   },
   chipInactive: {
     paddingHorizontal: 16,
@@ -365,6 +331,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 14,
   },
+  iconEmoji: {
+    fontSize: 20,
+  },
   txContent: {
     flex: 1,
     justifyContent: 'center',
@@ -408,7 +377,14 @@ const styles = StyleSheet.create({
     color: colors.incomeGreen,
   },
   neg: {
-    color: '#C0503A', // expenseRed from your theme
+    color: '#C0503A',
+  },
+  emptyText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 60,
   },
   loadMoreBtn: {
     backgroundColor: colors.white,

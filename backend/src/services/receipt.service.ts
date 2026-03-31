@@ -1,61 +1,64 @@
-import vision from '@google-cloud/vision';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Instantiates a client
-const visionClient = new vision.ImageAnnotatorClient();
+// Initialize the Gemini client using your environment variable
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
-export interface ParsedField<T> {
-  value: T;
-  confidence: number;
+/**
+ * Parses a receipt image (base64) using Gemini 1.5 Flash.
+ * * @param base64Image The base64 string of the receipt image (without the data:image/png;base64, prefix)
+ * @param mimeType The mime type of the image (e.g., 'image/jpeg', 'image/png')
+ * @returns Parsed JSON object with confidence scores
+ */
+export async function parseReceipt(base64Image: string, mimeType: string = 'image/jpeg') {
+  try {
+    // 1. Point to the fast, multimodal Flash model
+    const model = genAI.getGenerativeModel({ 
+        model: 'gemini-1.5-flash',
+        generationConfig: {
+            // Force the model to output valid, parseable JSON
+            responseMimeType: "application/json",
+        }
+    });
+
+    // 2. Format the image data exactly how the SDK expects it
+    const imageParts = [
+      {
+        inlineData: {
+          data: base64Image,
+          mimeType: mimeType,
+        },
+      },
+    ];
+
+    // 3. The prompt you designed
+    const prompt = `Extract from this Philippine GCash/Maya/BDO/BPI receipt:
+- merchant: the store or biller name (NOT the wallet provider)
+- amount: the total amount paid as a number
+- date: the transaction date as a string
+- wallet: the payment provider (GCash, Maya, BDO, BPI)
+
+Return ONLY valid JSON in this exact format:
+{
+  "merchant": { "value": string | null, "confidence": number },
+  "amount":   { "value": number | null, "confidence": number },
+  "date":     { "value": string | null, "confidence": number },
+  "wallet":   { "value": string | null, "confidence": number }
 }
 
-export interface ParseReceiptResponse {
-  merchant: ParsedField<string | null>;
-  amount: ParsedField<number | null>;
-  date: ParsedField<string | null>;
+Confidence is 0.0–1.0. Use 0.85+ only when you are very certain.
+If you cannot read a field clearly, use a lower confidence score.`;
+
+    // 4. Send the image and prompt to Gemini
+    const result = await model.generateContent([prompt, ...imageParts]);
+    const response = await result.response;
+    const textOutput = response.text();
+
+    // 5. Parse and return the structured data
+    const parsedData = JSON.parse(textOutput);
+    return parsedData;
+
+  } catch (error) {
+    console.error("Error parsing receipt with Gemini:", error);
+    throw new Error("Failed to process receipt image.");
+  }
 }
-
-export const analyzeReceiptImage = async (base64Data: string): Promise<ParseReceiptResponse> => {
-  const [result] = await visionClient.textDetection({
-    image: { content: base64Data },
-  });
-
-  const text = result.textAnnotations?.[0]?.description || '';
-  return extractDataFromText(text);
-};
-
-const extractDataFromText = (text: string): ParseReceiptResponse => {
-  const normalizedText = text.toUpperCase();
-  
-  // Extract Merchant
-  let merchant: ParsedField<string | null> = { value: null, confidence: 0 };
-  if (normalizedText.includes('GCASH')) {
-    merchant = { value: 'GCash', confidence: 0.95 };
-  } else if (normalizedText.includes('MAYA')) {
-    merchant = { value: 'Maya', confidence: 0.95 };
-  } else if (normalizedText.includes('BDO')) {
-    merchant = { value: 'BDO', confidence: 0.95 };
-  } else if (normalizedText.includes('BPI')) {
-    merchant = { value: 'BPI', confidence: 0.95 };
-  } else {
-    merchant = { value: 'Unknown', confidence: 0.40 };
-  }
-
-  // Extract Amount
-  let amount: ParsedField<number | null> = { value: null, confidence: 0 };
-  const amountMatch = text.match(/(?:PHP|₱|P|AMOUNT)\s*[:]?\s*([\d,]+\.\d{2})/i) || text.match(/([\d,]+\.\d{2})/);
-  
-  if (amountMatch) {
-    const parsedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
-    amount = { value: parsedAmount, confidence: 0.90 };
-  }
-
-  // Extract Date
-  let date: ParsedField<string | null> = { value: null, confidence: 0 };
-  const dateMatch = text.match(/\d{2,4}[-/]\d{2}[-/]\d{2,4}|\d{2}\s[A-Z]{3}\s\d{4}/i);
-  
-  if (dateMatch) {
-    date = { value: dateMatch[0], confidence: 0.88 };
-  }
-
-  return { merchant, amount, date };
-};

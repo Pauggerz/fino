@@ -1,605 +1,248 @@
-import React, { useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  Animated,
-  ScrollView,
+import React, { useState } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  Image, 
+  ActivityIndicator, 
   TextInput,
-  Modal,
+  ScrollView,
+  Alert
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { colors, spacing } from '../constants/theme';
+import * as FileSystem from 'expo-file-system';
+import { supabase } from '../services/supabase'; // Adjust path as needed
+import { useNavigation } from '@react-navigation/native';
 
-const CATEGORIES = [
-  {
-    id: 'food',
-    label: 'Food',
-    icon: 'fast-food',
-    bg: colors.pillFoodBg,
-    text: colors.pillFoodText,
-    border: colors.pillFoodBorder,
-  },
-  {
-    id: 'transport',
-    label: 'Transport',
-    icon: 'car',
-    bg: colors.pillTransportBg,
-    text: colors.pillTransportText,
-    border: colors.pillTransportBorder,
-  },
-  {
-    id: 'shopping',
-    label: 'Shopping',
-    icon: 'bag-handle',
-    bg: colors.pillShoppingBg,
-    text: colors.pillShoppingText,
-    border: colors.pillShoppingBorder,
-  },
-];
+// Define the shape of our parsed data
+interface ParsedField {
+  value: string | number;
+  confidence: number;
+  touched: boolean;
+}
+
+interface ParsedReceipt {
+  merchant: ParsedField;
+  amount: ParsedField;
+  date: ParsedField;
+}
 
 export default function ScreenshotScreen() {
-  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-
-  // State
+  
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [isParsing, setIsParsing] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [receiptData, setReceiptData] = useState<ParsedReceipt | null>(null);
 
-  // Parsed Data State
-  const [hasParsedData, setHasParsedData] = useState(false);
-  const [merchant] = useState('Jollibee Drive Thru');
-  const [amount] = useState('185.00');
-
-  // Auto-detect the current date and time as a fallback for the AI
-  const [date, setDate] = useState(
-    new Date().toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-  );
-
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [isEditingDate, setIsEditingDate] = useState(false);
-
-  // Animation
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  const handleImageSelection = (uri: string) => {
-    setImageUri(uri);
-    setIsParsing(true);
-    setHasParsedData(false);
-    fadeAnim.setValue(0);
-
-    // Simulate the 2200ms OCR / AI processing delay
-    setTimeout(() => {
-      setIsParsing(false);
-      setHasParsedData(true);
-
-      // Fade in the parsed data
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }).start();
-
-      // Auto-categorize based on simulateAIMap logic
-      setSelectedCategory('food');
-    }, 2200);
-  };
-
-  const pickImage = async (source: 'camera' | 'upload') => {
-    let result;
-    if (source === 'camera') {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) return;
-      result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
-    } else {
-      result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+  // 1. Pick Image & Send to Edge Function
+  const handleSelectImage = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert("Permission required", "We need camera roll permissions to read screenshots.");
+      return;
     }
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      handleImageSelection(result.assets[0].uri);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const uri = result.assets[0].uri;
+      setImageUri(uri);
+      processReceipt(uri);
     }
   };
 
-  const isFormValid = hasParsedData && selectedCategory !== null;
+  // 2. Process with Supabase Edge Function
+  const processReceipt = async (uri: string) => {
+    setLoading(true);
+    setReceiptData(null); // Reset previous data
 
-  const handleConfirm = () => {
-    if (!isFormValid) return;
-    navigation.goBack();
+    try {
+      // Read image as Base64
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: 'base64',
+      });
+
+      // Invoke Edge Function
+      const { data, error } = await supabase.functions.invoke('parse-receipt', {
+        body: { imageBase64: base64, mimeType: 'image/jpeg' },
+      });
+
+      if (error) throw new Error(error.message);
+
+      // Map the response to our state (assuming your Edge Function returns this structure)
+      // If the function returns slightly different keys, adjust them here.
+      setReceiptData({
+        merchant: { value: data.merchant || '', confidence: data.merchant_confidence || 0, touched: false },
+        amount: { value: data.amount || '', confidence: data.amount_confidence || 0, touched: false },
+        date: { value: data.date || '', confidence: data.date_confidence || 0, touched: false },
+      });
+
+    } catch (err: any) {
+      Alert.alert("OCR Error", err.message || "Failed to parse receipt.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 3. Handle Field Updates (Marks low-confidence fields as "touched")
+  const updateField = (field: keyof ParsedReceipt, newValue: string) => {
+    if (!receiptData) return;
+    setReceiptData({
+      ...receiptData,
+      [field]: { ...receiptData[field], value: newValue, touched: true }
+    });
+  };
+
+  // 4. Validation: Check if all low confidence fields have been touched
+  const isConfirmDisabled = () => {
+    if (!receiptData) return true;
+    
+    // Check all fields. If confidence < 0.85 AND it hasn't been touched, disable button.
+    const fields = Object.values(receiptData);
+    const hasUntouchedLowConfidence = fields.some(
+      (f) => f.confidence < 0.85 && !f.touched
+    );
+
+    return hasUntouchedLowConfidence;
+  };
+
+  // 5. Save to Database
+  const handleConfirmAndSave = async () => {
+    if (!receiptData) return;
+    setLoading(true);
+
+    try {
+      // Note: If you have an auth flow, grab the user_id here.
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+
+      // Insert into transactions table
+      const { error } = await supabase.from('transactions').insert({
+        user_id: userId, // Ensure your schema allows this or mock it for now
+        merchant_name: receiptData.merchant.value,
+        amount: Number(receiptData.amount.value),
+        date: receiptData.date.value,
+        type: 'expense',
+        signal_source: 'merchant', // Or however you categorize screenshot imports
+        merchant_confidence: receiptData.merchant.confidence,
+        amount_confidence: receiptData.amount.confidence,
+        date_confidence: receiptData.date.confidence,
+        receipt_url: imageUri, // *Optional: upload image to Supabase Storage first if you want a remote URL*
+      });
+
+      if (error) throw error;
+
+      Alert.alert("Success", "Transaction saved!");
+      navigation.goBack(); // Go back to Feed/Home
+
+    } catch (err: any) {
+      Alert.alert("Save Error", err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- UI Helper for Fields ---
+  const renderField = (label: string, fieldKey: keyof ParsedReceipt) => {
+    if (!receiptData) return null;
+    const fieldData = receiptData[fieldKey];
+    const isHighConfidence = fieldData.confidence >= 0.85;
+
+    return (
+      <View style={styles.fieldContainer}>
+        <Text style={styles.label}>{label}</Text>
+        <View style={[
+          styles.inputWrapper, 
+          { borderColor: isHighConfidence ? '#A0BCA0' : '#C8A09A' }
+        ]}>
+          <TextInput
+            style={[styles.input, isHighConfidence && styles.readOnlyText]}
+            value={String(fieldData.value)}
+            onChangeText={(text) => updateField(fieldKey, text)}
+            editable={!isHighConfidence} // Read-only if high confidence
+            onFocus={() => {
+              // Automatically mark as touched if they tap into it to fix it
+              if (!isHighConfidence && !fieldData.touched) {
+                updateField(fieldKey, String(fieldData.value));
+              }
+            }}
+          />
+          {!isHighConfidence && !fieldData.touched && (
+            <Text style={styles.fixPrompt}>Fix ›</Text>
+          )}
+        </View>
+      </View>
+    );
   };
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 16) }]}>
-      {/* --- Header --- */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Ionicons name="chevron-back" size={28} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Scan Receipt</Text>
-        <View style={styles.backButton} />
-      </View>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.title}>Scan Receipt</Text>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* --- Dynamic Image Source Area --- */}
-        {!imageUri ? (
-          <View style={styles.emptyStateContainer}>
-            <View style={styles.iconCircle}>
-              <Ionicons name="scan" size={32} color={colors.primary} />
-            </View>
-            <Text style={styles.emptyStateTitle}>Upload a Receipt</Text>
-            <Text style={styles.emptyStateSub}>
-              Snap a photo or choose from your gallery and let AI do the heavy
-              lifting.
-            </Text>
+      <TouchableOpacity style={styles.uploadButton} onPress={handleSelectImage}>
+        <Text style={styles.uploadText}>
+          {imageUri ? "Reselect Image" : "Upload GCash Screenshot"}
+        </Text>
+      </TouchableOpacity>
 
-            <View style={styles.uploadButtonsRow}>
-              <TouchableOpacity
-                style={styles.uploadBtn}
-                onPress={() => pickImage('camera')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="camera" size={20} color={colors.white} />
-                <Text style={styles.uploadBtnText}>Camera</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.uploadBtnSecondary}
-                onPress={() => pickImage('upload')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="image" size={20} color={colors.primary} />
-                <Text style={styles.uploadBtnTextSecondary}>Gallery</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.previewContainer}
-            activeOpacity={0.9}
-            onPress={() => setIsExpanded(true)}
-          >
-            <Image source={{ uri: imageUri }} style={styles.previewImage} />
-            <View style={styles.expandOverlay}>
-              <Ionicons name="expand" size={14} color={colors.white} />
-              <Text style={styles.expandText}>View</Text>
-            </View>
-          </TouchableOpacity>
-        )}
+      {imageUri && (
+        <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="contain" />
+      )}
 
-        {/* --- Parsing Overlay --- */}
-        {isParsing && (
-          <View style={styles.parsingOverlay}>
-            <ActivityIndicator
-              size="large"
-              color={colors.primary}
-              style={{ marginBottom: 16 }}
-            />
-            <Text style={styles.parsingTitle}>Extracting details...</Text>
-            <Text style={styles.parsingSubtitle}>Usually under 3 seconds</Text>
-          </View>
-        )}
-
-        {/* --- Parsed Data (Animated & Box-less) --- */}
-        {hasParsedData && (
-          <Animated.View style={{ opacity: fadeAnim, marginTop: 16 }}>
-            <View style={styles.aiBadgeRow}>
-              <Ionicons name="sparkles" size={14} color="#A0BCA0" />
-              <Text style={styles.aiBadgeText}>AI Extracted Details</Text>
-            </View>
-
-            {/* Seamless Form Rows */}
-            <View style={styles.formSection}>
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Merchant</Text>
-                <Text style={styles.rowValue}>{merchant}</Text>
-              </View>
-
-              <View style={styles.formRow}>
-                <Text style={styles.rowLabel}>Amount</Text>
-                <Text style={[styles.rowValue, styles.amountValue]}>
-                  ₱{amount}
-                </Text>
-              </View>
-
-              <View style={[styles.formRow, { borderBottomWidth: 0 }]}>
-                <Text style={styles.rowLabel}>Date & Time</Text>
-                {isEditingDate ? (
-                  <TextInput
-                    style={styles.inlineInput}
-                    value={date}
-                    onChangeText={setDate}
-                    onBlur={() => setIsEditingDate(false)}
-                    onSubmitEditing={() => setIsEditingDate(false)}
-                    autoFocus
-                  />
-                ) : (
-                  <TouchableOpacity
-                    onPress={() => setIsEditingDate(true)}
-                    style={styles.dateEditBtn}
-                  >
-                    <Text style={styles.rowValue}>{date}</Text>
-                    <Ionicons
-                      name="pencil"
-                      size={14}
-                      color={colors.textSecondary}
-                      style={{ marginLeft: 6 }}
-                    />
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
-            {/* Category Selection */}
-            <Text style={styles.categoryHeader}>Select Category</Text>
-            <View style={styles.categoriesGrid}>
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[
-                    styles.categoryPill,
-                    {
-                      backgroundColor:
-                        selectedCategory === cat.id ? cat.bg : colors.white,
-                    },
-                    selectedCategory === cat.id && {
-                      borderColor: cat.border,
-                      borderWidth: 1,
-                    },
-                  ]}
-                  onPress={() => setSelectedCategory(cat.id)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={cat.icon as any}
-                    size={18}
-                    color={
-                      selectedCategory === cat.id
-                        ? cat.text
-                        : colors.textSecondary
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.categoryText,
-                      {
-                        color:
-                          selectedCategory === cat.id
-                            ? cat.text
-                            : colors.textSecondary,
-                      },
-                    ]}
-                  >
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </Animated.View>
-        )}
-      </ScrollView>
-
-      {/* --- Footer Action --- */}
-      <View
-        style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 24) }]}
-      >
-        <TouchableOpacity
-          style={[styles.saveButton, !isFormValid && styles.saveButtonDisabled]}
-          onPress={handleConfirm}
-          disabled={!isFormValid}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.saveButtonText}>Confirm & Save</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* --- Fullscreen Image Modal --- */}
-      <Modal visible={isExpanded} transparent animationType="fade">
-        <View style={styles.modalBg}>
-          <TouchableOpacity
-            style={styles.modalClose}
-            onPress={() => setIsExpanded(false)}
-          >
-            <Ionicons name="close-circle" size={36} color={colors.white} />
-          </TouchableOpacity>
-          <Image
-            source={{ uri: imageUri || undefined }}
-            style={styles.modalImage}
-            resizeMode="contain"
-          />
+      {loading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4A90E2" />
+          <Text style={styles.loadingText}>Processing receipt...</Text>
         </View>
-      </Modal>
-    </View>
+      )}
+
+      {receiptData && !loading && (
+        <View style={styles.formContainer}>
+          {renderField('Merchant', 'merchant')}
+          {renderField('Amount', 'amount')}
+          {renderField('Date', 'date')}
+
+          <TouchableOpacity 
+            style={[styles.confirmButton, isConfirmDisabled() && styles.disabledButton]} 
+            onPress={handleConfirmAndSave}
+            disabled={isConfirmDisabled()}
+          >
+            <Text style={styles.confirmText}>Confirm & Save</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.screenPadding,
-    paddingBottom: 24,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontFamily: 'Nunito_700Bold',
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  backButton: {
-    width: 40,
-    alignItems: 'flex-start',
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.screenPadding,
-    paddingBottom: 40,
-  },
-
-  /* --- CLEAN UPLOAD EMPTY STATE --- */
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(45, 106, 79, 0.08)', // Faint primary color
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  emptyStateTitle: {
-    fontSize: 20,
-    fontFamily: 'Nunito_700Bold',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  emptyStateSub: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 20,
-    paddingHorizontal: 20,
-  },
-  uploadButtonsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  uploadBtn: {
-    flex: 1,
+  container: { padding: 20, flexGrow: 1, backgroundColor: '#FAFAFA' },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, color: '#333' },
+  uploadButton: { backgroundColor: '#E0E0E0', padding: 15, borderRadius: 10, alignItems: 'center', marginBottom: 20 },
+  uploadText: { fontSize: 16, fontWeight: '600', color: '#555' },
+  preview: { width: '100%', height: 200, borderRadius: 10, marginBottom: 20 },
+  loadingContainer: { alignItems: 'center', marginVertical: 20 },
+  loadingText: { marginTop: 10, color: '#666' },
+  formContainer: { marginTop: 10 },
+  fieldContainer: { marginBottom: 15 },
+  label: { fontSize: 14, color: '#666', marginBottom: 5 },
+  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
-    borderRadius: 16,
-    gap: 8,
-  },
-  uploadBtnText: {
-    color: colors.white,
-    fontWeight: '600',
-    fontSize: 15,
-  },
-  uploadBtnSecondary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.white,
-    paddingVertical: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
-    gap: 8,
-  },
-  uploadBtnTextSecondary: {
-    color: colors.primary,
-    fontWeight: '600',
-    fontSize: 15,
-  },
-
-  /* --- IMAGE PREVIEW --- */
-  previewContainer: {
-    height: 180,
-    borderRadius: 20,
-    overflow: 'hidden',
-    backgroundColor: '#EAE8E3',
-    marginBottom: 16,
-  },
-  previewImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  expandOverlay: {
-    position: 'absolute',
-    bottom: 12,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderWidth: 2,
+    borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 6,
+    backgroundColor: '#FFF',
   },
-  expandText: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  /* --- PARSING STATE --- */
-  parsingOverlay: {
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  parsingTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  parsingSubtitle: {
-    color: colors.textSecondary,
-    fontSize: 13,
-  },
-
-  /* --- SLEEK FORM SECTION --- */
-  aiBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    gap: 6,
-  },
-  aiBadgeText: {
-    fontSize: 13,
-    color: '#8CA68C',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  formSection: {
-    backgroundColor: colors.white,
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    marginBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  formRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0EFEA',
-  },
-  rowLabel: {
-    fontSize: 15,
-    color: colors.textSecondary,
-  },
-  rowValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    fontFamily: 'Inter_600SemiBold',
-    textAlign: 'right',
-    maxWidth: '65%',
-  },
-  amountValue: {
-    fontSize: 18,
-    fontFamily: 'DMMono_500Medium',
-    color: colors.primary,
-  },
-  dateEditBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  inlineInput: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.primary,
-    textAlign: 'right',
-    padding: 0,
-  },
-
-  /* --- CATEGORIES --- */
-  categoryHeader: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 16,
-    marginLeft: 4,
-  },
-  categoriesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  categoryPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  categoryText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  /* --- FOOTER & MODAL --- */
-  footer: {
-    paddingHorizontal: spacing.screenPadding,
-    backgroundColor: colors.background,
-    paddingTop: 16,
-  },
-  saveButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 18,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#D1D1D6',
-  },
-  saveButtonText: {
-    color: colors.white,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  modalBg: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.95)',
-    justifyContent: 'center',
-  },
-  modalClose: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-    zIndex: 10,
-  },
-  modalImage: {
-    width: '100%',
-    height: '80%',
-  },
+  input: { flex: 1, paddingVertical: 12, fontSize: 16, color: '#333' },
+  readOnlyText: { color: '#777' }, // Slightly faded text for read-only
+  fixPrompt: { color: '#C8A09A', fontWeight: 'bold', fontSize: 14, marginLeft: 10 },
+  confirmButton: { backgroundColor: '#4A90E2', padding: 16, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  disabledButton: { backgroundColor: '#A5C6EA' },
+  confirmText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }
 });
