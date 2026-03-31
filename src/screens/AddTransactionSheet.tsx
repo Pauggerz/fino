@@ -127,6 +127,7 @@ const ACCOUNT_ID_MAP: Record<string, Account> = {
   BDO: 'bdo',
   Maya: 'maya',
 };
+
 const CATEGORY_ID_MAP: Record<string, Category> = {
   Food: 'food',
   Transport: 'transport',
