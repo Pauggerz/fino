@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -13,6 +14,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors } from '../constants/theme';
+import { CategoryIcon } from '@/components/CategoryIcon';
+import { ACCOUNT_LOGOS, ACCOUNT_AVATAR_OVERRIDE } from '../constants/accountLogos';
 import { isNegativeBalance, BALANCE_ANIMATE_MS } from '../services/balanceCalc';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
@@ -473,11 +476,23 @@ export default function HomeScreen() {
                 style={styles.acctCard}
                 onPress={() => navigation.navigate('more')}
               >
-                <View
-                  style={[styles.acctAvatar, { backgroundColor: acc.brand_colour }]}
-                >
-                  <Text style={styles.acctAvatarLetter}>{acc.letter_avatar}</Text>
-                </View>
+                {(() => {
+                  const logo = ACCOUNT_LOGOS[acc.name];
+                  const avatarLetter = ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
+                  return logo ? (
+                    <View style={styles.acctIconWrap}>
+                      <Image
+                        source={logo}
+                        style={styles.acctLogo}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  ) : (
+                    <View style={[styles.acctIconWrap, { backgroundColor: acc.brand_colour }]}>
+                      <Text style={styles.acctLetter}>{avatarLetter}</Text>
+                    </View>
+                  );
+                })()}
                 <Text style={styles.acctName}>{acc.name}</Text>
                 <Text
                   style={[
@@ -532,9 +547,12 @@ export default function HomeScreen() {
                     )}
                   </View>
 
-                  {/* Emoji icon in white circle */}
+                  {/* SVG icon in duotone tinted circle */}
                   <View style={styles.catIconCircle}>
-                    <Text style={{ fontSize: 14 }}>{cat.emoji ?? '📦'}</Text>
+                    <CategoryIcon
+                      categoryKey={cat.emoji ?? 'default'}
+                      color={cat.text_colour ?? '#888780'}
+                    />
                   </View>
 
                   <Text style={[styles.catName, { color: textColor }]}>
@@ -842,18 +860,26 @@ const styles = StyleSheet.create({
     elevation: 2,
     gap: 4,
   },
-  acctAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  acctIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: 'rgba(30,30,46,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
     marginBottom: 4,
   },
-  acctAvatarLetter: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 13,
-    color: colors.white,
+  acctLogo: {
+    width: 28,
+    height: 28,
+  },
+  acctLetter: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
   },
   acctName: {
     fontFamily: 'Nunito_700Bold',
