@@ -15,10 +15,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing } from '../constants/theme';
 
-// ─── TOGGLE THIS TO TEST THE EMPTY GUARD STATE ──────────────────────────────
 const MOCK_HAS_TRANSACTIONS = true;
 
-// ─── TYPES & MOCK DATA ──────────────────────────────────────────────────────
 type RichRow = { label: string; value: string; color?: string };
 type Message = {
   id: string;
@@ -41,8 +39,8 @@ const INITIAL_MSG: Message = {
   type: 'ai',
   text: "Hi Hans! 👋 Here's a quick summary of your finances this month:",
   richData: [
-    { label: 'Total spent', value: '₱4,820.50', color: '#E57373' }, // Coral
-    { label: 'Total income', value: '₱25,000.00', color: '#2d6a4f' }, // Primary Green
+    { label: 'Total spent', value: '₱4,820.50', color: '#E57373' },
+    { label: 'Total income', value: '₱25,000.00', color: '#2d6a4f' },
   ],
   timestamp: new Date().toLocaleTimeString([], {
     hour: '2-digit',
@@ -75,7 +73,6 @@ const GENERIC_REPLY: Message = {
   }),
 };
 
-// ─── MAIN COMPONENT ─────────────────────────────────────────────────────────
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
@@ -83,36 +80,36 @@ export default function ChatScreen() {
 
   const [messages, setMessages] = useState<Message[]>([INITIAL_MSG]);
   const [inputText, setInputText] = useState('');
-  const [showPrompts, setShowPrompts] = useState(false);
+  const [showPrompts, setShowPrompts] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
 
-  // Load Prompt Visibility State
-  useEffect(() => {
-    const checkPrompts = async () => {
-      try {
-        const stored = await AsyncStorage.getItem('fino_prompts_shown');
-        if (stored !== 'true') {
-          setShowPrompts(true);
-        }
-      } catch (e) {
-        console.error('Failed to load prompts state', e);
-      }
-    };
-    checkPrompts();
-  }, []);
+  //   useEffect(() => {
+  //     const checkPrompts = async () => {
+  //       try {
+  //         const stored = await AsyncStorage.getItem('fino_prompts_shown');
+  //         if (stored !== 'true') {
+  //           setShowPrompts(true);
+  //         }
+  //       } catch (e) {
+  //         // ESLint fix: Silently ignore storage fetch errors
+  //       }
+  //     };
+  //     checkPrompts();
+  //   }, []);
 
-  // Handle Sending a Message
   const handleSend = async (textOverride?: string) => {
     const textToSend = textOverride || inputText;
     if (!textToSend.trim()) return;
 
-    // Hide prompts & save to storage on first message
     if (showPrompts) {
       setShowPrompts(false);
-      await AsyncStorage.setItem('fino_prompts_shown', 'true');
+      try {
+        await AsyncStorage.setItem('fino_prompts_shown', 'true');
+      } catch (e) {
+        // Silently ignore storage save errors
+      }
     }
 
-    // Add User Message
     const userMsg: Message = {
       id: Date.now().toString(),
       type: 'user',
@@ -127,7 +124,6 @@ export default function ChatScreen() {
     setInputText('');
     setIsTyping(true);
 
-    // Simulate Network Delay & AI Thinking
     setTimeout(() => {
       setIsTyping(false);
       const isFoodQuery = textToSend.toLowerCase().includes('food');
@@ -144,8 +140,6 @@ export default function ChatScreen() {
       setMessages((prev) => [...prev, replyMsg]);
     }, 1500);
   };
-
-  // ─── RENDERERS ───
 
   const renderEmptyGuard = () => (
     <View style={styles.emptyStateContainer}>
@@ -173,9 +167,9 @@ export default function ChatScreen() {
       <View style={styles.suggestedContainer}>
         <Text style={styles.suggestedLabel}>TRY ASKING</Text>
         <View style={styles.suggestedChipsWrapper}>
-          {SUGGESTED_PROMPTS.map((prompt, i) => (
+          {SUGGESTED_PROMPTS.map((prompt) => (
             <TouchableOpacity
-              key={i}
+              key={prompt}
               style={styles.suggestedChip}
               onPress={() => handleSend(prompt)}
             >
@@ -208,18 +202,17 @@ export default function ChatScreen() {
             </View>
             <Text style={styles.aiLabelText}>Fino</Text>
           </View>
-
           <Text style={styles.aiText}>{msg.text}</Text>
 
-          {msg.richData && (
+          {msg.richData ? (
             <View style={styles.richCard}>
-              {msg.richData.map((row, i) => (
-                <View key={i} style={styles.richCardRow}>
+              {msg.richData.map((row) => (
+                <View key={row.label} style={styles.richCardRow}>
                   <Text style={styles.richCardLabel}>{row.label}</Text>
                   <Text
                     style={[
                       styles.richCardValue,
-                      row.color && { color: row.color },
+                      row.color ? { color: row.color } : undefined,
                     ]}
                   >
                     {row.value}
@@ -227,16 +220,16 @@ export default function ChatScreen() {
                 </View>
               ))}
             </View>
-          )}
+          ) : null}
         </View>
 
         <Text style={styles.timestampAi}>{msg.timestamp}</Text>
 
-        {msg.followUps && (
+        {msg.followUps ? (
           <View style={styles.followupWrapper}>
-            {msg.followUps.map((prompt, i) => (
+            {msg.followUps.map((prompt) => (
               <TouchableOpacity
-                key={i}
+                key={prompt}
                 style={styles.followupChip}
                 onPress={() => handleSend(prompt)}
               >
@@ -244,7 +237,7 @@ export default function ChatScreen() {
               </TouchableOpacity>
             ))}
           </View>
-        )}
+        ) : null}
       </View>
     );
   };
@@ -287,7 +280,7 @@ export default function ChatScreen() {
         >
           {messages.map(renderMessage)}
 
-          {isTyping && (
+          {isTyping ? (
             <View style={styles.aiMsgWrapper}>
               <View
                 style={[styles.aiBubble, { width: 70, alignItems: 'center' }]}
@@ -295,7 +288,7 @@ export default function ChatScreen() {
                 <Text style={styles.typingDot}>•••</Text>
               </View>
             </View>
-          )}
+          ) : null}
 
           {renderSuggestedPrompts()}
         </ScrollView>
@@ -325,8 +318,9 @@ export default function ChatScreen() {
           <TouchableOpacity
             style={[
               styles.sendBtn,
-              (!inputText.trim() || !MOCK_HAS_TRANSACTIONS) &&
-                styles.sendBtnDisabled,
+              !inputText.trim() || !MOCK_HAS_TRANSACTIONS
+                ? styles.sendBtnDisabled
+                : undefined,
             ]}
             onPress={() => handleSend()}
             disabled={!inputText.trim() || !MOCK_HAS_TRANSACTIONS}
@@ -339,14 +333,8 @@ export default function ChatScreen() {
   );
 }
 
-// ─── STYLES ─────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F7F5F2', // App background
-  },
-
-  // ── HEADER ──
+  container: { flex: 1, backgroundColor: '#F7F5F2' },
   chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -356,28 +344,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.05)',
   },
-  backBtn: {
-    width: 40,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-  },
-  headerProfile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
+  backBtn: { width: 40, alignItems: 'flex-start', justifyContent: 'center' },
+  headerProfile: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: '#534AB7', // Fino Purple
+    backgroundColor: '#534AB7',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarGlyph: {
-    color: '#FFF',
-    fontSize: 20,
-  },
+  avatarGlyph: { color: '#FFF', fontSize: 20 },
   headerTitle: {
     fontFamily: 'Nunito_800ExtraBold',
     fontSize: 16,
@@ -389,22 +366,14 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
-
-  // ── SCROLL & EMPTY STATE ──
-  scrollContent: {
-    padding: spacing.screenPadding,
-    paddingBottom: 24,
-  },
+  scrollContent: { padding: spacing.screenPadding, paddingBottom: 24 },
   emptyStateContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 40,
   },
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
+  emptyEmoji: { fontSize: 48, marginBottom: 16 },
   emptyHeading: {
     fontFamily: 'Nunito_800ExtraBold',
     fontSize: 20,
@@ -420,7 +389,7 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   emptyBtn: {
-    backgroundColor: '#2d6a4f', // Primary Green
+    backgroundColor: '#2d6a4f',
     paddingHorizontal: 24,
     paddingVertical: 16,
     borderRadius: 16,
@@ -430,13 +399,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#FFF',
   },
-
-  // ── MESSAGES ──
-  aiMsgWrapper: {
-    alignItems: 'flex-start',
-    marginBottom: 20,
-    maxWidth: '85%',
-  },
+  aiMsgWrapper: { alignItems: 'flex-start', marginBottom: 20, maxWidth: '85%' },
   aiBubble: {
     backgroundColor: '#EEEDFE',
     borderWidth: 0.5,
@@ -461,10 +424,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  aiIconGlyph: {
-    color: '#FFF',
-    fontSize: 10,
-  },
+  aiIconGlyph: { color: '#FFF', fontSize: 10 },
   aiLabelText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
@@ -473,7 +433,7 @@ const styles = StyleSheet.create({
   aiText: {
     fontFamily: 'Inter_400Regular',
     fontSize: 14,
-    color: '#26215C', // Dark Purple
+    color: '#26215C',
     lineHeight: 20,
   },
   timestampAi: {
@@ -483,11 +443,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginLeft: 4,
   },
-
-  userMsgWrapper: {
-    alignItems: 'flex-end',
-    marginBottom: 20,
-  },
+  userMsgWrapper: { alignItems: 'flex-end', marginBottom: 20 },
   userBubble: {
     backgroundColor: '#2d6a4f',
     borderTopLeftRadius: 16,
@@ -510,13 +466,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginRight: 4,
   },
-  typingDot: {
-    fontSize: 16,
-    color: '#534AB7',
-    letterSpacing: 2,
-  },
-
-  // ── RICH CARD ──
+  typingDot: { fontSize: 16, color: '#534AB7', letterSpacing: 2 },
   richCard: {
     backgroundColor: '#FFF',
     borderRadius: 12,
@@ -539,8 +489,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#26215C',
   },
-
-  // ── FOLLOW UP CHIPS ──
   followupWrapper: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -560,12 +508,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#534AB7',
   },
-
-  // ── SUGGESTED PROMPTS ──
-  suggestedContainer: {
-    marginTop: 10,
-    marginBottom: 20,
-  },
+  suggestedContainer: { marginTop: 10, marginBottom: 20 },
   suggestedLabel: {
     fontFamily: 'Inter_700Bold',
     fontSize: 11,
@@ -574,11 +517,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginLeft: 4,
   },
-  suggestedChipsWrapper: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  suggestedChipsWrapper: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   suggestedChip: {
     backgroundColor: '#FFF',
     borderWidth: 1,
@@ -592,8 +531,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#534AB7',
   },
-
-  // ── INPUT ROW ──
   inputContainer: {
     backgroundColor: '#F7F5F2',
     paddingHorizontal: spacing.screenPadding,
@@ -631,7 +568,5 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     marginBottom: 4,
   },
-  sendBtnDisabled: {
-    backgroundColor: '#DCDAE8',
-  },
+  sendBtnDisabled: { backgroundColor: '#DCDAE8' },
 });
