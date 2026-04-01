@@ -12,6 +12,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors, radius, spacing } from '../constants/theme';
 import { useTransactions, FeedTransaction } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
+import { CategoryIcon } from '@/components/CategoryIcon';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -77,10 +78,11 @@ export default function FeedScreen() {
     const catData = categories.find(
       (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
     );
-    const iconBg = isExpense
-      ? (catData?.tile_bg_colour ?? '#F5F5F5')
-      : '#E8F5EE';
-    const emoji = isExpense ? (catData?.emoji ?? '📦') : '💵';
+    
+    // Map properties for CategoryIcon
+    const iconKey = isExpense ? (catData?.emoji ?? 'default') : 'default';
+    const iconColor = isExpense ? (catData?.text_colour ?? '#888780') : '#2d6a4f';
+    
     const time = new Date(tx.date).toLocaleTimeString('en-PH', {
       hour: 'numeric',
       minute: '2-digit',
@@ -96,8 +98,13 @@ export default function FeedScreen() {
           pressed && { backgroundColor: colors.primaryLight },
         ]}
       >
-        <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
-          <Text style={styles.iconEmoji}>{emoji}</Text>
+        <View style={{ marginRight: 14 }}>
+          <CategoryIcon 
+            categoryKey={iconKey} 
+            color={iconColor} 
+            wrapperSize={44} 
+            size={24} 
+          />
         </View>
 
         <View style={styles.txContent}>
@@ -322,17 +329,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.screenPadding,
     paddingVertical: 12,
     minHeight: 44,
-  },
-  iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  iconEmoji: {
-    fontSize: 20,
   },
   txContent: {
     flex: 1,
