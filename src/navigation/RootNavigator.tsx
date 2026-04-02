@@ -1,38 +1,29 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { StyleSheet } from 'react-native';
+import {
+  NavigationContainer,
+  NavigatorScreenParams,
+} from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import FABActionSheet from '../components/FABActionSheet';
 import HomeScreen from '../screens/HomeScreen';
 import FeedScreen from '../screens/FeedScreen';
+import StatsScreen from '../screens/StatsScreen';
 import TransactionDetailScreen from '../screens/TransactionDetailScreen';
 import AddTransactionSheet from '../screens/AddTransactionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
 import ScreenshotScreen from '../screens/ScreenshotScreen';
 import AccountDetailScreen from '../screens/AccountDetailScreen';
-import AIScreen from '../screens/AIScreen';
-
-// ─── Placeholder screens ────────────────────────────────────────────────────
-
-const StatsScreen = () => (
-  <View style={styles.placeholder}>
-    <Text style={styles.placeholderText}>Stats Screen</Text>
-  </View>
-);
-
-const MoreScreen = () => (
-  <View style={styles.placeholder}>
-    <Text style={styles.placeholderText}>More Screen</Text>
-  </View>
-);
+import MoreScreen from '../screens/MoreScreen';
+import ChatScreen from '../screens/ChatScreen';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type FeedStackParamList = {
-  FeedMain: undefined;
-  TransactionDetail: { id: string }; // <-- Updated to accept the transaction ID from FeedScreen
+  FeedMain: { filterCategory?: string } | undefined;
+  TransactionDetail: { id: string };
 };
 
 export type MoreStackParamList = {
@@ -42,13 +33,13 @@ export type MoreStackParamList = {
 
 export type TabStackParamList = {
   home: undefined;
-  feed: undefined;
+  feed: NavigatorScreenParams<FeedStackParamList>;
   stats: undefined;
-  more: undefined;
+  more: NavigatorScreenParams<MoreStackParamList>;
 };
 
 export type RootStackParamList = {
-  Tabs: undefined;
+  Tabs: NavigatorScreenParams<TabStackParamList>;
   FABActionSheet: undefined;
   AddTransaction: {
     mode: 'expense' | 'income';
@@ -61,7 +52,7 @@ export type RootStackParamList = {
     };
   };
   ScreenshotScreen: undefined;
-  AIScreen: undefined;
+  ChatScreen: undefined;
 };
 
 // ─── Navigators ─────────────────────────────────────────────────────────────
@@ -96,7 +87,20 @@ function TabNavigator() {
       tabBar={(props) => (
         <TabBar
           activeTab={props.state.routeNames[props.state.index] as TabRoute}
-          onTabPress={(tab) => props.navigation.navigate(tab)}
+          onTabPress={(tab) => {
+            // 👇 FIX: By always targeting the nested "Main" screen explicitly,
+            // we force the stack to reset to its base state every time you
+            // tap the tab (whether switching to it, or double-tapping it).
+            if (tab === 'more') {
+              // @ts-ignore
+              props.navigation.navigate('more', { screen: 'MoreMain' });
+            } else if (tab === 'feed') {
+              // @ts-ignore
+              props.navigation.navigate('feed', { screen: 'FeedMain' });
+            } else {
+              props.navigation.navigate(tab);
+            }
+          }}
           onFabPress={() => props.navigation.navigate('FABActionSheet')}
         />
       )}
@@ -105,6 +109,7 @@ function TabNavigator() {
       }}
     >
       <Tab.Screen name="home" component={HomeScreen} />
+      {/* unmountOnBlur safely removed to satisfy TypeScript */}
       <Tab.Screen name="feed" component={FeedNavigator} />
       <Tab.Screen name="stats" component={StatsScreen} />
       <Tab.Screen name="more" component={MoreNavigator} />
@@ -127,7 +132,7 @@ export default function RootNavigator() {
           component={FABActionSheet}
           options={{
             presentation: 'transparentModal',
-            animation: 'none', // Use 'none' because FABActionSheet has its own Animated.timing slide-up
+            animation: 'none',
             contentStyle: { backgroundColor: 'transparent' },
           }}
         />
@@ -151,8 +156,8 @@ export default function RootNavigator() {
         />
 
         <Stack.Screen
-          name="AIScreen"
-          component={AIScreen}
+          name="ChatScreen"
+          component={ChatScreen}
           options={{
             headerShown: false,
             presentation: 'modal',
@@ -162,19 +167,3 @@ export default function RootNavigator() {
     </NavigationContainer>
   );
 }
-
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  placeholder: {
-    flex: 1,
-    backgroundColor: '#F7F5F2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholderText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: '#1E1E2E',
-  },
-});
