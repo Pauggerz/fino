@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   TouchableWithoutFeedback,
@@ -18,6 +19,9 @@ import { useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../constants/theme';
+import { CATEGORY_TILE_BG, CATEGORY_COLOR } from '@/constants/categoryMappings';
+import { CategoryIcon } from '@/components/CategoryIcon';
+import { ACCOUNT_LOGOS, ACCOUNT_AVATAR_OVERRIDE } from '@/constants/accountLogos';
 import { transitions } from '../constants/transitions';
 import {
   createDebouncedAnalyzer,
@@ -348,40 +352,95 @@ export default function AddTransactionSheet({ route }: Props) {
             {/* ── Account selector ── */}
             <View style={styles.section}>
               <Text style={styles.fieldLabel}>FROM ACCOUNT</Text>
-              <View style={styles.acctOpts}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8 }}
+                style={{ marginHorizontal: -20 }}
+              >
+                <View style={{ width: 20 }} />
                 {accounts.map((acc, index) => {
                   const isSel = accountId === acc.id;
+                  const isLastUsed = index === 0;
+                  const logo = ACCOUNT_LOGOS[acc.name];
+                  const avatarLetter = ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
                   return (
                     <TouchableOpacity
                       key={acc.id}
                       onPress={() => setAccountId(acc.id)}
-                      style={[styles.acctOpt, isSel && styles.acctOptSel]}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        borderRadius: 14,
+                        borderWidth: isSel ? 2 : 1,
+                        borderColor: isSel ? '#5B8C6E' : 'rgba(30,30,46,0.12)',
+                        backgroundColor: isSel ? '#EBF2EE' : '#FFFFFF',
+                        minWidth: 90,
+                      }}
                     >
-                      <View
-                        style={[
-                          styles.acctAvatar,
-                          { backgroundColor: acc.brand_colour },
-                        ]}
-                      >
-                        <Text style={styles.acctAvatarLetter}>
-                          {acc.letter_avatar}
-                        </Text>
-                      </View>
-                      <Text
-                        style={[
-                          styles.acctOptName,
-                          isSel && { color: colors.primary },
-                        ]}
-                      >
-                        {acc.name}
-                      </Text>
-                      {index === 0 && isSel && (
-                        <Text style={styles.acctOptLast}>last used</Text>
+                      {logo ? (
+                        <View style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 16,
+                          backgroundColor: '#F7F5F2',
+                          borderWidth: 1,
+                          borderColor: 'rgba(30,30,46,0.08)',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                        }}>
+                          <Image
+                            source={logo}
+                            style={{ width: 22, height: 22 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      ) : (
+                        <View style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 16,
+                          backgroundColor: acc.brand_colour ?? '#888780',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}>
+                          <Text style={{
+                            fontFamily: 'Inter_700Bold',
+                            fontSize: 13,
+                            color: '#FFFFFF',
+                          }}>
+                            {avatarLetter}
+                          </Text>
+                        </View>
                       )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{
+                          fontFamily: 'Inter_600SemiBold',
+                          fontSize: 13,
+                          color: isSel ? '#2d6a4f' : '#1E1E2E',
+                        }} numberOfLines={1}>
+                          {acc.name}
+                        </Text>
+                        {isLastUsed && (
+                          <Text style={{
+                            fontFamily: 'Inter_400Regular',
+                            fontSize: 10,
+                            color: '#5B8C6E',
+                            marginTop: 1,
+                          }}>
+                            last used
+                          </Text>
+                        )}
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
-              </View>
+                <View style={{ width: 20 }} />
+              </ScrollView>
             </View>
 
             {/* ── Category pills ── */}
@@ -392,25 +451,37 @@ export default function AddTransactionSheet({ route }: Props) {
               <View style={styles.pillsRow}>
                 {categories.map((cat) => {
                   const isSel = category === cat.name;
-                  const bg = cat.tile_bg_colour ?? colors.background;
-                  const border = cat.text_colour ?? 'rgba(30,30,46,0.08)';
-                  const text = cat.text_colour ?? colors.textSecondary;
+                  const catKey = (cat.emoji ?? '').toLowerCase();
+                  const catColor = CATEGORY_COLOR[catKey] ?? colors.textSecondary;
+                  const catBg = CATEGORY_TILE_BG[catKey] ?? colors.background;
                   return (
                     <TouchableOpacity
                       key={cat.id}
                       onPress={() => handleCategoryManualSelect(cat.name)}
-                      style={[
-                        styles.catPill,
-                        isSel ? { backgroundColor: bg, borderColor: border } : {},
-                      ]}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderRadius: 12,
+                        borderWidth: isSel ? 2 : 1,
+                        borderColor: isSel ? catColor : 'rgba(30,30,46,0.12)',
+                        backgroundColor: isSel ? catBg : '#FFFFFF',
+                      }}
                     >
-                      <Text
-                        style={[
-                          styles.catPillText,
-                          isSel && { color: text },
-                        ]}
-                      >
-                        {cat.emoji ?? '📦'} {cat.name}
+                      <CategoryIcon
+                        categoryKey={catKey}
+                        color={isSel ? catColor : '#8A8A9A'}
+                        size={14}
+                        wrapperSize={22}
+                      />
+                      <Text style={{
+                        fontFamily: 'Inter_600SemiBold',
+                        fontSize: 13,
+                        color: isSel ? catColor : '#8A8A9A',
+                      }}>
+                        {cat.name}
                       </Text>
                     </TouchableOpacity>
                   );
