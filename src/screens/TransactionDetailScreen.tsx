@@ -278,12 +278,11 @@ export default function TransactionDetailScreen() {
           )}
 
           <TouchableOpacity
-            style={styles.deleteBtnBox}
+            style={styles.deleteBtn}
             activeOpacity={0.7}
             onPress={() => setIsDeleteConfirmVisible(true)}
           >
-            <Ionicons name="trash-outline" size={18} color="#E57373" />
-            <Text style={styles.deleteBtnBoxText}>Delete transaction</Text>
+            <Text style={styles.deleteBtnText}>Delete transaction</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -398,23 +397,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.screenPadding,
   },
-  heroIconBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+  heroEmoji: {
+    fontSize: 40,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  editAmountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   txAmount: {
     fontFamily: 'DMMono_500Medium',
@@ -427,13 +412,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.textPrimary,
     marginBottom: 4,
-  },
-  heroInput: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.2)',
-    paddingVertical: 0,
-    minWidth: 100,
-    textAlign: 'center',
   },
   heroMeta: {
     fontFamily: 'Inter_400Regular',
@@ -470,14 +448,6 @@ const styles = StyleSheet.create({
     maxWidth: '65%',
     textAlign: 'right',
   },
-  rowInput: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: colors.primary,
-    flex: 1,
-    textAlign: 'right',
-    padding: 0,
-  },
   receiptContainer: { marginBottom: 32 },
   sectionLabel: {
     fontFamily: 'Inter_600SemiBold',
@@ -505,35 +475,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#4B2DA3',
   },
-  saveBtn: {
-    backgroundColor: colors.primary,
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: 16,
+  deleteBtn: {
+    marginTop: 28,
     alignItems: 'center',
+    paddingVertical: 8,
   },
-  saveBtnText: {
+  deleteBtnText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
-    color: colors.white,
-  },
-  deleteBtnBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#FFCDD2',
-    backgroundColor: '#FFF5F5',
-    marginTop: 16,
-    gap: 6,
-  },
-  deleteBtnBoxText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    color: '#E57373',
+    color: colors.coral,
+    textDecorationLine: 'underline',
   },
   receiptModalBg: {
     flex: 1,

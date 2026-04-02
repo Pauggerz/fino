@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'; // 👈 Add t
 import {
   useFonts,
   Nunito_400Regular,
+  Nunito_600SemiBold,
   Nunito_700Bold,
   Nunito_800ExtraBold,
   Nunito_900Black,
@@ -28,6 +29,7 @@ SplashScreen.preventAutoHideAsync();
 export default function App() {
   const [fontsLoaded] = useFonts({
     Nunito_400Regular,
+    Nunito_600SemiBold,
     Nunito_700Bold,
     Nunito_800ExtraBold,
     Nunito_900Black,

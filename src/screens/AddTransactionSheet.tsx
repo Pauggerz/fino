@@ -41,10 +41,25 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+const ACCOUNT_ID_MAP: Record<string, Account> = {
+  GCash: 'gcash',
+  Cash: 'cash',
+  BDO: 'bdo',
+  Maya: 'maya',
+};
+const CATEGORY_ID_MAP: Record<string, Category> = {
+  Food: 'food',
+  Transport: 'transport',
+  Shopping: 'shopping',
+  Bills: 'bills',
+  Health: 'health',
+};
+
 export default function AddTransactionSheet({ route }: Props) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const initialMode = route.params?.mode ?? 'expense';
+  const prefill = route.params?.prefill;
 
   // ── Real data from Supabase ──
   const { accounts } = useAccounts();

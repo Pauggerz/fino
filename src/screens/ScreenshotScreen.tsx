@@ -28,6 +28,8 @@ interface ParsedReceipt {
   date: ParsedField;
 }
 
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function ScreenshotScreen() {
   const navigation = useNavigation();
   
@@ -219,6 +221,8 @@ export default function ScreenshotScreen() {
     </ScrollView>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { padding: 20, flexGrow: 1, backgroundColor: '#FAFAFA' },
