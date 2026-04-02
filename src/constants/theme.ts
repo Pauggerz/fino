@@ -121,4 +121,4 @@ export const gradients = {
   primaryHero: ['#4a7a5e', '#5B8C6E', '#6a9e7f'], // FAB, hero card (blobs), primary btn
   statsHero: ['#2d4a3e', '#1a3028'], // stats-hero card
   onTrack: ['#EFF8F2', '#d4eddf'], // on-track status pill
-};
+} as const; // <-- Add this here
