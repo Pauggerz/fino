@@ -17,7 +17,11 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     setLoading(true);
 
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    ).toISOString();
     const endOfMonth = new Date(
       now.getFullYear(),
       now.getMonth() + 1,
@@ -25,7 +29,7 @@ export const useMonthlyTotals = (): MonthlyTotals => {
       23,
       59,
       59,
-      999,
+      999
     ).toISOString();
 
     const { data, error } = await supabase

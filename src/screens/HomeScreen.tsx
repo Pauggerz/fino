@@ -15,7 +15,10 @@ import Svg, { Circle } from 'react-native-svg';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors } from '../constants/theme';
 import { CategoryIcon } from '@/components/CategoryIcon';
-import { ACCOUNT_LOGOS, ACCOUNT_AVATAR_OVERRIDE } from '../constants/accountLogos';
+import {
+  ACCOUNT_LOGOS,
+  ACCOUNT_AVATAR_OVERRIDE,
+} from '../constants/accountLogos';
 import { isNegativeBalance, BALANCE_ANIMATE_MS } from '../services/balanceCalc';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
@@ -156,19 +159,25 @@ export default function HomeScreen() {
 
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
   const { categories, refetch: refetchCategories } = useCategories();
-  const { totalIncome, totalExpense: monthlyExpense, refetch: refetchTotals } = useMonthlyTotals();
+  const {
+    totalIncome,
+    totalExpense: monthlyExpense,
+    refetch: refetchTotals,
+  } = useMonthlyTotals();
 
   // ── Balance animation — 400ms count up/down ──
   const animBalance = useRef(new Animated.Value(totalBalance)).current;
   const [displayBalance, setDisplayBalance] = useState(totalBalance);
 
   useEffect(() => {
-  const getMyId = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    console.log("MY USER ID IS:", user?.id);
-  };
-  getMyId();
-}, []);
+    const getMyId = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      console.log('MY USER ID IS:', user?.id);
+    };
+    getMyId();
+  }, []);
 
   useEffect(() => {
     // Listen to the animation frame-by-frame and update the display state
@@ -192,7 +201,9 @@ export default function HomeScreen() {
   const [toastIsUndo, setToastIsUndo] = useState(false);
   const [undoTxId, setUndoTxId] = useState<string | null>(null);
   const [undoAccountId, setUndoAccountId] = useState<string | null>(null);
-  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(null);
+  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(
+    null
+  );
 
   // Show toast whenever screen regains focus after a save; also refresh data
   useFocusEffect(
@@ -205,7 +216,9 @@ export default function HomeScreen() {
       clearLastSaved();
       const typeLabel = last.type === 'expense' ? 'Expense' : 'Income';
       setToastTitle(`${typeLabel} saved`);
-      setToastSubtitle(`${fmtPeso(last.amount)} · ${last.categoryName} · ${last.accountName}`);
+      setToastSubtitle(
+        `${fmtPeso(last.amount)} · ${last.categoryName} · ${last.accountName}`
+      );
       setToastIsUndo(false);
       setUndoTxId(last.id);
       setUndoAccountId(last.accountId);
@@ -233,7 +246,14 @@ export default function HomeScreen() {
     setToastSubtitle('Transaction undone');
     setToastIsUndo(true);
     setToastVisible(true);
-  }, [undoTxId, undoAccountId, undoPreviousBalance, refetchAccounts, refetchCategories, refetchTotals]);
+  }, [
+    undoTxId,
+    undoAccountId,
+    undoPreviousBalance,
+    refetchAccounts,
+    refetchCategories,
+    refetchTotals,
+  ]);
 
   // ── Derived values ──
   const { text: greetText, emoji: greetEmoji } = getGreeting();
@@ -246,7 +266,9 @@ export default function HomeScreen() {
   const savedPct = Math.max(0, 1 - pctSpent);
   // Top over-budget category for ring 2
   const foodCat = categories.find((c) => c.name.toLowerCase() === 'food');
-  const shoppingCat = categories.find((c) => c.name.toLowerCase() === 'shopping');
+  const shoppingCat = categories.find(
+    (c) => c.name.toLowerCase() === 'shopping'
+  );
   const foodPct = foodCat?.pct ?? 0;
   const shoppingPct = shoppingCat?.pct ?? 0;
   const isShoppingOver = shoppingPct >= 1;
@@ -271,20 +293,31 @@ export default function HomeScreen() {
       >
         {/* ════════════════ GREETING ════════════════ */}
         <View style={styles.greeting}>
-          <View style={{ marginBottom: 20, backgroundColor: '#fff', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#eee' }}>
-          <Text style={{ fontSize: 10, color: '#999', marginBottom: 5 }}>DEV TOOLS</Text>
-          <Button 
-  title="Final Sign In Test" 
-  onPress={async () => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: 'testuser@gmail.com',
-      password: 'Password123',
-    });
-    if (error) console.log("Error:", error.message);
-    else console.log("SUCCESS! ID:", data.user?.id);
-  }} 
-/>
-        </View>
+          <View
+            style={{
+              marginBottom: 20,
+              backgroundColor: '#fff',
+              padding: 10,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: '#eee',
+            }}
+          >
+            <Text style={{ fontSize: 10, color: '#999', marginBottom: 5 }}>
+              DEV TOOLS
+            </Text>
+            <Button
+              title="Final Sign In Test"
+              onPress={async () => {
+                const { data, error } = await supabase.auth.signInWithPassword({
+                  email: 'testuser@gmail.com',
+                  password: 'Password123',
+                });
+                if (error) console.log('Error:', error.message);
+                else console.log('SUCCESS! ID:', data.user?.id);
+              }}
+            />
+          </View>
           <View style={styles.greetingTop}>
             <View style={styles.greetingLeft}>
               {/* Time-based pill: transparent bg, no border per spec */}
@@ -480,13 +513,14 @@ export default function HomeScreen() {
                 onPress={() =>
                   navigation.navigate('more', {
                     screen: 'AccountDetail',
-                    params: { id: acc.accountId },
+                    params: { id: acc.id },
                   })
                 }
               >
                 {(() => {
                   const logo = ACCOUNT_LOGOS[acc.name];
-                  const avatarLetter = ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
+                  const avatarLetter =
+                    ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
                   return logo ? (
                     <View style={styles.acctIconWrap}>
                       <Image
@@ -496,7 +530,12 @@ export default function HomeScreen() {
                       />
                     </View>
                   ) : (
-                    <View style={[styles.acctIconWrap, { backgroundColor: acc.brand_colour }]}>
+                    <View
+                      style={[
+                        styles.acctIconWrap,
+                        { backgroundColor: acc.brand_colour },
+                      ]}
+                    >
                       <Text style={styles.acctLetter}>{avatarLetter}</Text>
                     </View>
                   );
@@ -547,9 +586,7 @@ export default function HomeScreen() {
                         <Text style={styles.catOverBadgeText}>Over!</Text>
                       </View>
                     ) : (
-                      <Text
-                        style={[styles.catPctBadge, { color: textColor }]}
-                      >
+                      <Text style={[styles.catPctBadge, { color: textColor }]}>
                         {Math.round(cat.pct * 100)}%
                       </Text>
                     )}

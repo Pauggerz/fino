@@ -6,6 +6,8 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
+/* eslint-disable import/prefer-default-export */
+
 /**
  * Returns "Today", "Yesterday", or a short date string like "Mon, Mar 22"
  * for a given ISO date string.

@@ -73,7 +73,7 @@ export const useTransactions = (category?: string) => {
         setHasMore(data.length === PAGE_SIZE);
       }
     },
-    [category],
+    [category]
   );
 
   useEffect(() => {

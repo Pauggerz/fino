@@ -21,7 +21,10 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../constants/theme';
 import { CATEGORY_TILE_BG, CATEGORY_COLOR } from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
-import { ACCOUNT_LOGOS, ACCOUNT_AVATAR_OVERRIDE } from '@/constants/accountLogos';
+import {
+  ACCOUNT_LOGOS,
+  ACCOUNT_AVATAR_OVERRIDE,
+} from '@/constants/accountLogos';
 import { transitions } from '../constants/transitions';
 import {
   createDebouncedAnalyzer,
@@ -65,7 +68,9 @@ export default function AddTransactionSheet({ route }: Props) {
   const [aiText, setAiText] = useState<string>('');
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
   const [aiInputFocused, setAiInputFocused] = useState(false);
-  const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>('manual');
+  const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>(
+    'manual'
+  );
   const [isSaving, setIsSaving] = useState(false);
 
   // Set defaults once accounts/categories load
@@ -123,7 +128,7 @@ export default function AddTransactionSheet({ route }: Props) {
         setAiResult(result);
         if (result.suggestedCategory) {
           const matched = categories.find(
-            (c) => c.name.toLowerCase() === result.suggestedCategory,
+            (c) => c.name.toLowerCase() === result.suggestedCategory
           );
           if (matched) {
             setCategory(matched.name);
@@ -143,7 +148,8 @@ export default function AddTransactionSheet({ route }: Props) {
   };
 
   // ── Save → Supabase ──
-  const isSaveDisabled = !amount || amount === '0' || amount === '.' || isSaving;
+  const isSaveDisabled =
+    !amount || amount === '0' || amount === '.' || isSaving;
 
   const handleSave = async () => {
     if (isSaveDisabled) return;
@@ -164,7 +170,8 @@ export default function AddTransactionSheet({ route }: Props) {
         category: category || null,
         display_name: aiText || category || null,
         transaction_note: aiText || null,
-        signal_source: signalSource === 'ai_description' ? 'description' : 'manual',
+        signal_source:
+          signalSource === 'ai_description' ? 'description' : 'manual',
         date: new Date().toISOString(),
         account_deleted: false,
       })
@@ -205,7 +212,12 @@ export default function AddTransactionSheet({ route }: Props) {
   const displayAmount = amount || '0';
 
   // ── Derived save label ──
-  const saveLabel = isSaving ? 'Saving…' : type === 'exp' ? 'Save expense' : 'Save income';
+  let saveLabel = 'Save income';
+  if (isSaving) {
+    saveLabel = 'Saving…';
+  } else if (type === 'exp') {
+    saveLabel = 'Save expense';
+  }
 
   return (
     <View style={styles.container}>
@@ -363,7 +375,8 @@ export default function AddTransactionSheet({ route }: Props) {
                   const isSel = accountId === acc.id;
                   const isLastUsed = index === 0;
                   const logo = ACCOUNT_LOGOS[acc.name];
-                  const avatarLetter = ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
+                  const avatarLetter =
+                    ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
                   return (
                     <TouchableOpacity
                       key={acc.id}
@@ -382,17 +395,19 @@ export default function AddTransactionSheet({ route }: Props) {
                       }}
                     >
                       {logo ? (
-                        <View style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 16,
-                          backgroundColor: '#F7F5F2',
-                          borderWidth: 1,
-                          borderColor: 'rgba(30,30,46,0.08)',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          overflow: 'hidden',
-                        }}>
+                        <View
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: '#F7F5F2',
+                            borderWidth: 1,
+                            borderColor: 'rgba(30,30,46,0.08)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                          }}
+                        >
                           <Image
                             source={logo}
                             style={{ width: 22, height: 22 }}
@@ -400,38 +415,47 @@ export default function AddTransactionSheet({ route }: Props) {
                           />
                         </View>
                       ) : (
-                        <View style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 16,
-                          backgroundColor: acc.brand_colour ?? '#888780',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}>
-                          <Text style={{
-                            fontFamily: 'Inter_700Bold',
-                            fontSize: 13,
-                            color: '#FFFFFF',
-                          }}>
+                        <View
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: acc.brand_colour ?? '#888780',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontFamily: 'Inter_700Bold',
+                              fontSize: 13,
+                              color: '#FFFFFF',
+                            }}
+                          >
                             {avatarLetter}
                           </Text>
                         </View>
                       )}
                       <View style={{ flex: 1 }}>
-                        <Text style={{
-                          fontFamily: 'Inter_600SemiBold',
-                          fontSize: 13,
-                          color: isSel ? '#2d6a4f' : '#1E1E2E',
-                        }} numberOfLines={1}>
+                        <Text
+                          style={{
+                            fontFamily: 'Inter_600SemiBold',
+                            fontSize: 13,
+                            color: isSel ? '#2d6a4f' : '#1E1E2E',
+                          }}
+                          numberOfLines={1}
+                        >
                           {acc.name}
                         </Text>
                         {isLastUsed && (
-                          <Text style={{
-                            fontFamily: 'Inter_400Regular',
-                            fontSize: 10,
-                            color: '#5B8C6E',
-                            marginTop: 1,
-                          }}>
+                          <Text
+                            style={{
+                              fontFamily: 'Inter_400Regular',
+                              fontSize: 10,
+                              color: '#5B8C6E',
+                              marginTop: 1,
+                            }}
+                          >
                             last used
                           </Text>
                         )}
@@ -452,7 +476,8 @@ export default function AddTransactionSheet({ route }: Props) {
                 {categories.map((cat) => {
                   const isSel = category === cat.name;
                   const catKey = (cat.emoji ?? '').toLowerCase();
-                  const catColor = CATEGORY_COLOR[catKey] ?? colors.textSecondary;
+                  const catColor =
+                    CATEGORY_COLOR[catKey] ?? colors.textSecondary;
                   const catBg = CATEGORY_TILE_BG[catKey] ?? colors.background;
                   return (
                     <TouchableOpacity
@@ -476,11 +501,13 @@ export default function AddTransactionSheet({ route }: Props) {
                         size={14}
                         wrapperSize={22}
                       />
-                      <Text style={{
-                        fontFamily: 'Inter_600SemiBold',
-                        fontSize: 13,
-                        color: isSel ? catColor : '#8A8A9A',
-                      }}>
+                      <Text
+                        style={{
+                          fontFamily: 'Inter_600SemiBold',
+                          fontSize: 13,
+                          color: isSel ? catColor : '#8A8A9A',
+                        }}
+                      >
                         {cat.name}
                       </Text>
                     </TouchableOpacity>

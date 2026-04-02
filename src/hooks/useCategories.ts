@@ -15,8 +15,20 @@ export const useCategories = () => {
   const fetchCategoriesAndSpend = async () => {
     // 1. Get current month boundaries
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    ).toISOString();
+    const endOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    ).toISOString();
 
     // 2. Fetch active categories
     const { data: catData, error: catError } = await supabase
@@ -42,7 +54,7 @@ export const useCategories = () => {
 
     // 4. Aggregate spend per category (GROUP BY equivalent)
     const spendMap: Record<string, number> = {};
-    expenses.forEach(tx => {
+    expenses.forEach((tx) => {
       // Assuming tx.category maps to category name or ID. Lowercased for safety.
       if (tx.category) {
         const catKey = tx.category.toLowerCase();
@@ -53,7 +65,7 @@ export const useCategories = () => {
     // 5. Combine and calculate states
     const enriched = catData.map((cat) => {
       const spent = spendMap[cat.name.toLowerCase()] || 0;
-      
+
       let pct = 0;
       if (cat.budget_limit && cat.budget_limit > 0) {
         pct = spent / cat.budget_limit;
@@ -61,15 +73,15 @@ export const useCategories = () => {
 
       let state: 'under' | 'nearing' | 'over' = 'under';
       if (cat.budget_limit) {
-         if (pct >= 1) state = 'over';
-         else if (pct >= 0.7) state = 'nearing';
+        if (pct >= 1) state = 'over';
+        else if (pct >= 0.7) state = 'nearing';
       }
 
       return {
         ...cat,
         spent,
         pct,
-        state
+        state,
       };
     });
 

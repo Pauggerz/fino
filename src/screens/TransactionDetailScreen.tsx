@@ -133,7 +133,14 @@ export default function TransactionDetailScreen() {
   // ── Loading / not found ──
   if (loading) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F7F5F2', justifyContent: 'center', alignItems: 'center' }}>
+      <SafeAreaView
+        style={{
+          flex: 1,
+          backgroundColor: '#F7F5F2',
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
         <ActivityIndicator color={colors.primary} />
       </SafeAreaView>
     );
@@ -141,12 +148,31 @@ export default function TransactionDetailScreen() {
 
   if (!tx) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F7F5F2', justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ fontFamily: 'Inter_400Regular', color: colors.textSecondary }}>
+      <SafeAreaView
+        style={{
+          flex: 1,
+          backgroundColor: '#F7F5F2',
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
+        <Text
+          style={{
+            fontFamily: 'Inter_400Regular',
+            color: colors.textSecondary,
+          }}
+        >
           Transaction not found.
         </Text>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 20 }}>
-          <Text style={{ color: colors.primary, fontFamily: 'Inter_600SemiBold' }}>Go Back</Text>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={{ marginTop: 20 }}
+        >
+          <Text
+            style={{ color: colors.primary, fontFamily: 'Inter_600SemiBold' }}
+          >
+            Go Back
+          </Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -160,7 +186,7 @@ export default function TransactionDetailScreen() {
     tx.display_name?.trim() ||
     tx.merchant_name?.trim() ||
     tx.transaction_note?.trim() ||
-    (categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1)) ||
+    categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1) ||
     'Unknown';
 
   const formattedAmount = tx.amount.toLocaleString('en-PH', {
@@ -203,15 +229,16 @@ export default function TransactionDetailScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
-
         {/* ── HEADER ── */}
-        <View style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 20,
-          paddingTop: 12,
-          paddingBottom: 8,
-        }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 20,
+            paddingTop: 12,
+            paddingBottom: 8,
+          }}
+        >
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={{
@@ -223,43 +250,50 @@ export default function TransactionDetailScreen() {
               justifyContent: 'center',
             }}
           >
-            <Text style={{ fontSize: 20, color: heroColor, lineHeight: 24 }}>‹</Text>
+            <Text style={{ fontSize: 20, color: heroColor, lineHeight: 24 }}>
+              ‹
+            </Text>
           </TouchableOpacity>
-          <Text style={{
-            flex: 1,
-            textAlign: 'center',
-            fontFamily: 'Nunito_800ExtraBold',
-            fontSize: 18,
-            color: '#1E1E2E',
-            marginRight: 36,
-          }}>
+          <Text
+            style={{
+              flex: 1,
+              textAlign: 'center',
+              fontFamily: 'Nunito_800ExtraBold',
+              fontSize: 18,
+              color: '#1E1E2E',
+              marginRight: 36,
+            }}
+          >
             Transaction
           </Text>
         </View>
 
         {/* ── HERO ── */}
-        <View style={{
-          alignItems: 'center',
-          paddingTop: 16,
-          paddingBottom: 32,
-          paddingHorizontal: 24,
-        }}>
-
-          {/* Icon in white rounded square */}
-          <View style={{
-            width: 80,
-            height: 80,
-            borderRadius: 22,
-            backgroundColor: 'rgba(255,255,255,0.9)',
+        <View
+          style={{
             alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 16,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.08,
-            shadowRadius: 12,
-            elevation: 3,
-          }}>
+            paddingTop: 16,
+            paddingBottom: 32,
+            paddingHorizontal: 24,
+          }}
+        >
+          {/* Icon in white rounded square */}
+          <View
+            style={{
+              width: 80,
+              height: 80,
+              borderRadius: 22,
+              backgroundColor: 'rgba(255,255,255,0.9)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 16,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 12,
+              elevation: 3,
+            }}
+          >
             <CategoryIcon
               categoryKey={categoryKey}
               color={heroColor}
@@ -270,43 +304,51 @@ export default function TransactionDetailScreen() {
 
           {/* Amount */}
           <Text style={{ marginBottom: 4 }}>
-            <Text style={{
-              fontFamily: 'Inter_600SemiBold',
-              fontSize: 22,
-              color: heroColor,
-              letterSpacing: 0,
-            }}>
+            <Text
+              style={{
+                fontFamily: 'Inter_600SemiBold',
+                fontSize: 22,
+                color: heroColor,
+                letterSpacing: 0,
+              }}
+            >
               {tx.type === 'expense' ? '−₱' : '+₱'}
             </Text>
-            <Text style={{
-              fontFamily: 'DMMonoMedium',
-              fontSize: 42,
-              fontWeight: '700',
-              color: heroColor,
-              letterSpacing: -2,
-            }}>
+            <Text
+              style={{
+                fontFamily: 'DMMonoMedium',
+                fontSize: 42,
+                fontWeight: '700',
+                color: heroColor,
+                letterSpacing: -2,
+              }}
+            >
               {formattedAmount}
             </Text>
           </Text>
 
           {/* Merchant name */}
-          <Text style={{
-            fontFamily: 'Nunito_700Bold',
-            fontSize: 18,
-            color: '#1E1E2E',
-            marginBottom: 4,
-            textAlign: 'center',
-          }}>
+          <Text
+            style={{
+              fontFamily: 'Nunito_700Bold',
+              fontSize: 18,
+              color: '#1E1E2E',
+              marginBottom: 4,
+              textAlign: 'center',
+            }}
+          >
             {displayTitle}
           </Text>
 
           {/* Date meta */}
-          <Text style={{
-            fontFamily: 'Inter_400Regular',
-            fontSize: 12,
-            color: '#8A8A9A',
-            textAlign: 'center',
-          }}>
+          <Text
+            style={{
+              fontFamily: 'Inter_400Regular',
+              fontSize: 12,
+              color: '#8A8A9A',
+              textAlign: 'center',
+            }}
+          >
             {new Date(tx.date).toLocaleDateString('en-PH', {
               month: 'long',
               day: 'numeric',
@@ -316,26 +358,28 @@ export default function TransactionDetailScreen() {
               hour12: true,
             })}
           </Text>
-
         </View>
 
         {/* ── DETAIL CARD ── */}
-        <View style={{
-          marginHorizontal: 16,
-          backgroundColor: '#FFFFFF',
-          borderRadius: 20,
-          overflow: 'hidden',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 12,
-          elevation: 2,
-        }}>
-
+        <View
+          style={{
+            marginHorizontal: 16,
+            backgroundColor: '#FFFFFF',
+            borderRadius: 20,
+            overflow: 'hidden',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 12,
+            elevation: 2,
+          }}
+        >
           {/* Account row */}
           <View style={rowStyle}>
             <Text style={labelStyle}>Account</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+            >
               <Text style={valueStyle}>{accountName}</Text>
             </View>
           </View>
@@ -358,28 +402,32 @@ export default function TransactionDetailScreen() {
           {/* Category row */}
           <View style={rowStyle}>
             <Text style={labelStyle}>Category</Text>
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              backgroundColor: heroBg,
-              borderColor: heroColor,
-              borderWidth: 1,
-              borderRadius: 8,
-              paddingHorizontal: 10,
-              paddingVertical: 5,
-            }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                backgroundColor: heroBg,
+                borderColor: heroColor,
+                borderWidth: 1,
+                borderRadius: 8,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+              }}
+            >
               <CategoryIcon
                 categoryKey={categoryKey}
                 color={heroColor}
                 size={12}
                 wrapperSize={20}
               />
-              <Text style={{
-                fontFamily: 'Inter_600SemiBold',
-                fontSize: 13,
-                color: heroColor,
-              }}>
+              <Text
+                style={{
+                  fontFamily: 'Inter_600SemiBold',
+                  fontSize: 13,
+                  color: heroColor,
+                }}
+              >
                 {categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1)}
               </Text>
             </View>
@@ -388,19 +436,22 @@ export default function TransactionDetailScreen() {
           {/* Note row */}
           <View style={[rowStyle, { borderBottomWidth: 0 }]}>
             <Text style={labelStyle}>Note</Text>
-            <Text style={[valueStyle, {
-              color: tx.transaction_note ? '#1E1E2E' : '#B4B2A9',
-              fontStyle: tx.transaction_note ? 'normal' : 'italic',
-            }]}>
+            <Text
+              style={[
+                valueStyle,
+                {
+                  color: tx.transaction_note ? '#1E1E2E' : '#B4B2A9',
+                  fontStyle: tx.transaction_note ? 'normal' : 'italic',
+                },
+              ]}
+            >
               {tx.transaction_note || 'No note'}
             </Text>
           </View>
-
         </View>
 
         {/* ── ACTIONS ── */}
         <View style={{ paddingHorizontal: 16, marginTop: 20, gap: 12 }}>
-
           {/* Edit button - lavender */}
           <TouchableOpacity
             onPress={handleEdit}
@@ -413,11 +464,13 @@ export default function TransactionDetailScreen() {
               borderColor: '#C9B8F5',
             }}
           >
-            <Text style={{
-              fontFamily: 'Nunito_700Bold',
-              fontSize: 16,
-              color: '#4B2DA3',
-            }}>
+            <Text
+              style={{
+                fontFamily: 'Nunito_700Bold',
+                fontSize: 16,
+                color: '#4B2DA3',
+              }}
+            >
               Edit transaction
             </Text>
           </TouchableOpacity>
@@ -427,30 +480,38 @@ export default function TransactionDetailScreen() {
             onPress={handleDelete}
             style={{ alignItems: 'center', paddingVertical: 12 }}
           >
-            <Text style={{
-              fontFamily: 'Inter_400Regular',
-              fontSize: 13,
-              color: '#C8A09A',
-              textDecorationLine: 'underline',
-            }}>
+            <Text
+              style={{
+                fontFamily: 'Inter_400Regular',
+                fontSize: 13,
+                color: '#C8A09A',
+                textDecorationLine: 'underline',
+              }}
+            >
               Delete transaction
             </Text>
           </TouchableOpacity>
-
         </View>
-
       </ScrollView>
 
       {/* ─── RECEIPT MODAL ─── */}
       <Modal visible={isReceiptVisible} transparent animationType="fade">
-        <View style={{
-          flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.9)',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.9)',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
           <TouchableOpacity
-            style={{ position: 'absolute', top: 60, right: 24, zIndex: 10, padding: 8 }}
+            style={{
+              position: 'absolute',
+              top: 60,
+              right: 24,
+              zIndex: 10,
+              padding: 8,
+            }}
             onPress={() => setIsReceiptVisible(false)}
           >
             <Ionicons name="close" size={32} color="#FFF" />
@@ -462,7 +523,6 @@ export default function TransactionDetailScreen() {
           />
         </View>
       </Modal>
-
     </SafeAreaView>
   );
 }

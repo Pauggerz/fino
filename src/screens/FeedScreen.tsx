@@ -8,11 +8,17 @@ import {
   FlatList,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import {
+  useNavigation,
+  useFocusEffect,
+  useRoute,
+  type RouteProp,
+} from '@react-navigation/native';
 import { colors, radius, spacing } from '../constants/theme';
 import { useTransactions, FeedTransaction } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
 import { CategoryIcon } from '@/components/CategoryIcon';
+import type { FeedStackParamList } from '../navigation/RootNavigator';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -25,7 +31,7 @@ function fmtPeso(n: number): string {
 
 /** Returns a light bg derived from a hex brand colour (12% opacity). */
 function tagBg(hex: string): string {
-  return hex + '20';
+  return `${hex}20`;
 }
 
 type ListItem =
@@ -36,7 +42,10 @@ type ListItem =
 
 export default function FeedScreen() {
   const navigation = useNavigation<any>();
-  const [activeCategory, setActiveCategory] = useState('All');
+  const route = useRoute<RouteProp<FeedStackParamList, 'FeedMain'>>();
+  const [activeCategory, setActiveCategory] = useState(
+    route.params?.filterCategory ?? 'All'
+  );
 
   const { sections, loading, loadMore, hasMore, loadingMore, refetch } =
     useTransactions(activeCategory);
@@ -50,12 +59,12 @@ export default function FeedScreen() {
     }, [refetch])
   );
 
+  React.useEffect(() => {
+    setActiveCategory(route.params?.filterCategory ?? 'All');
+  }, [route.params?.filterCategory]);
+
   // ── Filter options ──
-  const filterOptions = [
-    'All',
-    ...categories.map((c) => c.name),
-    'Income',
-  ];
+  const filterOptions = ['All', ...categories.map((c) => c.name), 'Income'];
 
   // ── Flatten sections → FlatList items ──
   const listData: ListItem[] = sections.flatMap((s) => [
@@ -78,11 +87,13 @@ export default function FeedScreen() {
     const catData = categories.find(
       (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
     );
-    
+
     // Map properties for CategoryIcon
     const iconKey = isExpense ? (catData?.emoji ?? 'default') : 'default';
-    const iconColor = isExpense ? (catData?.text_colour ?? '#888780') : '#2d6a4f';
-    
+    const iconColor = isExpense
+      ? (catData?.text_colour ?? '#888780')
+      : '#2d6a4f';
+
     const time = new Date(tx.date).toLocaleTimeString('en-PH', {
       hour: 'numeric',
       minute: '2-digit',
@@ -90,20 +101,18 @@ export default function FeedScreen() {
 
     return (
       <Pressable
-        onPress={() =>
-          navigation.navigate('TransactionDetail', { id: tx.id })
-        }
+        onPress={() => navigation.navigate('TransactionDetail', { id: tx.id })}
         style={({ pressed }) => [
           styles.transactionItem,
           pressed && { backgroundColor: colors.primaryLight },
         ]}
       >
         <View style={{ marginRight: 14 }}>
-          <CategoryIcon 
-            categoryKey={iconKey} 
-            color={iconColor} 
-            wrapperSize={44} 
-            size={24} 
+          <CategoryIcon
+            categoryKey={iconKey}
+            color={iconColor}
+            wrapperSize={44}
+            size={24}
           />
         </View>
 
@@ -121,10 +130,7 @@ export default function FeedScreen() {
               ]}
             >
               <Text
-                style={[
-                  styles.acctTagText,
-                  { color: tx.account_brand_colour },
-                ]}
+                style={[styles.acctTagText, { color: tx.account_brand_colour }]}
               >
                 {tx.account_name}
               </Text>
@@ -132,12 +138,7 @@ export default function FeedScreen() {
           </View>
         </View>
 
-        <Text
-          style={[
-            styles.txAmount,
-            isExpense ? styles.neg : styles.pos,
-          ]}
-        >
+        <Text style={[styles.txAmount, isExpense ? styles.neg : styles.pos]}>
           {isExpense ? '-' : '+'}
           {fmtPeso(tx.amount)}
         </Text>
@@ -158,7 +159,8 @@ export default function FeedScreen() {
         <View>
           <Text style={styles.headerTitle}>Transactions</Text>
           <Text style={styles.headerSubtitle}>
-            {monthLabel} · {sections.reduce((s, sec) => s + sec.data.length, 0)} entries
+            {monthLabel} · {sections.reduce((s, sec) => s + sec.data.length, 0)}{' '}
+            entries
           </Text>
         </View>
         <TouchableOpacity style={styles.monthPill} activeOpacity={0.7}>
@@ -198,10 +200,7 @@ export default function FeedScreen() {
       {/* ─── TRANSACTION LIST ─── */}
       <View style={{ flex: 1 }}>
         {loading ? (
-          <ActivityIndicator
-            color={colors.primary}
-            style={{ marginTop: 40 }}
-          />
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
         ) : (
           <FlatList
             data={listData}

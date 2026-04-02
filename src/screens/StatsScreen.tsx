@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,56 +10,23 @@ import {
   PanResponder,
   Vibration,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, G, Path } from 'react-native-svg';
+import Svg, { Circle, G } from 'react-native-svg';
 import { colors, spacing } from '../constants/theme';
-import { Category } from '../services/aiCategoryMap';
+import { supabase } from '@/services/supabase';
+import { CategoryIcon } from '@/components/CategoryIcon';
 
-// ─── SVG ICONS FROM HOME SCREEN ───────────────────────────────────────────────
-function getCategoryIcon(id: string, color: string) {
-  switch (id.toLowerCase()) {
-    case 'food':
-      return (
-        <Path
-          d="M11 2V9C11 10.1 10.1 11 9 11V20H7V11C5.9 11 5 10.1 5 9V2H6V7H7V2H8V7H9V2H11ZM15 2C16.1 2 17 2.9 17 4V10H14V20H12V2H15Z"
-          fill={color}
-        />
-      );
-    case 'transport':
-      return (
-        <Path
-          d="M4 16C4 17.1 4.9 18 6 18H6.5L6 20H8L8.5 18H15.5L16 20H18L17.5 18H18C19.1 18 20 17.1 20 16V6C20 3.8 18.2 2 16 2H8C5.8 2 4 3.8 4 6V16ZM7.5 14C6.7 14 6 13.3 6 12.5C6 11.7 6.7 11 7.5 11C8.3 11 9 11.7 9 12.5C9 13.3 8.3 14 7.5 14ZM16.5 14C15.7 14 15 13.3 15 12.5C15 11.7 15.7 11 16.5 11C17.3 11 18 11.7 18 12.5C18 13.3 17.3 14 16.5 14ZM6 9V6H18V9H6Z"
-          fill={color}
-        />
-      );
-    case 'shopping':
-      return (
-        <Path
-          d="M16 6V4C16 1.8 14.2 0 12 0C9.8 0 8 1.8 8 4V6H2V22C2 23.1 2.9 24 4 24H20C21.1 24 22 23.1 22 22V6H16ZM10 4C10 2.9 10.9 2 12 2C13.1 2 14 2.9 14 4V6H10V4ZM20 22H4V8H8V10C8 10.6 8.4 11 9 11C9.6 11 10 10.6 10 10V8H14V10C14 10.6 14.4 11 15 11C15.6 11 16 10.6 16 10V8H20V22Z"
-          fill={color}
-        />
-      );
-    case 'bills':
-      return (
-        <Path
-          d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM13 9V3.5L18.5 9H13Z"
-          fill={color}
-        />
-      );
-    default:
-      return (
-        <Path
-          d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM19 19H5V5H19V19Z"
-          fill={color}
-        />
-      );
-  }
-}
+type DbCategoryMeta = {
+  label: string;
+  emoji: string | null;
+  textColor: string | null;
+  tileBg: string | null;
+};
 
 // ─── THEME SYNC ─────────────────────────────────────────────────────────────
 const CATEGORY_THEME: Record<
-  Category,
+  string,
   {
     nameColor: string;
     barColor: string;
@@ -105,36 +72,129 @@ const CATEGORY_THEME: Record<
   },
 };
 
-const CATEGORY_BUDGETS: Record<Category, number> = {
+const DEFAULT_CATEGORY_BUDGETS: Record<string, number> = {
   food: 1500,
   transport: 1000,
   shopping: 2000,
   bills: 1500,
   health: 1000,
-  other: 1000,
+  default: 1000,
 };
 
-const TOTAL_BUDGET = 8000;
+const normalizeCategoryKey = (value: string | null): string =>
+  (value ?? '').trim().toLowerCase();
 
 export default function StatsScreen() {
   const navigation = useNavigation<any>();
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 2, 1));
+  const [currentDate, setCurrentDate] = useState(
+    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  );
   const [activeDonutIndex, setActiveDonutIndex] = useState<number>(-1);
   const [scrollEnabled, setScrollEnabled] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [categoryKeys, setCategoryKeys] = useState<string[]>([]);
+  const [categoryMetaByKey, setCategoryMetaByKey] = useState<
+    Record<string, DbCategoryMeta>
+  >({});
+  const [categoryTotals, setCategoryTotals] = useState<Record<string, number>>(
+    {}
+  );
+  const [categoryBudgets, setCategoryBudgets] = useState<
+    Record<string, number>
+  >({});
 
-  // ─── SAMPLE DATA ────────────────────────────────────────────────────────────
-  const spent = 5550;
-  const categoryTotals: Record<Category, number> = {
-    transport: 350,
-    food: 1200,
-    shopping: 2200,
-    bills: 800,
-    health: 0,
-    other: 1000,
-  };
+  const fetchStats = useCallback(async () => {
+    try {
+      setLoading(true);
 
-  const budgetUsedPct = Math.min((spent / TOTAL_BUDGET) * 100, 100);
-  const remaining = Math.max(TOTAL_BUDGET - spent, 0);
+      const startOfMonth = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth(),
+        1
+      ).toISOString();
+      const endOfMonth = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999
+      ).toISOString();
+
+      const { data: catData } = await supabase
+        .from('categories')
+        .select(
+          'name, budget_limit, emoji, text_colour, tile_bg_colour, sort_order'
+        )
+        .eq('is_active', true);
+
+      const { data: txData } = await supabase
+        .from('transactions')
+        .select('category, amount, type')
+        .in('type', ['expense', 'exp'])
+        .gte('date', startOfMonth)
+        .lte('date', endOfMonth);
+
+      const nextTotals: Record<string, number> = {};
+      const nextBudgets: Record<string, number> = {};
+      const nextKeys: string[] = [];
+      const nextMetaByKey: Record<string, DbCategoryMeta> = {};
+
+      (catData ?? []).forEach((cat) => {
+        const key = normalizeCategoryKey(cat.name);
+        if (!key) return;
+        nextKeys.push(key);
+        nextTotals[key] = 0;
+        nextBudgets[key] =
+          cat.budget_limit && cat.budget_limit > 0
+            ? cat.budget_limit
+            : (DEFAULT_CATEGORY_BUDGETS[key] ??
+              DEFAULT_CATEGORY_BUDGETS.default);
+        nextMetaByKey[key] = {
+          label: cat.name,
+          emoji: cat.emoji,
+          textColor: cat.text_colour,
+          tileBg: cat.tile_bg_colour,
+        };
+      });
+
+      (txData ?? []).forEach((tx) => {
+        const key = normalizeCategoryKey(tx.category);
+        if (!key || !(key in nextTotals)) return;
+        nextTotals[key] += Number(tx.amount) || 0;
+      });
+
+      setCategoryKeys(nextKeys);
+      setCategoryMetaByKey(nextMetaByKey);
+      setCategoryTotals(nextTotals);
+      setCategoryBudgets(nextBudgets);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentDate]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchStats();
+    }, [fetchStats])
+  );
+
+  const spent = Object.values(categoryTotals).reduce(
+    (sum, value) => sum + value,
+    0
+  );
+  const totalBudget = Object.values(categoryBudgets).reduce(
+    (sum, value) => sum + value,
+    0
+  );
+  const budgetUsedPct =
+    totalBudget > 0 ? Math.min((spent / totalBudget) * 100, 100) : 0;
+  const remaining = Math.max(totalBudget - spent, 0);
 
   const prevMonth = () =>
     setCurrentDate(
@@ -149,22 +209,34 @@ export default function StatsScreen() {
     year: 'numeric',
   });
 
+  const insight = {
+    headline: 'You spend most on Tuesdays 🍜',
+    body: 'Food is 42% of weekly spend. Want to set a lower limit?',
+  };
+
   // ─── SVG Donut Chart Math ───────────────────────────────────────────────────
   const donutRadius = 60;
   const donutStrokeWidth = 14;
   const donutCircumference = 2 * Math.PI * donutRadius;
 
   let cumulativeOffset = 0;
-  const donutSegments = (Object.keys(categoryTotals) as Category[])
+  const donutSegments = categoryKeys
     .filter((cat) => categoryTotals[cat] > 0)
-    .map((cat) => {
-      const catSpent = Math.min(categoryTotals[cat], TOTAL_BUDGET);
-      const strokeLength = (catSpent / TOTAL_BUDGET) * donutCircumference;
+    .map((cat, index) => {
+      const maxBudget = totalBudget > 0 ? totalBudget : 1;
+      const catSpent = Math.min(categoryTotals[cat], maxBudget);
+      const strokeLength = (catSpent / maxBudget) * donutCircumference;
       const gapLength = donutCircumference - strokeLength;
+      const meta = categoryMetaByKey[cat];
+      const fallbackColor =
+        Object.values(CATEGORY_THEME)[
+          index % Object.values(CATEGORY_THEME).length
+        ].barColor;
+      const color = meta?.textColor ?? fallbackColor;
 
       const segment = {
         key: cat,
-        color: CATEGORY_THEME[cat].barColor,
+        color,
         strokeDasharray: `${strokeLength} ${gapLength}`,
         strokeDashoffset: -cumulativeOffset,
         catSpent,
@@ -174,10 +246,31 @@ export default function StatsScreen() {
       return segment;
     });
 
+  const selectedDonut =
+    activeDonutIndex >= 0 ? donutSegments[activeDonutIndex] : null;
+  const selectedCategory = selectedDonut?.key;
+  const selectedCategoryLabel = selectedCategory
+    ? (categoryMetaByKey[selectedCategory]?.label ?? selectedCategory)
+    : '';
+  const selectedCategorySpent = selectedCategory
+    ? categoryTotals[selectedCategory] || 0
+    : 0;
+  const selectedCategoryBudget = selectedCategory
+    ? categoryBudgets[selectedCategory] || DEFAULT_CATEGORY_BUDGETS.default
+    : 0;
+  const selectedCategoryRemaining = Math.max(
+    selectedCategoryBudget - selectedCategorySpent,
+    0
+  );
+  const selectedThemeColor = selectedCategory
+    ? (categoryMetaByKey[selectedCategory]?.textColor ?? selectedDonut?.color)
+    : null;
+
   // ─── PAN RESPONDER (Drag & Scrub Menu) ──────────────────────────────────────
   const activeDonutIndexRef = useRef(activeDonutIndex);
   const startIndexRef = useRef(activeDonutIndex);
   const segmentsLengthRef = useRef(donutSegments.length);
+  const isInteractingWithDonutRef = useRef(false);
 
   useEffect(() => {
     activeDonutIndexRef.current = activeDonutIndex;
@@ -191,6 +284,7 @@ export default function StatsScreen() {
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
+        isInteractingWithDonutRef.current = true;
         setScrollEnabled(false);
         startIndexRef.current = activeDonutIndexRef.current;
       },
@@ -221,6 +315,9 @@ export default function StatsScreen() {
       },
       onPanResponderRelease: (evt, gestureState) => {
         setScrollEnabled(true);
+        setTimeout(() => {
+          isInteractingWithDonutRef.current = false;
+        }, 120);
         // If it was a tap instead of a drag
         if (Math.abs(gestureState.dy) <= 5 && Math.abs(gestureState.dx) <= 5) {
           const totalOptions = segmentsLengthRef.current + 1;
@@ -235,6 +332,9 @@ export default function StatsScreen() {
       },
       onPanResponderTerminate: () => {
         setScrollEnabled(true);
+        setTimeout(() => {
+          isInteractingWithDonutRef.current = false;
+        }, 120);
       },
     })
   ).current;
@@ -244,28 +344,36 @@ export default function StatsScreen() {
   let centerSubText = 'used overall';
   let centerTextColor = colors.textPrimary;
 
-  if (activeDonutIndex >= 0 && donutSegments[activeDonutIndex]) {
-    const activeData = donutSegments[activeDonutIndex];
-    const catBudget = CATEGORY_BUDGETS[activeData.key as Category] || 1000;
+  if (selectedDonut && selectedCategory) {
+    const catBudget = selectedCategoryBudget || 1000;
+    const catPct =
+      catBudget > 0 ? (selectedCategorySpent / catBudget) * 100 : 0;
 
-    centerPctText = `${((activeData.catSpent / catBudget) * 100).toFixed(0)}%`;
-    centerSubText = activeData.key;
-    centerTextColor = activeData.color;
+    centerPctText = `${catPct.toFixed(0)}%`;
+    centerSubText = selectedCategoryLabel;
+    centerTextColor = selectedDonut.color;
   }
 
   // ─── RENDERERS ──────────────────────────────────────────────────────────────
-  const renderCategoryRow = (catId: Category, title: string, note?: string) => {
-    const theme = CATEGORY_THEME[catId];
-    const catSpent = categoryTotals[catId] || 0;
-    const catBudget = CATEGORY_BUDGETS[catId];
-    const pct = (catSpent / catBudget) * 100;
+  const renderCategoryRow = (catKey: string, note?: string) => {
+    const meta = categoryMetaByKey[catKey];
+    const title = meta?.label ?? catKey;
+    const theme = CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other;
+    const color = meta?.textColor ?? theme.nameColor;
+    const bg = meta?.tileBg ?? theme.badgeBg;
+    const iconKey = normalizeCategoryKey(meta?.emoji) || catKey;
+    const catSpent = categoryTotals[catKey] || 0;
+    const catBudget =
+      categoryBudgets[catKey] || DEFAULT_CATEGORY_BUDGETS.default;
+    const pct = catBudget > 0 ? (catSpent / catBudget) * 100 : 0;
     const isOver = pct >= 100;
 
     const displayPct = isOver ? 'Over!' : `${pct.toFixed(0)}%`;
-    const activeTextColor = isOver ? colors.expenseRed : theme.nameColor;
+    const activeTextColor = isOver ? colors.expenseRed : color;
 
     return (
       <TouchableOpacity
+        key={catKey}
         activeOpacity={0.7}
         onPress={() =>
           navigation.navigate('feed', {
@@ -275,10 +383,13 @@ export default function StatsScreen() {
         }
         style={styles.progRow}
       >
-        <LinearGradient colors={theme.iconGrad} style={styles.catIconWrap}>
-          <Svg width={20} height={20} viewBox="0 0 24 24">
-            {getCategoryIcon(catId, theme.nameColor)}
-          </Svg>
+        <LinearGradient colors={[bg, bg]} style={styles.catIconWrap}>
+          <CategoryIcon
+            categoryKey={iconKey}
+            color={activeTextColor}
+            size={14}
+            wrapperSize={24}
+          />
         </LinearGradient>
 
         <View style={styles.progRowContent}>
@@ -288,9 +399,7 @@ export default function StatsScreen() {
             </Text>
 
             <View style={styles.progMetaWrap}>
-              <View
-                style={[styles.progBadge, { backgroundColor: theme.badgeBg }]}
-              >
+              <View style={[styles.progBadge, { backgroundColor: bg }]}>
                 <Text
                   style={[styles.progBadgeText, { color: activeTextColor }]}
                 >
@@ -311,7 +420,7 @@ export default function StatsScreen() {
                 styles.progFillBar,
                 {
                   width: `${Math.min(pct, 100)}%`,
-                  backgroundColor: theme.barColor,
+                  backgroundColor: color,
                 },
               ]}
             />
@@ -336,7 +445,9 @@ export default function StatsScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Stats</Text>
-          <Text style={styles.headerSub}>₱8,000 monthly budget</Text>
+          <Text style={styles.headerSub}>
+            ₱{totalBudget.toLocaleString()} monthly budget
+          </Text>
         </View>
         <View style={styles.monthSelector}>
           <TouchableOpacity style={styles.monthBtn} onPress={prevMonth}>
@@ -349,11 +460,13 @@ export default function StatsScreen() {
         </View>
       </View>
 
-      {/* 👇 Wrapped the overall card in a Pressable to capture white space clicks */}
       <Pressable
-        style={styles.overallCard}
+        style={[
+          styles.overallCard,
+          selectedThemeColor && { borderColor: selectedThemeColor },
+        ]}
         onPress={() => {
-          // Reset to Overall View when white space is clicked
+          if (isInteractingWithDonutRef.current) return;
           if (activeDonutIndex !== -1) {
             setActiveDonutIndex(-1);
             LayoutAnimation.configureNext(
@@ -415,16 +528,46 @@ export default function StatsScreen() {
         </View>
 
         <View style={styles.budgetMetrics} pointerEvents="none">
-          <View style={styles.metricCol}>
-            <Text style={styles.metricLabel}>Spent so far</Text>
-            <Text style={styles.metricVal}>₱{spent.toLocaleString()}</Text>
-          </View>
-          <View style={styles.metricDivider} />
-          <View style={styles.metricCol}>
-            <Text style={styles.metricLabel}>Remaining</Text>
-            <Text style={[styles.metricVal, { color: colors.primary }]}>
-              ₱{remaining.toLocaleString()}
-            </Text>
+          <View style={styles.budgetMetricsRow}>
+            <View style={styles.metricCol}>
+              <Text style={styles.metricLabel}>
+                {selectedCategory
+                  ? `Spent so far · ${selectedCategoryLabel}`
+                  : 'Spent so far'}
+              </Text>
+              <Text
+                style={[
+                  styles.metricVal,
+                  selectedThemeColor && { color: selectedThemeColor },
+                ]}
+              >
+                ₱
+                {(selectedCategory
+                  ? selectedCategorySpent
+                  : spent
+                ).toLocaleString()}
+              </Text>
+            </View>
+            <View style={styles.metricDivider} />
+            <View style={styles.metricCol}>
+              <Text style={styles.metricLabel}>
+                {selectedCategory
+                  ? `Remaining budget · ${selectedCategoryLabel}`
+                  : 'Remaining budget'}
+              </Text>
+              <Text
+                style={[
+                  styles.metricVal,
+                  { color: selectedThemeColor ?? colors.primary },
+                ]}
+              >
+                ₱
+                {(selectedCategory
+                  ? selectedCategoryRemaining
+                  : remaining
+                ).toLocaleString()}
+              </Text>
+            </View>
           </View>
         </View>
         <Text style={styles.tapHint} pointerEvents="none">
@@ -434,11 +577,43 @@ export default function StatsScreen() {
 
       <Text style={styles.sectionLabel}>By category</Text>
       <View style={{ marginBottom: 16 }}>
-        {renderCategoryRow('transport', 'Transport')}
-        {renderCategoryRow('food', 'Food', 'Nearing limit — ₱300 left')}
-        {renderCategoryRow('shopping', 'Shopping', 'Over by ₱200 😬')}
-        {renderCategoryRow('bills', 'Bills')}
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <Text style={styles.loadingText}>Loading category stats...</Text>
+          </View>
+        ) : (
+          categoryKeys.map((catKey) => renderCategoryRow(catKey))
+        )}
       </View>
+
+      {insight && (
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={styles.insightWrap}
+          onPress={() => navigation.navigate('AIScreen')}
+        >
+          <LinearGradient
+            colors={['#F0ECFD', '#EBF2EE']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.insightCard}
+          >
+            <View style={styles.insightAvatar}>
+              <Text style={styles.insightAvatarIcon}>✦</Text>
+            </View>
+
+            <View style={styles.insightBody}>
+              <Text style={styles.insightLabel}>Fino Intelligence</Text>
+              <Text style={styles.insightHeadline}>{insight.headline}</Text>
+              <Text style={styles.insightSub}>{insight.body}</Text>
+
+              <View style={styles.insightChip}>
+                <Text style={styles.insightChipText}>Ask Fino →</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }
@@ -506,6 +681,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  donutCenterLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 10,
+    color: '#6B6B7A',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  donutCenterAmount: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 8,
+    marginTop: 2,
+  },
+  donutCenterRemaining: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+    marginTop: 2,
+  },
   donutCenterPct: {
     fontFamily: 'Nunito_700Bold',
     fontSize: 28,
@@ -518,10 +714,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   budgetMetrics: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  budgetMetricsRow: {
     flexDirection: 'row',
     width: '100%',
     justifyContent: 'space-around',
-    marginBottom: 6,
+    alignItems: 'center',
   },
   metricCol: { alignItems: 'center' },
   metricLabel: {
@@ -555,6 +756,77 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     paddingVertical: 12,
+  },
+  loadingWrap: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  insightWrap: { marginBottom: 16 },
+  insightCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(201,184,245,0.35)',
+    padding: 16,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  insightAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F0ECFD',
+    borderWidth: 1,
+    borderColor: '#C9B8F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  insightAvatarIcon: {
+    fontSize: 15,
+    color: '#4B2DA3',
+  },
+  insightBody: { flex: 1 },
+  insightLabel: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    color: '#4B2DA3',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    marginBottom: 4,
+  },
+  insightHeadline: {
+    fontFamily: 'Nunito_800ExtraBold',
+    fontSize: 14,
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  insightSub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  insightChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F0ECFD',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#C9B8F5',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+  },
+  insightChipText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    color: '#4B2DA3',
+    textTransform: 'uppercase',
   },
   progRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   catIconWrap: {
