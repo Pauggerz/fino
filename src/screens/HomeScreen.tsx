@@ -483,7 +483,13 @@ export default function HomeScreen() {
                 key={acc.accountId}
                 activeOpacity={0.8}
                 style={styles.acctCard}
-                onPress={() => navigation.navigate('more')}
+                // 👇 UPDATED NAVIGATION LOGIC 👇
+                onPress={() =>
+                  navigation.navigate('more', {
+                    screen: 'AccountDetail',
+                    params: { id: acc.accountId },
+                  })
+                }
               >
                 <View
                   style={[styles.acctAvatar, { backgroundColor: cfg.color }]}

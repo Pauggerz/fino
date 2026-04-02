@@ -119,7 +119,12 @@ export default function MoreScreen() {
                   styles.acctRow,
                   index === ACCOUNTS.length - 1 && { borderBottomWidth: 0 },
                 ]}
-                onPress={() => navigation.navigate('AccountDetailScreen')}
+                // 👇 Dynamic ID assignment based on the account name
+                onPress={() =>
+                  navigation.navigate('AccountDetail', {
+                    id: acct.name.toLowerCase(),
+                  })
+                }
                 activeOpacity={0.7}
               >
                 <View style={styles.acctRowLeft}>
@@ -208,7 +213,7 @@ export default function MoreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F5F2', // Matches root theme
+    backgroundColor: '#F7F5F2',
   },
   header: {
     paddingHorizontal: spacing.screenPadding,
@@ -228,7 +233,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: spacing.screenPadding,
-    paddingBottom: 80, // Extra padding for bottom tabs
+    paddingBottom: 80,
   },
 
   // Section Structure
@@ -287,7 +292,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   acctBalance: {
-    fontFamily: 'DMMono_500Medium', // Used Medium as 700 bold fallback per your setup
+    fontFamily: 'DMMono_500Medium',
     fontSize: 14,
     color: colors.textPrimary,
   },
