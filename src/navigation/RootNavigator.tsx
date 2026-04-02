@@ -16,15 +16,8 @@ import AddTransactionSheet from '../screens/AddTransactionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
 import ScreenshotScreen from '../screens/ScreenshotScreen';
 import AccountDetailScreen from '../screens/AccountDetailScreen';
-import AIScreen from '../screens/AIScreen';
-
-// ─── Placeholder screens ────────────────────────────────────────────────────
-
-const MoreScreen = () => (
-  <View style={styles.placeholder}>
-    <Text style={styles.placeholderText}>More Screen</Text>
-  </View>
-);
+import MoreScreen from '@/screens/MoreScreen';
+import ChatScreen from '@/screens/ChatScreen';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -60,7 +53,7 @@ export type RootStackParamList = {
     };
   };
   ScreenshotScreen: undefined;
-  AIScreen: undefined;
+  ChatScreen: undefined;
 };
 
 // ─── Navigators ─────────────────────────────────────────────────────────────
@@ -150,8 +143,8 @@ export default function RootNavigator() {
         />
 
         <Stack.Screen
-          name="AIScreen"
-          component={AIScreen}
+          name="ChatScreen"
+          component={ChatScreen}
           options={{
             headerShown: false,
             presentation: 'modal',
