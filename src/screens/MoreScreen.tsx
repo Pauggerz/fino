@@ -5,48 +5,18 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing } from '../constants/theme';
-
-// ─── MOCK DATA ──────────────────────────────────────────────────────────────
-
-const ACCOUNTS = [
-  {
-    id: '1',
-    name: 'Cash',
-    balance: '1,250.00',
-    color: '#555555',
-    bg: '#F0F0F0',
-    letter: 'C',
-  },
-  {
-    id: '2',
-    name: 'GCash',
-    balance: '4,820.50',
-    color: '#007DFF',
-    bg: '#E5F1FF',
-    letter: 'G',
-  },
-  {
-    id: '3',
-    name: 'BDO',
-    balance: '25,000.00',
-    color: '#0038A8',
-    bg: '#E5EFF9',
-    letter: 'B',
-  },
-  {
-    id: '4',
-    name: 'Maya',
-    balance: '1,450.00',
-    color: '#000000',
-    bg: '#E6F7EC',
-    letter: 'M',
-  },
-];
+import { useAccounts } from '@/hooks/useAccounts';
+import {
+  ACCOUNT_LOGOS,
+  ACCOUNT_AVATAR_OVERRIDE,
+} from '@/constants/accountLogos';
 
 const TOOLS = [
   {
@@ -88,6 +58,7 @@ const TOOLS = [
 export default function MoreScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
+  const { accounts, loading } = useAccounts();
 
   const handleToolPress = (route: string) => {
     if (route !== 'Placeholder') {
@@ -112,41 +83,85 @@ export default function MoreScreen() {
           <Text style={styles.sectionLabel}>MY ACCOUNTS</Text>
 
           <View style={styles.acctCard}>
-            {ACCOUNTS.map((acct, index) => (
-              <TouchableOpacity
-                key={acct.id}
-                style={[
-                  styles.acctRow,
-                  index === ACCOUNTS.length - 1 && { borderBottomWidth: 0 },
-                ]}
-                // 👇 Dynamic ID assignment based on the account name
-                onPress={() =>
-                  navigation.navigate('AccountDetail', {
-                    id: acct.name.toLowerCase(),
-                  })
-                }
-                activeOpacity={0.7}
-              >
-                <View style={styles.acctRowLeft}>
-                  <View style={[styles.avatar, { backgroundColor: acct.bg }]}>
-                    <Text style={[styles.avatarText, { color: acct.color }]}>
-                      {acct.letter}
-                    </Text>
-                  </View>
-                  <Text style={styles.acctName}>{acct.name}</Text>
-                </View>
+            {loading ? (
+              <View style={styles.loadingAccountsWrap}>
+                <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : (
+              accounts.map((acct, index) => (
+                <TouchableOpacity
+                  key={acct.id}
+                  style={[
+                    styles.acctRow,
+                    index === accounts.length - 1 && { borderBottomWidth: 0 },
+                  ]}
+                  onPress={() =>
+                    navigation.navigate('AccountDetail', {
+                      id: acct.id,
+                    })
+                  }
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.acctRowLeft}>
+                    {(() => {
+                      const logo = ACCOUNT_LOGOS[acct.name];
+                      const avatarLetter =
+                        ACCOUNT_AVATAR_OVERRIDE[acct.name] ??
+                        acct.letter_avatar;
 
-                <View style={styles.acctRowRight}>
-                  <Text style={styles.acctBalance}>₱{acct.balance}</Text>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={16}
-                    color="#B4B2A9"
-                    style={{ marginLeft: 8 }}
-                  />
-                </View>
-              </TouchableOpacity>
-            ))}
+                      if (logo) {
+                        return (
+                          <View
+                            style={[
+                              styles.avatar,
+                              { backgroundColor: '#F7F5F2' },
+                            ]}
+                          >
+                            <Image
+                              source={logo}
+                              style={{ width: 20, height: 20 }}
+                              resizeMode="contain"
+                            />
+                          </View>
+                        );
+                      }
+
+                      return (
+                        <View
+                          style={[
+                            styles.avatar,
+                            { backgroundColor: acct.brand_colour ?? '#F0F0F0' },
+                          ]}
+                        >
+                          <Text
+                            style={[styles.avatarText, { color: '#FFFFFF' }]}
+                          >
+                            {avatarLetter}
+                          </Text>
+                        </View>
+                      );
+                    })()}
+                    <Text style={styles.acctName}>{acct.name}</Text>
+                  </View>
+
+                  <View style={styles.acctRowRight}>
+                    <Text style={styles.acctBalance}>
+                      ₱
+                      {acct.balance.toLocaleString('en-PH', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={16}
+                      color="#B4B2A9"
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
           </View>
 
           {/* Add Account Button */}
@@ -256,6 +271,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.03)',
+  },
+  loadingAccountsWrap: {
+    paddingVertical: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   acctRow: {
     flexDirection: 'row',

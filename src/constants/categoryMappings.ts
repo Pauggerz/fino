@@ -86,3 +86,32 @@ const categoryMappings: Record<string, Category> = {
 };
 
 export default categoryMappings;
+
+// Maps DB emoji key → display emoji (for use in feed rows, pills, etc.)
+export const CATEGORY_EMOJI: Record<string, string> = {
+  food: '🍔',
+  transport: '🚌',
+  shopping: '🛍',
+  bills: '⚡',
+  health: '❤️',
+};
+
+// Maps DB category key → tile background colour (matches theme.ts catXxxBg)
+export const CATEGORY_TILE_BG: Record<string, string> = {
+  food: '#FDF6E3',
+  transport: '#EEF6FF',
+  shopping: '#FFF0F3',
+  bills: '#F3EFFF',
+  health: '#EFF8F2',
+  default: '#F7F5F2',
+};
+
+// Maps DB emoji key → category text color (matches theme.ts)
+export const CATEGORY_COLOR: Record<string, string> = {
+  food: '#C97A20',
+  transport: '#3A80C0',
+  shopping: '#C0503A',
+  bills: '#7A4AB8',
+  health: '#2d6a4f',
+  default: '#888780',
+};

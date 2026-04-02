@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   TouchableWithoutFeedback,
@@ -18,14 +19,22 @@ import { useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../constants/theme';
+import { CATEGORY_TILE_BG, CATEGORY_COLOR } from '@/constants/categoryMappings';
+import { CategoryIcon } from '@/components/CategoryIcon';
+import {
+  ACCOUNT_LOGOS,
+  ACCOUNT_AVATAR_OVERRIDE,
+} from '@/constants/accountLogos';
 import { transitions } from '../constants/transitions';
 import {
   createDebouncedAnalyzer,
   type AIAnalysisResult,
-  type Category,
 } from '../services/aiCategoryMap';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { transactionStore, type Account } from '../services/balanceCalc';
+import { supabase } from '@/services/supabase';
+import { useAccounts } from '@/hooks/useAccounts';
+import { useCategories } from '@/hooks/useCategories';
+import { setLastSaved } from '@/services/lastSavedStore';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -35,130 +44,43 @@ type Props = {
   route: RouteProp<RootStackParamList, 'AddTransaction'>;
 };
 
-// ─── Data ─────────────────────────────────────────────────────────────────────
-
-const ACCOUNTS: {
-  id: Account;
-  letter: string;
-  color: string;
-  label: string;
-  isDefault: boolean;
-}[] = [
-  {
-    id: 'gcash',
-    letter: 'G',
-    color: colors.accountGCash,
-    label: 'GCash',
-    isDefault: true,
-  },
-  {
-    id: 'cash',
-    letter: '₱',
-    color: colors.accountCash,
-    label: 'Cash',
-    isDefault: false,
-  },
-  {
-    id: 'bdo',
-    letter: 'B',
-    color: colors.accountBDO,
-    label: 'BDO',
-    isDefault: false,
-  },
-];
-
-const CATEGORIES: {
-  id: Category;
-  icon: string;
-  name: string;
-  bg: string;
-  border: string;
-  text: string;
-}[] = [
-  {
-    id: 'food',
-    icon: '🍔',
-    name: 'Food',
-    bg: colors.pillFoodBg,
-    border: colors.pillFoodBorder,
-    text: colors.pillFoodText,
-  },
-  {
-    id: 'transport',
-    icon: '🚌',
-    name: 'Transport',
-    bg: colors.pillTransportBg,
-    border: colors.pillTransportBorder,
-    text: colors.pillTransportText,
-  },
-  {
-    id: 'shopping',
-    icon: '🛍',
-    name: 'Shopping',
-    bg: colors.pillShoppingBg,
-    border: colors.pillShoppingBorder,
-    text: colors.pillShoppingText,
-  },
-  {
-    id: 'bills',
-    icon: '⚡',
-    name: 'Bills',
-    bg: colors.pillBillsBg,
-    border: colors.pillBillsBorder,
-    text: colors.pillBillsText,
-  },
-  {
-    id: 'health',
-    icon: '❤️',
-    name: 'Health',
-    bg: colors.pillHealthBg,
-    border: colors.pillHealthBorder,
-    text: colors.pillHealthText,
-  },
-];
-
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ─── Component ────────────────────────────────────────────────────────────────
-
-const ACCOUNT_ID_MAP: Record<string, Account> = {
-  GCash: 'gcash',
-  Cash: 'cash',
-  BDO: 'bdo',
-  Maya: 'maya',
-};
-
-const CATEGORY_ID_MAP: Record<string, Category> = {
-  Food: 'food',
-  Transport: 'transport',
-  Shopping: 'shopping',
-  Bills: 'bills',
-  Health: 'health',
-};
 
 export default function AddTransactionSheet({ route }: Props) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const initialMode = route.params?.mode ?? 'expense';
-  const prefill = route.params?.prefill;
+
+  // ── Real data from Supabase ──
+  const { accounts } = useAccounts();
+  const { categories } = useCategories();
 
   const [type, setType] = useState<TxType>(
     initialMode === 'income' ? 'inc' : 'exp'
   );
-  const [amount, setAmount] = useState<string>(prefill?.amount ?? '');
-  const [account, setAccount] = useState<Account>(
-    prefill ? (ACCOUNT_ID_MAP[prefill.account] ?? 'gcash') : 'gcash'
-  );
-  const [category, setCategory] = useState<Category>(
-    prefill ? (CATEGORY_ID_MAP[prefill.category] ?? 'food') : 'food'
-  );
-  const [aiText, setAiText] = useState<string>(prefill?.merchant ?? '');
+  const [amount, setAmount] = useState<string>('');
+  // accountId is a Supabase UUID; default to the first account when loaded
+  const [accountId, setAccountId] = useState<string>('');
+  // category is the DB category name (e.g. 'Food')
+  const [category, setCategory] = useState<string>('');
+  const [aiText, setAiText] = useState<string>('');
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
   const [aiInputFocused, setAiInputFocused] = useState(false);
-  /** signal_source tracks how the category was determined — persisted with each save. */
   const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>(
     'manual'
   );
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Set defaults once accounts/categories load
+  useEffect(() => {
+    if (accounts.length > 0 && !accountId) setAccountId(accounts[0].id);
+  }, [accounts, accountId]);
+
+  useEffect(() => {
+    if (categories.length > 0 && !category) setCategory(categories[0].name);
+  }, [categories, category]);
 
   // Sheet slide animation
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -205,8 +127,13 @@ export default function AddTransactionSheet({ route }: Props) {
       analyzer.analyze(text, (result) => {
         setAiResult(result);
         if (result.suggestedCategory) {
-          setCategory(result.suggestedCategory as Category);
-          setSignalSource('ai_description');
+          const matched = categories.find(
+            (c) => c.name.toLowerCase() === result.suggestedCategory
+          );
+          if (matched) {
+            setCategory(matched.name);
+            setSignalSource('ai_description');
+          }
         }
       });
     } else {
@@ -215,28 +142,68 @@ export default function AddTransactionSheet({ route }: Props) {
     }
   };
 
-  const handleCategoryManualSelect = (id: Category) => {
-    setCategory(id);
+  const handleCategoryManualSelect = (name: string) => {
+    setCategory(name);
     setSignalSource('manual');
   };
 
-  // ── Save ──
-  const isSaveDisabled = !amount || amount === '0' || amount === '.';
+  // ── Save → Supabase ──
+  const isSaveDisabled =
+    !amount || amount === '0' || amount === '.' || isSaving;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (isSaveDisabled) return;
-    transactionStore.add({
-      type,
-      amount: parseFloat(amount),
-      account,
-      category,
-      note: aiText || undefined,
-      signal_source: signalSource,
-    });
-    dismiss();
+    const selectedAccount = accounts.find((a) => a.id === accountId);
+    if (!selectedAccount) return;
+
+    setIsSaving(true);
+    const parsedAmount = parseFloat(amount);
+    const txType = type === 'exp' ? 'expense' : 'income';
+
+    const { data: inserted, error } = await supabase
+      .from('transactions')
+      .insert({
+        user_id: selectedAccount.user_id,
+        account_id: accountId,
+        amount: parsedAmount,
+        type: txType,
+        category: category || null,
+        display_name: aiText || category || null,
+        transaction_note: aiText || null,
+        signal_source:
+          signalSource === 'ai_description' ? 'description' : 'manual',
+        date: new Date().toISOString(),
+        account_deleted: false,
+      })
+      .select()
+      .single();
+
+    if (!error && inserted) {
+      // Update account balance
+      const delta = txType === 'expense' ? -parsedAmount : parsedAmount;
+      await supabase
+        .from('accounts')
+        .update({ balance: selectedAccount.balance + delta })
+        .eq('id', accountId);
+
+      // Store for HomeScreen undo toast
+      setLastSaved({
+        id: inserted.id,
+        accountId,
+        previousBalance: selectedAccount.balance,
+        amount: parsedAmount,
+        type: txType,
+        accountName: selectedAccount.name,
+        categoryName: category || 'Other',
+      });
+
+      dismiss();
+    }
+
+    setIsSaving(false);
   };
 
-  // ── Date label (static for now — date picker in Phase 4+) ──
+  // ── Date label ──
   const today = new Date();
   const dateLabel = `📅 Today, ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 
@@ -245,7 +212,12 @@ export default function AddTransactionSheet({ route }: Props) {
   const displayAmount = amount || '0';
 
   // ── Derived save label ──
-  const saveLabel = type === 'exp' ? 'Save expense' : 'Save income';
+  let saveLabel = 'Save income';
+  if (isSaving) {
+    saveLabel = 'Saving…';
+  } else if (type === 'exp') {
+    saveLabel = 'Save expense';
+  }
 
   return (
     <View style={styles.container}>
@@ -392,41 +364,107 @@ export default function AddTransactionSheet({ route }: Props) {
             {/* ── Account selector ── */}
             <View style={styles.section}>
               <Text style={styles.fieldLabel}>FROM ACCOUNT</Text>
-              <View style={styles.acctOpts}>
-                {ACCOUNTS.map((acc) => {
-                  const isSel = account === acc.id;
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8 }}
+                style={{ marginHorizontal: -20 }}
+              >
+                <View style={{ width: 20 }} />
+                {accounts.map((acc, index) => {
+                  const isSel = accountId === acc.id;
+                  const isLastUsed = index === 0;
+                  const logo = ACCOUNT_LOGOS[acc.name];
+                  const avatarLetter =
+                    ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
                   return (
                     <TouchableOpacity
                       key={acc.id}
-                      onPress={() => setAccount(acc.id)}
-                      style={[styles.acctOpt, isSel && styles.acctOptSel]}
+                      onPress={() => setAccountId(acc.id)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        borderRadius: 14,
+                        borderWidth: isSel ? 2 : 1,
+                        borderColor: isSel ? '#5B8C6E' : 'rgba(30,30,46,0.12)',
+                        backgroundColor: isSel ? '#EBF2EE' : '#FFFFFF',
+                        minWidth: 90,
+                      }}
                     >
-                      {/* Letter avatar */}
-                      <View
-                        style={[
-                          styles.acctAvatar,
-                          { backgroundColor: acc.color },
-                        ]}
-                      >
-                        <Text style={styles.acctAvatarLetter}>
-                          {acc.letter}
-                        </Text>
-                      </View>
-                      <Text
-                        style={[
-                          styles.acctOptName,
-                          isSel && { color: colors.primary },
-                        ]}
-                      >
-                        {acc.label}
-                      </Text>
-                      {acc.isDefault && (
-                        <Text style={styles.acctOptLast}>last used</Text>
+                      {logo ? (
+                        <View
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: '#F7F5F2',
+                            borderWidth: 1,
+                            borderColor: 'rgba(30,30,46,0.08)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <Image
+                            source={logo}
+                            style={{ width: 22, height: 22 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      ) : (
+                        <View
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: acc.brand_colour ?? '#888780',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontFamily: 'Inter_700Bold',
+                              fontSize: 13,
+                              color: '#FFFFFF',
+                            }}
+                          >
+                            {avatarLetter}
+                          </Text>
+                        </View>
                       )}
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={{
+                            fontFamily: 'Inter_600SemiBold',
+                            fontSize: 13,
+                            color: isSel ? '#2d6a4f' : '#1E1E2E',
+                          }}
+                          numberOfLines={1}
+                        >
+                          {acc.name}
+                        </Text>
+                        {isLastUsed && (
+                          <Text
+                            style={{
+                              fontFamily: 'Inter_400Regular',
+                              fontSize: 10,
+                              color: '#5B8C6E',
+                              marginTop: 1,
+                            }}
+                          >
+                            last used
+                          </Text>
+                        )}
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
-              </View>
+                <View style={{ width: 20 }} />
+              </ScrollView>
             </View>
 
             {/* ── Category pills ── */}
@@ -435,26 +473,42 @@ export default function AddTransactionSheet({ route }: Props) {
                 CATEGORY <Text style={styles.aiLabel}>✦ AI suggested</Text>
               </Text>
               <View style={styles.pillsRow}>
-                {CATEGORIES.map((cat) => {
-                  const isSel = category === cat.id;
+                {categories.map((cat) => {
+                  const isSel = category === cat.name;
+                  const catKey = (cat.emoji ?? '').toLowerCase();
+                  const catColor =
+                    CATEGORY_COLOR[catKey] ?? colors.textSecondary;
+                  const catBg = CATEGORY_TILE_BG[catKey] ?? colors.background;
                   return (
                     <TouchableOpacity
                       key={cat.id}
-                      onPress={() => handleCategoryManualSelect(cat.id)}
-                      style={[
-                        styles.catPill,
-                        isSel
-                          ? { backgroundColor: cat.bg, borderColor: cat.border }
-                          : {},
-                      ]}
+                      onPress={() => handleCategoryManualSelect(cat.name)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderRadius: 12,
+                        borderWidth: isSel ? 2 : 1,
+                        borderColor: isSel ? catColor : 'rgba(30,30,46,0.12)',
+                        backgroundColor: isSel ? catBg : '#FFFFFF',
+                      }}
                     >
+                      <CategoryIcon
+                        categoryKey={catKey}
+                        color={isSel ? catColor : '#8A8A9A'}
+                        size={14}
+                        wrapperSize={22}
+                      />
                       <Text
-                        style={[
-                          styles.catPillText,
-                          isSel && { color: cat.text },
-                        ]}
+                        style={{
+                          fontFamily: 'Inter_600SemiBold',
+                          fontSize: 13,
+                          color: isSel ? catColor : '#8A8A9A',
+                        }}
                       >
-                        {cat.icon} {cat.name}
+                        {cat.name}
                       </Text>
                     </TouchableOpacity>
                   );

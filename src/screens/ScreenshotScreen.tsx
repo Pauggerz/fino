@@ -1,904 +1,914 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   Image,
   ActivityIndicator,
-  Animated,
-  ScrollView,
   TextInput,
-  Modal,
+  ScrollView,
+  Alert,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { colors, spacing } from '../constants/theme';
-import { transitions } from '../constants/transitions';
-import { transactionStore } from '../services/balanceCalc';
+import * as FileSystem from 'expo-file-system/legacy';
+import { useNavigation } from '@react-navigation/native';
+import { supabase } from '../services/supabase';
 import {
-  createDebouncedAnalyzer,
-  type AIAnalysisResult,
-  type Category,
-} from '../services/aiCategoryMap';
+  CATEGORY_EMOJI,
+  CATEGORY_COLOR,
+  CATEGORY_TILE_BG,
+} from '@/constants/categoryMappings';
 
-// ─── Data ─────────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-const CATEGORIES: {
-  id: Category;
-  label: string;
-  bg: string;
-  text: string;
-  border: string;
-}[] = [
-  {
-    id: 'food',
-    label: '🍔 Food',
-    bg: colors.pillFoodBg,
-    text: colors.pillFoodText,
-    border: colors.pillFoodBorder,
-  },
-  {
-    id: 'transport',
-    label: '🚌 Transport',
-    bg: colors.pillTransportBg,
-    text: colors.pillTransportText,
-    border: colors.pillTransportBorder,
-  },
-  {
-    id: 'shopping',
-    label: '🛍 Shopping',
-    bg: colors.pillShoppingBg,
-    text: colors.pillShoppingText,
-    border: colors.pillShoppingBorder,
-  },
-  {
-    id: 'bills',
-    label: '⚡ Bills',
-    bg: colors.pillBillsBg,
-    text: colors.pillBillsText,
-    border: colors.pillBillsBorder,
-  },
-  {
-    id: 'health',
-    label: '❤️ Health',
-    bg: colors.pillHealthBg,
-    text: colors.pillHealthText,
-    border: colors.pillHealthBorder,
-  },
-];
+interface ParsedField {
+  value: string | number | null;
+  confidence: number;
+  touched: boolean;
+}
 
-// ─── Component ────────────────────────────────────────────────────────────────
+interface ParsedReceipt {
+  merchant: ParsedField;
+  amount: ParsedField;
+  date: ParsedField;
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ScreenshotScreen() {
-  const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
 
-  // ── Image + parse state ──
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [selectedSource, setSelectedSource] = useState<string>('upload');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
-  const [hasParsedData, setHasParsedData] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [parsedData, setParsedData] = useState<ParsedReceipt | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('food');
+  const [descriptionText, setDescriptionText] = useState('');
+  const [fixedFields, setFixedFields] = useState<string[]>([]);
 
-  // ── Parsed fields (mocked — high vs low confidence) ──
-  const [merchant] = useState('Jollibee Drive Thru');
-  const [amount] = useState('185.00');
-  const [date, setDate] = useState(
-    new Date().toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-  );
+  const hasLowConfidenceUnfixed =
+    parsedData &&
+    ((parsedData.merchant.confidence < 0.85 &&
+      !fixedFields.includes('merchant')) ||
+      (parsedData.amount.confidence < 0.85 &&
+        !fixedFields.includes('amount')) ||
+      (parsedData.date.confidence < 0.85 && !fixedFields.includes('date')));
 
-  // ── Low-confidence field tracking ──
-  const [isEditingDate, setIsEditingDate] = useState(false);
-  const [isDateConfirmed, setIsDateConfirmed] = useState(false);
-
-  // ── Category + AI description ──
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(
-    null
-  );
-  const [aiText, setAiText] = useState('');
-  const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
-  const [aiInputFocused, setAiInputFocused] = useState(false);
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const analyzer = useRef(createDebouncedAnalyzer()).current;
-
-  useEffect(() => () => analyzer.cancel(), [analyzer]);
-
-  // ── Image selection ──
-  const handleImageSelection = (uri: string) => {
-    setImageUri(uri);
-    setIsParsing(true);
-    setHasParsedData(false);
-    setIsDateConfirmed(false);
-    setSelectedCategory(null);
-    setAiText('');
-    setAiResult(null);
-    fadeAnim.setValue(0);
-
-    // Simulate 2200ms OCR delay (matches prototype PARSING_OVERLAY_HIDE)
-    setTimeout(() => {
-      setIsParsing(false);
-      setHasParsedData(true);
-      setSelectedCategory('food');
-
-      // Parsed card fades in over 300ms
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: transitions.PARSING_REVEAL.duration, // 300ms
-        useNativeDriver: true,
-      }).start();
-    }, transitions.PARSING_OVERLAY_HIDE); // 2200ms
-  };
-
-  const pickImage = async (source: 'camera' | 'upload') => {
-    let result;
-    if (source === 'camera') {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) return;
-      result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
-    } else {
-      result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+  // ── Pick image from library ──
+  const handleUpload = async () => {
+    const permissionResult =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert(
+        'Permission required',
+        'We need camera roll permissions to read screenshots.'
+      );
+      return;
     }
-    if (!result.canceled && result.assets?.length) {
-      handleImageSelection(result.assets[0].uri);
-    }
-  };
 
-  // ── AI description ──
-  const handleAiTextChange = (text: string) => {
-    setAiText(text);
-    setAiResult(null);
-    if (text.trim()) {
-      analyzer.analyze(text, (result) => {
-        setAiResult(result);
-        if (result.suggestedCategory) {
-          setSelectedCategory(result.suggestedCategory as Category);
-        }
-      });
-    } else {
-      analyzer.cancel();
-    }
-  };
-
-  // ── Low-confidence date confirmation ──
-  const confirmDate = () => {
-    setIsEditingDate(false);
-    setIsDateConfirmed(true);
-  };
-
-  // ── Save — disabled until low-conf fields confirmed + category picked ──
-  const isFormValid =
-    hasParsedData && selectedCategory !== null && isDateConfirmed;
-
-  const handleConfirm = () => {
-    if (!isFormValid) return;
-    transactionStore.add({
-      type: 'exp',
-      amount: parseFloat(amount),
-      account: 'gcash',
-      category: selectedCategory!,
-      note: aiText || merchant,
-      signal_source: 'ai_description',
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      quality: 0.8,
     });
-    navigation.goBack();
+
+    if (!result.canceled && result.assets[0]) {
+      const { uri } = result.assets[0];
+      setSelectedImage(uri);
+      processReceipt(uri);
+    }
   };
+
+  // ── Pick image from camera ──
+  const handleCamera = async () => {
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert(
+        'Permission required',
+        'We need camera permissions to take a photo.'
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const { uri } = result.assets[0];
+      setSelectedImage(uri);
+      processReceipt(uri);
+    }
+  };
+
+  // ── Expand image (placeholder — full-screen viewer TBD) ──
+  const handleExpandImage = () => {
+    // Full-screen viewer will be wired in a future update
+  };
+
+  // ── Process with Supabase Edge Function ──
+  const processReceipt = async (uri: string) => {
+    setIsParsing(true);
+    setParsedData(null);
+
+    try {
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: 'base64',
+      });
+
+      const { data, error } = await supabase.functions.invoke('parse-receipt', {
+        body: { imageBase64: base64, mimeType: 'image/jpeg' },
+      });
+
+      if (error) throw new Error(error.message);
+
+      // Handle both the new nested structure { value, confidence }
+      // AND fallback to the old flat structure just in case
+      setParsedData({
+        merchant: {
+          value: data.merchant?.value ?? data.merchant ?? '',
+          confidence:
+            data.merchant?.confidence ?? data.merchant_confidence ?? 0,
+          touched: false,
+        },
+        amount: {
+          value: data.amount?.value ?? data.amount ?? '',
+          confidence: data.amount?.confidence ?? data.amount_confidence ?? 0,
+          touched: false,
+        },
+        date: {
+          value: data.date?.value ?? data.date ?? '',
+          confidence: data.date?.confidence ?? data.date_confidence ?? 0,
+          touched: false,
+        },
+      });
+    } catch (err: any) {
+      Alert.alert('OCR Error', err.message || 'Failed to parse receipt.');
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  // ── Mark a field as manually fixed ──
+  const markFixed = (field: string) => {
+    if (!fixedFields.includes(field)) {
+      setFixedFields((prev) => [...prev, field]);
+    }
+  };
+
+  // ── Save to Supabase ──
+  const handleConfirmSave = async () => {
+    if (!parsedData) return;
+    setIsParsing(true);
+
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+
+      const { error } = await supabase.from('transactions').insert({
+        user_id: userId,
+        merchant_name: parsedData.merchant.value,
+        amount: Number(parsedData.amount.value),
+        date: parsedData.date.value,
+        type: 'expense',
+        category: selectedCategory,
+        signal_source: 'merchant',
+        merchant_confidence: parsedData.merchant.confidence,
+        amount_confidence: parsedData.amount.confidence,
+        date_confidence: parsedData.date.confidence,
+        receipt_url: selectedImage,
+      });
+
+      if (error) throw error;
+
+      Alert.alert('Success', 'Transaction saved!');
+      navigation.goBack();
+    } catch (err: any) {
+      Alert.alert('Save Error', err.message);
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 16) }]}>
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Ionicons name="chevron-back" size={28} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Scan Receipt</Text>
-        <View style={styles.backButton} />
-      </View>
-
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F7F5F2' }}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
       >
-        {/* ── Empty state (no image yet) ── */}
-        {!imageUri && (
-          <View style={styles.emptyStateContainer}>
-            <View style={styles.iconCircle}>
-              <Ionicons name="scan" size={32} color={colors.primary} />
-            </View>
-            <Text style={styles.emptyStateTitle}>Upload a Receipt</Text>
-            <Text style={styles.emptyStateSub}>
-              Snap a photo or choose from your gallery and let AI do the heavy
-              lifting.
-            </Text>
-            <View style={styles.uploadButtonsRow}>
-              <TouchableOpacity
-                style={styles.uploadBtn}
-                onPress={() => pickImage('camera')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="camera" size={20} color={colors.white} />
-                <Text style={styles.uploadBtnText}>Camera</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.uploadBtnSecondary}
-                onPress={() => pickImage('upload')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="image" size={20} color={colors.primary} />
-                <Text style={styles.uploadBtnTextSecondary}>Gallery</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* ── Receipt preview — 140px, borderRadius:16, gradient bg ── */}
-        {!!imageUri && (
+        {/* ── HEADER ── */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 20,
+            paddingTop: 12,
+            paddingBottom: 16,
+          }}
+        >
           <TouchableOpacity
-            style={styles.previewContainer}
-            activeOpacity={0.9}
-            onPress={() => setIsExpanded(true)}
+            onPress={() => navigation.goBack()}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: '#FFFFFF',
+              borderWidth: 1,
+              borderColor: 'rgba(30,30,46,0.1)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
-            <LinearGradient
-              colors={['#e0ddd8', '#cccac4']}
-              style={StyleSheet.absoluteFill}
-            />
-            <Image source={{ uri: imageUri }} style={styles.previewImage} />
-            <View style={styles.expandOverlay}>
-              <Text style={styles.expandText}>⤢ expand</Text>
-            </View>
+            <Text style={{ fontSize: 20, color: '#1E1E2E', lineHeight: 24 }}>
+              ‹
+            </Text>
           </TouchableOpacity>
-        )}
+          <Text
+            style={{
+              flex: 1,
+              textAlign: 'center',
+              fontFamily: 'Nunito_800ExtraBold',
+              fontSize: 18,
+              color: '#1E1E2E',
+              marginRight: 36,
+            }}
+          >
+            Scan receipt
+          </Text>
+        </View>
 
-        {/* ── Parsing overlay ── */}
-        {isParsing && (
-          <View style={styles.parsingOverlay}>
-            <ActivityIndicator
-              size="large"
-              color={colors.primary}
-              style={{ marginBottom: 16 }}
+        {/* ── SOURCE SELECTOR — 3 buttons ── */}
+        <View
+          style={{
+            flexDirection: 'row',
+            marginHorizontal: 20,
+            marginBottom: 16,
+            backgroundColor: '#FFFFFF',
+            borderRadius: 14,
+            padding: 4,
+            borderWidth: 1,
+            borderColor: 'rgba(30,30,46,0.08)',
+          }}
+        >
+          {[
+            { key: 'share', label: 'Share sheet', icon: '⬆️' },
+            { key: 'camera', label: 'Camera', icon: '📷' },
+            { key: 'upload', label: 'Upload', icon: '🖼️' },
+          ].map(({ key, label, icon }) => (
+            <TouchableOpacity
+              key={key}
+              onPress={() => {
+                setSelectedSource(key);
+                if (key === 'camera') handleCamera();
+                if (key === 'upload') handleUpload();
+              }}
+              style={{
+                flex: 1,
+                paddingVertical: 8,
+                borderRadius: 10,
+                alignItems: 'center',
+                backgroundColor:
+                  selectedSource === key ? '#5B8C6E' : 'transparent',
+              }}
+            >
+              <Text style={{ fontSize: 16, marginBottom: 2 }}>{icon}</Text>
+              <Text
+                style={{
+                  fontFamily: 'Inter_600SemiBold',
+                  fontSize: 10,
+                  color: selectedSource === key ? '#FFFFFF' : '#8A8A9A',
+                }}
+              >
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* ── RECEIPT PREVIEW ── */}
+        <View
+          style={{
+            marginHorizontal: 20,
+            marginBottom: 16,
+            height: 180,
+            borderRadius: 16,
+            overflow: 'hidden',
+            backgroundColor: '#E8E6E2',
+            position: 'relative',
+          }}
+        >
+          {selectedImage ? (
+            <Image
+              source={{ uri: selectedImage }}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="cover"
             />
-            {/* spec: "Parsing receipt…", colors.primary, 13px Inter 700 */}
-            <Text style={styles.parsingTitle}>Parsing receipt…</Text>
-            {/* spec: 11px textSecondary */}
-            <Text style={styles.parsingSubtitle}>Usually under 3 seconds</Text>
+          ) : (
+            <TouchableOpacity
+              onPress={handleUpload}
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+            >
+              <Text style={{ fontSize: 32 }}>🧾</Text>
+              <Text
+                style={{
+                  fontFamily: 'Inter_600SemiBold',
+                  fontSize: 13,
+                  color: '#8A8A9A',
+                }}
+              >
+                Tap to select a receipt
+              </Text>
+              <Text
+                style={{
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 11,
+                  color: '#B4B2A9',
+                }}
+              >
+                GCash · Maya · BDO · BPI
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {selectedImage && (
+            <TouchableOpacity
+              onPress={handleExpandImage}
+              style={{
+                position: 'absolute',
+                bottom: 10,
+                right: 10,
+                backgroundColor: 'rgba(0,0,0,0.45)',
+                borderRadius: 8,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: 'Inter_600SemiBold',
+                  fontSize: 11,
+                  color: '#FFFFFF',
+                }}
+              >
+                ⤢ expand
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* ── PARSING OVERLAY ── */}
+        {isParsing && (
+          <View
+            style={{
+              marginHorizontal: 20,
+              marginBottom: 16,
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              padding: 24,
+              alignItems: 'center',
+              gap: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(30,30,46,0.08)',
+            }}
+          >
+            <ActivityIndicator size="large" color="#5B8C6E" />
+            <Text
+              style={{
+                fontFamily: 'Inter_700Bold',
+                fontSize: 13,
+                color: '#5B8C6E',
+              }}
+            >
+              Parsing receipt...
+            </Text>
+            <Text
+              style={{
+                fontFamily: 'Inter_400Regular',
+                fontSize: 11,
+                color: '#8A8A9A',
+              }}
+            >
+              Usually under 3 seconds
+            </Text>
           </View>
         )}
 
-        {/* ── Parsed card ── */}
-        {hasParsedData && (
-          <Animated.View style={{ opacity: fadeAnim, marginTop: 16 }}>
-            {/* Confidence legend */}
-            <View style={styles.legendRow}>
-              <View style={styles.legendItem}>
-                <View
-                  style={[styles.legendDot, { backgroundColor: '#A0BCA0' }]}
-                />
-                <Text style={styles.legendText}>Confirmed</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View
-                  style={[styles.legendDot, { backgroundColor: colors.coral }]}
-                />
-                <Text style={styles.legendText}>Check</Text>
-              </View>
-            </View>
-
-            {/* High-confidence: Merchant */}
-            <View style={[styles.confField, styles.confHiField]}>
-              <Text style={styles.confFieldLabel}>Merchant</Text>
-              <Text style={styles.confHiValue}>{merchant}</Text>
-            </View>
-
-            {/* High-confidence: Amount */}
+        {/* ── PARSED FIELDS CARD ── */}
+        {parsedData && !isParsing && (
+          <View
+            style={{
+              marginHorizontal: 20,
+              marginBottom: 16,
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              overflow: 'hidden',
+              borderWidth: 1,
+              borderColor: 'rgba(30,30,46,0.08)',
+            }}
+          >
+            {/* Card header + legend */}
             <View
-              style={[styles.confField, styles.confHiField, { marginTop: 8 }]}
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                borderBottomWidth: 1,
+                borderBottomColor: 'rgba(30,30,46,0.07)',
+              }}
             >
-              <Text style={styles.confFieldLabel}>Amount</Text>
-              <Text style={[styles.confHiValue, styles.confHiAmountValue]}>
-                ₱{amount}
+              <Text
+                style={{
+                  fontFamily: 'Inter_700Bold',
+                  fontSize: 10,
+                  color: '#8A8A9A',
+                  letterSpacing: 0.06,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Parsed fields
               </Text>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                >
+                  <View
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: 4,
+                      backgroundColor: '#5B8C6E',
+                    }}
+                  />
+                  <Text
+                    style={{
+                      fontFamily: 'Inter_400Regular',
+                      fontSize: 10,
+                      color: '#8A8A9A',
+                    }}
+                  >
+                    Confirmed
+                  </Text>
+                </View>
+                <View
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                >
+                  <View
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: 4,
+                      backgroundColor: '#E8856A',
+                    }}
+                  />
+                  <Text
+                    style={{
+                      fontFamily: 'Inter_400Regular',
+                      fontSize: 10,
+                      color: '#8A8A9A',
+                    }}
+                  >
+                    Check
+                  </Text>
+                </View>
+              </View>
             </View>
 
-            {/* Low-confidence: Date (requires Fix ›) */}
+            {/* Merchant field */}
             <View
-              style={[styles.confField, styles.confLoField, { marginTop: 8 }]}
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                borderBottomWidth: 1,
+                borderBottomColor: 'rgba(30,30,46,0.07)',
+              }}
             >
-              <Text style={styles.confFieldLabel}>Date & Time</Text>
-              {isEditingDate ? (
-                <TextInput
-                  style={styles.confLoInput}
-                  value={date}
-                  onChangeText={setDate}
-                  onBlur={confirmDate}
-                  onSubmitEditing={confirmDate}
-                  autoFocus
-                  returnKeyType="done"
-                />
-              ) : (
-                <TouchableOpacity
-                  style={styles.fixRow}
-                  onPress={() => setIsEditingDate(true)}
+              <Text
+                style={{
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 13,
+                  color: '#8A8A9A',
+                }}
+              >
+                Merchant
+              </Text>
+              {parsedData.merchant.confidence >= 0.85 ? (
+                <View
+                  style={{
+                    backgroundColor: '#E8E6E2',
+                    borderWidth: 1.5,
+                    borderColor: '#A0BCA0',
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                  }}
                 >
                   <Text
-                    style={[
-                      styles.confLoValue,
-                      isDateConfirmed && styles.confLoValueConfirmed,
-                    ]}
+                    style={{
+                      fontFamily: 'DMMonoMedium',
+                      fontSize: 13,
+                      color: '#1E1E2E',
+                    }}
                   >
-                    {date}
+                    {String(parsedData.merchant.value ?? '—')}
                   </Text>
-                  {!isDateConfirmed && (
-                    <Text style={styles.fixChevron}>Fix ›</Text>
-                  )}
+                </View>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => markFixed('merchant')}
+                  style={{
+                    backgroundColor: '#FBF0EC',
+                    borderWidth: 1.5,
+                    borderColor: '#C8A09A',
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: 'DMMonoMedium',
+                      fontSize: 13,
+                      color: '#B85A30',
+                    }}
+                  >
+                    {String(parsedData.merchant.value ?? '—')}
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: 'Inter_700Bold',
+                      fontSize: 10,
+                      color: '#B85A30',
+                    }}
+                  >
+                    Fix ›
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
 
-            {/* ── Category pills ── */}
-            <View style={styles.section}>
-              <Text style={styles.fieldLabel}>
-                CATEGORY <Text style={styles.aiLabel}>✦ AI suggested</Text>
+            {/* Amount field */}
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                borderBottomWidth: 1,
+                borderBottomColor: 'rgba(30,30,46,0.07)',
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 13,
+                  color: '#8A8A9A',
+                }}
+              >
+                Amount
               </Text>
-              <View style={styles.pillsRow}>
-                {CATEGORIES.map((cat) => {
-                  const isSel = selectedCategory === cat.id;
+              {parsedData.amount.confidence >= 0.85 ? (
+                <View
+                  style={{
+                    backgroundColor: '#E8E6E2',
+                    borderWidth: 1.5,
+                    borderColor: '#A0BCA0',
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: 'DMMonoMedium',
+                      fontSize: 13,
+                      fontWeight: '700',
+                      color: '#1E1E2E',
+                    }}
+                  >
+                    ₱
+                    {Number(parsedData.amount.value).toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => markFixed('amount')}
+                  style={{
+                    backgroundColor: '#FBF0EC',
+                    borderWidth: 1.5,
+                    borderColor: '#C8A09A',
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: 'DMMonoMedium',
+                      fontSize: 13,
+                      color: '#B85A30',
+                    }}
+                  >
+                    {String(parsedData.amount.value ?? '—')}
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: 'Inter_700Bold',
+                      fontSize: 10,
+                      color: '#B85A30',
+                    }}
+                  >
+                    Fix ›
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Date field */}
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 13,
+                  color: '#8A8A9A',
+                }}
+              >
+                Date
+              </Text>
+              {parsedData.date.confidence >= 0.85 ? (
+                <View
+                  style={{
+                    backgroundColor: '#E8E6E2',
+                    borderWidth: 1.5,
+                    borderColor: '#A0BCA0',
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: 'DMMonoMedium',
+                      fontSize: 13,
+                      color: '#1E1E2E',
+                    }}
+                  >
+                    {String(parsedData.date.value ?? '—')}
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => markFixed('date')}
+                  style={{
+                    backgroundColor: '#FBF0EC',
+                    borderWidth: 1.5,
+                    borderColor: '#C8A09A',
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: 'DMMonoMedium',
+                      fontSize: 13,
+                      color: '#B85A30',
+                    }}
+                  >
+                    {String(parsedData.date.value ?? '—')}
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: 'Inter_700Bold',
+                      fontSize: 10,
+                      color: '#B85A30',
+                    }}
+                  >
+                    Fix ›
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* ── CATEGORY SECTION ── */}
+        {parsedData && !isParsing && (
+          <View style={{ marginHorizontal: 20, marginBottom: 16 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                marginBottom: 10,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: 'Inter_700Bold',
+                  fontSize: 10,
+                  color: '#8A8A9A',
+                  letterSpacing: 0.06,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Category
+              </Text>
+              <Text
+                style={{
+                  fontFamily: 'Inter_700Bold',
+                  fontSize: 10,
+                  color: '#4B2DA3',
+                }}
+              >
+                ✦ from merchant
+              </Text>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {(
+                  ['food', 'transport', 'shopping', 'bills', 'health'] as const
+                ).map((key) => {
+                  const isSelected = selectedCategory === key;
                   return (
                     <TouchableOpacity
-                      key={cat.id}
-                      onPress={() => setSelectedCategory(cat.id)}
-                      style={[
-                        styles.catPill,
-                        isSel
-                          ? {
-                              backgroundColor: cat.bg,
-                              borderColor: cat.border,
-                            }
-                          : {},
-                      ]}
+                      key={key}
+                      onPress={() => setSelectedCategory(key)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderRadius: 12,
+                        borderWidth: isSelected ? 2 : 1,
+                        borderColor: isSelected
+                          ? CATEGORY_COLOR[key]
+                          : 'rgba(30,30,46,0.12)',
+                        backgroundColor: isSelected
+                          ? CATEGORY_TILE_BG[key]
+                          : '#FFFFFF',
+                      }}
                     >
+                      <Text style={{ fontSize: 15 }}>
+                        {CATEGORY_EMOJI[key]}
+                      </Text>
                       <Text
-                        style={[
-                          styles.catPillText,
-                          isSel && { color: cat.text },
-                        ]}
+                        style={{
+                          fontFamily: 'Inter_600SemiBold',
+                          fontSize: 13,
+                          color: isSelected ? CATEGORY_COLOR[key] : '#8A8A9A',
+                        }}
                       >
-                        {cat.label}
+                        {key.charAt(0).toUpperCase() + key.slice(1)}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
-            </View>
+            </ScrollView>
 
-            {/* ── "or describe" divider + AI field ── */}
-            <View style={styles.aiFieldWrap}>
-              <View style={styles.orDivider}>
-                <View style={styles.orLine} />
-                <Text style={styles.orText}>or describe</Text>
-                <View style={styles.orLine} />
-              </View>
-
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                marginVertical: 14,
+              }}
+            >
               <View
-                style={[
-                  styles.aiField,
-                  aiInputFocused && { borderColor: colors.primary },
-                ]}
+                style={{
+                  flex: 1,
+                  height: 1,
+                  backgroundColor: 'rgba(30,30,46,0.1)',
+                }}
+              />
+              <Text
+                style={{
+                  fontFamily: 'Inter_700Bold',
+                  fontSize: 9,
+                  color: '#8A8A9A',
+                  letterSpacing: 0.05,
+                  textTransform: 'uppercase',
+                }}
               >
-                <View
-                  style={[
-                    styles.aiFieldIcon,
-                    aiText ? styles.aiFieldIconMapped : {},
-                  ]}
-                />
-                <TextInput
-                  style={[
-                    styles.aiFieldText,
-                    aiText ? styles.aiFieldTextHasText : {},
-                  ]}
-                  placeholder='e.g. "lunch", "grab ride", "gamot"'
-                  placeholderTextColor={colors.textSecondary}
-                  value={aiText}
-                  onChangeText={handleAiTextChange}
-                  onFocus={() => setAiInputFocused(true)}
-                  onBlur={() => setAiInputFocused(false)}
-                  returnKeyType="done"
-                />
-              </View>
-
-              {!!aiResult && aiResult.suggestedCategory && (
-                <View style={styles.aiConfirm}>
-                  <View style={styles.aiConfirmDot} />
-                  <Text style={styles.aiConfirmText}>
-                    &quot;{aiResult.matchedKeyword}&quot; →{' '}
-                    {aiResult.suggestedCategory.charAt(0).toUpperCase() +
-                      aiResult.suggestedCategory.slice(1)}{' '}
-                    ✓
-                  </Text>
-                </View>
-              )}
-
-              {!!aiText && !!aiResult && !aiResult.suggestedCategory && (
-                <View style={styles.aiNudge}>
-                  <View style={styles.aiNudgeDot} />
-                  <Text style={styles.aiNudgeText}>
-                    Not sure about that one — pick a category?
-                  </Text>
-                </View>
-              )}
+                or describe
+              </Text>
+              <View
+                style={{
+                  flex: 1,
+                  height: 1,
+                  backgroundColor: 'rgba(30,30,46,0.1)',
+                }}
+              />
             </View>
-          </Animated.View>
+
+            <View
+              style={{
+                backgroundColor: '#F0ECFD',
+                borderWidth: 1.5,
+                borderColor: '#C9B8F5',
+                borderRadius: 14,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <Text style={{ fontSize: 14 }}>✦</Text>
+              <TextInput
+                style={{
+                  flex: 1,
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 13,
+                  color: '#1E1E2E',
+                }}
+                placeholder='e.g. "hamburger", "load", "tanghalian"'
+                placeholderTextColor="#B4B2A9"
+                value={descriptionText}
+                onChangeText={setDescriptionText}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* ── CONFIRM & SAVE BUTTON ── */}
+        {parsedData && !isParsing && (
+          <View style={{ marginHorizontal: 20 }}>
+            <TouchableOpacity
+              onPress={handleConfirmSave}
+              disabled={!!hasLowConfidenceUnfixed}
+              style={{
+                backgroundColor: hasLowConfidenceUnfixed
+                  ? '#B4D4C4'
+                  : '#5B8C6E',
+                borderRadius: 16,
+                paddingVertical: 18,
+                alignItems: 'center',
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: 'Nunito_700Bold',
+                  fontSize: 16,
+                  color: '#FFFFFF',
+                }}
+              >
+                Confirm & save
+              </Text>
+            </TouchableOpacity>
+            {hasLowConfidenceUnfixed && (
+              <Text
+                style={{
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 11,
+                  color: '#E8856A',
+                  textAlign: 'center',
+                  marginTop: 8,
+                }}
+              >
+                Fix the highlighted fields first
+              </Text>
+            )}
+          </View>
         )}
       </ScrollView>
-
-      {/* ── Footer ── */}
-      <View
-        style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 24) }]}
-      >
-        <TouchableOpacity
-          activeOpacity={0.8}
-          disabled={!isFormValid}
-          onPress={handleConfirm}
-          style={[
-            styles.saveBtnWrap,
-            !isFormValid && { opacity: 0.4, shadowOpacity: 0, elevation: 0 },
-          ]}
-        >
-          <LinearGradient
-            colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']}
-            style={styles.saveBtn}
-          >
-            <Text style={styles.saveBtnText}>Confirm & save</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Fullscreen image modal ── */}
-      <Modal visible={isExpanded} transparent animationType="fade">
-        <View style={styles.modalBg}>
-          <TouchableOpacity
-            style={styles.modalClose}
-            onPress={() => setIsExpanded(false)}
-          >
-            <Ionicons name="close-circle" size={36} color={colors.white} />
-          </TouchableOpacity>
-          <Image
-            source={{ uri: imageUri || undefined }}
-            style={styles.modalImage}
-            resizeMode="contain"
-          />
-        </View>
-      </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-
-  // ── Header ──
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.screenPadding,
-    paddingBottom: 24,
-  },
-  headerTitle: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 18,
-    color: colors.textPrimary,
-  },
-  backButton: {
-    width: 40,
-    alignItems: 'flex-start',
-  },
-
-  scrollContent: {
-    paddingHorizontal: spacing.screenPadding,
-    paddingBottom: 40,
-  },
-
-  // ── Empty state ──
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(45,106,79,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  emptyStateTitle: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 20,
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  emptyStateSub: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 20,
-    paddingHorizontal: 20,
-  },
-  uploadButtonsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  uploadBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
-    borderRadius: 16,
-    gap: 8,
-  },
-  uploadBtnText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    color: colors.white,
-  },
-  uploadBtnSecondary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.white,
-    paddingVertical: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
-    gap: 8,
-  },
-  uploadBtnTextSecondary: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    color: colors.primary,
-  },
-
-  // ── Receipt preview — spec: 140px, borderRadius:16, gradient bg ──
-  previewContainer: {
-    height: 140,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  previewImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  expandOverlay: {
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  expandText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    color: colors.white,
-  },
-
-  // ── Parsing overlay — spec: colors.primary 13px 700, subtitle 11px textSecondary ──
-  parsingOverlay: {
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  parsingTitle: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 13,
-    color: colors.primary,
-    marginBottom: 6,
-  },
-  parsingSubtitle: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    color: colors.textSecondary,
-  },
-
-  // ── Confidence legend ──
-  legendRow: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 12,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  legendDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  legendText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    color: colors.textSecondary,
-  },
-
-  // ── Confidence fields ──
-  confField: {
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  // High-confidence: #E8E6E2 bg, #A0BCA0 border
-  confHiField: {
-    backgroundColor: '#E8E6E2',
-    borderColor: '#A0BCA0',
-  },
-  // Low-confidence: #FBF0EC bg, #C8A09A border
-  confLoField: {
-    backgroundColor: '#FBF0EC',
-    borderColor: '#C8A09A',
-  },
-  confFieldLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  // High-conf value: DM Mono, read-only
-  confHiValue: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 13,
-    color: colors.textPrimary,
-    textAlign: 'right',
-    flex: 1,
-    marginLeft: 8,
-  },
-  confHiAmountValue: {
-    fontSize: 16,
-    color: colors.primary,
-  },
-  // Low-conf value + Fix › row
-  fixRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  confLoValue: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    color: colors.coralDark,
-    textAlign: 'right',
-  },
-  confLoValueConfirmed: {
-    fontFamily: 'DMMono_500Medium',
-    color: colors.textPrimary,
-  },
-  fixChevron: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
-    color: colors.coralDark,
-  },
-  confLoInput: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 13,
-    color: colors.primary,
-    flex: 1,
-    textAlign: 'right',
-    padding: 0,
-  },
-
-  // ── Section + category pills (borderRadius:12 per spec) ──
-  section: {
-    marginTop: 20,
-    marginBottom: 4,
-  },
-  fieldLabel: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 11,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
-  aiLabel: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    color: colors.lavenderDark,
-    textTransform: 'none',
-    letterSpacing: 0,
-  },
-  pillsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
-  catPill: {
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: 'rgba(30,30,46,0.08)',
-    backgroundColor: colors.background,
-  },
-  catPillText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-
-  // ── "or describe" + AI field (identical to AddTransactionSheet) ──
-  aiFieldWrap: {
-    marginTop: 4,
-    marginBottom: 24,
-  },
-  orDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginVertical: 12,
-  },
-  orLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(30,30,46,0.08)',
-  },
-  orText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 9,
-    color: colors.textSecondary,
-    letterSpacing: 0.5,
-  },
-  aiField: {
-    backgroundColor: colors.lavenderLight,
-    borderWidth: 1.5,
-    borderColor: colors.lavender,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  aiFieldIcon: {
-    width: 10,
-    height: 10,
-    borderRadius: 3,
-    backgroundColor: '#B8B4D8',
-  },
-  aiFieldIconMapped: {
-    backgroundColor: colors.primary,
-  },
-  aiFieldText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: colors.textSecondary,
-    flex: 1,
-  },
-  aiFieldTextHasText: {
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.textPrimary,
-  },
-  aiConfirm: {
-    backgroundColor: colors.primaryLight,
-    borderWidth: 1,
-    borderColor: 'rgba(91,140,110,0.3)',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 7,
-    alignSelf: 'flex-start',
-  },
-  aiConfirmDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.primary,
-  },
-  aiConfirmText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
-    color: colors.primaryDark,
-  },
-  aiNudge: {
-    backgroundColor: '#FBF0EC',
-    borderWidth: 1,
-    borderColor: 'rgba(232,133,106,0.4)',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 7,
-    alignSelf: 'flex-start',
-  },
-  aiNudgeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.coral,
-  },
-  aiNudgeText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    color: colors.coralDark,
-  },
-
-  // ── Footer + save button (gradient, opacity:0.4 disabled pattern) ──
-  footer: {
-    paddingHorizontal: spacing.screenPadding,
-    backgroundColor: colors.background,
-    paddingTop: 16,
-  },
-  saveBtnWrap: {
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 4,
-  },
-  saveBtn: {
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.2)',
-  },
-  saveBtnText: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 16,
-    color: colors.white,
-  },
-
-  // ── Fullscreen modal ──
-  modalBg: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.95)',
-    justifyContent: 'center',
-  },
-  modalClose: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-    zIndex: 10,
-  },
-  modalImage: {
-    width: '100%',
-    height: '80%',
-  },
-});

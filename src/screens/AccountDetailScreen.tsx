@@ -1,10 +1,19 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Modal,
+  ActivityIndicator,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context'; // 👈 Added this import
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { FlashList, ListRenderItem } from '@shopify/flash-list';
 import { colors, radius, spacing } from '../constants/theme';
-import { useTransactionStore, Transaction } from '../services/balanceCalc';
+import type { Transaction, Account } from '@/types';
+import { supabase } from '@/services/supabase';
+import { useAccounts } from '@/hooks/useAccounts';
 import type { MoreStackParamList } from '../navigation/RootNavigator';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -32,24 +41,52 @@ export default function AccountDetailScreen() {
   const route = useRoute<RouteProp<MoreStackParamList, 'AccountDetail'>>();
   const { id } = route.params;
 
-  const store = useTransactionStore();
+  const { accounts } = useAccounts();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
+  const selectedAccount = useMemo<Account | null>(() => {
+    if (!accounts.length) return null;
+    return (
+      accounts.find((a) => a.id === id) ??
+      accounts.find((a) => a.name.toLowerCase() === id.toLowerCase()) ??
+      null
+    );
+  }, [accounts, id]);
+
+  const fetchAccountTransactions = useCallback(async () => {
+    if (!selectedAccount?.id) {
+      setTransactions([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('account_id', selectedAccount.id)
+      .order('date', { ascending: false });
+
+    if (!error && data) setTransactions(data as Transaction[]);
+    setLoading(false);
+  }, [selectedAccount?.id]);
+
+  useEffect(() => {
+    fetchAccountTransactions();
+  }, [fetchAccountTransactions]);
+
   // ─── Data Extraction ───
-  const config = ACCOUNT_CONFIG[id] || {
-    letter: '?',
-    color: '#333',
-    label: id,
+  const config = {
+    letter: selectedAccount?.letter_avatar ?? '?',
+    color: selectedAccount?.brand_colour ?? '#333',
+    label: selectedAccount?.name ?? id,
   };
-  const allTxns = store.getAll();
-  const summaries = store.getAccountSummaries();
-  const balance = summaries.find((s) => s.accountId === id)?.balance || 0;
+  const balance = selectedAccount?.balance ?? 0;
 
   // 1. Filter txns to this account
-  const accountTxns = useMemo(
-    () => allTxns.filter((t) => t.account === id),
-    [allTxns, id]
-  );
+  const accountTxns = transactions;
 
   // 2. 3 Most Recent
   const recentTxns = accountTxns.slice(0, 3);
@@ -64,7 +101,7 @@ export default function AccountDetailScreen() {
       (acc, tx) => {
         const d = new Date(tx.date);
         if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
-          if (tx.type === 'inc') acc.monthIn += tx.amount;
+          if (tx.type === 'income') acc.monthIn += tx.amount;
           else acc.monthOut += tx.amount;
         }
         return acc;
@@ -76,18 +113,19 @@ export default function AccountDetailScreen() {
   // ─── UI Rendering ───
 
   const renderTxn: ListRenderItem<Transaction> = ({ item }) => {
-    const isInc = item.type === 'inc';
+    const isInc = item.type === 'income';
+    const categoryLabel = item.category ?? 'other';
     return (
       <View style={styles.txItem}>
         <View style={styles.txLeft}>
           <View style={styles.txAvatar}>
             <Text style={styles.txAvatarLetter}>
-              {item.category.charAt(0).toUpperCase()}
+              {categoryLabel.charAt(0).toUpperCase()}
             </Text>
           </View>
           <View>
             <Text style={styles.txCategory}>
-              {item.category.charAt(0).toUpperCase() + item.category.slice(1)}
+              {categoryLabel.charAt(0).toUpperCase() + categoryLabel.slice(1)}
             </Text>
             <Text style={styles.txDate}>
               {new Date(item.date).toLocaleDateString('en-US', {
@@ -106,6 +144,28 @@ export default function AccountDetailScreen() {
       </View>
     );
   };
+
+  if (loading) {
+    return (
+      <View style={styles.containerCenter}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (!selectedAccount) {
+    return (
+      <View style={styles.containerCenter}>
+        <Text style={styles.emptyText}>Account not found.</Text>
+        <TouchableOpacity
+          style={styles.backGhostBtn}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.backGhostBtnText}>Go back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     // 👈 Removed SafeAreaView wrapper, just using standard View
@@ -238,6 +298,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background, // 👈 Ensures background matches theme entirely
+  },
+  containerCenter: {
+    flex: 1,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.screenPadding,
+  },
+  backGhostBtn: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(30,30,46,0.15)',
+  },
+  backGhostBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: colors.textPrimary,
   },
   // ── Hero ──
   hero: {
