@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import {
   NavigationContainer,
   NavigatorScreenParams,
@@ -19,7 +19,23 @@ import AccountDetailScreen from '../screens/AccountDetailScreen';
 import MoreScreen from '../screens/MoreScreen';
 import ChatScreen from '../screens/ChatScreen';
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── ONBOARDING SCREENS ─────────────────────────────────────────────────────
+import AccountSetupScreen from '../screens/onboarding/AccountSetupScreen';
+
+// Temporary placeholder for the next step so the app doesn't crash when you hit Continue
+const OnboardingCategoriesScreen = ({ navigation }: any) => (
+  <View style={styles.placeholder}>
+    <Text style={styles.placeholderText}>Categories Setup Screen</Text>
+    <Text
+      style={{ color: '#534AB7', marginTop: 20, fontWeight: 'bold' }}
+      onPress={() => navigation.navigate('Tabs')}
+    >
+      Finish Onboarding & Go to App →
+    </Text>
+  </View>
+);
+
+// ─── TYPES ──────────────────────────────────────────────────────────────────
 
 export type FeedStackParamList = {
   FeedMain: { filterCategory?: string } | undefined;
@@ -35,7 +51,7 @@ export type TabStackParamList = {
   home: undefined;
   feed: NavigatorScreenParams<FeedStackParamList>;
   stats: undefined;
-  more: NavigatorScreenParams<MoreStackParamList>;
+  more: undefined;
 };
 
 export type RootStackParamList = {
@@ -53,9 +69,11 @@ export type RootStackParamList = {
   };
   ScreenshotScreen: undefined;
   ChatScreen: undefined;
+  AccountSetup: undefined; // <-- Added Onboarding
+  OnboardingCategories: undefined; // <-- Added Onboarding
 };
 
-// ─── Navigators ─────────────────────────────────────────────────────────────
+// ─── NAVIGATORS ─────────────────────────────────────────────────────────────
 
 const FeedStack = createNativeStackNavigator<FeedStackParamList>();
 function FeedNavigator() {
@@ -87,29 +105,13 @@ function TabNavigator() {
       tabBar={(props) => (
         <TabBar
           activeTab={props.state.routeNames[props.state.index] as TabRoute}
-          onTabPress={(tab) => {
-            // 👇 FIX: By always targeting the nested "Main" screen explicitly,
-            // we force the stack to reset to its base state every time you
-            // tap the tab (whether switching to it, or double-tapping it).
-            if (tab === 'more') {
-              // @ts-ignore
-              props.navigation.navigate('more', { screen: 'MoreMain' });
-            } else if (tab === 'feed') {
-              // @ts-ignore
-              props.navigation.navigate('feed', { screen: 'FeedMain' });
-            } else {
-              props.navigation.navigate(tab);
-            }
-          }}
+          onTabPress={(tab) => props.navigation.navigate(tab)}
           onFabPress={() => props.navigation.navigate('FABActionSheet')}
         />
       )}
-      screenOptions={{
-        headerShown: false,
-      }}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="home" component={HomeScreen} />
-      {/* unmountOnBlur safely removed to satisfy TypeScript */}
       <Tab.Screen name="feed" component={FeedNavigator} />
       <Tab.Screen name="stats" component={StatsScreen} />
       <Tab.Screen name="more" component={MoreNavigator} />
@@ -117,16 +119,29 @@ function TabNavigator() {
   );
 }
 
-// ─── Root Stack ─────────────────────────────────────────────────────────────
-
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {/* Notice initialRouteName is set to "AccountSetup" right now so you can test it. 
+        Later, we will conditionally render this based on if the user is signed in!
+      */}
+      <Stack.Navigator
+        screenOptions={{ headerShown: false }}
+        initialRouteName="AccountSetup"
+      >
+        {/* Onboarding Flow */}
+        <Stack.Screen name="AccountSetup" component={AccountSetupScreen} />
+        <Stack.Screen
+          name="OnboardingCategories"
+          component={OnboardingCategoriesScreen}
+        />
+
+        {/* Main App */}
         <Stack.Screen name="Tabs" component={TabNavigator} />
 
+        {/* Modals */}
         <Stack.Screen
           name="FABActionSheet"
           component={FABActionSheet}
@@ -145,25 +160,31 @@ export default function RootNavigator() {
             contentStyle: { backgroundColor: 'transparent' },
           }}
         />
-
         <Stack.Screen
           name="ScreenshotScreen"
           component={ScreenshotScreen}
-          options={{
-            headerShown: false,
-            presentation: 'modal',
-          }}
+          options={{ headerShown: false, presentation: 'modal' }}
         />
-
         <Stack.Screen
           name="ChatScreen"
           component={ChatScreen}
-          options={{
-            headerShown: false,
-            presentation: 'modal',
-          }}
+          options={{ headerShown: false, presentation: 'modal' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  placeholder: {
+    flex: 1,
+    backgroundColor: '#F7F5F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 16,
+    color: '#1E1E2E',
+  },
+});
