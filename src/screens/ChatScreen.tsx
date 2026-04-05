@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,25 @@ import {
   TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing } from '../constants/theme';
+import { sendMessage, ChatMessage, UserFinancialContext } from '@/services/gemini';
+import { useAccounts } from '@/hooks/useAccounts';
+import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
+import { useCategories } from '@/hooks/useCategories';
+import { supabase } from '@/services/supabase';
 
-const MOCK_HAS_TRANSACTIONS = true;
+const SUGGESTED_PROMPTS = [
+  'How much did I spend on food?',
+  'What is my biggest expense?',
+  'Summarize my month',
+  'Did I get paid yet?',
+];
 
 type RichRow = { label: string; value: string; color?: string };
 type Message = {
@@ -27,118 +37,151 @@ type Message = {
   timestamp: string;
 };
 
-const SUGGESTED_PROMPTS = [
-  'How much did I spend on food?',
-  'What is my biggest expense?',
-  'Summarize my week',
-  'Did I get paid yet?',
-];
-
-const INITIAL_MSG: Message = {
-  id: 'msg-1',
-  type: 'ai',
-  text: "Hi Hans! 👋 Here's a quick summary of your finances this month:",
-  richData: [
-    { label: 'Total spent', value: '₱4,820.50', color: '#E57373' },
-    { label: 'Total income', value: '₱25,000.00', color: '#2d6a4f' },
-  ],
-  timestamp: new Date().toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  }),
+type RecentTx = {
+  display_name: string | null;
+  amount: number;
+  type: string;
+  category: string | null;
+  date: string;
 };
 
-const FOOD_REPLY: Message = {
-  id: 'msg-food',
-  type: 'ai',
-  text: "You've spent ₱405.00 on Food this month. Here's the breakdown:",
-  richData: [
-    { label: 'Jollibee Drive Thru', value: '₱185.00' },
-    { label: 'Starbucks', value: '₱220.00' },
-  ],
-  followUps: ['What about transport?', 'Show highest expense'],
-  timestamp: new Date().toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  }),
-};
-
-const GENERIC_REPLY: Message = {
-  id: 'msg-generic',
-  type: 'ai',
-  text: "I'm still learning! Right now I can only answer questions about your food expenses.",
-  timestamp: new Date().toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  }),
-};
+function nowTime() {
+  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const [messages, setMessages] = useState<Message[]>([INITIAL_MSG]);
+  const { totalBalance } = useAccounts();
+  const { totalIncome, totalExpense: monthlySpent } = useMonthlyTotals();
+  const { categories } = useCategories();
+
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [showPrompts, setShowPrompts] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
+  const [geminiHistory, setGeminiHistory] = useState<ChatMessage[]>([]);
+  const [recentTxns, setRecentTxns] = useState<RecentTx[]>([]);
 
-  //   useEffect(() => {
-  //     const checkPrompts = async () => {
-  //       try {
-  //         const stored = await AsyncStorage.getItem('fino_prompts_shown');
-  //         if (stored !== 'true') {
-  //           setShowPrompts(true);
-  //         }
-  //       } catch (e) {
-  //         // ESLint fix: Silently ignore storage fetch errors
-  //       }
-  //     };
-  //     checkPrompts();
-  //   }, []);
+  // Scroll to bottom when keyboard opens so input stays visible
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Fetch recent 10 transactions once on mount
+  useEffect(() => {
+    supabase
+      .from('transactions')
+      .select('display_name, amount, type, category, date')
+      .order('date', { ascending: false })
+      .limit(10)
+      .then(({ data }) => setRecentTxns(data ?? []));
+  }, []);
+
+  // Build initial welcome message from real data once totals load
+  useEffect(() => {
+    setMessages([
+      {
+        id: 'msg-welcome',
+        type: 'ai',
+        text: "Hi! 👋 Here's your financial snapshot this month:",
+        richData: [
+          {
+            label: 'Spent this month',
+            value: `₱${monthlySpent.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+            color: colors.expenseRed,
+          },
+          {
+            label: 'Income this month',
+            value: `₱${totalIncome.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+            color: '#2d6a4f',
+          },
+          {
+            label: 'Total balance',
+            value: `₱${totalBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+          },
+        ],
+        timestamp: nowTime(),
+      },
+    ]);
+  }, [monthlySpent, totalIncome, totalBalance]);
+
+  const financialContext = useMemo<UserFinancialContext>(() => {
+    const totalBudget = categories.reduce(
+      (sum, c) => sum + (c.budget_limit ?? 0),
+      0,
+    );
+    return {
+      totalBalance,
+      monthlyIncome: totalIncome,
+      monthlySpent,
+      totalBudget: totalBudget > 0 ? totalBudget : null,
+      categoryBreakdown: categories.map((c) => ({
+        name: c.name,
+        spent: c.spent,
+        budget: c.budget_limit ?? null,
+      })),
+      recentTransactions: recentTxns,
+    };
+  }, [totalBalance, totalIncome, monthlySpent, categories, recentTxns]);
+
+  const hasTransactions = recentTxns.length > 0 || monthlySpent > 0;
 
   const handleSend = async (textOverride?: string) => {
-    const textToSend = textOverride || inputText;
+    const textToSend = textOverride ?? inputText;
     if (!textToSend.trim()) return;
 
-    if (showPrompts) {
-      setShowPrompts(false);
-      try {
-        await AsyncStorage.setItem('fino_prompts_shown', 'true');
-      } catch (e) {
-        // Silently ignore storage save errors
-      }
-    }
+    setShowPrompts(false);
+    setInputText('');
 
     const userMsg: Message = {
       id: Date.now().toString(),
       type: 'user',
       text: textToSend.trim(),
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      timestamp: nowTime(),
     };
-
     setMessages((prev) => [...prev, userMsg]);
-    setInputText('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      setIsTyping(false);
-      const isFoodQuery = textToSend.toLowerCase().includes('food');
+    try {
+      const reply = await sendMessage(
+        textToSend.trim(),
+        geminiHistory,
+        financialContext,
+      );
 
-      const replyMsg: Message = {
-        ...(isFoodQuery ? FOOD_REPLY : GENERIC_REPLY),
+      setGeminiHistory((prev) => [
+        ...prev,
+        { role: 'user', text: textToSend.trim() },
+        { role: 'model', text: reply },
+      ]);
+
+      const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
+        type: 'ai',
+        text: reply,
+        timestamp: nowTime(),
       };
-
-      setMessages((prev) => [...prev, replyMsg]);
-    }, 1500);
+      setMessages((prev) => [...prev, aiMsg]);
+    } catch (err) {
+      console.error('[Fino AI] sendMessage error:', err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          type: 'ai',
+          text: 'Something went wrong. Please try again.',
+          timestamp: nowTime(),
+        },
+      ]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const renderEmptyGuard = () => (
@@ -244,11 +287,11 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { paddingTop: Math.max(insets.top, 16) }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Math.max(insets.top, 16)}
     >
-      <View style={styles.chatHeader}>
+      <View style={[styles.chatHeader, { paddingTop: Math.max(insets.top, 16) }]}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
@@ -267,15 +310,20 @@ export default function ChatScreen() {
         <View style={styles.backBtn} />
       </View>
 
-      {!MOCK_HAS_TRANSACTIONS ? (
+      {!hasTransactions ? (
         renderEmptyGuard()
       ) : (
         <ScrollView
           ref={scrollViewRef}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           onContentSizeChange={() =>
             scrollViewRef.current?.scrollToEnd({ animated: true })
+          }
+          onLayout={() =>
+            scrollViewRef.current?.scrollToEnd({ animated: false })
           }
         >
           {messages.map(renderMessage)}
@@ -306,24 +354,24 @@ export default function ChatScreen() {
             value={inputText}
             onChangeText={setInputText}
             placeholder={
-              !MOCK_HAS_TRANSACTIONS
+              !hasTransactions
                 ? 'Log some expenses first...'
                 : 'Ask about your finances...'
             }
             placeholderTextColor="#888780"
-            editable={MOCK_HAS_TRANSACTIONS}
+            editable={hasTransactions}
             multiline
             maxLength={150}
           />
           <TouchableOpacity
             style={[
               styles.sendBtn,
-              !inputText.trim() || !MOCK_HAS_TRANSACTIONS
+              !inputText.trim() || !hasTransactions || isTyping
                 ? styles.sendBtnDisabled
                 : undefined,
             ]}
             onPress={() => handleSend()}
-            disabled={!inputText.trim() || !MOCK_HAS_TRANSACTIONS}
+            disabled={!inputText.trim() || !hasTransactions || isTyping}
           >
             <Ionicons name="arrow-up" size={18} color="#FFF" />
           </TouchableOpacity>

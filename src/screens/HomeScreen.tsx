@@ -472,7 +472,7 @@ export default function HomeScreen() {
                   {/* SVG icon in duotone tinted circle */}
                   <View style={styles.catIconCircle}>
                     <CategoryIcon
-                      categoryKey={cat.emoji ?? 'default'}
+                      categoryKey={cat.name.toLowerCase()}
                       color={cat.text_colour ?? '#888780'}
                     />
                   </View>

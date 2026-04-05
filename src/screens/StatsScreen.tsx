@@ -416,7 +416,7 @@ export default function StatsScreen() {
     const theme = CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other;
     const color = meta?.textColor ?? theme.nameColor;
     const bg = meta?.tileBg ?? theme.badgeBg;
-    const iconKey = normalizeCategoryKey(meta?.emoji) || catKey;
+    const iconKey = catKey;
     const catSpent = expenseTotals[catKey] || 0;
     const catBudget = expenseBudgets[catKey] || DEFAULT_CATEGORY_BUDGETS.default;
     const pct = catBudget > 0 ? (catSpent / catBudget) * 100 : 0;
@@ -572,7 +572,7 @@ export default function StatsScreen() {
       >
         <View {...panResponder.panHandlers} style={styles.donutContainer}>
           <Svg width={160} height={160} viewBox="0 0 160 160">
-            <G rotation="-90" origin="80, 80">
+            <G transform="rotate(-90, 80, 80)">
               <Circle cx="80" cy="80" r={donutRadius} stroke="rgba(30,30,46,0.06)" strokeWidth={donutStrokeWidth} fill="transparent" />
               {donutSegments.map((segment, index) => {
                 const isFocused = activeDonutIndex === index;

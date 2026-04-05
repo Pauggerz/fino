@@ -363,7 +363,7 @@ function BudgetSettingsModal({
                 <View key={cat.id} style={budgetStyles.catRow}>
                   <View style={[budgetStyles.catIconCircle, { backgroundColor: bg }]}>
                     <CategoryIcon
-                      categoryKey={(cat.emoji ?? 'default').toLowerCase()}
+                      categoryKey={cat.name.toLowerCase()}
                       color={color}
                       size={18}
                       wrapperSize={28}
