@@ -21,19 +21,7 @@ import ChatScreen from '../screens/ChatScreen';
 
 // ─── ONBOARDING SCREENS ─────────────────────────────────────────────────────
 import AccountSetupScreen from '../screens/onboarding/AccountSetupScreen';
-
-// Temporary placeholder for the next step so the app doesn't crash when you hit Continue
-const OnboardingCategoriesScreen = ({ navigation }: any) => (
-  <View style={styles.placeholder}>
-    <Text style={styles.placeholderText}>Categories Setup Screen</Text>
-    <Text
-      style={{ color: '#534AB7', marginTop: 20, fontWeight: 'bold' }}
-      onPress={() => navigation.navigate('Tabs')}
-    >
-      Finish Onboarding & Go to App →
-    </Text>
-  </View>
-);
+import CategorySetupScreen from '../screens/onboarding/CategorySetupScreen';
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
@@ -70,7 +58,7 @@ export type RootStackParamList = {
   ScreenshotScreen: undefined;
   ChatScreen: undefined;
   AccountSetup: undefined; // <-- Added Onboarding
-  OnboardingCategories: undefined; // <-- Added Onboarding
+  CategorySetup: undefined; // <-- Added Onboarding
 };
 
 // ─── NAVIGATORS ─────────────────────────────────────────────────────────────
@@ -133,10 +121,7 @@ export default function RootNavigator() {
       >
         {/* Onboarding Flow */}
         <Stack.Screen name="AccountSetup" component={AccountSetupScreen} />
-        <Stack.Screen
-          name="OnboardingCategories"
-          component={OnboardingCategoriesScreen}
-        />
+        <Stack.Screen name="CategorySetup" component={CategorySetupScreen} />
 
         {/* Main App */}
         <Stack.Screen name="Tabs" component={TabNavigator} />

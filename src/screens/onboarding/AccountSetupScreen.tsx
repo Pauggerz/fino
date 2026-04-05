@@ -155,7 +155,7 @@ export default function AccountSetupScreen() {
       if (error) throw error;
 
       // 4. Move to next step on success
-      navigation.navigate('OnboardingCategories');
+      navigation.navigate('CategorySetup');
     } catch (error: any) {
       Alert.alert('Error saving accounts', error.message);
     } finally {
