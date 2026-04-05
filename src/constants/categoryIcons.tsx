@@ -53,6 +53,67 @@ export const CATEGORY_ICON_PATHS: Record<string, CategoryIconConfig> = {
       />
     ),
   },
+  // ── Income categories ────────────────────────────────────────────────────────
+  salary: {
+    viewBox: '0 0 24 24',
+    // monetization_on — coin with currency symbol
+    paths: (
+      <Path
+        fill="#CURRENT"
+        d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"
+      />
+    ),
+  },
+  allowance: {
+    viewBox: '0 0 24 24',
+    // account_balance_wallet
+    paths: (
+      <Path
+        fill="#CURRENT"
+        d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"
+      />
+    ),
+  },
+  freelance: {
+    viewBox: '0 0 24 24',
+    // laptop_mac
+    paths: (
+      <Path
+        fill="#CURRENT"
+        d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"
+      />
+    ),
+  },
+  business: {
+    viewBox: '0 0 24 24',
+    // store / storefront
+    paths: (
+      <Path
+        fill="#CURRENT"
+        d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"
+      />
+    ),
+  },
+  gifts: {
+    viewBox: '0 0 24 24',
+    // redeem / gift card
+    paths: (
+      <Path
+        fill="#CURRENT"
+        d="M23 12v-2h-3.28c.17-.52.28-1.06.28-1.63C20 5.56 17.42 3 14.25 3c-1.7 0-3.21.8-4.25 2.05C8.96 3.8 7.45 3 5.75 3 2.58 3 0 5.56 0 8.37c0 .57.11 1.11.28 1.63H0v2h11v-2.5h2V12h10zM14.25 5c1.76 0 3.25 1.46 3.25 3.37 0 .64-.23 1.44-.66 1.63H11.6c-.43-.19-.6-1-.6-1.63C11 6.46 12.5 5 14.25 5zM5.75 5C7.5 5 9 6.46 9 8.37c0 .64-.17 1.44-.6 1.63H4.16C3.73 9.81 3.5 9 3.5 8.37 3.5 6.46 5 5 5.75 5zM2 20c0 1.1.9 2 2 2h7v-8H2v6zm11 2h7c1.1 0 2-.9 2-2v-6h-9v8z"
+      />
+    ),
+  },
+  investment: {
+    viewBox: '0 0 24 24',
+    // trending_up
+    paths: (
+      <Path
+        fill="#CURRENT"
+        d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"
+      />
+    ),
+  },
   // Fallback for any custom category the user creates
   default: {
     viewBox: '0 0 24 24',

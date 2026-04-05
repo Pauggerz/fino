@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle } from 'react-native-svg';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors } from '../constants/theme';
 import { CategoryIcon } from '@/components/CategoryIcon';
@@ -65,92 +64,6 @@ function onTrackLabel(pct: number): string {
   if (pct < 0.9) return 'Watch spending';
   return 'Over budget';
 }
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-/** Circular SVG progress ring — spec: strokeDasharray=94, strokeLinecap='round' */
-function CircleRing({
-  pct,
-  label,
-  value,
-  color,
-  warn,
-}: {
-  pct: number;
-  label: string;
-  value: string;
-  color: string;
-  warn?: boolean;
-}) {
-  const CIRC = 94; // 2π × 15 ≈ 94.2
-  const offset = CIRC * (1 - Math.max(0, Math.min(1, pct)));
-
-  return (
-    <View style={ringStyles.wrap}>
-      <View style={ringStyles.svgWrap}>
-        <Svg width={42} height={42} viewBox="0 0 42 42">
-          {/* Track */}
-          <Circle
-            cx="21"
-            cy="21"
-            r="15"
-            stroke="#d4eddf"
-            strokeWidth={4}
-            fill="none"
-          />
-          {/* Fill */}
-          <Circle
-            cx="21"
-            cy="21"
-            r="15"
-            stroke={color}
-            strokeWidth={4}
-            fill="none"
-            strokeDasharray={CIRC}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            transform="rotate(-90 21 21)"
-          />
-        </Svg>
-        {warn && (
-          <View style={ringStyles.warnBadge}>
-            <Text style={ringStyles.warnText}>!</Text>
-          </View>
-        )}
-      </View>
-      <Text style={[ringStyles.val, { color }]}>{value}</Text>
-      <Text style={ringStyles.label}>{label}</Text>
-    </View>
-  );
-}
-
-const ringStyles = StyleSheet.create({
-  wrap: { alignItems: 'center', gap: 3 },
-  svgWrap: { position: 'relative', width: 42, height: 42 },
-  warnBadge: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: 'rgba(192,80,58,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  warnText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 9,
-    color: colors.expenseRed,
-  },
-  val: { fontFamily: 'DMMono_500Medium', fontSize: 11, lineHeight: 14 },
-  label: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 9,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-});
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -262,17 +175,6 @@ export default function HomeScreen() {
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
 
-  // Saved ring: budget remaining / budget
-  const savedPct = Math.max(0, 1 - pctSpent);
-  // Top over-budget category for ring 2
-  const foodCat = categories.find((c) => c.name.toLowerCase() === 'food');
-  const shoppingCat = categories.find(
-    (c) => c.name.toLowerCase() === 'shopping'
-  );
-  const foodPct = foodCat?.pct ?? 0;
-  const shoppingPct = shoppingCat?.pct ?? 0;
-  const isShoppingOver = shoppingPct >= 1;
-
   // Mock last-month delta for trend badge
   const LAST_MONTH_TOTAL = totalBalance - 2450;
   const delta = totalBalance - LAST_MONTH_TOTAL;
@@ -383,31 +285,6 @@ export default function HomeScreen() {
               </Text>
             </View>
           </LinearGradient>
-        </View>
-
-        {/* ════════════════ MINI CIRCLE STATS ════════════════ */}
-        <View style={styles.miniStats}>
-          <CircleRing
-            pct={savedPct}
-            label="Saved"
-            value={`${Math.round(savedPct * 100)}%`}
-            color={colors.primary}
-          />
-          <CircleRing
-            pct={foodPct}
-            label="Food"
-            value={`${Math.round(foodPct * 100)}%`}
-            color={colors.coral}
-          />
-          <CircleRing
-            pct={shoppingPct}
-            label="Shopping"
-            value={
-              isShoppingOver ? 'Over!' : `${Math.round(shoppingPct * 100)}%`
-            }
-            color={isShoppingOver ? colors.expenseRed : colors.catShoppingText}
-            warn={isShoppingOver}
-          />
         </View>
 
         {/* ════════════════ HERO BALANCE CARD ════════════════ */}
@@ -630,7 +507,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             activeOpacity={0.9}
             style={styles.insightWrap}
-            onPress={() => navigation.navigate('AIScreen')}
+            onPress={() => navigation.navigate('ChatScreen')}
           >
             <LinearGradient
               colors={['#F0ECFD', '#EBF2EE']}
@@ -746,15 +623,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.onTrackSub,
     marginTop: 1,
-  },
-
-  // ── Mini circle stats ──
-  miniStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    marginBottom: 8,
   },
 
   // ── Hero card ──

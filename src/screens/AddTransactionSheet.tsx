@@ -19,7 +19,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../constants/theme';
-import { CATEGORY_TILE_BG, CATEGORY_COLOR } from '@/constants/categoryMappings';
+import { CATEGORY_TILE_BG, CATEGORY_COLOR, INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import {
   ACCOUNT_LOGOS,
@@ -79,8 +79,18 @@ export default function AddTransactionSheet({ route }: Props) {
   }, [accounts, accountId]);
 
   useEffect(() => {
-    if (categories.length > 0 && !category) setCategory(categories[0].name);
-  }, [categories, category]);
+    if (type === 'inc') {
+      setCategory(INCOME_CATEGORIES[0].name);
+    } else if (categories.length > 0) {
+      setCategory(categories[0].name);
+    }
+  }, [type]); // reset category whenever type switches
+
+  useEffect(() => {
+    if (categories.length > 0 && !category && type === 'exp') {
+      setCategory(categories[0].name);
+    }
+  }, [categories, category, type]);
 
   // Sheet slide animation
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -470,49 +480,87 @@ export default function AddTransactionSheet({ route }: Props) {
             {/* ── Category pills ── */}
             <View style={styles.section}>
               <Text style={styles.fieldLabel}>
-                CATEGORY <Text style={styles.aiLabel}>✦ AI suggested</Text>
+                CATEGORY{type === 'exp' && <Text style={styles.aiLabel}> ✦ AI suggested</Text>}
               </Text>
               <View style={styles.pillsRow}>
-                {categories.map((cat) => {
-                  const isSel = category === cat.name;
-                  const catKey = (cat.emoji ?? '').toLowerCase();
-                  const catColor =
-                    CATEGORY_COLOR[catKey] ?? colors.textSecondary;
-                  const catBg = CATEGORY_TILE_BG[catKey] ?? colors.background;
-                  return (
-                    <TouchableOpacity
-                      key={cat.id}
-                      onPress={() => handleCategoryManualSelect(cat.name)}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 6,
-                        paddingHorizontal: 14,
-                        paddingVertical: 8,
-                        borderRadius: 12,
-                        borderWidth: isSel ? 2 : 1,
-                        borderColor: isSel ? catColor : 'rgba(30,30,46,0.12)',
-                        backgroundColor: isSel ? catBg : '#FFFFFF',
-                      }}
-                    >
-                      <CategoryIcon
-                        categoryKey={catKey}
-                        color={isSel ? catColor : '#8A8A9A'}
-                        size={14}
-                        wrapperSize={22}
-                      />
-                      <Text
-                        style={{
-                          fontFamily: 'Inter_600SemiBold',
-                          fontSize: 13,
-                          color: isSel ? catColor : '#8A8A9A',
-                        }}
-                      >
-                        {cat.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                {type === 'inc'
+                  ? INCOME_CATEGORIES.map((cat) => {
+                      const isSel = category === cat.name;
+                      const catColor = CATEGORY_COLOR[cat.key] ?? colors.textSecondary;
+                      const catBg = CATEGORY_TILE_BG[cat.key] ?? colors.background;
+                      return (
+                        <TouchableOpacity
+                          key={cat.key}
+                          onPress={() => handleCategoryManualSelect(cat.name)}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 6,
+                            paddingHorizontal: 14,
+                            paddingVertical: 8,
+                            borderRadius: 12,
+                            borderWidth: isSel ? 2 : 1,
+                            borderColor: isSel ? catColor : 'rgba(30,30,46,0.12)',
+                            backgroundColor: isSel ? catBg : '#FFFFFF',
+                          }}
+                        >
+                          <CategoryIcon
+                            categoryKey={cat.key}
+                            color={isSel ? catColor : '#8A8A9A'}
+                            size={14}
+                            wrapperSize={22}
+                          />
+                          <Text
+                            style={{
+                              fontFamily: 'Inter_600SemiBold',
+                              fontSize: 13,
+                              color: isSel ? catColor : '#8A8A9A',
+                            }}
+                          >
+                            {cat.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  : categories.map((cat) => {
+                      const isSel = category === cat.name;
+                      const catKey = (cat.emoji ?? '').toLowerCase();
+                      const catColor = CATEGORY_COLOR[catKey] ?? colors.textSecondary;
+                      const catBg = CATEGORY_TILE_BG[catKey] ?? colors.background;
+                      return (
+                        <TouchableOpacity
+                          key={cat.id}
+                          onPress={() => handleCategoryManualSelect(cat.name)}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 6,
+                            paddingHorizontal: 14,
+                            paddingVertical: 8,
+                            borderRadius: 12,
+                            borderWidth: isSel ? 2 : 1,
+                            borderColor: isSel ? catColor : 'rgba(30,30,46,0.12)',
+                            backgroundColor: isSel ? catBg : '#FFFFFF',
+                          }}
+                        >
+                          <CategoryIcon
+                            categoryKey={catKey}
+                            color={isSel ? catColor : '#8A8A9A'}
+                            size={14}
+                            wrapperSize={22}
+                          />
+                          <Text
+                            style={{
+                              fontFamily: 'Inter_600SemiBold',
+                              fontSize: 13,
+                              color: isSel ? catColor : '#8A8A9A',
+                            }}
+                          >
+                            {cat.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
               </View>
             </View>
 

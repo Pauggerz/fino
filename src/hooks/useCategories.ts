@@ -2,6 +2,11 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/services/supabase';
 import { Category } from '@/types';
 
+// Keys used for income categories — exclude them from expense/budget views
+const INCOME_EMOJI_KEYS = new Set([
+  'salary', 'allowance', 'freelance', 'business', 'gifts', 'investment',
+]);
+
 export interface CategoryWithSpend extends Category {
   spent: number;
   pct: number;
@@ -62,8 +67,10 @@ export const useCategories = () => {
       }
     });
 
-    // 5. Combine and calculate states
-    const enriched = catData.map((cat) => {
+    // 5. Combine and calculate states (exclude income categories)
+    const enriched = catData
+      .filter((cat) => !INCOME_EMOJI_KEYS.has((cat.emoji ?? '').toLowerCase()))
+      .map((cat) => {
       const spent = spendMap[cat.name.toLowerCase()] || 0;
 
       let pct = 0;

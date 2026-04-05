@@ -27,14 +27,19 @@ function mapRow(row: any): FeedTransaction {
   };
 }
 
+export interface DateRange {
+  from: string; // ISO string
+  to: string;   // ISO string
+}
+
 /**
  * Fetches paginated transactions joined with account info.
  *
- * @param category  Pass 'All' or undefined for no filter.
- *                  Pass 'Income' to show only income.
- *                  Pass a category name (e.g. 'Food') to filter expenses by category.
+ * @param category   'All' / undefined = no filter. 'Income' = income only.
+ *                   A category name filters expenses by that category.
+ * @param dateRange  Optional ISO date range to restrict results to a month.
  */
-export const useTransactions = (category?: string) => {
+export const useTransactions = (category?: string, dateRange?: DateRange) => {
   const [items, setItems] = useState<FeedTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -59,6 +64,10 @@ export const useTransactions = (category?: string) => {
         }
       }
 
+      if (dateRange) {
+        q = q.gte('date', dateRange.from).lte('date', dateRange.to);
+      }
+
       const { data, error } = await q;
 
       if (!error && data) {
@@ -73,7 +82,7 @@ export const useTransactions = (category?: string) => {
         setHasMore(data.length === PAGE_SIZE);
       }
     },
-    [category]
+    [category, dateRange]
   );
 
   useEffect(() => {

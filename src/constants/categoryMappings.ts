@@ -98,20 +98,52 @@ export const CATEGORY_EMOJI: Record<string, string> = {
 
 // Maps DB category key → tile background colour (matches theme.ts catXxxBg)
 export const CATEGORY_TILE_BG: Record<string, string> = {
+  // Expense categories
   food: '#FDF6E3',
   transport: '#EEF6FF',
   shopping: '#FFF0F3',
   bills: '#F3EFFF',
   health: '#EFF8F2',
+  // Income categories
+  salary: '#EFF8F2',
+  allowance: '#EEF6FF',
+  freelance: '#F3EFFF',
+  business: '#FDF6E3',
+  gifts: '#FFF0F3',
+  investment: '#E8F6F5',
   default: '#F7F5F2',
 };
 
 // Maps DB emoji key → category text color (matches theme.ts)
 export const CATEGORY_COLOR: Record<string, string> = {
+  // Expense categories
   food: '#C97A20',
   transport: '#3A80C0',
   shopping: '#C0503A',
   bills: '#7A4AB8',
   health: '#2d6a4f',
+  // Income categories
+  salary: '#2d6a4f',
+  allowance: '#3A80C0',
+  freelance: '#7A4AB8',
+  business: '#C97A20',
+  gifts: '#C0503A',
+  investment: '#1a7a6e',
   default: '#888780',
 };
+
+// Income category definitions (used in AddTransactionSheet + FeedScreen)
+export interface IncomeCategoryDef {
+  key: string;
+  name: string;
+}
+
+export const INCOME_CATEGORIES: IncomeCategoryDef[] = [
+  { key: 'salary',     name: 'Salary' },
+  { key: 'allowance',  name: 'Allowance' },
+  { key: 'freelance',  name: 'Freelance' },
+  { key: 'business',   name: 'Business' },
+  { key: 'gifts',      name: 'Gifts' },
+  { key: 'investment', name: 'Investment' },
+  { key: 'default',    name: 'Others' },
+];
