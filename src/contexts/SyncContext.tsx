@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import { processQueue, addToQueue, getPendingQueue } from '@/services/syncService';
 
-export type SyncStatus = 'synced' | 'pending' | 'failed';
+export type SyncStatus = 'synced' | 'syncing' | 'offline';
 
 interface SyncContextProps {
   status: SyncStatus;
@@ -18,63 +18,62 @@ const SyncContext = createContext<SyncContextProps>({
 
 export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [status, setStatus] = useState<SyncStatus>('synced');
+  const isSyncing = useRef(false); // Prevents duplicate syncs running at the same time
 
-  // Simply checks if the local storage has items
-  const checkQueue = useCallback(async () => {
-    const queue = await getPendingQueue();
-    if (queue.length > 0) {
-      setStatus('pending');
-    } else {
-      setStatus('synced');
+  const triggerSync = useCallback(async (isConnected: boolean) => {
+    if (!isConnected) {
+      setStatus('offline'); // Instantly Red
+      return;
     }
-  }, []);
 
-  // Fires the sync event dynamically checking the live network status
-  const attemptSync = useCallback(async () => {
     const queue = await getPendingQueue();
     if (queue.length === 0) {
-      setStatus('synced');
+      setStatus('synced'); // Instantly Green
       return;
     }
 
-    // Fetch live network state directly to avoid React state closure traps
-    const networkState = await NetInfo.fetch();
-    
-    // We use isConnected because it is instantaneous. 
-    if (!networkState.isConnected) {
-      setStatus('pending');
-      return;
-    }
+    if (isSyncing.current) return;
+    isSyncing.current = true;
+    setStatus('syncing'); // Turn Orange while working
 
     const success = await processQueue();
-    setStatus(success ? 'synced' : 'failed');
+
+    isSyncing.current = false;
+    if (success) {
+      setStatus('synced'); // Success -> Green
+    } else {
+      setStatus('offline'); // Failed (e.g. server down) -> Red
+    }
   }, []);
 
   useEffect(() => {
-    // This listener triggers immediately when Wi-Fi is toggled
+    // Listens for instant Wi-Fi toggles
     const unsubscribe = NetInfo.addEventListener((state) => {
-      if (state.isConnected) {
-        attemptSync(); // Internet restored -> Push to DB
-      } else {
-        checkQueue(); // Internet lost -> Instantly turn amber if queue has items
-      }
+      const isOnline = state.isConnected === true;
+      triggerSync(isOnline);
     });
 
-    // Initial check on app boot
-    attemptSync();
+    // Check once on boot
+    NetInfo.fetch().then((state) => {
+      triggerSync(state.isConnected === true);
+    });
 
     return () => unsubscribe();
-  }, [attemptSync, checkQueue]);
+  }, [triggerSync]);
 
   const addOfflineTransaction = async (tx: any) => {
     await addToQueue(tx);
-    setStatus('pending');
-    // Instantly attempt a sync. If offline, attemptSync aborts cleanly.
-    await attemptSync();
+    const state = await NetInfo.fetch();
+    
+    if (state.isConnected === true) {
+      await triggerSync(true);
+    } else {
+      setStatus('offline');
+    }
   };
 
   return (
-    <SyncContext.Provider value={{ status, addOfflineTransaction, forceSync: attemptSync }}>
+    <SyncContext.Provider value={{ status, addOfflineTransaction, forceSync: () => triggerSync(true) }}>
       {children}
     </SyncContext.Provider>
   );

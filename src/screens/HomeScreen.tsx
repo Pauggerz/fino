@@ -71,7 +71,7 @@ function onTrackLabel(pct: number): string {
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
-  const { status: syncStatus } = useSync(); // Get sync status
+  const { status: syncStatus } = useSync(); 
 
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
   const { categories, refetch: refetchCategories } = useCategories();
@@ -81,17 +81,16 @@ export default function HomeScreen() {
     refetch: refetchTotals,
   } = useMonthlyTotals();
 
-  // Helper function to determine dot color
+  // 👇 Exact Color Mapper 👇
   const getSyncColor = () => {
     switch (syncStatus) {
       case 'synced': return '#10B981'; // Green
-      case 'pending': return '#F59E0B'; // Amber
-      case 'failed': return '#EF4444'; // Red
+      case 'syncing': return '#F59E0B'; // Orange
+      case 'offline': return '#EF4444'; // Red
       default: return '#10B981';
     }
   };
 
-  // ── Balance animation — 400ms count up/down ──
   const animBalance = useRef(new Animated.Value(totalBalance)).current;
   const [displayBalance, setDisplayBalance] = useState(totalBalance);
 
@@ -100,13 +99,11 @@ export default function HomeScreen() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      console.log('MY USER ID IS:', user?.id);
     };
     getMyId();
   }, []);
 
   useEffect(() => {
-    // Listen to the animation frame-by-frame and update the display state
     const listenerId = animBalance.addListener(({ value }) => {
       setDisplayBalance(value);
     });
@@ -114,24 +111,20 @@ export default function HomeScreen() {
     Animated.timing(animBalance, {
       toValue: totalBalance,
       duration: BALANCE_ANIMATE_MS,
-      useNativeDriver: false, // Must be false to animate text values
+      useNativeDriver: false,
     }).start();
 
     return () => animBalance.removeListener(listenerId);
   }, [totalBalance, animBalance]);
 
-  // ── Toast state ──
   const [toastVisible, setToastVisible] = useState(false);
   const [toastTitle, setToastTitle] = useState('');
   const [toastSubtitle, setToastSubtitle] = useState('');
   const [toastIsUndo, setToastIsUndo] = useState(false);
   const [undoTxId, setUndoTxId] = useState<string | null>(null);
   const [undoAccountId, setUndoAccountId] = useState<string | null>(null);
-  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(
-    null
-  );
+  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(null);
 
-  // Show toast whenever screen regains focus after a save; also refresh data
   useFocusEffect(
     useCallback(() => {
       refetchAccounts();
@@ -181,19 +174,16 @@ export default function HomeScreen() {
     refetchTotals,
   ]);
 
-  // ── Derived values ──
   const { text: greetText, emoji: greetEmoji } = getGreeting();
   const daysLeft = getDaysLeftInMonth();
   const totalBudget = categories.reduce((s, c) => s + (c.budget_limit ?? 0), 0);
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
 
-  // Mock last-month delta for trend badge
   const LAST_MONTH_TOTAL = totalBalance - 2450;
   const delta = totalBalance - LAST_MONTH_TOTAL;
   const deltaLabel = `${delta >= 0 ? '↑' : '↓'} ${delta >= 0 ? '+' : ''}${fmtPeso(delta)} vs last month`;
 
-  // Mock insight (only render if present)
   const insight = {
     headline: 'You spend most on Tuesdays 🍜',
     body: 'Food is 42% of weekly spend. Want to set a lower limit?',
@@ -206,36 +196,9 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* ════════════════ GREETING ════════════════ */}
         <View style={styles.greeting}>
-          <View
-            style={{
-              marginBottom: 20,
-              backgroundColor: '#fff',
-              padding: 10,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: '#eee',
-            }}
-          >
-            <Text style={{ fontSize: 10, color: '#999', marginBottom: 5 }}>
-              DEV TOOLS
-            </Text>
-            <Button
-              title="Final Sign In Test"
-              onPress={async () => {
-                const { data, error } = await supabase.auth.signInWithPassword({
-                  email: 'testuser@gmail.com',
-                  password: 'Password123',
-                });
-                if (error) console.log('Error:', error.message);
-                else console.log('SUCCESS! ID:', data.user?.id);
-              }}
-            />
-          </View>
           <View style={styles.greetingTop}>
             <View style={styles.greetingLeft}>
-              {/* Time-based pill with Sync Dot */}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                 <Text style={[styles.greetingPill, { marginBottom: 0 }]}>
                   {greetText} {greetEmoji}
@@ -252,7 +215,6 @@ export default function HomeScreen() {
                   }} 
                 />
               </View>
-              {/* Two-tone name */}
               <Text style={styles.greetingName}>
                 <Text
                   style={{
@@ -267,7 +229,6 @@ export default function HomeScreen() {
                 </Text>
               </Text>
             </View>
-            {/* Avatar: 36px green gradient circle */}
             <LinearGradient
               colors={['#5B8C6E', '#3f6b52']}
               style={styles.avatar}
@@ -277,7 +238,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ════════════════ ON-TRACK STATUS PILL ════════════════ */}
         <View style={styles.onTrackWrap}>
           <LinearGradient
             colors={['#EFF8F2', '#d4eddf']}
@@ -285,7 +245,6 @@ export default function HomeScreen() {
             end={{ x: 1, y: 0 }}
             style={styles.onTrackPill}
           >
-            {/* Sparkline */}
             <View style={styles.sparkline}>
               {SPARKLINE.map((bar, i) => (
                 <View
@@ -313,15 +272,12 @@ export default function HomeScreen() {
           </LinearGradient>
         </View>
 
-        {/* ════════════════ HERO BALANCE CARD ════════════════ */}
         <TouchableOpacity
           activeOpacity={0.9}
           style={styles.heroWrap}
           onPress={() => navigation.navigate('stats')}
         >
-          {/* Dark base */}
           <View style={styles.heroCard}>
-            {/* Radial Blob Overlays + BlurView */}
             <View style={StyleSheet.absoluteFill}>
               <LinearGradient
                 colors={['rgba(168,213,181,0.6)', 'transparent']}
@@ -351,9 +307,7 @@ export default function HomeScreen() {
               />
             </View>
 
-            {/* Glass panel */}
             <View style={styles.glassPanel}>
-              {/* Month chip */}
               <View style={styles.heroChip}>
                 <Text style={styles.heroChipText}>
                   {new Date().toLocaleDateString('en-US', {
@@ -365,7 +319,6 @@ export default function HomeScreen() {
 
               <Text style={styles.heroLabel}>Total balance</Text>
 
-              {/* Split peso + amount */}
               <View style={styles.heroAmountRow}>
                 <Text style={styles.heroCurr}>₱</Text>
                 <Text style={styles.heroAmount}>
@@ -376,12 +329,10 @@ export default function HomeScreen() {
                 </Text>
               </View>
 
-              {/* Trend badge */}
               <View style={styles.trendBadge}>
                 <Text style={styles.trendText}>{deltaLabel}</Text>
               </View>
 
-              {/* Income / Spent row */}
               <View style={styles.heroRow}>
                 <View style={[styles.heroCol, styles.heroColBorder]}>
                   <Text style={styles.heroColLabel}>Income</Text>
@@ -398,7 +349,6 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* ════════════════ ACCOUNTS GRID ════════════════ */}
         <View style={styles.sectionLabelRow}>
           <View style={styles.sectionDot} />
           <Text style={styles.sectionLabel}>Accounts</Text>
@@ -412,7 +362,6 @@ export default function HomeScreen() {
                 key={acc.id}
                 activeOpacity={0.8}
                 style={styles.acctCard}
-                // 👇 UPDATED NAVIGATION LOGIC 👇
                 onPress={() =>
                   navigation.navigate('more', {
                     screen: 'AccountDetail',
@@ -458,7 +407,6 @@ export default function HomeScreen() {
           })}
         </View>
 
-        {/* ════════════════ CATEGORY TILES ════════════════ */}
         <View style={styles.sectionLabelRow}>
           <View style={styles.sectionDot} />
           <Text style={styles.sectionLabel}>Monthly budgets</Text>
@@ -482,7 +430,6 @@ export default function HomeScreen() {
                   end={{ x: 1, y: 1 }}
                   style={styles.catTile}
                 >
-                  {/* % badge — top right */}
                   <View style={styles.catBadgeWrap}>
                     {isOver ? (
                       <View style={styles.catOverBadge}>
@@ -495,7 +442,6 @@ export default function HomeScreen() {
                     )}
                   </View>
 
-                  {/* SVG icon in duotone tinted circle */}
                   <View style={styles.catIconCircle}>
                     <CategoryIcon
                       categoryKey={cat.name.toLowerCase()}
@@ -510,7 +456,6 @@ export default function HomeScreen() {
                     {fmtPeso(cat.spent)}
                   </Text>
 
-                  {/* Progress bar: rgba(255,255,255,0.8) track */}
                   <View style={styles.catBarTrack}>
                     <View
                       style={[
@@ -528,7 +473,6 @@ export default function HomeScreen() {
           })}
         </View>
 
-        {/* ════════════════ INSIGHT CARD (only if insight exists) ════════════════ */}
         {insight && (
           <TouchableOpacity
             activeOpacity={0.9}
@@ -541,7 +485,6 @@ export default function HomeScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.insightCard}
             >
-              {/* ✦ avatar circle */}
               <View style={styles.insightAvatar}>
                 <Text style={styles.insightAvatarIcon}>✦</Text>
               </View>
@@ -551,7 +494,6 @@ export default function HomeScreen() {
                 <Text style={styles.insightHeadline}>{insight.headline}</Text>
                 <Text style={styles.insightSub}>{insight.body}</Text>
 
-                {/* "Ask Fino →" action chip */}
                 <View style={styles.insightChip}>
                   <Text style={styles.insightChipText}>Ask Fino →</Text>
                 </View>
@@ -561,7 +503,6 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
-      {/* ── Toast — absolute overlay, zIndex 300, auto-dismisses after 3500ms ── */}
       <Toast
         visible={toastVisible}
         title={toastTitle}
@@ -580,8 +521,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 100 },
-
-  // ── Greeting ──
   greeting: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   greetingTop: {
     flexDirection: 'row',
@@ -589,7 +528,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   greetingLeft: { flex: 1 },
-  // spec: background:transparent, border:none, Inter 500, textSecondary
   greetingPill: {
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
@@ -601,7 +539,6 @@ const styles = StyleSheet.create({
     fontSize: 26,
     lineHeight: 32,
   },
-  // Avatar: 36px circle, green gradient
   avatar: {
     width: 36,
     height: 36,
@@ -615,8 +552,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.white,
   },
-
-  // ── On-track status pill ──
   onTrackWrap: { paddingHorizontal: 20, marginBottom: 14 },
   onTrackPill: {
     borderRadius: 14,
@@ -634,10 +569,7 @@ const styles = StyleSheet.create({
     gap: 3,
     height: 20,
   },
-  sparkBar: {
-    width: 4,
-    borderRadius: 2,
-  },
+  sparkBar: { width: 4, borderRadius: 2 },
   onTrackText: { flex: 1 },
   onTrackTitle: {
     fontFamily: 'Nunito_700Bold',
@@ -650,8 +582,6 @@ const styles = StyleSheet.create({
     color: colors.onTrackSub,
     marginTop: 1,
   },
-
-  // ── Hero card ──
   heroWrap: { paddingHorizontal: 20, marginBottom: 20 },
   heroCard: {
     backgroundColor: '#2a4f3a',
@@ -669,7 +599,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#ffffff',
   },
-  // Glass panel wraps the actual content
   glassPanel: {
     backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: 18,
@@ -698,7 +627,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 4,
   },
-  // Split peso sign + amount per spec
   heroAmountRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -718,7 +646,6 @@ const styles = StyleSheet.create({
     letterSpacing: -2,
     lineHeight: 48,
   },
-  // Trend badge
   trendBadge: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(168,213,181,0.25)',
@@ -756,8 +683,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.white,
   },
-
-  // ── Section label row ──
   sectionLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -778,8 +703,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-
-  // ── Accounts 2-column grid ──
   acctGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -811,32 +734,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 4,
   },
-  acctLogo: {
-    width: 28,
-    height: 28,
-  },
-  acctLetter: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#fff',
-  },
+  acctLogo: { width: 28, height: 28 },
+  acctLetter: { fontSize: 16, fontWeight: '700', color: '#fff' },
   acctName: {
     fontFamily: 'Nunito_700Bold',
     fontSize: 13,
     color: colors.textPrimary,
   },
-  // spec: DM Mono, colors.textSecondary
   acctBalance: {
     fontFamily: 'DMMono_500Medium',
     fontSize: 13,
     color: colors.textSecondary,
   },
-  negBang: {
-    color: colors.expenseRed,
-    fontFamily: 'Inter_700Bold',
-  },
-
-  // ── Category tiles ──
+  negBang: { color: colors.expenseRed, fontFamily: 'Inter_700Bold' },
   catGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -846,23 +756,14 @@ const styles = StyleSheet.create({
   },
   catTileWrap: { width: '47.5%' },
   catTile: {
-    // spec: borderRadius:28, height:120
     borderRadius: 28,
     height: 120,
     padding: 14,
     justifyContent: 'flex-end',
     overflow: 'hidden',
   },
-  catBadgeWrap: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-  },
-  catPctBadge: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-  },
-  // Shopping "Over!" badge: rgba(192,80,58,0.12) bg per spec
+  catBadgeWrap: { position: 'absolute', top: 10, right: 10 },
+  catPctBadge: { fontFamily: 'Inter_700Bold', fontSize: 10 },
   catOverBadge: {
     backgroundColor: 'rgba(192,80,58,0.12)',
     borderRadius: 6,
@@ -874,7 +775,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.expenseRed,
   },
-  // Icon in white circle
   catIconCircle: {
     position: 'absolute',
     top: 14,
@@ -896,20 +796,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginBottom: 6,
   },
-  // spec: rgba(255,255,255,0.8) track
   catBarTrack: {
     height: 4,
     borderRadius: 4,
     backgroundColor: 'rgba(255,255,255,0.8)',
     overflow: 'hidden',
   },
-  catBarFill: {
-    height: '100%',
-    borderRadius: 4,
-    opacity: 0.6,
-  },
-
-  // ── Insight card ──
+  catBarFill: { height: '100%', borderRadius: 4, opacity: 0.6 },
   insightWrap: { paddingHorizontal: 20, marginBottom: 16 },
   insightCard: {
     borderRadius: 18,
@@ -931,12 +824,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  insightAvatarIcon: {
-    fontSize: 15,
-    color: colors.lavenderDark,
-  },
+  insightAvatarIcon: { fontSize: 15, color: colors.lavenderDark },
   insightBody: { flex: 1 },
-  // spec: "Fino Intelligence" label, #4B2DA3
   insightLabel: {
     fontFamily: 'Inter_700Bold',
     fontSize: 10,
@@ -945,7 +834,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.7,
     marginBottom: 4,
   },
-  // spec: Nunito 800 headline
   insightHeadline: {
     fontFamily: 'Nunito_800ExtraBold',
     fontSize: 14,
@@ -959,7 +847,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 10,
   },
-  // "Ask Fino →" action chip
   insightChip: {
     alignSelf: 'flex-start',
     backgroundColor: colors.lavenderLight,
