@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/services/supabase';
 import { Transaction } from '@/types';
 import { formatSectionTitle } from '@/utils/groupByDate';
-import { getPendingQueue } from '@/services/syncService'; // Add this import
+import { getPendingQueue } from '@/services/syncService';
 
 const PAGE_SIZE = 20;
 
@@ -10,7 +10,7 @@ export interface FeedTransaction extends Transaction {
   account_name: string;
   account_brand_colour: string;
   account_letter_avatar: string;
-  isPending?: boolean; // Add pending flag
+  isPending?: boolean;
 }
 
 export interface TransactionSection {
@@ -68,19 +68,18 @@ export const useTransactions = (category?: string, dateRange?: DateRange) => {
 
       // 2. Fetch local pending items
       const pendingQueue = await getPendingQueue();
-      const mappedPending = pendingQueue.map(row => ({
+      const mappedPending = pendingQueue.map((row) => ({
         ...row,
         account_name: 'Pending Sync',
-        account_brand_colour: '#F59E0B', // Amber for offline
+        account_brand_colour: '#F59E0B',
         account_letter_avatar: 'P',
-        isPending: true
+        isPending: true,
       }));
 
       if (!error && data) {
         const mappedDb = data.map(mapRow);
         
         if (reset) {
-          // Combine pending items at the top of the list
           setItems([...mappedPending, ...mappedDb]);
           offset.current = PAGE_SIZE;
         } else {
@@ -88,6 +87,13 @@ export const useTransactions = (category?: string, dateRange?: DateRange) => {
           offset.current = start + PAGE_SIZE;
         }
         setHasMore(data.length === PAGE_SIZE);
+      } else if (error && reset) {
+        // OFFLINE FALLBACK: Preserve old items, just update pending queue
+        setItems((prev) => {
+          const withoutPending = prev.filter(tx => !tx.isPending);
+          return [...mappedPending, ...withoutPending];
+        });
+        setHasMore(false);
       }
     },
     [category, dateRange]
