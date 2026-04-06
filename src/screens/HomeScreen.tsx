@@ -31,7 +31,6 @@ import Toast from '../components/Toast';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const USER_NAME = 'Christian';
-// 7 mock daily-spend percentages for the sparkline (last 7 days)
 const SPARKLINE = [
   { id: 'day0', val: 0.38 },
   { id: 'day1', val: 0.6 },
@@ -71,7 +70,8 @@ function onTrackLabel(pct: number): string {
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
-  const { status: syncStatus } = useSync(); 
+  // 👇 Pull in the new syncVersion 👇
+  const { status: syncStatus, syncVersion } = useSync(); 
 
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
   const { categories, refetch: refetchCategories } = useCategories();
@@ -81,12 +81,21 @@ export default function HomeScreen() {
     refetch: refetchTotals,
   } = useMonthlyTotals();
 
-  // 👇 Exact Color Mapper 👇
+  // 👇 Listen for background syncs to instantly update the UI 👇
+  useEffect(() => {
+    if (syncVersion > 0) {
+      refetchAccounts();
+      refetchCategories();
+      refetchTotals();
+    }
+  }, [syncVersion, refetchAccounts, refetchCategories, refetchTotals]);
+
+  // Exact requested color logic
   const getSyncColor = () => {
     switch (syncStatus) {
-      case 'synced': return '#10B981'; // Green
-      case 'syncing': return '#F59E0B'; // Orange
-      case 'offline': return '#EF4444'; // Red
+      case 'synced': return '#10B981'; // Green (Online, Everything saved)
+      case 'syncing': return '#F59E0B'; // Orange (Actively pushing to database)
+      case 'offline': return '#EF4444'; // Red (No connection)
       default: return '#10B981';
     }
   };
