@@ -23,6 +23,7 @@ import {
 } from '@expo-google-fonts/dm-mono';
 
 import RootNavigator from './src/navigation/RootNavigator';
+import { SyncProvider } from './src/contexts/SyncContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -51,9 +52,11 @@ export default function App() {
 
   return (
     // 👇 Wrap the app in SafeAreaProvider
-    <SafeAreaProvider>
-      <RootNavigator />
-      <StatusBar style="auto" />
-    </SafeAreaProvider>
+  <SafeAreaProvider>
+        <SyncProvider>
+          <RootNavigator />
+          <StatusBar style="auto" />
+        </SyncProvider>
+      </SafeAreaProvider>
   );
 }
