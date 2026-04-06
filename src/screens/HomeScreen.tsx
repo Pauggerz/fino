@@ -235,10 +235,23 @@ export default function HomeScreen() {
           </View>
           <View style={styles.greetingTop}>
             <View style={styles.greetingLeft}>
-              {/* Time-based pill: transparent bg, no border per spec */}
-              <Text style={styles.greetingPill}>
-                {greetText} {greetEmoji}
-              </Text>
+              {/* Time-based pill with Sync Dot */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={[styles.greetingPill, { marginBottom: 0 }]}>
+                  {greetText} {greetEmoji}
+                </Text>
+                {/* Sync Status Dot */}
+                <View 
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: getSyncColor(),
+                    marginLeft: 8,
+                    marginTop: 2
+                  }} 
+                />
+              </View>
               {/* Two-tone name */}
               <Text style={styles.greetingName}>
                 <Text
