@@ -8,17 +8,20 @@ interface SyncContextProps {
   status: SyncStatus;
   addOfflineTransaction: (tx: any) => Promise<void>;
   forceSync: () => Promise<void>;
+  syncVersion: number;
 }
 
 const SyncContext = createContext<SyncContextProps>({
   status: 'synced',
   addOfflineTransaction: async () => {},
   forceSync: async () => {},
+  syncVersion: 0,
 });
 
 export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [status, setStatus] = useState<SyncStatus>('synced');
-  const isSyncing = useRef(false); // Prevents duplicate syncs running at the same time
+  const [syncVersion, setSyncVersion] = useState(0);
+  const isSyncing = useRef(false); 
 
   const triggerSync = useCallback(async (isConnected: boolean) => {
     if (!isConnected) {
@@ -41,24 +44,38 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isSyncing.current = false;
     if (success) {
       setStatus('synced'); // Success -> Green
+      setSyncVersion((v) => v + 1); // Trigger the UI to auto-refresh!
     } else {
       setStatus('offline'); // Failed (e.g. server down) -> Red
     }
   }, []);
 
   useEffect(() => {
-    // Listens for instant Wi-Fi toggles
+    // 1. Listens for instant Wi-Fi toggles
     const unsubscribe = NetInfo.addEventListener((state) => {
-      const isOnline = state.isConnected === true;
-      triggerSync(isOnline);
+      triggerSync(state.isConnected === true);
     });
 
-    // Check once on boot
+    // 2. Check once on boot
     NetInfo.fetch().then((state) => {
       triggerSync(state.isConnected === true);
     });
 
-    return () => unsubscribe();
+    // 3. Robust Polling Fallback (Every 8 seconds)
+    // This perfectly solves the issue where the network reconnects but Supabase 
+    // hasn't loaded its auth token yet. It will automatically catch it on the next tick.
+    const interval = setInterval(() => {
+      NetInfo.fetch().then((state) => {
+        if (state.isConnected) {
+          triggerSync(true);
+        }
+      });
+    }, 8000); 
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, [triggerSync]);
 
   const addOfflineTransaction = async (tx: any) => {
@@ -73,7 +90,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <SyncContext.Provider value={{ status, addOfflineTransaction, forceSync: () => triggerSync(true) }}>
+    <SyncContext.Provider value={{ status, addOfflineTransaction, forceSync: () => triggerSync(true), syncVersion }}>
       {children}
     </SyncContext.Provider>
   );
