@@ -8,7 +8,7 @@ dotenv.config({ path: '../.env.local' });
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = createClient(supabaseUrl, supabaseKey  );
 
 export const requireAuth = async (
   req: Request,
