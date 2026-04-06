@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/services/supabase';
 import { Transaction } from '@/types';
 import { formatSectionTitle } from '@/utils/groupByDate';
+import { getPendingQueue } from '@/services/syncService'; // Add this import
 
 const PAGE_SIZE = 20;
 
@@ -9,6 +10,7 @@ export interface FeedTransaction extends Transaction {
   account_name: string;
   account_brand_colour: string;
   account_letter_avatar: string;
+  isPending?: boolean; // Add pending flag
 }
 
 export interface TransactionSection {
@@ -21,24 +23,17 @@ function mapRow(row: any): FeedTransaction {
   return {
     ...row,
     accounts: undefined,
-    account_name: acct.name ?? '',
+    account_name: acct.name ?? 'Unknown',
     account_brand_colour: acct.brand_colour ?? '#888888',
     account_letter_avatar: acct.letter_avatar ?? '?',
   };
 }
 
 export interface DateRange {
-  from: string; // ISO string
-  to: string;   // ISO string
+  from: string;
+  to: string;   
 }
 
-/**
- * Fetches paginated transactions joined with account info.
- *
- * @param category   'All' / undefined = no filter. 'Income' = income only.
- *                   A category name filters expenses by that category.
- * @param dateRange  Optional ISO date range to restrict results to a month.
- */
 export const useTransactions = (category?: string, dateRange?: DateRange) => {
   const [items, setItems] = useState<FeedTransaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +45,7 @@ export const useTransactions = (category?: string, dateRange?: DateRange) => {
     async (reset: boolean) => {
       const start = reset ? 0 : offset.current;
 
+      // 1. Fetch from Supabase
       let q = supabase
         .from('transactions')
         .select('*, accounts(name, brand_colour, letter_avatar)')
@@ -70,13 +66,25 @@ export const useTransactions = (category?: string, dateRange?: DateRange) => {
 
       const { data, error } = await q;
 
+      // 2. Fetch local pending items
+      const pendingQueue = await getPendingQueue();
+      const mappedPending = pendingQueue.map(row => ({
+        ...row,
+        account_name: 'Pending Sync',
+        account_brand_colour: '#F59E0B', // Amber for offline
+        account_letter_avatar: 'P',
+        isPending: true
+      }));
+
       if (!error && data) {
-        const mapped = data.map(mapRow);
+        const mappedDb = data.map(mapRow);
+        
         if (reset) {
-          setItems(mapped);
+          // Combine pending items at the top of the list
+          setItems([...mappedPending, ...mappedDb]);
           offset.current = PAGE_SIZE;
         } else {
-          setItems((prev) => [...prev, ...mapped]);
+          setItems((prev) => [...prev, ...mappedDb]);
           offset.current = start + PAGE_SIZE;
         }
         setHasMore(data.length === PAGE_SIZE);
@@ -104,7 +112,7 @@ export const useTransactions = (category?: string, dateRange?: DateRange) => {
   const sections: TransactionSection[] = useMemo(() => {
     const map: Record<string, FeedTransaction[]> = {};
     items.forEach((tx) => {
-      const title = formatSectionTitle(tx.date);
+      const title = formatSectionTitle(tx.date || new Date().toISOString());
       if (!map[title]) map[title] = [];
       map[title].push(tx);
     });
