@@ -1,4 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { useSync } from '@/contexts/SyncContext';
+
 import {
   View,
   Text,
@@ -69,6 +71,7 @@ function onTrackLabel(pct: number): string {
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
+  const { status: syncStatus } = useSync(); // Get sync status
 
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
   const { categories, refetch: refetchCategories } = useCategories();
@@ -77,6 +80,16 @@ export default function HomeScreen() {
     totalExpense: monthlyExpense,
     refetch: refetchTotals,
   } = useMonthlyTotals();
+
+  // Helper function to determine dot color
+  const getSyncColor = () => {
+    switch (syncStatus) {
+      case 'synced': return '#10B981'; // Green
+      case 'pending': return '#F59E0B'; // Amber
+      case 'failed': return '#EF4444'; // Red
+      default: return '#10B981';
+    }
+  };
 
   // ── Balance animation — 400ms count up/down ──
   const animBalance = useRef(new Animated.Value(totalBalance)).current;
