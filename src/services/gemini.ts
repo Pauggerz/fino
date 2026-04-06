@@ -4,7 +4,7 @@ const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? '';
 if (!apiKey) {
   console.warn(
     '[Fino AI] EXPO_PUBLIC_GEMINI_API_KEY is not set. ' +
-      'Add it to your .env file and restart Expo with --clear.',
+      'Add it to your .env file and restart Expo with --clear.'
   );
 }
 const genAI = new GoogleGenerativeAI(apiKey);
@@ -67,20 +67,20 @@ export interface UserFinancialContext {
 export const sendMessage = async (
   userMessage: string,
   history: ChatMessage[],
-  financialContext: UserFinancialContext,
+  financialContext: UserFinancialContext
 ): Promise<string> => {
   const contextBlock = `
 CURRENT USER FINANCIAL DATA (use this to answer questions):
 - Total balance across all accounts: ₱${financialContext.totalBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
 - Income this month: ₱${financialContext.monthlyIncome.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
 - Spent this month: ₱${financialContext.monthlySpent.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-- Monthly budget limit: ${financialContext.totalBudget ? '₱' + financialContext.totalBudget.toLocaleString('en-PH') : 'Not set'}
+- Monthly budget limit: ${financialContext.totalBudget ? `₱${financialContext.totalBudget.toLocaleString('en-PH')}` : 'Not set'}
 
 SPENDING BY CATEGORY THIS MONTH:
 ${financialContext.categoryBreakdown
   .map(
     (c) =>
-      `- ${c.name}: ₱${c.spent.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${c.budget ? ' (budget: ₱' + c.budget.toLocaleString('en-PH') + ')' : ''}`,
+      `- ${c.name}: ₱${c.spent.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${c.budget ? ` (budget: ₱${c.budget.toLocaleString('en-PH')})` : ''}`
   )
   .join('\n')}
 
@@ -88,7 +88,7 @@ RECENT TRANSACTIONS (last 10):
 ${financialContext.recentTransactions
   .map(
     (t) =>
-      `- ${t.display_name || t.category || 'Unknown'}: ${t.type === 'expense' ? '-' : '+'}₱${t.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })} (${t.category ?? 'uncategorized'}, ${new Date(t.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })})`,
+      `- ${t.display_name || t.category || 'Unknown'}: ${t.type === 'expense' ? '-' : '+'}₱${t.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })} (${t.category ?? 'uncategorized'}, ${new Date(t.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })})`
   )
   .join('\n')}
   `.trim();

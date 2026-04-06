@@ -23,6 +23,7 @@ import {
 } from '@expo-google-fonts/dm-mono';
 
 import RootNavigator from './src/navigation/RootNavigator';
+import { supabase } from './src/services/supabase';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -46,6 +47,16 @@ export default function App() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
+
+  useEffect(() => {
+    // When a coworker invalidates sessions on the Supabase dashboard, the
+    // stored refresh token becomes orphaned. Calling getSession() surfaces
+    // the error so we can cleanly sign out and clear AsyncStorage, stopping
+    // the unhandled AuthApiError from propagating.
+    supabase.auth.getSession().catch(() => {
+      supabase.auth.signOut();
+    });
+  }, []);
 
   if (!fontsLoaded) return null;
 

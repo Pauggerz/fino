@@ -4,7 +4,12 @@ import { Category } from '@/types';
 
 // Keys used for income categories — exclude them from expense/budget views
 const INCOME_EMOJI_KEYS = new Set([
-  'salary', 'allowance', 'freelance', 'business', 'gifts', 'investment',
+  'salary',
+  'allowance',
+  'freelance',
+  'business',
+  'gifts',
+  'investment',
 ]);
 
 export interface CategoryWithSpend extends Category {
@@ -71,26 +76,26 @@ export const useCategories = () => {
     const enriched = catData
       .filter((cat) => !INCOME_EMOJI_KEYS.has((cat.emoji ?? '').toLowerCase()))
       .map((cat) => {
-      const spent = spendMap[cat.name.toLowerCase()] || 0;
+        const spent = spendMap[cat.name.toLowerCase()] || 0;
 
-      let pct = 0;
-      if (cat.budget_limit && cat.budget_limit > 0) {
-        pct = spent / cat.budget_limit;
-      }
+        let pct = 0;
+        if (cat.budget_limit && cat.budget_limit > 0) {
+          pct = spent / cat.budget_limit;
+        }
 
-      let state: 'under' | 'nearing' | 'over' = 'under';
-      if (cat.budget_limit) {
-        if (pct >= 1) state = 'over';
-        else if (pct >= 0.7) state = 'nearing';
-      }
+        let state: 'under' | 'nearing' | 'over' = 'under';
+        if (cat.budget_limit) {
+          if (pct >= 1) state = 'over';
+          else if (pct >= 0.7) state = 'nearing';
+        }
 
-      return {
-        ...cat,
-        spent,
-        pct,
-        state,
-      };
-    });
+        return {
+          ...cat,
+          spent,
+          pct,
+          state,
+        };
+      });
 
     setCategories(enriched);
     setLoading(false);

@@ -18,6 +18,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
 import { useAccounts } from '@/hooks/useAccounts';
+import { Account } from '@/types';
 import {
   ACCOUNT_LOGOS,
   ACCOUNT_AVATAR_OVERRIDE,
@@ -39,6 +40,7 @@ interface ParsedReceipt {
   merchant: ParsedField;
   amount: ParsedField;
   date: ParsedField;
+  wallet?: ParsedField; // value = raw OCR wallet name e.g. 'GCash'
 }
 
 type EditableField = 'merchant' | 'amount';
@@ -172,6 +174,11 @@ export default function ScreenshotScreen() {
   // Account picker modal
   const [showAccountModal, setShowAccountModal] = useState(false);
 
+  // Wallet-based account selection
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
+  const [fixedFields, setFixedFields] = useState<string[]>([]);
+
   const daysInMonth = new Date(draftYear, draftMonth + 1, 0).getDate();
 
   const hasUnresolvedCheck = parsedData
@@ -236,20 +243,30 @@ export default function ScreenshotScreen() {
       if (error) throw new Error(error.message);
 
       // Match detected account name → account UUID
-      const detectedAccountName: string | null = data.account?.value ?? null;
-      const detectedAccountConf: number = data.account?.confidence ?? 0;
+      // Use wallet (text-based) first, fall back to account (UI-based)
+      const detectedWalletName: string | null = data.wallet?.value ?? null;
+      const detectedWalletConf: number = data.wallet?.confidence ?? 0;
+      const detectedAccountName: string | null =
+        detectedWalletName ?? data.account?.value ?? null;
+      const detectedAccountConf: number =
+        detectedWalletName ? detectedWalletConf : (data.account?.confidence ?? 0);
       let matchedAccountId = accounts[0]?.id ?? '';
       let accountConf = detectedAccountConf > 0 ? detectedAccountConf : 0.4;
+      let matchedAccount: typeof accounts[0] | undefined;
 
       if (detectedAccountName && accounts.length > 0) {
         const lower = detectedAccountName.toLowerCase();
-        const match = accounts.find(
-          (a) =>
-            a.name.toLowerCase().includes(lower) ||
-            lower.includes(a.name.toLowerCase())
-        );
-        if (match) {
-          matchedAccountId = match.id;
+        matchedAccount = accounts.find((a) => {
+          const accountLower = a.name.toLowerCase();
+          // Forward: account name contains detected (e.g. "gcash wallet" contains "gcash")
+          if (accountLower.includes(lower)) return true;
+          // Reverse with word boundary: "gcash wallet" contains whole word "gcash"
+          // but "gcash" does NOT contain whole word "cash" (no word boundary before 'c')
+          const escaped = accountLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return new RegExp(`\\b${escaped}\\b`).test(lower);
+        });
+        if (matchedAccount) {
+          matchedAccountId = matchedAccount.id;
           accountConf =
             detectedAccountConf >= 0.85
               ? detectedAccountConf
@@ -264,7 +281,15 @@ export default function ScreenshotScreen() {
       const dateConf: number =
         data.date?.confidence ?? data.date_confidence ?? 0;
 
-      setParsedData({
+      const VALID_CATEGORIES = ['food', 'transport', 'shopping', 'bills', 'health', 'other'];
+      const suggestedCategory: string = data.category?.value ?? '';
+      if (VALID_CATEGORIES.includes(suggestedCategory)) {
+        setSelectedCategory(suggestedCategory);
+      } else {
+        setSelectedCategory('other');
+      }
+
+      const result: ParsedReceipt = {
         account: {
           value: matchedAccountId,
           confidence: accountConf,
@@ -285,7 +310,22 @@ export default function ScreenshotScreen() {
           confidence: dateConf,
           status: toStatus(dateConf),
         },
-      });
+        wallet: detectedWalletName ? {
+          value: detectedWalletName,
+          confidence: detectedWalletConf,
+          status: toStatus(detectedWalletConf),
+        } : (data.account?.value ? {
+          value: data.account.value,
+          confidence: data.account.confidence ?? 0,
+          status: toStatus(data.account.confidence ?? 0),
+        } : undefined),
+      };
+      setParsedData(result);
+
+      // Auto-select account based on detected wallet
+      if (matchedAccount) {
+        setSelectedAccount(matchedAccount);
+      }
     } catch (err: any) {
       Alert.alert('OCR Error', err.message || 'Failed to parse receipt.');
     } finally {
@@ -294,7 +334,7 @@ export default function ScreenshotScreen() {
   };
 
   const acceptField = (field: keyof ParsedReceipt) => {
-    if (!parsedData || parsedData[field].status !== 'check') return;
+    if (!parsedData || !parsedData[field] || parsedData[field]!.status !== 'check') return;
     setParsedData((prev) =>
       prev ? { ...prev, [field]: { ...prev[field], status: 'fixed' } } : null
     );
@@ -386,7 +426,7 @@ export default function ScreenshotScreen() {
 
       const { error } = await supabase.from('transactions').insert({
         user_id: userId,
-        account_id: parsedData.account.value,
+        account_id: selectedAccount?.id ?? parsedData.account.value ?? accounts[0]?.id,
         merchant_name: parsedData.merchant.value,
         amount: Number(parsedData.amount.value),
         date: isoDate,
@@ -402,7 +442,7 @@ export default function ScreenshotScreen() {
       if (error) throw error;
 
       // Update account balance
-      const accountId = String(parsedData.account.value ?? '');
+      const accountId = selectedAccount?.id ?? String(parsedData.account.value ?? '');
       if (accountId) {
         const { data: acct } = await supabase
           .from('accounts')
@@ -423,11 +463,6 @@ export default function ScreenshotScreen() {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const getAccountName = (field: ParsedField): string => {
-    if (!field.value) return '–';
-    return accounts.find((a) => a.id === field.value)?.name ?? '–';
   };
 
   const getDateDisplay = (field: ParsedField): string => {
@@ -451,7 +486,7 @@ export default function ScreenshotScreen() {
     onLongPress: () => void
   ) => {
     if (!parsedData) return null;
-    const { status } = parsedData[field];
+    const { status } = parsedData[field] ?? { status: 'confirmed' as FieldStatus };
     const isDone = status === 'confirmed' || status === 'fixed';
 
     return (
@@ -817,15 +852,6 @@ export default function ScreenshotScreen() {
               </View>
             </View>
 
-            {/* Account */}
-            {renderParsedRow(
-              'Account',
-              'account',
-              getAccountName(parsedData.account),
-              () => setShowAccountModal(true), // single tap → open picker (account always needs selection)
-              () => setShowAccountModal(true)
-            )}
-
             {/* Merchant */}
             {renderParsedRow(
               'Merchant',
@@ -857,8 +883,104 @@ export default function ScreenshotScreen() {
               () => acceptField('date'),
               () => openDateEdit()
             )}
+
+            {/* Wallet / Account row */}
+            {(
+              <View style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                borderTopWidth: 1,
+                borderTopColor: 'rgba(30,30,46,0.07)',
+              }}>
+                <Text style={{
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 13,
+                  color: '#8A8A9A',
+                }}>
+                  Account
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowAccountPicker(true)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                >
+                  {(() => {
+                    const acctName = selectedAccount?.name
+                      ?? String(parsedData.wallet?.value ?? accounts[0]?.name ?? '–');
+                    const logo = ACCOUNT_LOGOS[acctName];
+                    const brandColour = selectedAccount?.brand_colour
+                      ?? accounts.find(a => a.name === acctName)?.brand_colour ?? '#888780';
+                    const letter = selectedAccount?.letter_avatar ?? acctName.charAt(0);
+                    const walletConf = parsedData.wallet?.confidence ?? 0;
+                    const isConfident = fixedFields.includes('wallet') || !!selectedAccount || walletConf >= 0.85;
+                    return (
+                      <>
+                        {logo ? (
+                          <View style={{
+                            width: 28, height: 28, borderRadius: 14,
+                            backgroundColor: '#F7F5F2',
+                            borderWidth: 1,
+                            borderColor: 'rgba(30,30,46,0.08)',
+                            alignItems: 'center', justifyContent: 'center',
+                            overflow: 'hidden',
+                          }}>
+                            <Image
+                              source={logo}
+                              style={{ width: 20, height: 20 }}
+                              resizeMode="contain"
+                            />
+                          </View>
+                        ) : (
+                          <View style={{
+                            width: 28, height: 28, borderRadius: 14,
+                            backgroundColor: brandColour,
+                            alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <Text style={{
+                              fontFamily: 'Inter_700Bold',
+                              fontSize: 12,
+                              color: '#FFFFFF',
+                            }}>
+                              {letter}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={{
+                          backgroundColor: isConfident ? '#E8E6E2' : '#FBF0EC',
+                          borderWidth: 1.5,
+                          borderColor: isConfident ? '#A0BCA0' : '#C8A09A',
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}>
+                          <Text style={{
+                            fontFamily: 'DMMonoMedium',
+                            fontSize: 13,
+                            color: isConfident ? '#1E1E2E' : '#B85A30',
+                          }}>
+                            {acctName}
+                          </Text>
+                          <Text style={{
+                            fontSize: 10,
+                            color: isConfident ? '#5B8C6E' : '#B85A30',
+                          }}>
+                            ›
+                          </Text>
+                        </View>
+                      </>
+                    );
+                  })()}
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
+
 
         {parsedData && !isParsing && hasUnresolvedCheck && (
           <Text
@@ -1373,6 +1495,113 @@ export default function ScreenshotScreen() {
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Wallet account picker modal */}
+      <Modal
+        visible={showAccountPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAccountPicker(false)}
+      >
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }}
+          onPress={() => setShowAccountPicker(false)}
+        />
+        <View style={{
+          backgroundColor: '#FFFFFF',
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          padding: 20,
+          paddingBottom: 40,
+        }}>
+          <View style={{
+            width: 36, height: 4, borderRadius: 2,
+            backgroundColor: '#D8D6D0',
+            alignSelf: 'center',
+            marginBottom: 16,
+          }} />
+          <Text style={{
+            fontFamily: 'Nunito_700Bold',
+            fontSize: 16,
+            color: '#1E1E2E',
+            marginBottom: 14,
+          }}>
+            Select account
+          </Text>
+          {accounts.map(account => {
+            const isSelected = selectedAccount?.id === account.id;
+            const logo = ACCOUNT_LOGOS[account.name];
+            const avatarLetter = ACCOUNT_AVATAR_OVERRIDE[account.name]
+              ?? account.letter_avatar;
+            return (
+              <TouchableOpacity
+                key={account.id}
+                onPress={() => {
+                  setSelectedAccount(account);
+                  setShowAccountPicker(false);
+                  if (!fixedFields.includes('wallet')) {
+                    setFixedFields(prev => [...prev, 'wallet']);
+                  }
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  paddingVertical: 12,
+                  paddingHorizontal: 14,
+                  borderRadius: 14,
+                  marginBottom: 8,
+                  backgroundColor: isSelected ? '#EBF2EE' : '#F7F5F2',
+                  borderWidth: isSelected ? 2 : 1,
+                  borderColor: isSelected ? '#5B8C6E' : 'rgba(30,30,46,0.08)',
+                }}
+              >
+                {logo ? (
+                  <View style={{
+                    width: 36, height: 36, borderRadius: 18,
+                    backgroundColor: '#F7F5F2',
+                    borderWidth: 1,
+                    borderColor: 'rgba(30,30,46,0.08)',
+                    alignItems: 'center', justifyContent: 'center',
+                    overflow: 'hidden',
+                  }}>
+                    <Image
+                      source={logo}
+                      style={{ width: 26, height: 26 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+                ) : (
+                  <View style={{
+                    width: 36, height: 36, borderRadius: 18,
+                    backgroundColor: account.brand_colour ?? '#888780',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Text style={{
+                      fontFamily: 'Inter_700Bold',
+                      fontSize: 14,
+                      color: '#FFFFFF',
+                    }}>
+                      {avatarLetter}
+                    </Text>
+                  </View>
+                )}
+                <Text style={{
+                  fontFamily: 'Inter_600SemiBold',
+                  fontSize: 15,
+                  color: isSelected ? '#2d6a4f' : '#1E1E2E',
+                  flex: 1,
+                }}>
+                  {account.name}
+                </Text>
+                {isSelected && (
+                  <Text style={{ color: '#5B8C6E', fontSize: 18 }}>✓</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </Modal>
     </SafeAreaView>
   );

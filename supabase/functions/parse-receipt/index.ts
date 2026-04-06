@@ -5,6 +5,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
 // @ts-ignore
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -17,169 +18,135 @@ serve(async (req) => {
     if (!imageBase64) {
       return new Response(
         JSON.stringify({ error: 'imageBase64 is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
-// @ts-ignore
-    const VISION_API_KEY = Deno.env.get('VISION_API_KEY');
 
-    if (!VISION_API_KEY) {
+    // @ts-ignore
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+
+    if (!GEMINI_API_KEY) {
       return new Response(
-        JSON.stringify({ error: 'VISION_API_KEY not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'GEMINI_API_KEY not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    // Call Vision API via HTTP
-    const visionResponse = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`,
+    const prompt = `You are a receipt parser for a Filipino budgeting app.
+
+Analyze this receipt image and extract the following fields.
+Return ONLY a valid JSON object with no markdown, no backticks,
+no explanation — just the raw JSON.
+
+JSON format to return:
+{
+  "merchant": { "value": string or null, "confidence": number },
+  "amount": { "value": number or null, "confidence": number },
+  "date": { "value": string or null, "confidence": number },
+  "wallet": { "value": string or null, "confidence": number },
+  "account": { "value": string or null, "confidence": number },
+  "category": { "value": string or null, "confidence": number }
+}
+
+Rules:
+- merchant: the store, biller, or recipient name.
+  NOT the wallet provider (GCash/Maya/BDO).
+  For GCash Send receipts, use the recipient name.
+  For GBills receipts, use the biller name (e.g. "Meralco", "Globe").
+- amount: the total amount paid as a number only, no currency symbol.
+  Use the largest/final amount if multiple amounts shown.
+- date: the transaction date as a readable string
+  (e.g. "Mar 31, 2026" or "April 3, 2026").
+- wallet: the payment provider detected from text — GCash, Maya, BDO, BPI,
+  GoTyme, UnionBank, or null if unknown.
+- account: the app or bank the screenshot was taken FROM, identified by
+  the UI design, colors, logo, or layout (not just the text).
+  Examples: "GCash" (blue UI), "Maya" (dark/purple UI), "BDO" (blue/gold),
+  "BPI" (red), "GoTyme" (teal), "UnionBank". Use null if unrecognizable.
+- category: the spending category. Must be exactly one of:
+  "food", "transport", "shopping", "bills", "health", "other".
+  Guidelines:
+    food      → restaurants, fast food, groceries, coffee shops, convenience stores
+    transport → Grab, Angkas, toll, fuel, parking, MRT/LRT, bus, tricycle, jeep
+    shopping  → malls, online shops (Shopee, Lazada), clothing, gadgets, laundry,
+                laundromat, personal care, salon, barber
+    bills     → utilities (Meralco, PLDT, Globe, Converge, Maynilad), rent,
+                insurance, subscriptions (Netflix, Spotify)
+    health    → pharmacy, hospital, clinic, dental, medical, Watsons, Mercury Drug
+    other     → money transfers (GCash Send), ATM withdrawal, unclear/unrecognizable
+- confidence: 0.0 to 1.0. Use 0.9+ only when very certain.
+  Use 0.5 to 0.7 when partially uncertain.
+  Use 0.3 or below when guessing.
+
+If a field cannot be found, set value to null and confidence to 0.`;
+
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          requests: [{
-            image: { content: imageBase64 },
-            features: [{ type: 'TEXT_DETECTION', maxResults: 1 }],
+          contents: [{
+            parts: [
+              {
+                inline_data: {
+                  mime_type: mimeType,
+                  data: imageBase64,
+                },
+              },
+              { text: prompt },
+            ],
           }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 700,
+          },
         }),
-      }
+      },
     );
 
-    const visionData = await visionResponse.json();
-    const text = visionData.responses?.[0]?.textAnnotations?.[0]?.description ?? '';
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text();
+      return new Response(
+        JSON.stringify({ error: 'Gemini API error', details: errorText }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
-    // Run your existing extraction logic
-    const result = extractDataFromText(text);
+    const geminiData = await geminiResponse.json();
+    const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+
+    // Strip any markdown formatting if present
+    const cleanJson = rawText
+      .replace(/```json/g, '')
+      .replace(/```/g, '')
+      .trim();
+
+    let result;
+    try {
+      result = JSON.parse(cleanJson);
+    } catch {
+      return new Response(
+        JSON.stringify({
+          error: 'Failed to parse Gemini response',
+          raw: rawText,
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     return new Response(
       JSON.stringify(result),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
 
   } catch (error) {
     return new Response(
-      JSON.stringify({ error: 'Failed to process receipt' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({
+        error: 'Failed to process receipt',
+        details: String(error),
+      }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 });
-
-// ── EXTRACTION LOGIC (ported from receipt.service.ts) ──
-
-const KNOWN_MERCHANTS: Record<string, string> = {
-  'JOLLIBEE': 'Jollibee', 'MCDONALDS': "McDonald's",
-  'KFC': 'KFC', 'CHOWKING': 'Chowking',
-  'MANG INASAL': 'Mang Inasal', 'STARBUCKS': 'Starbucks',
-  'SHOPEE': 'Shopee', 'LAZADA': 'Lazada',
-  'MERALCO': 'Meralco', 'GLOBE': 'Globe',
-  'SMART': 'Smart', 'PLDT': 'PLDT',
-  'GRAB': 'Grab', 'APMC': 'APMC',
-};
-
-const WALLET_PROVIDERS = ['GCASH', 'MAYA', 'BDO', 'BPI', 'GOTYME', 'UNIONBANK'];
-
-const SKIP_PATTERNS = [
-  /^\d{1,2}:\d{2}/,
-  /^\+63/,
-  /^ref/i,
-  /^\d+$/,
-  /^[a-z]$/i,
-  /sent via/i,
-  /payment received/i,
-  /using your/i,
-  /^amount$/i,
-  /^fee$/i,
-  /^total/i,
-  /account number/i,
-  /amount paid/i,
-  /this has been/i,
-  /save biller/i,
-  /gcash pay/i,
-  /gbills/i,
-];
-
-function extractDataFromText(text: string) {
-  const normalizedText = text.toUpperCase();
-  const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean);
-
-  // Wallet
-  let wallet = { value: null as string | null, confidence: 0 };
-  for (const provider of WALLET_PROVIDERS) {
-    if (normalizedText.includes(provider)) {
-      wallet = {
-        value: provider === 'GCASH' ? 'GCash'
-              : provider === 'MAYA' ? 'Maya'
-              : provider === 'GOTYME' ? 'GoTyme'
-              : provider,
-        confidence: 0.95,
-      };
-      break;
-    }
-  }
-
-  // Merchant
-  let merchant = { value: null as string | null, confidence: 0 };
-
-  if (normalizedText.includes('EXPRESS SEND')) {
-    // GCash Send — recipient name
-    const candidate = lines.find(line =>
-      line.length > 2 &&
-      !SKIP_PATTERNS.some(p => p.test(line)) &&
-      !WALLET_PROVIDERS.some(w => line.toUpperCase().includes(w))
-    );
-    merchant = { value: candidate ?? 'Unknown', confidence: 0.80 };
-  } else {
-    // Known merchant or biller
-    for (const [key, displayName] of Object.entries(KNOWN_MERCHANTS)) {
-      if (normalizedText.includes(key)) {
-        merchant = { value: displayName, confidence: 0.92 };
-        break;
-      }
-    }
-    if (!merchant.value) {
-      const candidate = lines.find(line =>
-        line.length > 2 &&
-        !SKIP_PATTERNS.some(p => p.test(line))
-      );
-      merchant = { value: candidate ?? 'Unknown', confidence: 0.55 };
-    }
-  }
-
-  // Fix stray single letter prefix e.g. "A APMC"
-  if (merchant.value && /^[A-Z]\s+/.test(merchant.value)) {
-    merchant.value = merchant.value.replace(/^[A-Z]\s+/, '').trim();
-  }
-
-  // Amount
-  let amount = { value: null as number | null, confidence: 0 };
-  const labeledMatch = text.match(
-    /(?:TOTAL|AMOUNT|PHP|₱|GRAND TOTAL)[:\s]*([₱P]?\s*[\d,]+\.\d{2})/i
-  );
-  if (labeledMatch) {
-    const parsed = parseFloat(labeledMatch[1].replace(/[₱P,\s]/g, ''));
-    if (!isNaN(parsed)) amount = { value: parsed, confidence: 0.93 };
-  }
-  if (!amount.value) {
-    const anyAmount = text.match(/([\d,]+\.\d{2})/);
-    if (anyAmount) {
-      const parsed = parseFloat(anyAmount[1].replace(/,/g, ''));
-      if (!isNaN(parsed)) amount = { value: parsed, confidence: 0.72 };
-    }
-  }
-
-  // Date
-  let date = { value: null as string | null, confidence: 0 };
-  const gcashDate = text.match(
-    /(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})|(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4})/i
-  );
-  const numericDate = text.match(
-    /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}[\/\-]\d{2}[\/\-]\d{2}/
-  );
-  if (gcashDate) {
-    date = { value: gcashDate[0], confidence: 0.88 };
-  } else if (numericDate) {
-    date = { value: numericDate[0], confidence: 0.75 };
-  }
-
-  return { merchant, amount, date, wallet };
-}
