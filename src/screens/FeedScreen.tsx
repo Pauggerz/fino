@@ -19,10 +19,17 @@ import {
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '../constants/theme';
-import { useTransactions, FeedTransaction, DateRange } from '@/hooks/useTransactions';
+import {
+  useTransactions,
+  FeedTransaction,
+  DateRange,
+} from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
 import { CategoryIcon } from '@/components/CategoryIcon';
-import { INCOME_CATEGORIES, CATEGORY_COLOR } from '@/constants/categoryMappings';
+import {
+  INCOME_CATEGORIES,
+  CATEGORY_COLOR,
+} from '@/constants/categoryMappings';
 import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
@@ -47,8 +54,18 @@ function getMonthRange(year: number, month: number): DateRange {
 }
 
 const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 const SWIPE_DELETE_WIDTH = 80;
@@ -74,9 +91,7 @@ function SwipeableRow({
         if (!isOpen.current && dx < 0) {
           translateX.setValue(Math.max(dx, -SWIPE_DELETE_WIDTH));
         } else if (isOpen.current && dx > 0) {
-          translateX.setValue(
-            Math.min(dx - SWIPE_DELETE_WIDTH, 0)
-          );
+          translateX.setValue(Math.min(dx - SWIPE_DELETE_WIDTH, 0));
         }
       },
       onPanResponderRelease: (_, { dx, vx }) => {
@@ -122,10 +137,12 @@ function SwipeableRow({
       </View>
 
       {/* Sliding row */}
+      {/* eslint-disable react/jsx-props-no-spreading */}
       <Animated.View
         style={{ transform: [{ translateX }] }}
         {...panResponder.panHandlers}
       >
+        {/* eslint-enable react/jsx-props-no-spreading */}
         {children}
       </Animated.View>
     </View>
@@ -163,7 +180,7 @@ function MonthPickerModal({
   visible: boolean;
   year: number;
   month: number;
-  onConfirm: (year: number, month: number) => void;
+  onConfirm: (y: number, m: number) => void;
   onClose: () => void;
 }) {
   const [draftYear, setDraftYear] = useState(year);
@@ -187,7 +204,11 @@ function MonthPickerModal({
 
   const nextMonth = () => {
     const now = new Date();
-    if (draftYear > now.getFullYear() || (draftYear === now.getFullYear() && draftMonth >= now.getMonth())) return;
+    if (
+      draftYear > now.getFullYear() ||
+      (draftYear === now.getFullYear() && draftMonth >= now.getMonth())
+    )
+      return;
     if (draftMonth === 11) {
       setDraftMonth(0);
       setDraftYear((y) => y + 1);
@@ -197,18 +218,32 @@ function MonthPickerModal({
   };
 
   const now = new Date();
-  const isAtMax = draftYear > now.getFullYear() ||
+  const isAtMax =
+    draftYear > now.getFullYear() ||
     (draftYear === now.getFullYear() && draftMonth >= now.getMonth());
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
       <Pressable style={pickerStyles.backdrop} onPress={onClose}>
         <Pressable style={pickerStyles.card} onPress={() => {}}>
           <Text style={pickerStyles.title}>Select Month</Text>
 
           <View style={pickerStyles.row}>
-            <TouchableOpacity style={pickerStyles.arrow} onPress={prevMonth} activeOpacity={0.7}>
-              <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+            <TouchableOpacity
+              style={pickerStyles.arrow}
+              onPress={prevMonth}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="chevron-back"
+                size={20}
+                color={colors.textPrimary}
+              />
             </TouchableOpacity>
 
             <Text style={pickerStyles.monthLabel}>
@@ -221,12 +256,20 @@ function MonthPickerModal({
               disabled={isAtMax}
               activeOpacity={0.7}
             >
-              <Ionicons name="chevron-forward" size={20} color={colors.textPrimary} />
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={colors.textPrimary}
+              />
             </TouchableOpacity>
           </View>
 
           <View style={pickerStyles.actions}>
-            <TouchableOpacity style={pickerStyles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={pickerStyles.cancelBtn}
+              onPress={onClose}
+              activeOpacity={0.7}
+            >
               <Text style={pickerStyles.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -355,9 +398,10 @@ export default function FeedScreen() {
   );
 
   // Build effective category filter for the hook
-  const hookCategory = viewType === 'income'
-    ? (activeCategory === 'All' ? 'Income' : activeCategory)
-    : activeCategory;
+  let hookCategory = activeCategory;
+  if (viewType === 'income' && activeCategory === 'All') {
+    hookCategory = 'Income';
+  }
 
   const { sections, loading, loadMore, hasMore, loadingMore, refetch } =
     useTransactions(hookCategory, dateRange);
@@ -383,7 +427,8 @@ export default function FeedScreen() {
   // ── Filter chip options ──
   const expenseFilterOptions = ['All', ...categories.map((c) => c.name)];
   const incomeFilterOptions = ['All', ...INCOME_CATEGORIES.map((c) => c.name)];
-  const filterOptions = viewType === 'income' ? incomeFilterOptions : expenseFilterOptions;
+  const filterOptions =
+    viewType === 'income' ? incomeFilterOptions : expenseFilterOptions;
 
   // ── Delete handler ──
   const handleDelete = async (tx: FeedTransaction) => {
@@ -461,7 +506,9 @@ export default function FeedScreen() {
     return (
       <SwipeableRow onDelete={() => handleDelete(tx)}>
         <Pressable
-          onPress={() => navigation.navigate('TransactionDetail', { id: tx.id })}
+          onPress={() =>
+            navigation.navigate('TransactionDetail', { id: tx.id })
+          }
           style={({ pressed }) => [
             styles.transactionItem,
             pressed && { backgroundColor: colors.primaryLight },
@@ -490,7 +537,10 @@ export default function FeedScreen() {
                 ]}
               >
                 <Text
-                  style={[styles.acctTagText, { color: tx.account_brand_colour }]}
+                  style={[
+                    styles.acctTagText,
+                    { color: tx.account_brand_colour },
+                  ]}
                 >
                   {tx.account_name}
                 </Text>
@@ -580,7 +630,7 @@ export default function FeedScreen() {
 
             // Resolve chip accent color for income categories
             let activeBg = colors.primary;
-            let activeText = colors.white;
+            const activeText = colors.white;
             if (viewType === 'income' && item !== 'All') {
               const incCat = INCOME_CATEGORIES.find((c) => c.name === item);
               if (incCat) {

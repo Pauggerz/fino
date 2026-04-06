@@ -6,7 +6,12 @@ import { getPendingQueue } from '@/services/syncService';
 
 // Keys used for income categories — exclude them from expense/budget views
 const INCOME_EMOJI_KEYS = new Set([
-  'salary', 'allowance', 'freelance', 'business', 'gifts', 'investment',
+  'salary',
+  'allowance',
+  'freelance',
+  'business',
+  'gifts',
+  'investment',
 ]);
 
 const CACHE_KEY = 'FINO_CATEGORIES_CACHE';

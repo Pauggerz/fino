@@ -14,7 +14,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing } from '../constants/theme';
-import { sendMessage, ChatMessage, UserFinancialContext } from '@/services/gemini';
+import {
+  sendMessage,
+  ChatMessage,
+  UserFinancialContext,
+} from '@/services/gemini';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { useCategories } from '@/hooks/useCategories';
@@ -46,7 +50,10 @@ type RecentTx = {
 };
 
 function nowTime() {
-  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date().toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export default function ChatScreen() {
@@ -114,7 +121,7 @@ export default function ChatScreen() {
   const financialContext = useMemo<UserFinancialContext>(() => {
     const totalBudget = categories.reduce(
       (sum, c) => sum + (c.budget_limit ?? 0),
-      0,
+      0
     );
     return {
       totalBalance,
@@ -152,7 +159,7 @@ export default function ChatScreen() {
       const reply = await sendMessage(
         textToSend.trim(),
         geminiHistory,
-        financialContext,
+        financialContext
       );
 
       setGeminiHistory((prev) => [
@@ -291,7 +298,9 @@ export default function ChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Math.max(insets.top, 16)}
     >
-      <View style={[styles.chatHeader, { paddingTop: Math.max(insets.top, 16) }]}>
+      <View
+        style={[styles.chatHeader, { paddingTop: Math.max(insets.top, 16) }]}
+      >
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}

@@ -19,7 +19,11 @@ import { useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../constants/theme';
-import { CATEGORY_TILE_BG, CATEGORY_COLOR, INCOME_CATEGORIES } from '@/constants/categoryMappings';
+import {
+  CATEGORY_TILE_BG,
+  CATEGORY_COLOR,
+  INCOME_CATEGORIES,
+} from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import {
   ACCOUNT_LOGOS,
@@ -473,14 +477,19 @@ export default function AddTransactionSheet({ route }: Props) {
 
             <View style={styles.section}>
               <Text style={styles.fieldLabel}>
-                CATEGORY{type === 'exp' && <Text style={styles.aiLabel}> ✦ AI suggested</Text>}
+                CATEGORY
+                {type === 'exp' && (
+                  <Text style={styles.aiLabel}> ✦ AI suggested</Text>
+                )}
               </Text>
               <View style={styles.pillsRow}>
                 {type === 'inc'
                   ? INCOME_CATEGORIES.map((cat) => {
                       const isSel = category === cat.name;
-                      const catColor = CATEGORY_COLOR[cat.key] ?? colors.textSecondary;
-                      const catBg = CATEGORY_TILE_BG[cat.key] ?? colors.background;
+                      const catColor =
+                        CATEGORY_COLOR[cat.key] ?? colors.textSecondary;
+                      const catBg =
+                        CATEGORY_TILE_BG[cat.key] ?? colors.background;
                       return (
                         <TouchableOpacity
                           key={cat.key}
@@ -493,7 +502,9 @@ export default function AddTransactionSheet({ route }: Props) {
                             paddingVertical: 8,
                             borderRadius: 12,
                             borderWidth: isSel ? 2 : 1,
-                            borderColor: isSel ? catColor : 'rgba(30,30,46,0.12)',
+                            borderColor: isSel
+                              ? catColor
+                              : 'rgba(30,30,46,0.12)',
                             backgroundColor: isSel ? catBg : '#FFFFFF',
                           }}
                         >
@@ -518,8 +529,10 @@ export default function AddTransactionSheet({ route }: Props) {
                   : categories.map((cat) => {
                       const isSel = category === cat.name;
                       const catKey = (cat.emoji ?? '').toLowerCase();
-                      const catColor = CATEGORY_COLOR[catKey] ?? colors.textSecondary;
-                      const catBg = CATEGORY_TILE_BG[catKey] ?? colors.background;
+                      const catColor =
+                        CATEGORY_COLOR[catKey] ?? colors.textSecondary;
+                      const catBg =
+                        CATEGORY_TILE_BG[catKey] ?? colors.background;
                       return (
                         <TouchableOpacity
                           key={cat.id}
@@ -532,7 +545,9 @@ export default function AddTransactionSheet({ route }: Props) {
                             paddingVertical: 8,
                             borderRadius: 12,
                             borderWidth: isSel ? 2 : 1,
-                            borderColor: isSel ? catColor : 'rgba(30,30,46,0.12)',
+                            borderColor: isSel
+                              ? catColor
+                              : 'rgba(30,30,46,0.12)',
                             backgroundColor: isSel ? catBg : '#FFFFFF',
                           }}
                         >

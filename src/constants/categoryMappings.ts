@@ -139,11 +139,11 @@ export interface IncomeCategoryDef {
 }
 
 export const INCOME_CATEGORIES: IncomeCategoryDef[] = [
-  { key: 'salary',     name: 'Salary' },
-  { key: 'allowance',  name: 'Allowance' },
-  { key: 'freelance',  name: 'Freelance' },
-  { key: 'business',   name: 'Business' },
-  { key: 'gifts',      name: 'Gifts' },
+  { key: 'salary', name: 'Salary' },
+  { key: 'allowance', name: 'Allowance' },
+  { key: 'freelance', name: 'Freelance' },
+  { key: 'business', name: 'Business' },
+  { key: 'gifts', name: 'Gifts' },
   { key: 'investment', name: 'Investment' },
-  { key: 'default',    name: 'Others' },
+  { key: 'default', name: 'Others' },
 ];

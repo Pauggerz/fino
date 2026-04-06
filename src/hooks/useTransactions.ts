@@ -30,8 +30,8 @@ function mapRow(row: any): FeedTransaction {
 }
 
 export interface DateRange {
-  from: string;
-  to: string;   
+  from: string; // ISO string
+  to: string; // ISO string
 }
 
 export const useTransactions = (category?: string, dateRange?: DateRange) => {
