@@ -16,7 +16,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
 
-// Theme Colors
+// 👈 IMPORT YOUR ACTUAL APP THEME DICTIONARIES
+import {
+  CATEGORY_COLOR,
+  CATEGORY_TILE_BG,
+} from '../../constants/categoryMappings';
+
 const colors = {
   primary: '#2d6a4f',
   primaryLight: '#EFF8F2',
@@ -27,39 +32,19 @@ const colors = {
   background: '#F7F5F2',
 };
 
-// Default Fino Categories
+// These are STRICTLY for the UI of this specific onboarding screen
 const DEFAULT_CATEGORIES = [
-  { id: 'food', name: 'Food', emoji: '🍔', bg: '#2d6a4f', text: '#FFFFFF' },
-  {
-    id: 'transport',
-    name: 'Transport',
-    emoji: '🚌',
-    bg: '#534AB7',
-    text: '#FFFFFF',
-  },
-  {
-    id: 'shopping',
-    name: 'Shopping',
-    emoji: '🛍️',
-    bg: '#BA7517',
-    text: '#FFFFFF',
-  },
-  { id: 'bills', name: 'Bills', emoji: '🧾', bg: '#1A535C', text: '#FFFFFF' },
-  {
-    id: 'entertainment',
-    name: 'Fun',
-    emoji: '🍿',
-    bg: '#007DFF',
-    text: '#FFFFFF',
-  },
-  { id: 'health', name: 'Health', emoji: '💊', bg: '#E56B70', text: '#FFFFFF' },
+  { id: 'food', name: 'Food', emoji: '🍔', setupBg: '#2d6a4f' },
+  { id: 'transport', name: 'Transport', emoji: '🚌', setupBg: '#534AB7' },
+  { id: 'shopping', name: 'Shopping', emoji: '🛍️', setupBg: '#BA7517' },
+  { id: 'bills', name: 'Bills', emoji: '🧾', setupBg: '#1A535C' },
+  { id: 'health', name: 'Health', emoji: '❤️', setupBg: '#E56B70' },
 ];
 
 export default function CategorySetupScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
 
-  // Start with all defaults selected
   const [selectedCats, setSelectedCats] = useState<string[]>(
     DEFAULT_CATEGORIES.map((c) => c.id)
   );
@@ -86,25 +71,30 @@ export default function CategorySetupScreen() {
         return;
       }
 
-      // 1. Prepare the payload matching your public.categories schema
+      // 1. Prepare the payload
       const categoriesToCreate = categoryIdsToSave.map((id, index) => {
         const catDef = DEFAULT_CATEGORIES.find((c) => c.id === id)!;
         return {
           user_id: user.id,
           name: catDef.name,
-          emoji: catDef.emoji,
-          tile_bg_colour: catDef.bg,
-          text_colour: catDef.text,
+
+          // 👈 MUST BE THE STRING KEY for CategoryIcon.tsx to render SVGs in FeedScreen
+          emoji: catDef.id,
+
+          // 👈 Pulls your actual beautiful theme colors for the FeedScreen!
+          tile_bg_colour: CATEGORY_TILE_BG[catDef.id] || '#F7F5F2',
+          text_colour: CATEGORY_COLOR[catDef.id] || '#888780',
+
           is_active: true,
           is_default: true,
           sort_order: index,
         };
       });
 
-      // 2. Wipe existing categories to prevent conflicts with the user seed trigger
+      // 2. Wipe existing broken categories
       await supabase.from('categories').delete().eq('user_id', user.id);
 
-      // 3. Bulk insert the selected categories
+      // 3. Bulk insert the corrected categories
       if (categoriesToCreate.length > 0) {
         const { error } = await supabase
           .from('categories')
@@ -133,16 +123,8 @@ export default function CategorySetupScreen() {
   };
 
   const handleUseDefaults = () => {
-    // Force save all default categories, ignoring current selection
     const allIds = DEFAULT_CATEGORIES.map((c) => c.id);
     saveCategoriesToSupabase(allIds);
-  };
-
-  const handleAddCustom = () => {
-    Alert.alert(
-      'Coming Soon',
-      'You can add fully custom categories and emojis from the Settings menu once you finish onboarding!'
-    );
   };
 
   return (
@@ -154,7 +136,6 @@ export default function CategorySetupScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ─── PROGRESS INDICATOR ─── */}
         <View style={styles.obProgress}>
           <View style={styles.dotInactive} />
           <View style={styles.dotInactive} />
@@ -162,7 +143,6 @@ export default function CategorySetupScreen() {
           <View style={styles.dotInactive} />
         </View>
 
-        {/* ─── HERO EMOJI BLOCK ─── */}
         <LinearGradient colors={['#FFF0E5', '#FCE4D6']} style={styles.obHero}>
           <Text style={styles.heroEmoji}>🗂️</Text>
         </LinearGradient>
@@ -175,7 +155,6 @@ export default function CategorySetupScreen() {
           </Text>
         </View>
 
-        {/* ─── CATEGORY GRID ─── */}
         <View style={styles.catObGrid}>
           {DEFAULT_CATEGORIES.map((cat) => {
             const isSelected = selectedCats.includes(cat.id);
@@ -188,7 +167,7 @@ export default function CategorySetupScreen() {
                 style={[
                   styles.catTile,
                   isSelected
-                    ? { backgroundColor: cat.bg, borderColor: cat.bg }
+                    ? { backgroundColor: cat.setupBg, borderColor: cat.setupBg }
                     : styles.catTileUnsel,
                 ]}
               >
@@ -196,7 +175,7 @@ export default function CategorySetupScreen() {
                 <Text
                   style={[
                     styles.catName,
-                    isSelected ? { color: cat.text } : styles.catNameUnsel,
+                    isSelected ? { color: colors.white } : styles.catNameUnsel,
                   ]}
                 >
                   {cat.name}
@@ -205,11 +184,9 @@ export default function CategorySetupScreen() {
             );
           })}
 
-          {/* Add Custom Category Tile (Always Unselected State) */}
           <TouchableOpacity
             activeOpacity={0.7}
-            disabled={isSubmitting}
-            onPress={handleAddCustom}
+            disabled={true} // Disabled during onboarding
             style={[styles.catTile, styles.catTileUnsel, styles.catTileDashed]}
           >
             <View style={styles.addIconCircle}>
@@ -222,7 +199,6 @@ export default function CategorySetupScreen() {
         </View>
       </ScrollView>
 
-      {/* ─── FOOTER ACTIONS ─── */}
       <View
         style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 24) }]}
       >
@@ -252,16 +228,8 @@ export default function CategorySetupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-  },
-
-  // Progress
+  container: { flex: 1, backgroundColor: colors.background },
+  scrollContent: { paddingHorizontal: 24, paddingBottom: 40 },
   obProgress: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -281,8 +249,6 @@ const styles = StyleSheet.create({
     borderRadius: 3.5,
     backgroundColor: '#D8D6D0',
   },
-
-  // Hero
   obHero: {
     height: 140,
     borderRadius: 20,
@@ -290,12 +256,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 24,
   },
-  heroEmoji: {
-    fontSize: 60,
-  },
-  headerTextContainer: {
-    marginBottom: 32,
-  },
+  heroEmoji: { fontSize: 60 },
+  headerTextContainer: { marginBottom: 32 },
   title: {
     fontFamily: 'Nunito_800ExtraBold',
     fontSize: 24,
@@ -308,43 +270,26 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 22,
   },
-
-  // Grid
   catObGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: 12, // Acts as fallback for older RN versions, use margin below if needed
+    gap: 12,
   },
   catTile: {
-    width: '48%', // 2-column layout
+    width: '48%',
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     borderRadius: 16,
     borderWidth: 1.5,
-    marginBottom: 12, // Spacing for wrapping
+    marginBottom: 12,
   },
-  catTileUnsel: {
-    backgroundColor: colors.white,
-    borderColor: colors.border,
-  },
-  catTileDashed: {
-    borderStyle: 'dashed',
-    backgroundColor: 'transparent',
-  },
-  catEmoji: {
-    fontSize: 22,
-    marginRight: 10,
-  },
-  catName: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    flexShrink: 1,
-  },
-  catNameUnsel: {
-    color: colors.textSecondary,
-  },
+  catTileUnsel: { backgroundColor: colors.white, borderColor: colors.border },
+  catTileDashed: { borderStyle: 'dashed', backgroundColor: 'transparent' },
+  catEmoji: { fontSize: 22, marginRight: 10 },
+  catName: { fontFamily: 'Inter_600SemiBold', fontSize: 15, flexShrink: 1 },
+  catNameUnsel: { color: colors.textSecondary },
   addIconCircle: {
     width: 28,
     height: 28,
@@ -354,8 +299,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
-
-  // Footer Buttons
   footer: {
     paddingHorizontal: 24,
     backgroundColor: colors.background,
@@ -373,10 +316,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.white,
   },
-  ghostBtn: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
+  ghostBtn: { alignItems: 'center', paddingVertical: 8 },
   ghostBtnText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
