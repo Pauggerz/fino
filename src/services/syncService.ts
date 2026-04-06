@@ -44,15 +44,22 @@ export const processQueue = async (): Promise<boolean> => {
   let allSuccess = true;
 
   for (const tx of queue) {
-    // Remove local-only properties before pushing to DB
+    // Strip local-only properties before pushing to Supabase
     const { id, isPending, ...dbPayload } = tx;
-    const { error } = await supabase.from('transactions').insert(dbPayload);
+    
+    try {
+      const { error } = await supabase.from('transactions').insert(dbPayload);
 
-    if (error) {
-      console.error('Sync failed for transaction:', error.message);
+      if (error) {
+        console.error('Supabase Sync error for tx:', error.message, error.details);
+        allSuccess = false;
+      } else {
+        // Only remove from local storage if Supabase responds with success
+        await removeFromQueue(id);
+      }
+    } catch (e) {
+      console.error('Exception during sync (Network drop?):', e);
       allSuccess = false;
-    } else {
-      await removeFromQueue(id);
     }
   }
 
