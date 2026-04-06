@@ -36,6 +36,9 @@ import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { setLastSaved } from '@/services/lastSavedStore';
 
+// 👇 ADDED THIS IMPORT 👇
+import { useSync } from '@/contexts/SyncContext';
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type TxType = 'exp' | 'inc';
@@ -53,6 +56,9 @@ export default function AddTransactionSheet({ route }: Props) {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const initialMode = route.params?.mode ?? 'expense';
 
+  // 👇 Get our offline sync function 👇
+  const { addOfflineTransaction } = useSync();
+
   // ── Real data from Supabase ──
   const { accounts } = useAccounts();
   const { categories } = useCategories();
@@ -61,9 +67,7 @@ export default function AddTransactionSheet({ route }: Props) {
     initialMode === 'income' ? 'inc' : 'exp'
   );
   const [amount, setAmount] = useState<string>('');
-  // accountId is a Supabase UUID; default to the first account when loaded
   const [accountId, setAccountId] = useState<string>('');
-  // category is the DB category name (e.g. 'Food')
   const [category, setCategory] = useState<string>('');
   const [aiText, setAiText] = useState<string>('');
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
@@ -73,7 +77,6 @@ export default function AddTransactionSheet({ route }: Props) {
   );
   const [isSaving, setIsSaving] = useState(false);
 
-  // Set defaults once accounts/categories load
   useEffect(() => {
     if (accounts.length > 0 && !accountId) setAccountId(accounts[0].id);
   }, [accounts, accountId]);
@@ -84,7 +87,7 @@ export default function AddTransactionSheet({ route }: Props) {
     } else if (categories.length > 0) {
       setCategory(categories[0].name);
     }
-  }, [type]); // reset category whenever type switches
+  }, [type]); 
 
   useEffect(() => {
     if (categories.length > 0 && !category && type === 'exp') {
@@ -92,33 +95,28 @@ export default function AddTransactionSheet({ route }: Props) {
     }
   }, [categories, category, type]);
 
-  // Sheet slide animation
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  // Debounced AI analyzer (stable ref across renders)
   const analyzer = useRef(createDebouncedAnalyzer()).current;
 
-  // ── Slide in on mount ──
   useEffect(() => {
     Animated.timing(slideAnim, {
       toValue: 0,
-      duration: transitions.SHEET_OPEN.duration, // 340 ms
+      duration: transitions.SHEET_OPEN.duration,
       easing: Easing.bezier(0.32, 0.72, 0, 1),
       useNativeDriver: true,
     }).start();
     return () => analyzer.cancel();
   }, [slideAnim, analyzer]);
 
-  // ── Unified dismiss (runs exit animation then pops) ──
   const dismiss = () => {
     Animated.timing(slideAnim, {
       toValue: SCREEN_HEIGHT,
-      duration: transitions.SHEET_DISMISS_SAVE.duration, // 280 ms
+      duration: transitions.SHEET_DISMISS_SAVE.duration,
       easing: Easing.in(Easing.ease),
       useNativeDriver: true,
     }).start(() => navigation.goBack());
   };
 
-  // ── Numpad ──
   const handleNumTap = (key: string) => {
     if (key === 'back') {
       setAmount((prev) => prev.slice(0, -1));
@@ -129,7 +127,6 @@ export default function AddTransactionSheet({ route }: Props) {
     }
   };
 
-  // ── AI description input ──
   const handleAiTextChange = (text: string) => {
     setAiText(text);
     setAiResult(null);
@@ -157,9 +154,8 @@ export default function AddTransactionSheet({ route }: Props) {
     setSignalSource('manual');
   };
 
-  // ── Save → Supabase ──
-  const isSaveDisabled =
-    !amount || amount === '0' || amount === '.' || isSaving;
+  // 👇 UPDATED SAVE LOGIC 👇
+  const isSaveDisabled = !amount || amount === '0' || amount === '.' || isSaving;
 
   const handleSave = async () => {
     if (isSaveDisabled) return;
@@ -170,9 +166,9 @@ export default function AddTransactionSheet({ route }: Props) {
     const parsedAmount = parseFloat(amount);
     const txType = type === 'exp' ? 'expense' : 'income';
 
-    const { data: inserted, error } = await supabase
-      .from('transactions')
-      .insert({
+    try {
+      // 1. Build the transaction payload
+      const txPayload = {
         user_id: selectedAccount.user_id,
         account_id: accountId,
         amount: parsedAmount,
@@ -180,25 +176,35 @@ export default function AddTransactionSheet({ route }: Props) {
         category: category || null,
         display_name: aiText || category || null,
         transaction_note: aiText || null,
-        signal_source:
-          signalSource === 'ai_description' ? 'description' : 'manual',
+        signal_source: signalSource === 'ai_description' ? 'description' : 'manual',
         date: new Date().toISOString(),
         account_deleted: false,
-      })
-      .select()
-      .single();
+      };
 
-    if (!error && inserted) {
-      // Update account balance
+      // 2. Fire and forget the sync context!
+      // We removed the 'await' here. If the network hangs, it won't block the UI.
+      // The transaction saves to the local Async queue instantly, and the UI moves on.
+      addOfflineTransaction(txPayload).catch((err) => {
+        console.log('Background sync error (safe to ignore):', err);
+      });
+
+      // 3. Attempt to update balance optimistically if online (fails silently if offline)
       const delta = txType === 'expense' ? -parsedAmount : parsedAmount;
-      await supabase
-        .from('accounts')
-        .update({ balance: selectedAccount.balance + delta })
-        .eq('id', accountId);
+      const updateBalance = async () => {
+        try {
+          await supabase
+            .from('accounts')
+            .update({ balance: selectedAccount.balance + delta })
+            .eq('id', accountId);
+        } catch (e) {
+          // Fail silently if offline
+        }
+      };
+      updateBalance();
 
-      // Store for HomeScreen undo toast
+      // 4. Setup Toast and Dismiss immediately
       setLastSaved({
-        id: inserted.id,
+        id: `temp_${Date.now()}`, 
         accountId,
         previousBalance: selectedAccount.balance,
         amount: parsedAmount,
@@ -208,20 +214,19 @@ export default function AddTransactionSheet({ route }: Props) {
       });
 
       dismiss();
+    } catch (error) {
+      console.error('Save error:', error);
+    } finally {
+      setIsSaving(false);
     }
-
-    setIsSaving(false);
   };
 
-  // ── Date label ──
   const today = new Date();
   const dateLabel = `📅 Today, ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 
-  // ── Amount display ──
   const amountHasValue = amount.length > 0 && amount !== '0';
   const displayAmount = amount || '0';
 
-  // ── Derived save label ──
   let saveLabel = 'Save income';
   if (isSaving) {
     saveLabel = 'Saving…';
@@ -231,7 +236,6 @@ export default function AddTransactionSheet({ route }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* Dimmed backdrop */}
       <TouchableWithoutFeedback onPress={dismiss}>
         <View style={styles.overlay} />
       </TouchableWithoutFeedback>
@@ -246,7 +250,6 @@ export default function AddTransactionSheet({ route }: Props) {
             { transform: [{ translateY: slideAnim }] },
           ]}
         >
-          {/* Handle */}
           <View style={styles.sheetHandle} />
 
           <ScrollView
@@ -254,18 +257,14 @@ export default function AddTransactionSheet({ route }: Props) {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            {/* ── Date pill ── */}
             <TouchableOpacity activeOpacity={0.7} style={styles.datePill}>
               <Text style={styles.datePillText}>{dateLabel}</Text>
             </TouchableOpacity>
 
-            {/* ── Title ── */}
             <Text style={styles.sheetTitle}>Add transaction</Text>
             <Text style={styles.sheetSub}>Log expense or income</Text>
 
-            {/* ── Type toggle ── */}
             <View style={styles.typeToggle}>
-              {/* Expense */}
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() => setType('exp')}
@@ -291,7 +290,6 @@ export default function AddTransactionSheet({ route }: Props) {
                 </Text>
               </TouchableOpacity>
 
-              {/* Income */}
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() => setType('inc')}
@@ -318,14 +316,12 @@ export default function AddTransactionSheet({ route }: Props) {
               </TouchableOpacity>
             </View>
 
-            {/* ── Amount display ── */}
             <View
               style={[
                 styles.amountDisplay,
                 { borderColor: amountHasValue ? colors.primary : '#e0dfd7' },
               ]}
             >
-              {/* Peso sign — superscripted per spec */}
               <View style={styles.amountRow}>
                 <Text style={styles.amountCurr}>₱</Text>
                 <Text style={styles.amountVal}>{displayAmount}</Text>
@@ -337,7 +333,6 @@ export default function AddTransactionSheet({ route }: Props) {
               )}
             </View>
 
-            {/* ── Custom numpad ── */}
             <View style={styles.numpad}>
               {[
                 '1',
@@ -371,7 +366,6 @@ export default function AddTransactionSheet({ route }: Props) {
               })}
             </View>
 
-            {/* ── Account selector ── */}
             <View style={styles.section}>
               <Text style={styles.fieldLabel}>FROM ACCOUNT</Text>
               <ScrollView
@@ -477,7 +471,6 @@ export default function AddTransactionSheet({ route }: Props) {
               </ScrollView>
             </View>
 
-            {/* ── Category pills ── */}
             <View style={styles.section}>
               <Text style={styles.fieldLabel}>
                 CATEGORY{type === 'exp' && <Text style={styles.aiLabel}> ✦ AI suggested</Text>}
@@ -564,7 +557,6 @@ export default function AddTransactionSheet({ route }: Props) {
               </View>
             </View>
 
-            {/* ── AI description field ── */}
             <View style={styles.aiFieldWrap}>
               <View style={styles.orDivider}>
                 <View style={styles.orLine} />
@@ -572,7 +564,6 @@ export default function AddTransactionSheet({ route }: Props) {
                 <View style={styles.orLine} />
               </View>
 
-              {/* Real TextInput — debounce triggers aiCategoryMap */}
               <View
                 style={[
                   styles.aiField,
@@ -600,7 +591,6 @@ export default function AddTransactionSheet({ route }: Props) {
                 />
               </View>
 
-              {/* ai-confirm chip — green dot + mapped label */}
               {!!aiResult && aiResult.suggestedCategory && (
                 <View style={styles.aiConfirm}>
                   <View style={styles.aiConfirmDot} />
@@ -613,7 +603,6 @@ export default function AddTransactionSheet({ route }: Props) {
                 </View>
               )}
 
-              {/* ai-nudge chip — coral dot + prompt */}
               {!!aiText && !!aiResult && !aiResult.suggestedCategory && (
                 <View style={styles.aiNudge}>
                   <View style={styles.aiNudgeDot} />
@@ -624,7 +613,6 @@ export default function AddTransactionSheet({ route }: Props) {
               )}
             </View>
 
-            {/* ── Save button ── */}
             <TouchableOpacity
               activeOpacity={0.8}
               disabled={isSaveDisabled}
@@ -646,7 +634,6 @@ export default function AddTransactionSheet({ route }: Props) {
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* ── Cancel — plain text, underlined, no container ── */}
             <TouchableOpacity onPress={dismiss} style={styles.cancelBtn}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
@@ -690,8 +677,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: Platform.OS === 'ios' ? 40 : 24,
   },
-
-  // ── Date pill ──
   datePill: {
     alignSelf: 'flex-start',
     borderWidth: 1,
@@ -706,8 +691,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
   },
-
-  // ── Title ──
   sheetTitle: {
     fontFamily: 'Nunito_800ExtraBold',
     fontSize: 20,
@@ -720,8 +703,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: 20,
   },
-
-  // ── Type toggle ──
   typeToggle: {
     flexDirection: 'row',
     gap: 8,
@@ -738,8 +719,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Nunito_700Bold',
     fontSize: 14,
   },
-
-  // ── Amount display ──
   amountDisplay: {
     backgroundColor: colors.white,
     borderWidth: 2,
@@ -752,15 +731,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
-  // Peso sign: Inter 600, 22px, #888780, superscripted via marginTop
   amountCurr: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 22,
     color: '#888780',
-    marginTop: 12, // pushes it down to align with top of large number = superscript look
+    marginTop: 12,
     marginRight: 3,
   },
-  // Amount value: DM Mono 500 (700 not available in DM Mono), 52px per spec
   amountVal: {
     fontFamily: 'DMMono_500Medium',
     fontSize: 52,
@@ -774,8 +751,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
-
-  // ── Numpad ──
   numpad: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -790,7 +765,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    // spec: 0.5px border, #e0dfd7
     borderWidth: 0.5,
     borderColor: '#e0dfd7',
     shadowColor: '#1E1E2E',
@@ -799,7 +773,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 1,
   },
-  // Delete key: spec says coral bg/text/border
   numKeyDel: {
     backgroundColor: '#fde8e0',
     borderColor: '#f0997b',
@@ -813,8 +786,6 @@ const styles = StyleSheet.create({
   numKeyTextDel: {
     color: '#c0391a',
   },
-
-  // ── Section ──
   section: {
     marginBottom: 18,
   },
@@ -833,8 +804,6 @@ const styles = StyleSheet.create({
     textTransform: 'none',
     letterSpacing: 0,
   },
-
-  // ── Account opts ──
   acctOpts: {
     flexDirection: 'row',
     gap: 8,
@@ -856,7 +825,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8f5ee',
     borderColor: '#2d6a4f',
   },
-  // Letter avatar chip
   acctAvatar: {
     width: 24,
     height: 24,
@@ -880,8 +848,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: colors.textSecondary,
   },
-
-  // ── Category pills — borderRadius: 12 per spec ──
   pillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -900,8 +866,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
   },
-
-  // ── AI description field ──
   aiFieldWrap: {
     marginBottom: 24,
   },
@@ -922,11 +886,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     letterSpacing: 0.5,
   },
-  // spec: background colors.lavenderLight (#F0ECFD), NEVER colors.background
   aiField: {
     backgroundColor: colors.lavenderLight,
     borderWidth: 1.5,
-    borderColor: colors.lavender, // #C9B8F5 at rest; switches to colors.primary on focus
+    borderColor: colors.lavender,
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -953,7 +916,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     color: colors.textPrimary,
   },
-  // ai-confirm chip: green dot + "keyword" → Category ✓
   aiConfirm: {
     backgroundColor: colors.primaryLight,
     borderWidth: 1,
@@ -978,7 +940,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.primaryDark,
   },
-  // ai-nudge chip: coral dot + "Not sure…" prompt
   aiNudge: {
     backgroundColor: '#FBF0EC',
     borderWidth: 1,
@@ -1003,8 +964,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.coralDark,
   },
-
-  // ── Save button ──
   saveBtnWrap: {
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 6 },
@@ -1025,8 +984,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.white,
   },
-
-  // ── Cancel — plain underlined text, no button container ──
   cancelBtn: {
     paddingVertical: 8,
     alignItems: 'center',

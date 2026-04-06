@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/services/supabase';
 import { Category } from '@/types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Keys used for income categories — exclude them from expense/budget views
 const INCOME_EMOJI_KEYS = new Set([
   'salary', 'allowance', 'freelance', 'business', 'gifts', 'investment',
 ]);
+
+const CACHE_KEY = 'FINO_CATEGORIES_CACHE';
 
 export interface CategoryWithSpend extends Category {
   spent: number;
@@ -17,8 +20,19 @@ export const useCategories = () => {
   const [categories, setCategories] = useState<CategoryWithSpend[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchCategoriesAndSpend = async () => {
-    // 1. Get current month boundaries
+  // 👇 Wrapped in useCallback to prevent infinite loops in HomeScreen 👇
+  const fetchCategoriesAndSpend = useCallback(async () => {
+    // 1. Load from local cache first for instant/offline display
+    try {
+      const cachedData = await AsyncStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        setCategories(JSON.parse(cachedData));
+      }
+    } catch (e) {
+      console.error('Failed to load categories cache', e);
+    }
+
+    // 2. Get current month boundaries
     const now = new Date();
     const startOfMonth = new Date(
       now.getFullYear(),
@@ -35,19 +49,20 @@ export const useCategories = () => {
       999
     ).toISOString();
 
-    // 2. Fetch active categories
+    // 3. Fetch active categories
     const { data: catData, error: catError } = await supabase
       .from('categories')
       .select('*')
       .eq('is_active', true)
       .order('sort_order');
 
+    // If offline or errored, stick with the cached data and stop loading
     if (catError || !catData) {
       setLoading(false);
       return;
     }
 
-    // 3. Fetch expenses for the current month
+    // 4. Fetch expenses for the current month
     const { data: txData, error: txError } = await supabase
       .from('transactions')
       .select('category, amount')
@@ -57,17 +72,16 @@ export const useCategories = () => {
 
     const expenses = txData && !txError ? txData : [];
 
-    // 4. Aggregate spend per category (GROUP BY equivalent)
+    // 5. Aggregate spend per category (GROUP BY equivalent)
     const spendMap: Record<string, number> = {};
     expenses.forEach((tx) => {
-      // Assuming tx.category maps to category name or ID. Lowercased for safety.
       if (tx.category) {
         const catKey = tx.category.toLowerCase();
         spendMap[catKey] = (spendMap[catKey] || 0) + tx.amount;
       }
     });
 
-    // 5. Combine and calculate states (exclude income categories)
+    // 6. Combine and calculate states (exclude income categories)
     const enriched = catData
       .filter((cat) => !INCOME_EMOJI_KEYS.has((cat.emoji ?? '').toLowerCase()))
       .map((cat) => {
@@ -92,13 +106,15 @@ export const useCategories = () => {
       };
     });
 
+    // 7. Update state and cache with fresh data
     setCategories(enriched);
+    AsyncStorage.setItem(CACHE_KEY, JSON.stringify(enriched)).catch(() => {});
     setLoading(false);
-  };
+  }, []); // <-- Empty dependency array ensures this function is only created once
 
   useEffect(() => {
     fetchCategoriesAndSpend();
-  }, []);
+  }, [fetchCategoriesAndSpend]);
 
   return { categories, loading, refetch: fetchCategoriesAndSpend };
 };
