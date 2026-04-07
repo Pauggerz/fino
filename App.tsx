@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { SafeAreaProvider } from 'react-native-safe-area-context'; // 👈 Add this import
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
   useFonts,
@@ -48,6 +49,11 @@ export default function App() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
+
+  // DEV ONLY: reset onboarding flag so the flow is always visible
+  useEffect(() => {
+    AsyncStorage.removeItem('hasOnboarded');
+  }, []);
 
   useEffect(() => {
     // When a coworker invalidates sessions on the Supabase dashboard, the

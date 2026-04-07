@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import {
   NavigationContainer,
@@ -6,6 +6,7 @@ import {
 } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import FABActionSheet from '../components/FABActionSheet';
 import HomeScreen from '../screens/HomeScreen';
@@ -18,6 +19,7 @@ import ScreenshotScreen from '../screens/ScreenshotScreen';
 import AccountDetailScreen from '../screens/AccountDetailScreen';
 import MoreScreen from '../screens/MoreScreen';
 import ChatScreen from '../screens/ChatScreen';
+import OnboardingScreen from '../screens/OnboardingScreen';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -39,6 +41,7 @@ export type TabStackParamList = {
 };
 
 export type RootStackParamList = {
+  Onboarding: undefined;
   Tabs: NavigatorScreenParams<TabStackParamList>;
   FABActionSheet: undefined;
   AddTransaction: {
@@ -122,9 +125,20 @@ function TabNavigator() {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
+  const [initialRoute, setInitialRoute] = useState<'Onboarding' | 'Tabs' | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem('hasOnboarded').then(val => {
+      setInitialRoute(val === 'true' ? 'Tabs' : 'Onboarding');
+    });
+  }, []);
+
+  if (initialRoute === null) return null;
+
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         <Stack.Screen name="Tabs" component={TabNavigator} />
 
         <Stack.Screen

@@ -248,11 +248,12 @@ export default function ScreenshotScreen() {
       const detectedWalletConf: number = data.wallet?.confidence ?? 0;
       const detectedAccountName: string | null =
         detectedWalletName ?? data.account?.value ?? null;
-      const detectedAccountConf: number =
-        detectedWalletName ? detectedWalletConf : (data.account?.confidence ?? 0);
+      const detectedAccountConf: number = detectedWalletName
+        ? detectedWalletConf
+        : (data.account?.confidence ?? 0);
       let matchedAccountId = accounts[0]?.id ?? '';
       let accountConf = detectedAccountConf > 0 ? detectedAccountConf : 0.4;
-      let matchedAccount: typeof accounts[0] | undefined;
+      let matchedAccount: (typeof accounts)[0] | undefined;
 
       if (detectedAccountName && accounts.length > 0) {
         const lower = detectedAccountName.toLowerCase();
@@ -281,7 +282,14 @@ export default function ScreenshotScreen() {
       const dateConf: number =
         data.date?.confidence ?? data.date_confidence ?? 0;
 
-      const VALID_CATEGORIES = ['food', 'transport', 'shopping', 'bills', 'health', 'other'];
+      const VALID_CATEGORIES = [
+        'food',
+        'transport',
+        'shopping',
+        'bills',
+        'health',
+        'other',
+      ];
       const suggestedCategory: string = data.category?.value ?? '';
       if (VALID_CATEGORIES.includes(suggestedCategory)) {
         setSelectedCategory(suggestedCategory);
@@ -310,15 +318,23 @@ export default function ScreenshotScreen() {
           confidence: dateConf,
           status: toStatus(dateConf),
         },
-        wallet: detectedWalletName ? {
-          value: detectedWalletName,
-          confidence: detectedWalletConf,
-          status: toStatus(detectedWalletConf),
-        } : (data.account?.value ? {
-          value: data.account.value,
-          confidence: data.account.confidence ?? 0,
-          status: toStatus(data.account.confidence ?? 0),
-        } : undefined),
+        wallet: (() => {
+          if (detectedWalletName) {
+            return {
+              value: detectedWalletName,
+              confidence: detectedWalletConf,
+              status: toStatus(detectedWalletConf),
+            };
+          }
+          if (data.account?.value) {
+            return {
+              value: data.account.value,
+              confidence: data.account.confidence ?? 0,
+              status: toStatus(data.account.confidence ?? 0),
+            };
+          }
+          return undefined;
+        })(),
       };
       setParsedData(result);
 
@@ -334,7 +350,12 @@ export default function ScreenshotScreen() {
   };
 
   const acceptField = (field: keyof ParsedReceipt) => {
-    if (!parsedData || !parsedData[field] || parsedData[field]!.status !== 'check') return;
+    if (
+      !parsedData ||
+      !parsedData[field] ||
+      parsedData[field]!.status !== 'check'
+    )
+      return;
     setParsedData((prev) =>
       prev ? { ...prev, [field]: { ...prev[field], status: 'fixed' } } : null
     );
@@ -426,7 +447,8 @@ export default function ScreenshotScreen() {
 
       const { error } = await supabase.from('transactions').insert({
         user_id: userId,
-        account_id: selectedAccount?.id ?? parsedData.account.value ?? accounts[0]?.id,
+        account_id:
+          selectedAccount?.id ?? parsedData.account.value ?? accounts[0]?.id,
         merchant_name: parsedData.merchant.value,
         amount: Number(parsedData.amount.value),
         date: isoDate,
@@ -442,7 +464,8 @@ export default function ScreenshotScreen() {
       if (error) throw error;
 
       // Update account balance
-      const accountId = selectedAccount?.id ?? String(parsedData.account.value ?? '');
+      const accountId =
+        selectedAccount?.id ?? String(parsedData.account.value ?? '');
       if (accountId) {
         const { data: acct } = await supabase
           .from('accounts')
@@ -486,7 +509,9 @@ export default function ScreenshotScreen() {
     onLongPress: () => void
   ) => {
     if (!parsedData) return null;
-    const { status } = parsedData[field] ?? { status: 'confirmed' as FieldStatus };
+    const { status } = parsedData[field] ?? {
+      status: 'confirmed' as FieldStatus,
+    };
     const isDone = status === 'confirmed' || status === 'fixed';
 
     return (
@@ -885,8 +910,8 @@ export default function ScreenshotScreen() {
             )}
 
             {/* Wallet / Account row */}
-            {(
-              <View style={{
+            <View
+              style={{
                 flexDirection: 'row',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -894,60 +919,85 @@ export default function ScreenshotScreen() {
                 paddingVertical: 12,
                 borderTopWidth: 1,
                 borderTopColor: 'rgba(30,30,46,0.07)',
-              }}>
-                <Text style={{
+              }}
+            >
+              <Text
+                style={{
                   fontFamily: 'Inter_400Regular',
                   fontSize: 13,
                   color: '#8A8A9A',
-                }}>
-                  Account
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setShowAccountPicker(true)}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                >
-                  {(() => {
-                    const acctName = selectedAccount?.name
-                      ?? String(parsedData.wallet?.value ?? accounts[0]?.name ?? '–');
-                    const logo = ACCOUNT_LOGOS[acctName];
-                    const brandColour = selectedAccount?.brand_colour
-                      ?? accounts.find(a => a.name === acctName)?.brand_colour ?? '#888780';
-                    const letter = selectedAccount?.letter_avatar ?? acctName.charAt(0);
-                    const walletConf = parsedData.wallet?.confidence ?? 0;
-                    const isConfident = fixedFields.includes('wallet') || !!selectedAccount || walletConf >= 0.85;
-                    return (
-                      <>
-                        {logo ? (
-                          <View style={{
-                            width: 28, height: 28, borderRadius: 14,
+                }}
+              >
+                Account
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowAccountPicker(true)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+              >
+                {(() => {
+                  const acctName =
+                    selectedAccount?.name ??
+                    String(
+                      parsedData.wallet?.value ?? accounts[0]?.name ?? '–'
+                    );
+                  const logo = ACCOUNT_LOGOS[acctName];
+                  const brandColour =
+                    selectedAccount?.brand_colour ??
+                    accounts.find((a) => a.name === acctName)?.brand_colour ??
+                    '#888780';
+                  const letter =
+                    selectedAccount?.letter_avatar ?? acctName.charAt(0);
+                  const walletConf = parsedData.wallet?.confidence ?? 0;
+                  const isConfident =
+                    fixedFields.includes('wallet') ||
+                    !!selectedAccount ||
+                    walletConf >= 0.85;
+                  return (
+                    <>
+                      {logo ? (
+                        <View
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 14,
                             backgroundColor: '#F7F5F2',
                             borderWidth: 1,
                             borderColor: 'rgba(30,30,46,0.08)',
-                            alignItems: 'center', justifyContent: 'center',
+                            alignItems: 'center',
+                            justifyContent: 'center',
                             overflow: 'hidden',
-                          }}>
-                            <Image
-                              source={logo}
-                              style={{ width: 20, height: 20 }}
-                              resizeMode="contain"
-                            />
-                          </View>
-                        ) : (
-                          <View style={{
-                            width: 28, height: 28, borderRadius: 14,
+                          }}
+                        >
+                          <Image
+                            source={logo}
+                            style={{ width: 20, height: 20 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      ) : (
+                        <View
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 14,
                             backgroundColor: brandColour,
-                            alignItems: 'center', justifyContent: 'center',
-                          }}>
-                            <Text style={{
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Text
+                            style={{
                               fontFamily: 'Inter_700Bold',
                               fontSize: 12,
                               color: '#FFFFFF',
-                            }}>
-                              {letter}
-                            </Text>
-                          </View>
-                        )}
-                        <View style={{
+                            }}
+                          >
+                            {letter}
+                          </Text>
+                        </View>
+                      )}
+                      <View
+                        style={{
                           backgroundColor: isConfident ? '#E8E6E2' : '#FBF0EC',
                           borderWidth: 1.5,
                           borderColor: isConfident ? '#A0BCA0' : '#C8A09A',
@@ -957,30 +1007,33 @@ export default function ScreenshotScreen() {
                           flexDirection: 'row',
                           alignItems: 'center',
                           gap: 6,
-                        }}>
-                          <Text style={{
+                        }}
+                      >
+                        <Text
+                          style={{
                             fontFamily: 'DMMonoMedium',
                             fontSize: 13,
                             color: isConfident ? '#1E1E2E' : '#B85A30',
-                          }}>
-                            {acctName}
-                          </Text>
-                          <Text style={{
+                          }}
+                        >
+                          {acctName}
+                        </Text>
+                        <Text
+                          style={{
                             fontSize: 10,
                             color: isConfident ? '#5B8C6E' : '#B85A30',
-                          }}>
-                            ›
-                          </Text>
-                        </View>
-                      </>
-                    );
-                  })()}
-                </TouchableOpacity>
-              </View>
-            )}
+                          }}
+                        >
+                          ›
+                        </Text>
+                      </View>
+                    </>
+                  );
+                })()}
+              </TouchableOpacity>
+            </View>
           </View>
         )}
-
 
         {parsedData && !isParsing && hasUnresolvedCheck && (
           <Text
@@ -1508,32 +1561,40 @@ export default function ScreenshotScreen() {
           style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }}
           onPress={() => setShowAccountPicker(false)}
         />
-        <View style={{
-          backgroundColor: '#FFFFFF',
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-          padding: 20,
-          paddingBottom: 40,
-        }}>
-          <View style={{
-            width: 36, height: 4, borderRadius: 2,
-            backgroundColor: '#D8D6D0',
-            alignSelf: 'center',
-            marginBottom: 16,
-          }} />
-          <Text style={{
-            fontFamily: 'Nunito_700Bold',
-            fontSize: 16,
-            color: '#1E1E2E',
-            marginBottom: 14,
-          }}>
+        <View
+          style={{
+            backgroundColor: '#FFFFFF',
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            padding: 20,
+            paddingBottom: 40,
+          }}
+        >
+          <View
+            style={{
+              width: 36,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: '#D8D6D0',
+              alignSelf: 'center',
+              marginBottom: 16,
+            }}
+          />
+          <Text
+            style={{
+              fontFamily: 'Nunito_700Bold',
+              fontSize: 16,
+              color: '#1E1E2E',
+              marginBottom: 14,
+            }}
+          >
             Select account
           </Text>
-          {accounts.map(account => {
+          {accounts.map((account) => {
             const isSelected = selectedAccount?.id === account.id;
             const logo = ACCOUNT_LOGOS[account.name];
-            const avatarLetter = ACCOUNT_AVATAR_OVERRIDE[account.name]
-              ?? account.letter_avatar;
+            const avatarLetter =
+              ACCOUNT_AVATAR_OVERRIDE[account.name] ?? account.letter_avatar;
             return (
               <TouchableOpacity
                 key={account.id}
@@ -1541,7 +1602,7 @@ export default function ScreenshotScreen() {
                   setSelectedAccount(account);
                   setShowAccountPicker(false);
                   if (!fixedFields.includes('wallet')) {
-                    setFixedFields(prev => [...prev, 'wallet']);
+                    setFixedFields((prev) => [...prev, 'wallet']);
                   }
                 }}
                 style={{
@@ -1558,14 +1619,19 @@ export default function ScreenshotScreen() {
                 }}
               >
                 {logo ? (
-                  <View style={{
-                    width: 36, height: 36, borderRadius: 18,
-                    backgroundColor: '#F7F5F2',
-                    borderWidth: 1,
-                    borderColor: 'rgba(30,30,46,0.08)',
-                    alignItems: 'center', justifyContent: 'center',
-                    overflow: 'hidden',
-                  }}>
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: '#F7F5F2',
+                      borderWidth: 1,
+                      borderColor: 'rgba(30,30,46,0.08)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                    }}
+                  >
                     <Image
                       source={logo}
                       style={{ width: 26, height: 26 }}
@@ -1573,26 +1639,35 @@ export default function ScreenshotScreen() {
                     />
                   </View>
                 ) : (
-                  <View style={{
-                    width: 36, height: 36, borderRadius: 18,
-                    backgroundColor: account.brand_colour ?? '#888780',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <Text style={{
-                      fontFamily: 'Inter_700Bold',
-                      fontSize: 14,
-                      color: '#FFFFFF',
-                    }}>
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: account.brand_colour ?? '#888780',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: 'Inter_700Bold',
+                        fontSize: 14,
+                        color: '#FFFFFF',
+                      }}
+                    >
                       {avatarLetter}
                     </Text>
                   </View>
                 )}
-                <Text style={{
-                  fontFamily: 'Inter_600SemiBold',
-                  fontSize: 15,
-                  color: isSelected ? '#2d6a4f' : '#1E1E2E',
-                  flex: 1,
-                }}>
+                <Text
+                  style={{
+                    fontFamily: 'Inter_600SemiBold',
+                    fontSize: 15,
+                    color: isSelected ? '#2d6a4f' : '#1E1E2E',
+                    flex: 1,
+                  }}
+                >
                   {account.name}
                 </Text>
                 {isSelected && (

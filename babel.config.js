@@ -12,6 +12,7 @@ module.exports = function babelConfig(api) {
           },
         },
       ],
+      'react-native-reanimated/plugin',
     ],
   };
 };
