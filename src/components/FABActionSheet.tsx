@@ -1,17 +1,10 @@
-import React, { useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  Animated,
-  Easing,
-} from 'react-native';
+import React, { useRef, useCallback } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { TouchableOpacity } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
 import { colors } from '../constants/theme';
-import { transitions } from '../constants/transitions';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -45,86 +38,87 @@ const ACTIONS = [
 
 export default function FABActionSheet() {
   const navigation = useNavigation<NavProp>();
-  const slideAnim = useRef(new Animated.Value(320)).current;
+  const bottomSheetRef = useRef<BottomSheet>(null);
+  
+  // 1. Safely store the next action so it fires after the animation
+  const nextActionRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    Animated.timing(slideAnim, {
-      toValue: 0,
-      duration: transitions.SHEET_OPEN.duration,
-      easing: Easing.bezier(0.32, 0.72, 0, 1),
-      useNativeDriver: true,
-    }).start();
-  }, [slideAnim]);
-
-  const dismiss = (afterDismiss?: () => void) => {
-    Animated.timing(slideAnim, {
-      toValue: 320,
-      duration: transitions.SHEET_DISMISS_SAVE.duration,
-      easing: Easing.in(Easing.ease),
-      useNativeDriver: true,
-    }).start(() => {
-      navigation.goBack();
-      afterDismiss?.();
-    });
-  };
-
-  const handleAction = (key: (typeof ACTIONS)[number]['key']) => {
-    if (key === 'expense' || key === 'income') {
-      // Slide down this sheet, then replace with AddTransaction in the chosen mode
-      Animated.timing(slideAnim, {
-        toValue: 320,
-        duration: transitions.SHEET_DISMISS_SAVE.duration,
-        easing: Easing.in(Easing.ease),
-        useNativeDriver: true,
-      }).start(() => {
-        navigation.replace('AddTransaction', { mode: key });
-      });
-    } else if (key === 'scan') {
-      // Dismiss the sheet, then smoothly transition to the AI scanning screen
-      dismiss(() => {
-        navigation.navigate('ScreenshotScreen');
-      });
+  // 2. Listen to position changes. Index -1 means the sheet is fully closed.
+  const handleSheetChanges = useCallback((index: number) => {
+    if (index === -1) {
+      if (nextActionRef.current) {
+        nextActionRef.current();
+      } else {
+        navigation.goBack();
+      }
     }
-  };
+  }, [navigation]);
+
+  const dismiss = useCallback((action?: () => void) => {
+    if (action) {
+      nextActionRef.current = action;
+    }
+    bottomSheetRef.current?.close();
+  }, []);
+
+  const handleAction = useCallback(
+    (key: (typeof ACTIONS)[number]['key']) => {
+      if (key === 'expense' || key === 'income') {
+        dismiss(() => {
+          navigation.replace('AddTransaction', { mode: key });
+        });
+      } else if (key === 'scan') {
+        dismiss(() => {
+          navigation.navigate('ScreenshotScreen');
+        });
+      }
+    },
+    [dismiss, navigation]
+  );
+
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />
+    ),
+    []
+  );
 
   return (
     <View style={styles.container}>
-      {/* Dimmed backdrop — tap to dismiss */}
-      <TouchableWithoutFeedback onPress={() => dismiss()}>
-        <View style={styles.overlay} />
-      </TouchableWithoutFeedback>
-
-      <Animated.View
-        style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={0}
+        enableDynamicSizing={true}
+        enablePanDownToClose
+        onChange={handleSheetChanges} /* 👈 FIX: Uses onChange instead of onClose */
+        backdropComponent={renderBackdrop}
+        backgroundStyle={styles.sheetBackground}
+        handleIndicatorStyle={styles.handle}
       >
-        {/* Handle bar */}
-        <View style={styles.handle} />
+        <BottomSheetView style={styles.sheetContent}>
+          <Text style={styles.sheetLabel}>QUICK ADD</Text>
 
-        <Text style={styles.sheetLabel}>QUICK ADD</Text>
+          {ACTIONS.map((action, idx) => (
+            <TouchableOpacity
+              key={action.key}
+              activeOpacity={0.7}
+              onPress={() => handleAction(action.key)}
+              style={[styles.row, idx < ACTIONS.length - 1 && styles.rowBorder]}
+            >
+              <View style={[styles.iconWrap, { backgroundColor: action.iconBg }]}>
+                <Text style={[styles.iconText, { color: action.iconColor }]}>{action.icon}</Text>
+              </View>
 
-        {ACTIONS.map((action, idx) => (
-          <TouchableOpacity
-            key={action.key}
-            activeOpacity={0.7}
-            onPress={() => handleAction(action.key)}
-            style={[styles.row, idx < ACTIONS.length - 1 && styles.rowBorder]}
-          >
-            {/* Icon container — 40px as per spec */}
-            <View style={[styles.iconWrap, { backgroundColor: action.iconBg }]}>
-              <Text style={[styles.iconText, { color: action.iconColor }]}>
-                {action.icon}
-              </Text>
-            </View>
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle}>{action.title}</Text>
+                <Text style={styles.rowSub}>{action.sub}</Text>
+              </View>
 
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{action.title}</Text>
-              <Text style={styles.rowSub}>{action.sub}</Text>
-            </View>
-
-            <Text style={styles.rowChevron}>›</Text>
-          </TouchableOpacity>
-        ))}
-      </Animated.View>
+              <Text style={styles.rowChevron}>›</Text>
+            </TouchableOpacity>
+          ))}
+        </BottomSheetView>
+      </BottomSheet>
     </View>
   );
 }
@@ -132,16 +126,13 @@ export default function FABActionSheet() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'flex-end',
   },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(30,30,46,0.4)',
-  },
-  sheet: {
+  sheetBackground: {
     backgroundColor: colors.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+  },
+  sheetContent: {
     paddingTop: 10,
     paddingBottom: 40,
     paddingHorizontal: 20,
@@ -151,7 +142,7 @@ const styles = StyleSheet.create({
     height: 4,
     backgroundColor: '#D8D6D0',
     borderRadius: 2,
-    alignSelf: 'center',
+    marginTop: 10,
     marginBottom: 20,
   },
   sheetLabel: {
