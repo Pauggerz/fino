@@ -28,6 +28,7 @@ import {
   INCOME_CATEGORIES,
   CATEGORY_COLOR,
 } from '@/constants/categoryMappings';
+import { Skeleton } from '@/components/Skeleton';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -845,6 +846,88 @@ export default function StatsScreen() {
     ? (incomeTotals[selectedCategory!] ?? 0)
     : totalIncome;
 
+  if (loading) {
+    return (
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        scrollEnabled={false}
+      >
+        <View style={styles.loadingHeader}>
+          <View>
+            <Skeleton width={92} height={24} style={{ marginBottom: 8 }} />
+            <Skeleton width={152} height={13} />
+          </View>
+          <Skeleton width={92} height={32} borderRadius={999} />
+        </View>
+
+        <View style={styles.toggleRow}>
+          <Skeleton width="100%" height={28} borderRadius={10} />
+        </View>
+
+        <View style={styles.loadingOverallCard}>
+          <View style={styles.loadingDonutRow}>
+            <Skeleton width={132} height={132} borderRadius={66} />
+            <View style={styles.loadingDonutText}>
+              <Skeleton width={72} height={28} style={{ marginBottom: 8 }} />
+              <Skeleton width={88} height={12} />
+            </View>
+          </View>
+
+          <View style={styles.loadingMetricRow}>
+            <View style={styles.loadingMetricCol}>
+              <Skeleton width={84} height={11} style={{ marginBottom: 8 }} />
+              <Skeleton width={96} height={18} />
+            </View>
+            <View style={styles.metricDivider} />
+            <View style={styles.loadingMetricCol}>
+              <Skeleton width={96} height={11} style={{ marginBottom: 8 }} />
+              <Skeleton width={96} height={18} />
+            </View>
+          </View>
+
+          <Skeleton width={168} height={11} style={{ marginTop: 12 }} />
+        </View>
+
+        <Skeleton width={88} height={11} style={{ marginBottom: 12 }} />
+        <View style={{ marginBottom: 16 }}>
+          {Array.from({ length: 5 }).map((_, index) => (
+            <View key={`stats-skel-${index}`} style={styles.loadingProgRow}>
+              <Skeleton
+                width={44}
+                height={44}
+                borderRadius={14}
+                style={{ marginRight: 12 }}
+              />
+              <View style={styles.loadingProgContent}>
+                <View style={styles.loadingProgHeaderRow}>
+                  <Skeleton width={120} height={15} />
+                  <Skeleton width={46} height={18} borderRadius={20} />
+                </View>
+                <Skeleton width="100%" height={6} borderRadius={4} />
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.loadingInsightCard}>
+          <Skeleton
+            width={36}
+            height={36}
+            borderRadius={18}
+            style={{ marginRight: 12 }}
+          />
+          <View style={{ flex: 1 }}>
+            <Skeleton width={124} height={13} style={{ marginBottom: 10 }} />
+            <Skeleton width="88%" height={18} style={{ marginBottom: 8 }} />
+            <Skeleton width="96%" height={14} style={{ marginBottom: 14 }} />
+            <Skeleton width={88} height={24} borderRadius={12} />
+          </View>
+        </View>
+      </ScrollView>
+    );
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -1257,6 +1340,67 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  loadingHeader: {
+    paddingTop: 16,
+    paddingBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  loadingOverallCard: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: 'rgba(30,30,46,0.08)',
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  loadingDonutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 18,
+  },
+  loadingDonutText: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingMetricRow: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  loadingMetricCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  loadingProgRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  loadingProgContent: {
+    flex: 1,
+  },
+  loadingProgHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  loadingInsightCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(201,184,245,0.35)',
+    padding: 16,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+    backgroundColor: '#F0ECFD',
   },
   emptyText: {
     fontFamily: 'Inter_400Regular',
