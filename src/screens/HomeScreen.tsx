@@ -1,5 +1,7 @@
+// src/screens/HomeScreen.tsx
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useSync } from '@/contexts/SyncContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 import {
   View,
@@ -28,10 +30,6 @@ import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
 import { Skeleton } from '@/components/Skeleton';
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const USER_NAME = 'Christian';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -102,8 +100,10 @@ function calculateSparkline(transactions: FeedTransaction[]): { id: string; val:
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const { status: syncStatus, syncVersion } = useSync(); 
+  const { profile } = useAuth();
+  
+  const userName = profile?.name || 'User';
 
-  // 👇 Extracted loading states 👇
   const { accounts, totalBalance, refetch: refetchAccounts, loading: isAccountsLoading = false } = useAccounts();
   const { categories, refetch: refetchCategories, loading: isCategoriesLoading = false } = useCategories();
   const {
@@ -135,15 +135,6 @@ export default function HomeScreen() {
 
   const animBalance = useRef(new Animated.Value(totalBalance)).current;
   const [displayBalance, setDisplayBalance] = useState(totalBalance);
-
-  useEffect(() => {
-    const getMyId = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-    };
-    getMyId();
-  }, []);
 
   useEffect(() => {
     const listenerId = animBalance.addListener(({ value }) => {
@@ -303,7 +294,7 @@ export default function HomeScreen() {
                   Kamusta,{' '}
                 </Text>
                 <Text style={{ color: colors.greetingPurple }}>
-                  {USER_NAME}!
+                  {userName}!
                 </Text>
               </Text>
             </View>
@@ -311,7 +302,7 @@ export default function HomeScreen() {
               colors={['#5B8C6E', '#3f6b52']}
               style={styles.avatar}
             >
-              <Text style={styles.avatarLetter}>{USER_NAME[0]}</Text>
+              <Text style={styles.avatarLetter}>{userName.charAt(0).toUpperCase()}</Text>
             </LinearGradient>
           </View>
         </View>
@@ -620,8 +611,6 @@ export default function HomeScreen() {
     </View>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
