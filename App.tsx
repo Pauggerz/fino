@@ -1,10 +1,10 @@
 import 'react-native-gesture-handler';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { GestureHandlerRootView } from 'react-native-gesture-handler'; // 👈 Added
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import {
   useFonts,
@@ -29,9 +29,12 @@ import RootNavigator from './src/navigation/RootNavigator';
 import { SyncProvider } from './src/contexts/SyncContext';
 import { supabase } from './src/services/supabase';
 
+// Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 export default function App() {
+  const [isAuthReady, setIsAuthReady] = useState(false);
+
   const [fontsLoaded] = useFonts({
     Nunito_400Regular,
     Nunito_600SemiBold,
@@ -46,22 +49,39 @@ export default function App() {
     DMMono_500Medium,
   });
 
+  // Check Supabase session on mount
   useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
+    async function prepareSession() {
+      try {
+        await supabase.auth.getSession();
+      } catch (error) {
+        console.warn('Session check failed, signing out:', error);
+        await supabase.auth.signOut();
+      } finally {
+        // Always mark auth as ready, whether session exists, is empty, or failed
+        setIsAuthReady(true);
+      }
     }
-  }, [fontsLoaded]);
 
-  useEffect(() => {
-    supabase.auth.getSession().catch(() => {
-      supabase.auth.signOut();
-    });
+    prepareSession();
   }, []);
 
-  if (!fontsLoaded) return null;
+  // Determine if all required resources are loaded
+  const isAppReady = fontsLoaded && isAuthReady;
+
+  useEffect(() => {
+    if (isAppReady) {
+      // Hide the splash screen once everything is ready
+      SplashScreen.hideAsync().catch(console.warn);
+    }
+  }, [isAppReady]);
+
+  // Return null to keep the splash screen visible until ready
+  if (!isAppReady) {
+    return null;
+  }
 
   return (
-    // 👈 Wrap SafeAreaProvider in GestureHandlerRootView
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <SyncProvider>
