@@ -8,7 +8,6 @@ import {
   Modal,
   ScrollView,
   TextInput,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +15,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { colors } from '../constants/theme';
 import { CATEGORY_TILE_BG, CATEGORY_COLOR } from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
+import { Skeleton } from '@/components/Skeleton';
 import { supabase } from '@/services/supabase';
 import { useAccounts } from '@/hooks/useAccounts';
 import {
@@ -332,14 +332,45 @@ export default function TransactionDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView
-        style={{
-          flex: 1,
-          backgroundColor: '#F7F5F2',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
+        style={{ flex: 1, backgroundColor: '#F7F5F2' }}
       >
-        <ActivityIndicator color={colors.primary} />
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 40 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' }}>
+            <Skeleton width={56} height={36} borderRadius={10} />
+            <Skeleton width={120} height={18} style={{ marginLeft: 16, flex: 1 }} />
+            <Skeleton width={56} height={18} />
+          </View>
+
+          <View style={{ alignItems: 'center', paddingTop: 16, paddingBottom: 32, paddingHorizontal: 24 }}>
+            <Skeleton width={80} height={80} borderRadius={22} style={{ marginBottom: 16 }} />
+            <Skeleton width={230} height={18} style={{ marginBottom: 10 }} />
+            <Skeleton width={180} height={12} />
+          </View>
+
+          <View style={{ marginHorizontal: 16, backgroundColor: '#FFFFFF', borderRadius: 20, overflow: 'hidden' }}>
+            {Array.from({ length: 4 }).map((_, index) => (
+              <View
+                key={`tx-detail-skel-${index}`}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingVertical: 14,
+                  paddingHorizontal: 16,
+                  borderBottomWidth: index === 3 ? 0 : 1,
+                  borderBottomColor: 'rgba(30,30,46,0.07)',
+                  minHeight: 52,
+                }}
+              >
+                <Skeleton width={92} height={14} />
+                <Skeleton width={index === 0 ? 120 : index === 1 ? 150 : index === 2 ? 100 : 130} height={14} />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }

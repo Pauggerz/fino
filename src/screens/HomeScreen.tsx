@@ -27,6 +27,7 @@ import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
+import { Skeleton } from '@/components/Skeleton'; // <-- Added Skeleton Import
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -70,18 +71,17 @@ function onTrackLabel(pct: number): string {
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
-  // 👇 Pull in the new syncVersion 👇
   const { status: syncStatus, syncVersion } = useSync(); 
 
-  const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
-  const { categories, refetch: refetchCategories } = useCategories();
+  // 👇 Extracted loading states 👇
+  const { accounts, totalBalance, refetch: refetchAccounts, loading: isAccountsLoading = false } = useAccounts();
+  const { categories, refetch: refetchCategories, loading: isCategoriesLoading = false } = useCategories();
   const {
     totalIncome,
     totalExpense: monthlyExpense,
     refetch: refetchTotals,
   } = useMonthlyTotals();
 
-  // 👇 Listen for background syncs to instantly update the UI 👇
   useEffect(() => {
     if (syncVersion > 0) {
       refetchAccounts();
@@ -90,12 +90,11 @@ export default function HomeScreen() {
     }
   }, [syncVersion, refetchAccounts, refetchCategories, refetchTotals]);
 
-  // Exact requested color logic
   const getSyncColor = () => {
     switch (syncStatus) {
-      case 'synced': return '#10B981'; // Green (Online, Everything saved)
-      case 'syncing': return '#F59E0B'; // Orange (Actively pushing to database)
-      case 'offline': return '#EF4444'; // Red (No connection)
+      case 'synced': return '#10B981'; 
+      case 'syncing': return '#F59E0B'; 
+      case 'offline': return '#EF4444'; 
       default: return '#10B981';
     }
   };
@@ -212,7 +211,6 @@ export default function HomeScreen() {
                 <Text style={[styles.greetingPill, { marginBottom: 0 }]}>
                   {greetText} {greetEmoji}
                 </Text>
-                {/* Sync Status Dot */}
                 <View 
                   style={{
                     width: 8,
@@ -364,56 +362,67 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.acctGrid}>
-          {accounts.map((acc) => {
-            const neg = isNegativeBalance(acc.balance);
-            return (
-              <TouchableOpacity
-                key={acc.id}
-                activeOpacity={0.8}
-                style={styles.acctCard}
-                onPress={() =>
-                  navigation.navigate('more', {
-                    screen: 'AccountDetail',
-                    params: { id: acc.id },
-                  })
-                }
-              >
-                {(() => {
-                  const logo = ACCOUNT_LOGOS[acc.name];
-                  const avatarLetter =
-                    ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
-                  return logo ? (
-                    <View style={styles.acctIconWrap}>
-                      <Image
-                        source={logo}
-                        style={styles.acctLogo}
-                        resizeMode="contain"
-                      />
-                    </View>
-                  ) : (
-                    <View
-                      style={[
-                        styles.acctIconWrap,
-                        { backgroundColor: acc.brand_colour },
-                      ]}
-                    >
-                      <Text style={styles.acctLetter}>{avatarLetter}</Text>
-                    </View>
-                  );
-                })()}
-                <Text style={styles.acctName}>{acc.name}</Text>
-                <Text
-                  style={[
-                    styles.acctBalance,
-                    neg && { color: colors.expenseRed },
-                  ]}
+          {isAccountsLoading ? (
+            // 👇 Render Skeleton Account Cards 👇
+            Array.from({ length: 4 }).map((_, i) => (
+              <View key={`skel-acc-${i}`} style={styles.acctCard}>
+                <Skeleton width={40} height={40} borderRadius={20} style={{ marginBottom: 4 }} />
+                <Skeleton width={80} height={14} style={{ marginBottom: 4 }} />
+                <Skeleton width={60} height={14} />
+              </View>
+            ))
+          ) : (
+            accounts.map((acc) => {
+              const neg = isNegativeBalance(acc.balance);
+              return (
+                <TouchableOpacity
+                  key={acc.id}
+                  activeOpacity={0.8}
+                  style={styles.acctCard}
+                  onPress={() =>
+                    navigation.navigate('more', {
+                      screen: 'AccountDetail',
+                      params: { id: acc.id },
+                    })
+                  }
                 >
-                  {neg && <Text style={styles.negBang}>! </Text>}
-                  {fmtPeso(acc.balance)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+                  {(() => {
+                    const logo = ACCOUNT_LOGOS[acc.name];
+                    const avatarLetter =
+                      ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
+                    return logo ? (
+                      <View style={styles.acctIconWrap}>
+                        <Image
+                          source={logo}
+                          style={styles.acctLogo}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    ) : (
+                      <View
+                        style={[
+                          styles.acctIconWrap,
+                          { backgroundColor: acc.brand_colour },
+                        ]}
+                      >
+                        <Text style={styles.acctLetter}>{avatarLetter}</Text>
+                      </View>
+                    );
+                  })()}
+                  <Text style={styles.acctName}>{acc.name}</Text>
+                  <Text
+                    style={[
+                      styles.acctBalance,
+                      neg && { color: colors.expenseRed },
+                    ]}
+                  >
+                    {neg && <Text style={styles.negBang}>! </Text>}
+                    {fmtPeso(acc.balance)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
 
         <View style={styles.sectionLabelRow}>
@@ -422,64 +431,83 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.catGrid}>
-          {categories.map((cat) => {
-            const bgColor = cat.tile_bg_colour ?? '#F5F5F5';
-            const textColor = cat.text_colour ?? colors.textPrimary;
-            const isOver = cat.state === 'over';
-            return (
-              <TouchableOpacity
-                key={cat.id}
-                activeOpacity={0.8}
-                style={styles.catTileWrap}
-                onPress={() => navigation.navigate('stats')}
-              >
-                <LinearGradient
-                  colors={[bgColor, bgColor]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.catTile}
-                >
+          {isCategoriesLoading ? (
+             // 👇 Render Skeleton Category Tiles 👇
+             Array.from({ length: 4 }).map((_, i) => (
+              <View key={`skel-cat-${i}`} style={styles.catTileWrap}>
+                <View style={[styles.catTile, { backgroundColor: '#F5F5F5' }]}>
                   <View style={styles.catBadgeWrap}>
-                    {isOver ? (
-                      <View style={styles.catOverBadge}>
-                        <Text style={styles.catOverBadgeText}>Over!</Text>
-                      </View>
-                    ) : (
-                      <Text style={[styles.catPctBadge, { color: textColor }]}>
-                        {Math.round(cat.pct * 100)}%
-                      </Text>
-                    )}
+                    <Skeleton width={32} height={14} borderRadius={4} />
                   </View>
-
-                  <View style={styles.catIconCircle}>
-                    <CategoryIcon
-                      categoryKey={cat.name.toLowerCase()}
-                      color={cat.text_colour ?? '#888780'}
-                    />
+                  <View style={[styles.catIconCircle, { backgroundColor: 'transparent' }]}>
+                     <Skeleton width={32} height={32} borderRadius={16} />
                   </View>
+                  <Skeleton width={70} height={14} style={{ marginBottom: 4 }} />
+                  <Skeleton width={50} height={12} style={{ marginBottom: 8 }} />
+                  <Skeleton width="100%" height={4} borderRadius={4} />
+                </View>
+              </View>
+            ))
+          ) : (
+            categories.map((cat) => {
+              const bgColor = cat.tile_bg_colour ?? '#F5F5F5';
+              const textColor = cat.text_colour ?? colors.textPrimary;
+              const isOver = cat.state === 'over';
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  activeOpacity={0.8}
+                  style={styles.catTileWrap}
+                  onPress={() => navigation.navigate('stats')}
+                >
+                  <LinearGradient
+                    colors={[bgColor, bgColor]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.catTile}
+                  >
+                    <View style={styles.catBadgeWrap}>
+                      {isOver ? (
+                        <View style={styles.catOverBadge}>
+                          <Text style={styles.catOverBadgeText}>Over!</Text>
+                        </View>
+                      ) : (
+                        <Text style={[styles.catPctBadge, { color: textColor }]}>
+                          {Math.round(cat.pct * 100)}%
+                        </Text>
+                      )}
+                    </View>
 
-                  <Text style={[styles.catName, { color: textColor }]}>
-                    {cat.name}
-                  </Text>
-                  <Text style={[styles.catAmt, { color: textColor }]}>
-                    {fmtPeso(cat.spent)}
-                  </Text>
+                    <View style={styles.catIconCircle}>
+                      <CategoryIcon
+                        categoryKey={cat.name.toLowerCase()}
+                        color={cat.text_colour ?? '#888780'}
+                      />
+                    </View>
 
-                  <View style={styles.catBarTrack}>
-                    <View
-                      style={[
-                        styles.catBarFill,
-                        {
-                          width: `${cat.pct * 100}%` as any,
-                          backgroundColor: textColor,
-                        },
-                      ]}
-                    />
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            );
-          })}
+                    <Text style={[styles.catName, { color: textColor }]}>
+                      {cat.name}
+                    </Text>
+                    <Text style={[styles.catAmt, { color: textColor }]}>
+                      {fmtPeso(cat.spent)}
+                    </Text>
+
+                    <View style={styles.catBarTrack}>
+                      <View
+                        style={[
+                          styles.catBarFill,
+                          {
+                            width: `${cat.pct * 100}%` as any,
+                            backgroundColor: textColor,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
 
         {insight && (

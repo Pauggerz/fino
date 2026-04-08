@@ -33,6 +33,7 @@ import {
 import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
+import { Skeleton } from '@/components/Skeleton'; // <-- Added Skeleton Import
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,6 @@ function SwipeableRow({
 
   return (
     <View style={{ overflow: 'hidden' }}>
-      {/* Red delete zone revealed behind the row */}
       <View style={swipeStyles.deleteZone}>
         <TouchableOpacity
           style={swipeStyles.deleteBtn}
@@ -136,13 +136,10 @@ function SwipeableRow({
         </TouchableOpacity>
       </View>
 
-      {/* Sliding row */}
-      {/* eslint-disable react/jsx-props-no-spreading */}
       <Animated.View
         style={{ transform: [{ translateX }] }}
         {...panResponder.panHandlers}
       >
-        {/* eslint-enable react/jsx-props-no-spreading */}
         {children}
       </Animated.View>
     </View>
@@ -467,6 +464,29 @@ export default function FeedScreen() {
     ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
   ]);
 
+  // 👇 Render Skeleton Rows when Loading 👇
+  const renderSkeletonList = () => (
+    <View style={{ flex: 1 }}>
+      <View style={styles.dateHeaderContainer}>
+        <Skeleton width={100} height={12} borderRadius={4} />
+      </View>
+      {Array.from({ length: 7 }).map((_, i) => (
+        <View key={`skel-tx-${i}`} style={styles.transactionItem}>
+          <Skeleton width={44} height={44} borderRadius={22} style={{ marginRight: 14 }} />
+          <View style={styles.txContent}>
+            <Skeleton width={140} height={16} style={{ marginBottom: 6 }} />
+            <View style={styles.txSubtitleRow}>
+              <Skeleton width={40} height={12} />
+              <View style={styles.metaDot} />
+              <Skeleton width={60} height={16} borderRadius={4} />
+            </View>
+          </View>
+          <Skeleton width={75} height={16} />
+        </View>
+      ))}
+    </View>
+  );
+
   // ── Render row ──
   const renderItem = ({ item }: { item: ListItem }) => {
     if (item.type === 'header') {
@@ -664,7 +684,8 @@ export default function FeedScreen() {
       {/* ─── TRANSACTION LIST ─── */}
       <View style={{ flex: 1 }}>
         {loading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+          // 👇 Replaced ActivityIndicator with Skeleton Rows 👇
+          renderSkeletonList()
         ) : (
           <FlatList
             data={listData}

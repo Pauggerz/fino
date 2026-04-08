@@ -27,6 +27,7 @@ import {
 import { supabase } from '@/services/supabase';
 import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
+import { Skeleton } from '@/components/Skeleton';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1407,7 +1408,34 @@ export default function MoreScreen() {
           <View style={styles.acctCard}>
             {loading ? (
               <View style={styles.loadingAccountsWrap}>
-                <ActivityIndicator color={colors.primary} />
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <View
+                    key={`more-acct-skel-${index}`}
+                    style={[
+                      styles.acctRow,
+                      index === 3 && { borderBottomWidth: 0 },
+                    ]}
+                  >
+                    <View style={styles.acctRowLeft}>
+                      <Skeleton
+                        width={40}
+                        height={40}
+                        borderRadius={20}
+                        style={{ marginRight: 14 }}
+                      />
+                      <Skeleton width={104} height={15} />
+                    </View>
+                    <View style={styles.acctRowRight}>
+                      <Skeleton width={84} height={14} />
+                      <Skeleton
+                        width={16}
+                        height={16}
+                        borderRadius={8}
+                        style={{ marginLeft: 8 }}
+                      />
+                    </View>
+                  </View>
+                ))}
               </View>
             ) : (
               accounts.map((acct, index) => (
@@ -1727,7 +1755,7 @@ const styles = StyleSheet.create({
   },
   loadingAccountsWrap: {
     paddingVertical: 18,
-    alignItems: 'center',
+    alignItems: 'stretch',
     justifyContent: 'center',
   },
   acctRow: {

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
-  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context'; // 👈 Added this import
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -14,6 +13,7 @@ import { colors, radius, spacing } from '../constants/theme';
 import type { Transaction, Account } from '@/types';
 import { supabase } from '@/services/supabase';
 import { useAccounts } from '@/hooks/useAccounts';
+import { Skeleton } from '@/components/Skeleton';
 import type { MoreStackParamList } from '../navigation/RootNavigator';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -147,8 +147,66 @@ export default function AccountDetailScreen() {
 
   if (loading) {
     return (
-      <View style={styles.containerCenter}>
-        <ActivityIndicator color={colors.primary} />
+      <View style={styles.container}>
+        <View style={styles.loadingTopBar}>
+          <Skeleton width={72} height={16} />
+          <Skeleton width={120} height={16} />
+        </View>
+
+        <View
+          style={[
+            styles.hero,
+            {
+              backgroundColor: '#D7E4DB',
+              paddingTop: Math.max(insets.top, 16) + 10,
+            },
+          ]}
+        >
+          <View style={styles.loadingHeroInner}>
+            <Skeleton
+              width={64}
+              height={64}
+              borderRadius={32}
+              style={{ marginBottom: 12 }}
+            />
+            <Skeleton width={120} height={18} style={{ marginBottom: 8 }} />
+            <Skeleton width={160} height={36} />
+          </View>
+        </View>
+
+        <View style={styles.statsRow}>
+          {Array.from({ length: 3 }).map((_, index) => (
+            <View key={`acct-stat-skel-${index}`} style={styles.statChip}>
+              <Skeleton width={72} height={10} style={{ marginBottom: 8 }} />
+              <Skeleton width={58} height={14} />
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Skeleton width={130} height={14} />
+          <Skeleton width={64} height={14} />
+        </View>
+
+        <View style={styles.listWrap}>
+          {Array.from({ length: 3 }).map((_, index) => (
+            <View key={`acct-txn-skel-${index}`} style={styles.txItem}>
+              <View style={styles.txLeft}>
+                <Skeleton
+                  width={44}
+                  height={44}
+                  borderRadius={22}
+                  style={{ marginRight: 14 }}
+                />
+                <View>
+                  <Skeleton width={110} height={14} style={{ marginBottom: 6 }} />
+                  <Skeleton width={72} height={12} />
+                </View>
+              </View>
+              <Skeleton width={84} height={16} />
+            </View>
+          ))}
+        </View>
       </View>
     );
   }
@@ -318,6 +376,18 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
     color: colors.textPrimary,
+  },
+  loadingTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 16,
+    marginBottom: 8,
+  },
+  loadingHeroInner: {
+    alignItems: 'center',
+    paddingBottom: 16,
   },
   // ── Hero ──
   hero: {
