@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Asset } from 'expo-asset';
 
 import {
   useFonts,
@@ -28,12 +29,14 @@ import {
 import RootNavigator from './src/navigation/RootNavigator';
 import { SyncProvider } from './src/contexts/SyncContext';
 import { supabase } from './src/services/supabase';
+import { ACCOUNT_LOGOS } from './src/constants/accountLogos';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isAssetsReady, setIsAssetsReady] = useState(false);
 
   const [fontsLoaded] = useFonts({
     Nunito_400Regular,
@@ -66,8 +69,25 @@ export default function App() {
     prepareSession();
   }, []);
 
+  // Pre-load local image assets
+  useEffect(() => {
+    async function prepareAssets() {
+      try {
+        // Cast the values to number[] to satisfy the TypeScript compiler
+        const imageAssets = Object.values(ACCOUNT_LOGOS) as number[];
+        await Asset.loadAsync(imageAssets);
+      } catch (error) {
+        console.warn('Asset pre-loading failed:', error);
+      } finally {
+        setIsAssetsReady(true);
+      }
+    }
+
+    prepareAssets();
+  }, []);
+
   // Determine if all required resources are loaded
-  const isAppReady = fontsLoaded && isAuthReady;
+  const isAppReady = fontsLoaded && isAuthReady && isAssetsReady;
 
   useEffect(() => {
     if (isAppReady) {
