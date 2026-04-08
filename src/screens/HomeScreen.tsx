@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useSync } from '@/contexts/SyncContext';
 
 import {
@@ -9,7 +9,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
-  Button,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,23 +23,15 @@ import { isNegativeBalance, BALANCE_ANIMATE_MS } from '../services/balanceCalc';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
+import { useTransactions, FeedTransaction } from '@/hooks/useTransactions';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
-import { Skeleton } from '@/components/Skeleton'; // <-- Added Skeleton Import
+import { Skeleton } from '@/components/Skeleton';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const USER_NAME = 'Christian';
-const SPARKLINE = [
-  { id: 'day0', val: 0.38 },
-  { id: 'day1', val: 0.6 },
-  { id: 'day2', val: 0.27 },
-  { id: 'day3', val: 0.74 },
-  { id: 'day4', val: 0.45 },
-  { id: 'day5', val: 0.88 },
-  { id: 'day6', val: 0.52 },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +58,45 @@ function onTrackLabel(pct: number): string {
   return 'Over budget';
 }
 
+function calculateSparkline(transactions: FeedTransaction[]): { id: string; val: number }[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (6 - i));
+    return {
+      id: `day${i}`,
+      timestamp: d.getTime(),
+      total: 0,
+    };
+  });
+
+  if (!transactions || transactions.length === 0) {
+    return days.map((d) => ({ id: d.id, val: 0 }));
+  }
+
+  transactions.forEach((tx) => {
+    if (tx.type === 'expense' && tx.date) {
+      const txDate = new Date(tx.date);
+      txDate.setHours(0, 0, 0, 0);
+      const txTime = txDate.getTime();
+
+      const dayMatch = days.find((d) => d.timestamp === txTime);
+      if (dayMatch) {
+        dayMatch.total += Number(tx.amount) || 0;
+      }
+    }
+  });
+
+  const maxSpend = Math.max(...days.map((d) => d.total));
+
+  return days.map((d) => ({
+    id: d.id,
+    val: maxSpend > 0 ? d.total / maxSpend : 0,
+  }));
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -81,14 +111,18 @@ export default function HomeScreen() {
     totalExpense: monthlyExpense,
     refetch: refetchTotals,
   } = useMonthlyTotals();
+  const { items: transactions, refetch: refetchTransactions } = useTransactions();
+
+  const sparklineData = useMemo(() => calculateSparkline(transactions), [transactions]);
 
   useEffect(() => {
     if (syncVersion > 0) {
       refetchAccounts();
       refetchCategories();
       refetchTotals();
+      refetchTransactions();
     }
-  }, [syncVersion, refetchAccounts, refetchCategories, refetchTotals]);
+  }, [syncVersion, refetchAccounts, refetchCategories, refetchTotals, refetchTransactions]);
 
   const getSyncColor = () => {
     switch (syncStatus) {
@@ -138,6 +172,7 @@ export default function HomeScreen() {
       refetchAccounts();
       refetchCategories();
       refetchTotals();
+      refetchTransactions();
       const last = getLastSaved();
       if (!last) return;
       clearLastSaved();
@@ -151,7 +186,7 @@ export default function HomeScreen() {
       setUndoAccountId(last.accountId);
       setUndoPreviousBalance(last.previousBalance);
       setToastVisible(true);
-    }, [refetchAccounts, refetchCategories, refetchTotals])
+    }, [refetchAccounts, refetchCategories, refetchTotals, refetchTransactions])
   );
 
   const handleUndo = useCallback(async () => {
@@ -166,6 +201,7 @@ export default function HomeScreen() {
     refetchAccounts();
     refetchCategories();
     refetchTotals();
+    refetchTransactions();
     setUndoTxId(null);
     setUndoAccountId(null);
     setUndoPreviousBalance(null);
@@ -180,6 +216,7 @@ export default function HomeScreen() {
     refetchAccounts,
     refetchCategories,
     refetchTotals,
+    refetchTransactions
   ]);
 
   const { text: greetText, emoji: greetEmoji } = getGreeting();
@@ -253,7 +290,7 @@ export default function HomeScreen() {
             style={styles.onTrackPill}
           >
             <View style={styles.sparkline}>
-              {SPARKLINE.map((bar, i) => (
+              {sparklineData.map((bar, i) => (
                 <View
                   key={bar.id}
                   style={[
@@ -261,7 +298,7 @@ export default function HomeScreen() {
                     {
                       height: Math.max(4, bar.val * 20),
                       backgroundColor:
-                        i === SPARKLINE.length - 1
+                        i === sparklineData.length - 1
                           ? colors.primary
                           : 'rgba(91,140,110,0.3)',
                     },
@@ -363,7 +400,6 @@ export default function HomeScreen() {
 
         <View style={styles.acctGrid}>
           {isAccountsLoading ? (
-            // 👇 Render Skeleton Account Cards 👇
             Array.from({ length: 4 }).map((_, i) => (
               <View key={`skel-acc-${i}`} style={styles.acctCard}>
                 <Skeleton width={40} height={40} borderRadius={20} style={{ marginBottom: 4 }} />
@@ -432,7 +468,6 @@ export default function HomeScreen() {
 
         <View style={styles.catGrid}>
           {isCategoriesLoading ? (
-             // 👇 Render Skeleton Category Tiles 👇
              Array.from({ length: 4 }).map((_, i) => (
               <View key={`skel-cat-${i}`} style={styles.catTileWrap}>
                 <View style={[styles.catTile, { backgroundColor: '#F5F5F5' }]}>
