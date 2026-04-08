@@ -1,5 +1,5 @@
 import React, { useRef, useCallback } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Keyboard, InteractionManager } from 'react-native';
 import { TouchableOpacity } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -39,25 +39,29 @@ const ACTIONS = [
 export default function FABActionSheet() {
   const navigation = useNavigation<NavProp>();
   const bottomSheetRef = useRef<BottomSheet>(null);
-  
-  // 1. Safely store the next action so it fires after the animation
   const nextActionRef = useRef<(() => void) | null>(null);
 
-  // 2. Listen to position changes. Index -1 means the sheet is fully closed.
-  const handleSheetChanges = useCallback((index: number) => {
-    if (index === -1) {
-      if (nextActionRef.current) {
-        nextActionRef.current();
-      } else {
-        navigation.goBack();
+  const handleSheetChanges = useCallback(
+    (index: number) => {
+      if (index === -1) {
+        const action = nextActionRef.current;
+        nextActionRef.current = null;
+
+        if (action) {
+          InteractionManager.runAfterInteractions(() => {
+            requestAnimationFrame(action);
+          });
+        } else {
+          navigation.goBack();
+        }
       }
-    }
-  }, [navigation]);
+    },
+    [navigation]
+  );
 
   const dismiss = useCallback((action?: () => void) => {
-    if (action) {
-      nextActionRef.current = action;
-    }
+    Keyboard.dismiss();
+    nextActionRef.current = action ?? null;
     bottomSheetRef.current?.close();
   }, []);
 
@@ -69,7 +73,7 @@ export default function FABActionSheet() {
         });
       } else if (key === 'scan') {
         dismiss(() => {
-          navigation.navigate('ScreenshotScreen');
+          navigation.replace('ScreenshotScreen');
         });
       }
     },

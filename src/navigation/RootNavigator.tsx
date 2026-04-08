@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import {
   NavigationContainer,
   NavigatorScreenParams,
@@ -140,9 +140,11 @@ export default function RootNavigator() {
           name="AddTransaction"
           component={AddTransactionSheet}
           options={{
-            presentation: 'transparentModal',
-            animation: 'none',
-            contentStyle: { backgroundColor: 'transparent' },
+            presentation: Platform.OS === 'android' ? 'modal' : 'transparentModal',
+            animation: Platform.OS === 'android' ? 'slide_from_bottom' : 'none',
+            contentStyle: {
+              backgroundColor: Platform.OS === 'android' ? '#00000000' : 'transparent',
+            },
           }}
         />
 

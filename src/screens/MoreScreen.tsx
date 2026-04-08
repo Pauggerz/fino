@@ -1271,9 +1271,16 @@ export default function MoreScreen() {
   const { accounts, loading, refetch: refetchAccounts } = useAccounts();
 
   // Modals
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showBudgetSettings, setShowBudgetSettings] = useState(false);
   const [showBillReminders, setShowBillReminders] = useState(false);
+
+  // Auth
+  const [authEmail, setAuthEmail] = useState<string | null>(null);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Bill quick view
   const [quickViewBill, setQuickViewBill] = useState<BillReminder | null>(null);
@@ -1289,13 +1296,44 @@ export default function MoreScreen() {
     setUpcomingBills((data as BillReminder[]) ?? []);
   }, []);
 
+  const refreshAuthState = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    setAuthEmail(user?.email ?? null);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       fetchUpcomingBills();
-    }, [fetchUpcomingBills])
+      refreshAuthState();
+    }, [fetchUpcomingBills, refreshAuthState])
   );
 
   const nextBill = upcomingBills[0] ?? null;
+
+  const handleLogin = async () => {
+    if (!loginEmail.trim() || !loginPassword) {
+      Alert.alert('Required', 'Please enter your email and password.');
+      return;
+    }
+
+    setIsLoggingIn(true);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: loginEmail.trim(),
+      password: loginPassword,
+    });
+    setIsLoggingIn(false);
+
+    if (error) {
+      Alert.alert('Log in failed', error.message);
+      return;
+    }
+
+    setShowLoginModal(false);
+    setLoginPassword('');
+    refreshAuthState();
+  };
 
   const handleToolPress = (id: string) => {
     if (id === 'fino') navigation.navigate('ChatScreen');
@@ -1338,8 +1376,25 @@ export default function MoreScreen() {
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 16) }]}>
       {/* ─── HEADER ─── */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>More</Text>
-        <Text style={styles.headerSubtitle}>Manage your money</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.headerTitle}>More</Text>
+          {authEmail ? (
+            <View style={styles.loggedInPill}>
+              <Text style={styles.loggedInPillText}>Logged in</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.loginBtn}
+              activeOpacity={0.8}
+              onPress={() => setShowLoginModal(true)}
+            >
+              <Text style={styles.loginBtnText}>Log in</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <Text style={styles.headerSubtitle}>
+          {authEmail ?? 'Manage your money'}
+        </Text>
       </View>
 
       <ScrollView
@@ -1503,6 +1558,70 @@ export default function MoreScreen() {
       </ScrollView>
 
       {/* ─── MODALS ─── */}
+      <Modal
+        visible={showLoginModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowLoginModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <View style={modalStyles.sheet}>
+            <View style={modalStyles.handle} />
+
+            <View style={modalStyles.sheetHeader}>
+              <Text style={modalStyles.sheetTitle}>Log in</Text>
+              <TouchableOpacity
+                onPress={() => setShowLoginModal(false)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={modalStyles.fieldGroup}>
+              <Text style={modalStyles.fieldLabel}>EMAIL</Text>
+              <TextInput
+                style={modalStyles.input}
+                value={loginEmail}
+                onChangeText={setLoginEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholder="you@example.com"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+
+            <View style={modalStyles.fieldGroup}>
+              <Text style={modalStyles.fieldLabel}>PASSWORD</Text>
+              <TextInput
+                style={modalStyles.input}
+                value={loginPassword}
+                onChangeText={setLoginPassword}
+                secureTextEntry
+                placeholder="Password"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[modalStyles.primaryBtn, isLoggingIn && { opacity: 0.6 }]}
+              onPress={handleLogin}
+              activeOpacity={0.8}
+              disabled={isLoggingIn}
+            >
+              {isLoggingIn ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={modalStyles.primaryBtnText}>Log in</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <AddAccountModal
         visible={showAddAccount}
         onClose={() => setShowAddAccount(false)}
@@ -1544,6 +1663,11 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     paddingTop: 12,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   headerTitle: {
     fontFamily: 'Nunito_700Bold',
     fontSize: 22,
@@ -1554,6 +1678,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  loginBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#2d6a4f',
+  },
+  loginBtnText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    color: '#FFFFFF',
+  },
+  loggedInPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#E9F6EF',
+    borderWidth: 1,
+    borderColor: '#B9E1C8',
+  },
+  loggedInPillText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    color: '#2d6a4f',
   },
   scrollContent: {
     paddingHorizontal: spacing.screenPadding,

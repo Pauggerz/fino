@@ -4,10 +4,12 @@ import {
   Text,
   Image,
   StyleSheet,
+  Keyboard,
+  useWindowDimensions,
   Platform,
 } from 'react-native';
-// 👇 1. FIX: IMPORT FROM GESTURE HANDLER SO BUTTONS ARE CLICKABLE
-import { TouchableOpacity } from 'react-native-gesture-handler';
+// IMPORT FROM GESTURE HANDLER TO FIX CLICKS AND SCROLLING
+import { TouchableOpacity, ScrollView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
@@ -41,8 +43,10 @@ type Props = { route: RouteProp<RootStackParamList, 'AddTransaction'>; };
 
 export default function AddTransactionSheet({ route }: Props) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { width: windowWidth } = useWindowDimensions();
   const initialMode = route.params?.mode ?? 'expense';
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const numpadKeyWidth = Math.floor((windowWidth - 56) / 3);
 
   const { addOfflineTransaction } = useSync();
   const { accounts } = useAccounts();
@@ -76,7 +80,7 @@ export default function AddTransactionSheet({ route }: Props) {
     return () => analyzer.cancel();
   }, [analyzer]);
 
-  // 👇 2. FIX: LISTEN TO SHEET CHANGES INSTEAD OF ONCLOSE
+  // Handle navigation after the sheet has fully closed
   const handleSheetChanges = useCallback((index: number) => {
     if (index === -1) {
       navigation.goBack();
@@ -84,6 +88,7 @@ export default function AddTransactionSheet({ route }: Props) {
   }, [navigation]);
 
   const dismiss = useCallback(() => {
+    Keyboard.dismiss();
     bottomSheetRef.current?.close();
   }, []);
 
@@ -147,9 +152,7 @@ export default function AddTransactionSheet({ route }: Props) {
         account_deleted: false,
       };
 
-      addOfflineTransaction(txPayload).catch((err) => {
-        console.log('Background sync error (safe to ignore):', err);
-      });
+      addOfflineTransaction(txPayload).catch(() => {});
 
       const delta = txType === 'expense' ? -parsedAmount : parsedAmount;
       const updateBalance = async () => {
@@ -198,17 +201,20 @@ export default function AddTransactionSheet({ route }: Props) {
         index={0}
         snapPoints={['90%']}
         enablePanDownToClose
-        onChange={handleSheetChanges} /* 👈 3. FIX: Uses onChange */
+        enableBlurKeyboardOnGesture
+        onChange={handleSheetChanges}
         backdropComponent={renderBackdrop}
         backgroundStyle={styles.sheetBackground}
         handleIndicatorStyle={styles.sheetHandle}
-        keyboardBehavior="interactive"
+        keyboardBehavior={Platform.OS === 'ios' ? 'interactive' : 'extend'}
         keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
       >
         <BottomSheetScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         >
           <TouchableOpacity activeOpacity={0.7} style={styles.datePill}>
             <Text style={styles.datePillText}>{dateLabel}</Text>
@@ -265,7 +271,7 @@ export default function AddTransactionSheet({ route }: Props) {
                   key={key}
                   activeOpacity={0.7}
                   onPress={() => handleNumTap(key)}
-                  style={[styles.numKey, isDel && styles.numKeyDel]}
+                  style={[styles.numKey, { width: numpadKeyWidth }, isDel && styles.numKeyDel]}
                 >
                   <Text style={[styles.numKeyText, isDel && styles.numKeyTextDel]}>{isDel ? '⌫' : key}</Text>
                 </TouchableOpacity>
@@ -275,12 +281,13 @@ export default function AddTransactionSheet({ route }: Props) {
 
           <View style={styles.section}>
             <Text style={styles.fieldLabel}>FROM ACCOUNT</Text>
-            <BottomSheetScrollView
+            <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8, paddingHorizontal: 20 }}
+              contentContainerStyle={{ gap: 8 }}
               style={{ marginHorizontal: -20 }}
             >
+              <View style={{ width: 20 }} />
               {accounts.map((acc, index) => {
                 const isSel = accountId === acc.id;
                 const isLastUsed = index === 0;
@@ -321,7 +328,8 @@ export default function AddTransactionSheet({ route }: Props) {
                   </TouchableOpacity>
                 );
               })}
-            </BottomSheetScrollView>
+              <View style={{ width: 20 }} />
+            </ScrollView>
           </View>
 
           <View style={styles.section}>
@@ -414,6 +422,7 @@ export default function AddTransactionSheet({ route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    height: '100%', /* 👈 FIX: Ensures proper height calculation for bottom content */
   },
   sheetBackground: {
     backgroundColor: colors.background,
@@ -430,7 +439,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    paddingBottom: Platform.OS === 'ios' ? 60 : 40, /* 👈 FIX: Added extra padding to clear home indicator */
   },
   datePill: {
     alignSelf: 'flex-start',
@@ -514,7 +523,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   numKey: {
-    width: '31%',
     height: 52,
     backgroundColor: colors.white,
     borderRadius: 12,
@@ -634,7 +642,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.lavender,
     borderRadius: 12,
-    paddingVertical: Platform.OS === 'ios' ? 14 : 10, // Adjust for iOS padding inner
+    paddingVertical: Platform.OS === 'ios' ? 14 : 10,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
