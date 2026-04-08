@@ -225,14 +225,48 @@ export default function HomeScreen() {
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
 
-  const LAST_MONTH_TOTAL = totalBalance - 2450;
-  const delta = totalBalance - LAST_MONTH_TOTAL;
+  // Dynamic Delta and Last Month Projection
+  const delta = totalIncome - monthlyExpense;
+  const LAST_MONTH_TOTAL = totalBalance - delta; 
   const deltaLabel = `${delta >= 0 ? '↑' : '↓'} ${delta >= 0 ? '+' : ''}${fmtPeso(delta)} vs last month`;
 
-  const insight = {
-    headline: 'You spend most on Tuesdays 🍜',
-    body: 'Food is 42% of weekly spend. Want to set a lower limit?',
-  };
+  // Dynamic Contextual Insights based on real categorized data
+  const insight = useMemo(() => {
+    if (isCategoriesLoading) return null;
+
+    if (categories.length === 0 && monthlyExpense === 0) {
+       return {
+         headline: 'Welcome to Fino! 👋',
+         body: 'Start adding transactions to get personalized insights on your spending.',
+       };
+    }
+
+    // 1. Alert on Over Budget Categories
+    const overBudget = categories.find((c) => c.state === 'over' || c.pct >= 1);
+    if (overBudget) {
+      const overAmt = overBudget.spent - (overBudget.budget_limit || 0);
+      return {
+        headline: `${overBudget.name} budget exceeded ⚠️`,
+        body: `You are ${fmtPeso(overAmt)} over your limit for ${overBudget.name}. Try to hold off on purchases.`,
+      };
+    }
+
+    // 2. Identify Highest Spends
+    const topSpend = [...categories].sort((a, b) => b.spent - a.spent)[0];
+    if (topSpend && topSpend.spent > 0) {
+      const pctOfTotal = monthlyExpense > 0 ? Math.round((topSpend.spent / monthlyExpense) * 100) : 0;
+      return {
+        headline: `${topSpend.name} is your top spend 📊`,
+        body: `It makes up ${pctOfTotal}% of your expenses. Want to adjust your budget?`,
+      };
+    }
+
+    // 3. Fallback Positive Reinforcement
+    return {
+      headline: 'On track this month 🌟',
+      body: "You're keeping your expenses low. Keep up the good work!",
+    };
+  }, [categories, monthlyExpense, isCategoriesLoading]);
 
   return (
     <View style={styles.container}>
