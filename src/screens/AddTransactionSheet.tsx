@@ -47,6 +47,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const initialMode = route.params?.mode ?? 'expense';
   const bottomSheetRef = useRef<BottomSheet>(null);
   const numpadKeyWidth = Math.floor((windowWidth - 56) / 3);
+  const typeToggleBtnWidth = Math.floor((windowWidth - 48) / 2);
 
   const { addOfflineTransaction } = useSync();
   const { accounts } = useAccounts();
@@ -229,6 +230,7 @@ export default function AddTransactionSheet({ route }: Props) {
               onPress={() => setType('exp')}
               style={[
                 styles.typeBtn,
+                { width: typeToggleBtnWidth },
                 type === 'exp'
                   ? { backgroundColor: '#fde8e0', borderColor: '#e87c5a' }
                   : { backgroundColor: colors.background, borderColor: 'rgba(30,30,46,0.08)' },
@@ -244,6 +246,7 @@ export default function AddTransactionSheet({ route }: Props) {
               onPress={() => setType('inc')}
               style={[
                 styles.typeBtn,
+                { width: typeToggleBtnWidth },
                 type === 'inc'
                   ? { backgroundColor: '#e8f5ee', borderColor: '#2d6a4f' }
                   : { backgroundColor: colors.background, borderColor: 'rgba(30,30,46,0.08)' },
@@ -469,15 +472,17 @@ const styles = StyleSheet.create({
   },
   typeToggle: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
     marginBottom: 18,
+    width: '100%',
   },
   typeBtn: {
-    flex: 1,
+    minHeight: 52,
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1.5,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   typeBtnText: {
     fontFamily: 'Nunito_700Bold',
