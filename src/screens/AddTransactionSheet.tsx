@@ -1,23 +1,21 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   Image,
   StyleSheet,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  TextInput,
-  KeyboardAvoidingView,
-  Dimensions,
-  ScrollView,
+  Keyboard,
+  useWindowDimensions,
   Platform,
-  Animated,
-  Easing,
 } from 'react-native';
+// IMPORT FROM GESTURE HANDLER TO FIX CLICKS AND SCROLLING
+import { TouchableOpacity, ScrollView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+
 import { colors } from '../constants/theme';
 import {
   CATEGORY_TILE_BG,
@@ -29,7 +27,6 @@ import {
   ACCOUNT_LOGOS,
   ACCOUNT_AVATAR_OVERRIDE,
 } from '@/constants/accountLogos';
-import { transitions } from '../constants/transitions';
 import {
   createDebouncedAnalyzer,
   type AIAnalysisResult,
@@ -39,47 +36,34 @@ import { supabase } from '@/services/supabase';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { setLastSaved } from '@/services/lastSavedStore';
-
-// 👇 ADDED THIS IMPORT 👇
 import { useSync } from '@/contexts/SyncContext';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 type TxType = 'exp' | 'inc';
-
-type Props = {
-  route: RouteProp<RootStackParamList, 'AddTransaction'>;
-};
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// ─── Component ────────────────────────────────────────────────────────────────
+type Props = { route: RouteProp<RootStackParamList, 'AddTransaction'>; };
 
 export default function AddTransactionSheet({ route }: Props) {
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { width: windowWidth } = useWindowDimensions();
   const initialMode = route.params?.mode ?? 'expense';
+  const bottomSheetRef = useRef<BottomSheet>(null);
+  const numpadKeyWidth = Math.floor((windowWidth - 56) / 3);
+  const typeToggleBtnWidth = Math.floor((windowWidth - 48) / 2);
 
-  // 👇 Get our offline sync function 👇
   const { addOfflineTransaction } = useSync();
-
-  // ── Real data from Supabase ──
   const { accounts } = useAccounts();
   const { categories } = useCategories();
 
-  const [type, setType] = useState<TxType>(
-    initialMode === 'income' ? 'inc' : 'exp'
-  );
+  const [type, setType] = useState<TxType>(initialMode === 'income' ? 'inc' : 'exp');
   const [amount, setAmount] = useState<string>('');
   const [accountId, setAccountId] = useState<string>('');
   const [category, setCategory] = useState<string>('');
   const [aiText, setAiText] = useState<string>('');
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
   const [aiInputFocused, setAiInputFocused] = useState(false);
-  const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>(
-    'manual'
-  );
+  const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>('manual');
   const [isSaving, setIsSaving] = useState(false);
+
+  const analyzer = useRef(createDebouncedAnalyzer()).current;
 
   useEffect(() => {
     if (accounts.length > 0 && !accountId) setAccountId(accounts[0].id);
@@ -91,35 +75,23 @@ export default function AddTransactionSheet({ route }: Props) {
     } else if (categories.length > 0) {
       setCategory(categories[0].name);
     }
-  }, [type]); 
+  }, [type, categories]);
 
   useEffect(() => {
-    if (categories.length > 0 && !category && type === 'exp') {
-      setCategory(categories[0].name);
-    }
-  }, [categories, category, type]);
-
-  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  const analyzer = useRef(createDebouncedAnalyzer()).current;
-
-  useEffect(() => {
-    Animated.timing(slideAnim, {
-      toValue: 0,
-      duration: transitions.SHEET_OPEN.duration,
-      easing: Easing.bezier(0.32, 0.72, 0, 1),
-      useNativeDriver: true,
-    }).start();
     return () => analyzer.cancel();
-  }, [slideAnim, analyzer]);
+  }, [analyzer]);
 
-  const dismiss = () => {
-    Animated.timing(slideAnim, {
-      toValue: SCREEN_HEIGHT,
-      duration: transitions.SHEET_DISMISS_SAVE.duration,
-      easing: Easing.in(Easing.ease),
-      useNativeDriver: true,
-    }).start(() => navigation.goBack());
-  };
+  // Handle navigation after the sheet has fully closed
+  const handleSheetChanges = useCallback((index: number) => {
+    if (index === -1) {
+      navigation.goBack();
+    }
+  }, [navigation]);
+
+  const dismiss = useCallback(() => {
+    Keyboard.dismiss();
+    bottomSheetRef.current?.close();
+  }, []);
 
   const handleNumTap = (key: string) => {
     if (key === 'back') {
@@ -138,9 +110,7 @@ export default function AddTransactionSheet({ route }: Props) {
       analyzer.analyze(text, (result) => {
         setAiResult(result);
         if (result.suggestedCategory) {
-          const matched = categories.find(
-            (c) => c.name.toLowerCase() === result.suggestedCategory
-          );
+          const matched = categories.find((c) => c.name.toLowerCase() === result.suggestedCategory);
           if (matched) {
             setCategory(matched.name);
             setSignalSource('ai_description');
@@ -158,7 +128,6 @@ export default function AddTransactionSheet({ route }: Props) {
     setSignalSource('manual');
   };
 
-  // 👇 UPDATED SAVE LOGIC 👇
   const isSaveDisabled = !amount || amount === '0' || amount === '.' || isSaving;
 
   const handleSave = async () => {
@@ -171,7 +140,6 @@ export default function AddTransactionSheet({ route }: Props) {
     const txType = type === 'exp' ? 'expense' : 'income';
 
     try {
-      // 1. Build the transaction payload
       const txPayload = {
         user_id: selectedAccount.user_id,
         account_id: accountId,
@@ -185,14 +153,8 @@ export default function AddTransactionSheet({ route }: Props) {
         account_deleted: false,
       };
 
-      // 2. Fire and forget the sync context!
-      // We removed the 'await' here. If the network hangs, it won't block the UI.
-      // The transaction saves to the local Async queue instantly, and the UI moves on.
-      addOfflineTransaction(txPayload).catch((err) => {
-        console.log('Background sync error (safe to ignore):', err);
-      });
+      addOfflineTransaction(txPayload).catch(() => {});
 
-      // 3. Attempt to update balance optimistically if online (fails silently if offline)
       const delta = txType === 'expense' ? -parsedAmount : parsedAmount;
       const updateBalance = async () => {
         try {
@@ -200,15 +162,12 @@ export default function AddTransactionSheet({ route }: Props) {
             .from('accounts')
             .update({ balance: selectedAccount.balance + delta })
             .eq('id', accountId);
-        } catch (e) {
-          // Fail silently if offline
-        }
+        } catch (e) {}
       };
       updateBalance();
 
-      // 4. Setup Toast and Dismiss immediately
       setLastSaved({
-        id: `temp_${Date.now()}`, 
+        id: `temp_${Date.now()}`,
         accountId,
         previousBalance: selectedAccount.balance,
         amount: parsedAmount,
@@ -225,472 +184,265 @@ export default function AddTransactionSheet({ route }: Props) {
     }
   };
 
+  const renderBackdrop = useCallback(
+    (props: any) => <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />,
+    []
+  );
+
   const today = new Date();
   const dateLabel = `📅 Today, ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-
   const amountHasValue = amount.length > 0 && amount !== '0';
   const displayAmount = amount || '0';
-
-  let saveLabel = 'Save income';
-  if (isSaving) {
-    saveLabel = 'Saving…';
-  } else if (type === 'exp') {
-    saveLabel = 'Save expense';
-  }
+  const saveLabel = isSaving ? 'Saving…' : type === 'exp' ? 'Save expense' : 'Save income';
 
   return (
     <View style={styles.container}>
-      <TouchableWithoutFeedback onPress={dismiss}>
-        <View style={styles.overlay} />
-      </TouchableWithoutFeedback>
-
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.kavWrapper}
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={0}
+        snapPoints={['90%']}
+        enablePanDownToClose
+        enableBlurKeyboardOnGesture
+        onChange={handleSheetChanges}
+        backdropComponent={renderBackdrop}
+        backgroundStyle={styles.sheetBackground}
+        handleIndicatorStyle={styles.sheetHandle}
+        keyboardBehavior={Platform.OS === 'ios' ? 'interactive' : 'extend'}
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
       >
-        <Animated.View
-          style={[
-            styles.sheetPanel,
-            { transform: [{ translateY: slideAnim }] },
-          ]}
+        <BottomSheetScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         >
-          <View style={styles.sheetHandle} />
+          <TouchableOpacity activeOpacity={0.7} style={styles.datePill}>
+            <Text style={styles.datePillText}>{dateLabel}</Text>
+          </TouchableOpacity>
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            <TouchableOpacity activeOpacity={0.7} style={styles.datePill}>
-              <Text style={styles.datePillText}>{dateLabel}</Text>
-            </TouchableOpacity>
+          <Text style={styles.sheetTitle}>Add transaction</Text>
+          <Text style={styles.sheetSub}>Log expense or income</Text>
 
-            <Text style={styles.sheetTitle}>Add transaction</Text>
-            <Text style={styles.sheetSub}>Log expense or income</Text>
-
-            <View style={styles.typeToggle}>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => setType('exp')}
-                style={[
-                  styles.typeBtn,
-                  type === 'exp'
-                    ? { backgroundColor: '#fde8e0', borderColor: '#e87c5a' }
-                    : {
-                        backgroundColor: colors.background,
-                        borderColor: 'rgba(30,30,46,0.08)',
-                      },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.typeBtnText,
-                    {
-                      color: type === 'exp' ? '#c0391a' : colors.textSecondary,
-                    },
-                  ]}
-                >
-                  Expense ↓
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => setType('inc')}
-                style={[
-                  styles.typeBtn,
-                  type === 'inc'
-                    ? { backgroundColor: '#e8f5ee', borderColor: '#2d6a4f' }
-                    : {
-                        backgroundColor: colors.background,
-                        borderColor: 'rgba(30,30,46,0.08)',
-                      },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.typeBtnText,
-                    {
-                      color: type === 'inc' ? '#27500A' : colors.textSecondary,
-                    },
-                  ]}
-                >
-                  Income ↑
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View
+          <View style={styles.typeToggle}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setType('exp')}
               style={[
-                styles.amountDisplay,
-                { borderColor: amountHasValue ? colors.primary : '#e0dfd7' },
+                styles.typeBtn,
+                { width: typeToggleBtnWidth },
+                type === 'exp'
+                  ? { backgroundColor: '#fde8e0', borderColor: '#e87c5a' }
+                  : { backgroundColor: colors.background, borderColor: 'rgba(30,30,46,0.08)' },
               ]}
             >
-              <View style={styles.amountRow}>
-                <Text style={styles.amountCurr}>₱</Text>
-                <Text style={styles.amountVal}>{displayAmount}</Text>
-              </View>
-              {!amountHasValue && (
-                <Text style={styles.amountSub}>
-                  Tap a number to enter amount
-                </Text>
-              )}
-            </View>
+              <Text style={[styles.typeBtnText, { color: type === 'exp' ? '#c0391a' : colors.textSecondary }]}>
+                Expense ↓
+              </Text>
+            </TouchableOpacity>
 
-            <View style={styles.numpad}>
-              {[
-                '1',
-                '2',
-                '3',
-                '4',
-                '5',
-                '6',
-                '7',
-                '8',
-                '9',
-                '.',
-                '0',
-                'back',
-              ].map((key) => {
-                const isDel = key === 'back';
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setType('inc')}
+              style={[
+                styles.typeBtn,
+                { width: typeToggleBtnWidth },
+                type === 'inc'
+                  ? { backgroundColor: '#e8f5ee', borderColor: '#2d6a4f' }
+                  : { backgroundColor: colors.background, borderColor: 'rgba(30,30,46,0.08)' },
+              ]}
+            >
+              <Text style={[styles.typeBtnText, { color: type === 'inc' ? '#27500A' : colors.textSecondary }]}>
+                Income ↑
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.amountDisplay, { borderColor: amountHasValue ? colors.primary : '#e0dfd7' }]}>
+            <View style={styles.amountRow}>
+              <Text style={styles.amountCurr}>₱</Text>
+              <Text style={styles.amountVal}>{displayAmount}</Text>
+            </View>
+            {!amountHasValue && <Text style={styles.amountSub}>Tap a number to enter amount</Text>}
+          </View>
+
+          <View style={styles.numpad}>
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'back'].map((key) => {
+              const isDel = key === 'back';
+              return (
+                <TouchableOpacity
+                  key={key}
+                  activeOpacity={0.7}
+                  onPress={() => handleNumTap(key)}
+                  style={[styles.numKey, { width: numpadKeyWidth }, isDel && styles.numKeyDel]}
+                >
+                  <Text style={[styles.numKeyText, isDel && styles.numKeyTextDel]}>{isDel ? '⌫' : key}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.fieldLabel}>FROM ACCOUNT</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}
+              style={{ marginHorizontal: -20 }}
+            >
+              <View style={{ width: 20 }} />
+              {accounts.map((acc, index) => {
+                const isSel = accountId === acc.id;
+                const isLastUsed = index === 0;
+                const logo = ACCOUNT_LOGOS[acc.name];
+                const avatarLetter = ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
                 return (
                   <TouchableOpacity
-                    key={key}
-                    activeOpacity={0.7}
-                    onPress={() => handleNumTap(key)}
-                    style={[styles.numKey, isDel && styles.numKeyDel]}
+                    key={acc.id}
+                    onPress={() => setAccountId(acc.id)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      borderRadius: 14,
+                      borderWidth: isSel ? 2 : 1,
+                      borderColor: isSel ? '#5B8C6E' : 'rgba(30,30,46,0.12)',
+                      backgroundColor: isSel ? '#EBF2EE' : '#FFFFFF',
+                      minWidth: 90,
+                    }}
                   >
-                    <Text
-                      style={[styles.numKeyText, isDel && styles.numKeyTextDel]}
-                    >
-                      {isDel ? '⌫' : key}
-                    </Text>
+                    {logo ? (
+                      <View style={styles.logoWrap}>
+                        <Image source={logo} style={{ width: 22, height: 22 }} resizeMode="contain" />
+                      </View>
+                    ) : (
+                      <View style={[styles.avatarWrap, { backgroundColor: acc.brand_colour ?? '#888780' }]}>
+                        <Text style={styles.avatarLetter}>{avatarLetter}</Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.acctText, { color: isSel ? '#2d6a4f' : '#1E1E2E' }]} numberOfLines={1}>
+                        {acc.name}
+                      </Text>
+                      {isLastUsed && <Text style={styles.lastUsedText}>last used</Text>}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              <View style={{ width: 20 }} />
+            </ScrollView>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.fieldLabel}>
+              CATEGORY{type === 'exp' && <Text style={styles.aiLabel}> ✦ AI suggested</Text>}
+            </Text>
+            <View style={styles.pillsRow}>
+              {(type === 'inc' ? INCOME_CATEGORIES : categories).map((cat: any) => {
+                const catName = cat.name;
+                const catKey = type === 'inc' ? cat.key : (cat.emoji ?? '').toLowerCase();
+                const isSel = category === catName;
+                const catColor = CATEGORY_COLOR[catKey] ?? colors.textSecondary;
+                const catBg = CATEGORY_TILE_BG[catKey] ?? colors.background;
+                return (
+                  <TouchableOpacity
+                    key={cat.key || cat.id}
+                    onPress={() => handleCategoryManualSelect(catName)}
+                    style={[
+                      styles.catPill,
+                      { borderColor: isSel ? catColor : 'rgba(30,30,46,0.12)', backgroundColor: isSel ? catBg : '#FFFFFF', borderWidth: isSel ? 2 : 1 },
+                    ]}
+                  >
+                    <CategoryIcon categoryKey={catKey} color={isSel ? catColor : '#8A8A9A'} size={14} wrapperSize={22} />
+                    <Text style={[styles.catPillText, { color: isSel ? catColor : '#8A8A9A' }]}>{catName}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
+          </View>
 
-            <View style={styles.section}>
-              <Text style={styles.fieldLabel}>FROM ACCOUNT</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 8 }}
-                style={{ marginHorizontal: -20 }}
-              >
-                <View style={{ width: 20 }} />
-                {accounts.map((acc, index) => {
-                  const isSel = accountId === acc.id;
-                  const isLastUsed = index === 0;
-                  const logo = ACCOUNT_LOGOS[acc.name];
-                  const avatarLetter =
-                    ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
-                  return (
-                    <TouchableOpacity
-                      key={acc.id}
-                      onPress={() => setAccountId(acc.id)}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 8,
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
-                        borderRadius: 14,
-                        borderWidth: isSel ? 2 : 1,
-                        borderColor: isSel ? '#5B8C6E' : 'rgba(30,30,46,0.12)',
-                        backgroundColor: isSel ? '#EBF2EE' : '#FFFFFF',
-                        minWidth: 90,
-                      }}
-                    >
-                      {logo ? (
-                        <View
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: '#F7F5F2',
-                            borderWidth: 1,
-                            borderColor: 'rgba(30,30,46,0.08)',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          <Image
-                            source={logo}
-                            style={{ width: 22, height: 22 }}
-                            resizeMode="contain"
-                          />
-                        </View>
-                      ) : (
-                        <View
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: acc.brand_colour ?? '#888780',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontFamily: 'Inter_700Bold',
-                              fontSize: 13,
-                              color: '#FFFFFF',
-                            }}
-                          >
-                            {avatarLetter}
-                          </Text>
-                        </View>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={{
-                            fontFamily: 'Inter_600SemiBold',
-                            fontSize: 13,
-                            color: isSel ? '#2d6a4f' : '#1E1E2E',
-                          }}
-                          numberOfLines={1}
-                        >
-                          {acc.name}
-                        </Text>
-                        {isLastUsed && (
-                          <Text
-                            style={{
-                              fontFamily: 'Inter_400Regular',
-                              fontSize: 10,
-                              color: '#5B8C6E',
-                              marginTop: 1,
-                            }}
-                          >
-                            last used
-                          </Text>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-                <View style={{ width: 20 }} />
-              </ScrollView>
+          <View style={styles.aiFieldWrap}>
+            <View style={styles.orDivider}>
+              <View style={styles.orLine} />
+              <Text style={styles.orText}>or describe</Text>
+              <View style={styles.orLine} />
             </View>
 
-            <View style={styles.section}>
-              <Text style={styles.fieldLabel}>
-                CATEGORY
-                {type === 'exp' && (
-                  <Text style={styles.aiLabel}> ✦ AI suggested</Text>
-                )}
-              </Text>
-              <View style={styles.pillsRow}>
-                {type === 'inc'
-                  ? INCOME_CATEGORIES.map((cat) => {
-                      const isSel = category === cat.name;
-                      const catColor =
-                        CATEGORY_COLOR[cat.key] ?? colors.textSecondary;
-                      const catBg =
-                        CATEGORY_TILE_BG[cat.key] ?? colors.background;
-                      return (
-                        <TouchableOpacity
-                          key={cat.key}
-                          onPress={() => handleCategoryManualSelect(cat.name)}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 6,
-                            paddingHorizontal: 14,
-                            paddingVertical: 8,
-                            borderRadius: 12,
-                            borderWidth: isSel ? 2 : 1,
-                            borderColor: isSel
-                              ? catColor
-                              : 'rgba(30,30,46,0.12)',
-                            backgroundColor: isSel ? catBg : '#FFFFFF',
-                          }}
-                        >
-                          <CategoryIcon
-                            categoryKey={cat.key}
-                            color={isSel ? catColor : '#8A8A9A'}
-                            size={14}
-                            wrapperSize={22}
-                          />
-                          <Text
-                            style={{
-                              fontFamily: 'Inter_600SemiBold',
-                              fontSize: 13,
-                              color: isSel ? catColor : '#8A8A9A',
-                            }}
-                          >
-                            {cat.name}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })
-                  : categories.map((cat) => {
-                      const isSel = category === cat.name;
-                      const catKey = (cat.emoji ?? '').toLowerCase();
-                      const catColor =
-                        CATEGORY_COLOR[catKey] ?? colors.textSecondary;
-                      const catBg =
-                        CATEGORY_TILE_BG[catKey] ?? colors.background;
-                      return (
-                        <TouchableOpacity
-                          key={cat.id}
-                          onPress={() => handleCategoryManualSelect(cat.name)}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 6,
-                            paddingHorizontal: 14,
-                            paddingVertical: 8,
-                            borderRadius: 12,
-                            borderWidth: isSel ? 2 : 1,
-                            borderColor: isSel
-                              ? catColor
-                              : 'rgba(30,30,46,0.12)',
-                            backgroundColor: isSel ? catBg : '#FFFFFF',
-                          }}
-                        >
-                          <CategoryIcon
-                            categoryKey={catKey}
-                            color={isSel ? catColor : '#8A8A9A'}
-                            size={14}
-                            wrapperSize={22}
-                          />
-                          <Text
-                            style={{
-                              fontFamily: 'Inter_600SemiBold',
-                              fontSize: 13,
-                              color: isSel ? catColor : '#8A8A9A',
-                            }}
-                          >
-                            {cat.name}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-              </View>
+            <View style={[styles.aiField, aiInputFocused && { borderColor: colors.primary }]}>
+              <View style={[styles.aiFieldIcon, aiText ? styles.aiFieldIconMapped : {}]} />
+              <BottomSheetTextInput
+                style={[styles.aiFieldText, aiText ? styles.aiFieldTextHasText : {}]}
+                placeholder='e.g. "lunch", "grab ride", "gamot"'
+                placeholderTextColor={colors.textSecondary}
+                value={aiText}
+                onChangeText={handleAiTextChange}
+                onFocus={() => setAiInputFocused(true)}
+                onBlur={() => setAiInputFocused(false)}
+                returnKeyType="done"
+              />
             </View>
 
-            <View style={styles.aiFieldWrap}>
-              <View style={styles.orDivider}>
-                <View style={styles.orLine} />
-                <Text style={styles.orText}>or describe</Text>
-                <View style={styles.orLine} />
+            {!!aiResult && aiResult.suggestedCategory && (
+              <View style={styles.aiConfirm}>
+                <View style={styles.aiConfirmDot} />
+                <Text style={styles.aiConfirmText}>
+                  &quot;{aiResult.matchedKeyword}&quot; →{' '}
+                  {aiResult.suggestedCategory.charAt(0).toUpperCase() + aiResult.suggestedCategory.slice(1)} ✓
+                </Text>
               </View>
+            )}
 
-              <View
-                style={[
-                  styles.aiField,
-                  aiInputFocused && { borderColor: colors.primary },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.aiFieldIcon,
-                    aiText ? styles.aiFieldIconMapped : {},
-                  ]}
-                />
-                <TextInput
-                  style={[
-                    styles.aiFieldText,
-                    aiText ? styles.aiFieldTextHasText : {},
-                  ]}
-                  placeholder='e.g. "lunch", "grab ride", "gamot"'
-                  placeholderTextColor={colors.textSecondary}
-                  value={aiText}
-                  onChangeText={handleAiTextChange}
-                  onFocus={() => setAiInputFocused(true)}
-                  onBlur={() => setAiInputFocused(false)}
-                  returnKeyType="done"
-                />
+            {!!aiText && !!aiResult && !aiResult.suggestedCategory && (
+              <View style={styles.aiNudge}>
+                <View style={styles.aiNudgeDot} />
+                <Text style={styles.aiNudgeText}>Not sure about that one — pick a category?</Text>
               </View>
+            )}
+          </View>
 
-              {!!aiResult && aiResult.suggestedCategory && (
-                <View style={styles.aiConfirm}>
-                  <View style={styles.aiConfirmDot} />
-                  <Text style={styles.aiConfirmText}>
-                    &quot;{aiResult.matchedKeyword}&quot; →{' '}
-                    {aiResult.suggestedCategory.charAt(0).toUpperCase() +
-                      aiResult.suggestedCategory.slice(1)}{' '}
-                    ✓
-                  </Text>
-                </View>
-              )}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            disabled={isSaveDisabled}
+            onPress={handleSave}
+            style={[styles.saveBtnWrap, isSaveDisabled && { opacity: 0.4, shadowOpacity: 0, elevation: 0 }]}
+          >
+            <LinearGradient colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']} style={styles.saveBtn}>
+              <Text style={styles.saveBtnText}>{saveLabel}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
 
-              {!!aiText && !!aiResult && !aiResult.suggestedCategory && (
-                <View style={styles.aiNudge}>
-                  <View style={styles.aiNudgeDot} />
-                  <Text style={styles.aiNudgeText}>
-                    Not sure about that one — pick a category?
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              disabled={isSaveDisabled}
-              onPress={handleSave}
-              style={[
-                styles.saveBtnWrap,
-                isSaveDisabled && {
-                  opacity: 0.4,
-                  shadowOpacity: 0,
-                  elevation: 0,
-                },
-              ]}
-            >
-              <LinearGradient
-                colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']}
-                style={styles.saveBtn}
-              >
-                <Text style={styles.saveBtnText}>{saveLabel}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={dismiss} style={styles.cancelBtn}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </Animated.View>
-      </KeyboardAvoidingView>
+          <TouchableOpacity onPress={dismiss} style={styles.cancelBtn}>
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        </BottomSheetScrollView>
+      </BottomSheet>
     </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'flex-end',
+    height: '100%', /* 👈 FIX: Ensures proper height calculation for bottom content */
   },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(30,30,46,0.4)',
-  },
-  kavWrapper: {
-    justifyContent: 'flex-end',
-  },
-  sheetPanel: {
+  sheetBackground: {
     backgroundColor: colors.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: SCREEN_HEIGHT * 0.92,
-    paddingTop: 10,
   },
   sheetHandle: {
     width: 36,
     height: 4,
     backgroundColor: '#D8D6D0',
     borderRadius: 2,
-    alignSelf: 'center',
+    marginTop: 10,
     marginBottom: 16,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    paddingBottom: Platform.OS === 'ios' ? 60 : 40, /* 👈 FIX: Added extra padding to clear home indicator */
   },
   datePill: {
     alignSelf: 'flex-start',
@@ -720,15 +472,17 @@ const styles = StyleSheet.create({
   },
   typeToggle: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
     marginBottom: 18,
+    width: '100%',
   },
   typeBtn: {
-    flex: 1,
+    minHeight: 52,
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1.5,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   typeBtnText: {
     fontFamily: 'Nunito_700Bold',
@@ -774,7 +528,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   numKey: {
-    width: '31%',
     height: 52,
     backgroundColor: colors.white,
     borderRadius: 12,
@@ -819,49 +572,38 @@ const styles = StyleSheet.create({
     textTransform: 'none',
     letterSpacing: 0,
   },
-  acctOpts: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  acctOpt: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.background,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderWidth: 1.5,
+  logoWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F7F5F2',
+    borderWidth: 1,
     borderColor: 'rgba(30,30,46,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
-  acctOptSel: {
-    backgroundColor: '#e8f5ee',
-    borderColor: '#2d6a4f',
-  },
-  acctAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+  avatarWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  acctAvatarLetter: {
+  avatarLetter: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 11,
-    color: colors.white,
+    fontSize: 13,
+    color: '#FFFFFF',
   },
-  acctOptName: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
-    color: colors.textSecondary,
-    flex: 1,
+  acctText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
   },
-  acctOptLast: {
+  lastUsedText: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 9,
-    color: colors.textSecondary,
+    fontSize: 10,
+    color: '#5B8C6E',
+    marginTop: 1,
   },
   pillsRow: {
     flexDirection: 'row',
@@ -869,17 +611,16 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   catPill: {
-    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: 'rgba(30,30,46,0.08)',
-    backgroundColor: colors.background,
   },
   catPillText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
-    color: colors.textSecondary,
   },
   aiFieldWrap: {
     marginBottom: 24,
@@ -906,7 +647,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.lavender,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 10,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',

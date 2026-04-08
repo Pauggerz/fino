@@ -1,7 +1,10 @@
+import 'react-native-gesture-handler';
 import { useEffect } from 'react';
+import { StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { SafeAreaProvider } from 'react-native-safe-area-context'; // 👈 Add this import
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler'; // 👈 Added
 
 import {
   useFonts,
@@ -50,10 +53,6 @@ export default function App() {
   }, [fontsLoaded]);
 
   useEffect(() => {
-    // When a coworker invalidates sessions on the Supabase dashboard, the
-    // stored refresh token becomes orphaned. Calling getSession() surfaces
-    // the error so we can cleanly sign out and clear AsyncStorage, stopping
-    // the unhandled AuthApiError from propagating.
     supabase.auth.getSession().catch(() => {
       supabase.auth.signOut();
     });
@@ -62,12 +61,20 @@ export default function App() {
   if (!fontsLoaded) return null;
 
   return (
-    // 👇 Wrap the app in SafeAreaProvider
-  <SafeAreaProvider>
+    // 👈 Wrap SafeAreaProvider in GestureHandlerRootView
+    <GestureHandlerRootView style={styles.container}>
+      <SafeAreaProvider>
         <SyncProvider>
           <RootNavigator />
           <StatusBar style="auto" />
         </SyncProvider>
       </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+});
