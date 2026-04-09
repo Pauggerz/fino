@@ -1,5 +1,10 @@
-// src/screens/HomeScreen.tsx
-import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useSync } from '@/contexts/SyncContext';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -56,7 +61,9 @@ function onTrackLabel(pct: number): string {
   return 'Over budget';
 }
 
-function calculateSparkline(transactions: FeedTransaction[]): { id: string; val: number }[] {
+function calculateSparkline(
+  transactions: FeedTransaction[]
+): { id: string; val: number }[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -95,10 +102,9 @@ function calculateSparkline(transactions: FeedTransaction[]): { id: string; val:
   }));
 }
 
-// NEW HELPER: Calculates dynamic relative time 
 function timeSince(date: Date): string {
   const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes} min${minutes !== 1 ? 's' : ''} ago`;
   const hours = Math.floor(minutes / 60);
@@ -111,22 +117,34 @@ function timeSince(date: Date): string {
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
-  // Extract lastSyncedAt from Context
-  const { status: syncStatus, syncVersion, lastSyncedAt } = useSync(); 
+  const { status: syncStatus, syncVersion, lastSyncedAt } = useSync();
   const { profile } = useAuth();
-  
+
   const userName = profile?.name || 'User';
 
-  const { accounts, totalBalance, refetch: refetchAccounts, loading: isAccountsLoading = false } = useAccounts();
-  const { categories, refetch: refetchCategories, loading: isCategoriesLoading = false } = useCategories();
+  const {
+    accounts,
+    totalBalance,
+    refetch: refetchAccounts,
+    loading: isAccountsLoading = false,
+  } = useAccounts();
+  const {
+    categories,
+    refetch: refetchCategories,
+    loading: isCategoriesLoading = false,
+  } = useCategories();
   const {
     totalIncome,
     totalExpense: monthlyExpense,
     refetch: refetchTotals,
   } = useMonthlyTotals();
-  const { items: transactions, refetch: refetchTransactions } = useTransactions();
+  const { items: transactions, refetch: refetchTransactions } =
+    useTransactions();
 
-  const sparklineData = useMemo(() => calculateSparkline(transactions), [transactions]);
+  const sparklineData = useMemo(
+    () => calculateSparkline(transactions),
+    [transactions]
+  );
 
   useEffect(() => {
     if (syncVersion > 0) {
@@ -135,14 +153,24 @@ export default function HomeScreen() {
       refetchTotals();
       refetchTransactions();
     }
-  }, [syncVersion, refetchAccounts, refetchCategories, refetchTotals, refetchTransactions]);
+  }, [
+    syncVersion,
+    refetchAccounts,
+    refetchCategories,
+    refetchTotals,
+    refetchTransactions,
+  ]);
 
   const getSyncColor = () => {
     switch (syncStatus) {
-      case 'synced': return '#10B981'; 
-      case 'syncing': return '#F59E0B'; 
-      case 'offline': return '#EF4444'; 
-      default: return '#10B981';
+      case 'synced':
+        return colors.syncSynced;
+      case 'syncing':
+        return colors.syncSyncing;
+      case 'offline':
+        return colors.syncOffline;
+      default:
+        return colors.syncSynced;
     }
   };
 
@@ -169,7 +197,9 @@ export default function HomeScreen() {
   const [toastIsUndo, setToastIsUndo] = useState(false);
   const [undoTxId, setUndoTxId] = useState<string | null>(null);
   const [undoAccountId, setUndoAccountId] = useState<string | null>(null);
-  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(null);
+  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(
+    null
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -220,10 +250,9 @@ export default function HomeScreen() {
     refetchAccounts,
     refetchCategories,
     refetchTotals,
-    refetchTransactions
+    refetchTransactions,
   ]);
 
-  // NEW: Real-time calculation of stale data time difference
   const [staleTimeText, setStaleTimeText] = useState('');
   useEffect(() => {
     if (syncStatus !== 'offline' || !lastSyncedAt) {
@@ -231,12 +260,13 @@ export default function HomeScreen() {
       return;
     }
 
-    const updateTime = () => setStaleTimeText(`Last synced ${timeSince(lastSyncedAt)}`);
-    
-    updateTime(); // Initial update
-    const intervalId = setInterval(updateTime, 60000); // Recalculate every minute
-    
-    return () => clearInterval(intervalId); // Cleanup to prevent memory leaks
+    const updateTime = () =>
+      setStaleTimeText(`Last synced ${timeSince(lastSyncedAt)}`);
+
+    updateTime();
+    const intervalId = setInterval(updateTime, 60000);
+
+    return () => clearInterval(intervalId);
   }, [syncStatus, lastSyncedAt]);
 
   const { text: greetText, emoji: greetEmoji } = getGreeting();
@@ -245,23 +275,20 @@ export default function HomeScreen() {
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
 
-  // Dynamic Delta and Last Month Projection
   const delta = totalIncome - monthlyExpense;
-  const LAST_MONTH_TOTAL = totalBalance - delta; 
+  const LAST_MONTH_TOTAL = totalBalance - delta;
   const deltaLabel = `${delta >= 0 ? '↑' : '↓'} ${delta >= 0 ? '+' : ''}${fmtPeso(delta)} vs last month`;
 
-  // Dynamic Contextual Insights based on real categorized data
   const insight = useMemo(() => {
     if (isCategoriesLoading) return null;
 
     if (categories.length === 0 && monthlyExpense === 0) {
-       return {
-         headline: 'Welcome to Fino! 👋',
-         body: 'Start adding transactions to get personalized insights on your spending.',
-       };
+      return {
+        headline: 'Welcome to Fino! 👋',
+        body: 'Start adding transactions to get personalized insights on your spending.',
+      };
     }
 
-    // 1. Alert on Over Budget Categories
     const overBudget = categories.find((c) => c.state === 'over' || c.pct >= 1);
     if (overBudget) {
       const overAmt = overBudget.spent - (overBudget.budget_limit || 0);
@@ -271,17 +298,18 @@ export default function HomeScreen() {
       };
     }
 
-    // 2. Identify Highest Spends
     const topSpend = [...categories].sort((a, b) => b.spent - a.spent)[0];
     if (topSpend && topSpend.spent > 0) {
-      const pctOfTotal = monthlyExpense > 0 ? Math.round((topSpend.spent / monthlyExpense) * 100) : 0;
+      const pctOfTotal =
+        monthlyExpense > 0
+          ? Math.round((topSpend.spent / monthlyExpense) * 100)
+          : 0;
       return {
         headline: `${topSpend.name} is your top spend 📊`,
         body: `It makes up ${pctOfTotal}% of your expenses. Want to adjust your budget?`,
       };
     }
 
-    // 3. Fallback Positive Reinforcement
     return {
       headline: 'On track this month 🌟',
       body: "You're keeping your expenses low. Keep up the good work!",
@@ -298,19 +326,25 @@ export default function HomeScreen() {
         <View style={styles.greeting}>
           <View style={styles.greetingTop}>
             <View style={styles.greetingLeft}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginBottom: 6,
+                }}
+              >
                 <Text style={[styles.greetingPill, { marginBottom: 0 }]}>
                   {greetText} {greetEmoji}
                 </Text>
-                <View 
+                <View
                   style={{
                     width: 8,
                     height: 8,
                     borderRadius: 4,
                     backgroundColor: getSyncColor(),
                     marginLeft: 8,
-                    marginTop: 2
-                  }} 
+                    marginTop: 2,
+                  }}
                 />
               </View>
               <Text style={styles.greetingName}>
@@ -328,17 +362,19 @@ export default function HomeScreen() {
               </Text>
             </View>
             <LinearGradient
-              colors={['#5B8C6E', '#3f6b52']}
+              colors={[colors.primary, colors.primaryDark]}
               style={styles.avatar}
             >
-              <Text style={styles.avatarLetter}>{userName.charAt(0).toUpperCase()}</Text>
+              <Text style={styles.avatarLetter}>
+                {userName.charAt(0).toUpperCase()}
+              </Text>
             </LinearGradient>
           </View>
         </View>
 
         <View style={styles.onTrackWrap}>
           <LinearGradient
-            colors={['#EFF8F2', '#d4eddf']}
+            colors={[colors.onTrackBg1, colors.onTrackBg2]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.onTrackPill}
@@ -354,7 +390,7 @@ export default function HomeScreen() {
                       backgroundColor:
                         i === sparklineData.length - 1
                           ? colors.primary
-                          : 'rgba(91,140,110,0.3)',
+                          : colors.primaryTransparent30,
                     },
                   ]}
                 />
@@ -378,21 +414,21 @@ export default function HomeScreen() {
           <View style={styles.heroCard}>
             <View style={StyleSheet.absoluteFill}>
               <LinearGradient
-                colors={['rgba(168,213,181,0.6)', 'transparent']}
+                colors={[colors.primaryLight60, 'transparent']}
                 style={[
                   styles.blob,
                   { top: -40, right: -30, width: 140, height: 140 },
                 ]}
               />
               <LinearGradient
-                colors={['rgba(255,255,255,0.3)', 'transparent']}
+                colors={[colors.whiteTransparent30, 'transparent']}
                 style={[
                   styles.blob,
                   { bottom: -20, left: -20, width: 100, height: 100 },
                 ]}
               />
               <LinearGradient
-                colors={['rgba(91,140,110,0.5)', 'transparent']}
+                colors={[colors.primaryTransparent50, 'transparent']}
                 style={[
                   styles.blob,
                   { top: 20, left: '45%', width: 80, height: 80 },
@@ -427,14 +463,15 @@ export default function HomeScreen() {
                 </Text>
               </View>
 
-              {/* NEW: Badge Row Container for Trend & Stale Data */}
               <View style={styles.badgeRow}>
                 {syncStatus === 'offline' && (
                   <View style={styles.staleDataBadge}>
-                    <Text style={styles.staleDataText}>{staleTimeText || 'Offline - Stale data'}</Text>
+                    <Text style={styles.staleDataText}>
+                      {staleTimeText || 'Offline - Stale data'}
+                    </Text>
                   </View>
                 )}
-                
+
                 <View style={styles.trendBadge}>
                   <Text style={styles.trendText}>{deltaLabel}</Text>
                 </View>
@@ -462,66 +499,73 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.acctGrid}>
-          {isAccountsLoading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <View key={`skel-acc-${i}`} style={styles.acctCard}>
-                <Skeleton width={40} height={40} borderRadius={20} style={{ marginBottom: 4 }} />
-                <Skeleton width={80} height={14} style={{ marginBottom: 4 }} />
-                <Skeleton width={60} height={14} />
-              </View>
-            ))
-          ) : (
-            accounts.map((acc) => {
-              const neg = isNegativeBalance(acc.balance);
-              return (
-                <TouchableOpacity
-                  key={acc.id}
-                  activeOpacity={0.8}
-                  style={styles.acctCard}
-                  onPress={() =>
-                    navigation.navigate('more', {
-                      screen: 'AccountDetail',
-                      params: { id: acc.id },
-                    })
-                  }
-                >
-                  {(() => {
-                    const logo = ACCOUNT_LOGOS[acc.name];
-                    const avatarLetter =
-                      ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
-                    return logo ? (
-                      <View style={styles.acctIconWrap}>
-                        <Image
-                          source={logo}
-                          style={styles.acctLogo}
-                          resizeMode="contain"
-                        />
-                      </View>
-                    ) : (
-                      <View
-                        style={[
-                          styles.acctIconWrap,
-                          { backgroundColor: acc.brand_colour },
-                        ]}
-                      >
-                        <Text style={styles.acctLetter}>{avatarLetter}</Text>
-                      </View>
-                    );
-                  })()}
-                  <Text style={styles.acctName}>{acc.name}</Text>
-                  <Text
-                    style={[
-                      styles.acctBalance,
-                      neg && { color: colors.expenseRed },
-                    ]}
+          {isAccountsLoading
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <View key={`skel-acc-${i}`} style={styles.acctCard}>
+                  <Skeleton
+                    width={40}
+                    height={40}
+                    borderRadius={20}
+                    style={{ marginBottom: 4 }}
+                  />
+                  <Skeleton
+                    width={80}
+                    height={14}
+                    style={{ marginBottom: 4 }}
+                  />
+                  <Skeleton width={60} height={14} />
+                </View>
+              ))
+            : accounts.map((acc) => {
+                const neg = isNegativeBalance(acc.balance);
+                return (
+                  <TouchableOpacity
+                    key={acc.id}
+                    activeOpacity={0.8}
+                    style={styles.acctCard}
+                    onPress={() =>
+                      navigation.navigate('more', {
+                        screen: 'AccountDetail',
+                        params: { id: acc.id },
+                      })
+                    }
                   >
-                    {neg && <Text style={styles.negBang}>! </Text>}
-                    {fmtPeso(acc.balance)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })
-          )}
+                    {(() => {
+                      const logo = ACCOUNT_LOGOS[acc.name];
+                      const avatarLetter =
+                        ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
+                      return logo ? (
+                        <View style={styles.acctIconWrap}>
+                          <Image
+                            source={logo}
+                            style={styles.acctLogo}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      ) : (
+                        <View
+                          style={[
+                            styles.acctIconWrap,
+                            { backgroundColor: acc.brand_colour },
+                          ]}
+                        >
+                          <Text style={styles.acctLetter}>{avatarLetter}</Text>
+                        </View>
+                      );
+                    })()}
+                    <Text style={styles.acctName}>{acc.name}</Text>
+                    <Text
+                      style={[
+                        styles.acctBalance,
+                        neg && { color: colors.expenseRed },
+                      ]}
+                    >
+                      {neg && <Text style={styles.negBang}>! </Text>}
+                      {fmtPeso(acc.balance)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
         </View>
 
         <View style={styles.sectionLabelRow}>
@@ -530,82 +574,100 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.catGrid}>
-          {isCategoriesLoading ? (
-             Array.from({ length: 4 }).map((_, i) => (
-              <View key={`skel-cat-${i}`} style={styles.catTileWrap}>
-                <View style={[styles.catTile, { backgroundColor: '#F5F5F5' }]}>
-                  <View style={styles.catBadgeWrap}>
-                    <Skeleton width={32} height={14} borderRadius={4} />
-                  </View>
-                  <View style={[styles.catIconCircle, { backgroundColor: 'transparent' }]}>
-                     <Skeleton width={32} height={32} borderRadius={16} />
-                  </View>
-                  <Skeleton width={70} height={14} style={{ marginBottom: 4 }} />
-                  <Skeleton width={50} height={12} style={{ marginBottom: 8 }} />
-                  <Skeleton width="100%" height={4} borderRadius={4} />
-                </View>
-              </View>
-            ))
-          ) : (
-            categories.map((cat) => {
-              const bgColor = cat.tile_bg_colour ?? '#F5F5F5';
-              const textColor = cat.text_colour ?? colors.textPrimary;
-              const isOver = cat.state === 'over';
-              return (
-                <TouchableOpacity
-                  key={cat.id}
-                  activeOpacity={0.8}
-                  style={styles.catTileWrap}
-                  onPress={() => navigation.navigate('stats')}
-                >
-                  <LinearGradient
-                    colors={[bgColor, bgColor]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.catTile}
+          {isCategoriesLoading
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <View key={`skel-cat-${i}`} style={styles.catTileWrap}>
+                  <View
+                    style={[
+                      styles.catTile,
+                      { backgroundColor: colors.catTileEmptyBg },
+                    ]}
                   >
                     <View style={styles.catBadgeWrap}>
-                      {isOver ? (
-                        <View style={styles.catOverBadge}>
-                          <Text style={styles.catOverBadgeText}>Over!</Text>
-                        </View>
-                      ) : (
-                        <Text style={[styles.catPctBadge, { color: textColor }]}>
-                          {Math.round(cat.pct * 100)}%
-                        </Text>
-                      )}
+                      <Skeleton width={32} height={14} borderRadius={4} />
                     </View>
-
-                    <View style={styles.catIconCircle}>
-                      <CategoryIcon
-                        categoryKey={cat.name.toLowerCase()}
-                        color={cat.text_colour ?? '#888780'}
-                      />
+                    <View
+                      style={[
+                        styles.catIconCircle,
+                        { backgroundColor: 'transparent' },
+                      ]}
+                    >
+                      <Skeleton width={32} height={32} borderRadius={16} />
                     </View>
+                    <Skeleton
+                      width={70}
+                      height={14}
+                      style={{ marginBottom: 4 }}
+                    />
+                    <Skeleton
+                      width={50}
+                      height={12}
+                      style={{ marginBottom: 8 }}
+                    />
+                    <Skeleton width="100%" height={4} borderRadius={4} />
+                  </View>
+                </View>
+              ))
+            : categories.map((cat) => {
+                const bgColor = cat.tile_bg_colour ?? colors.catTileEmptyBg;
+                const textColor = cat.text_colour ?? colors.textPrimary;
+                const isOver = cat.state === 'over';
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    activeOpacity={0.8}
+                    style={styles.catTileWrap}
+                    onPress={() => navigation.navigate('stats')}
+                  >
+                    <LinearGradient
+                      colors={[bgColor, bgColor]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.catTile}
+                    >
+                      <View style={styles.catBadgeWrap}>
+                        {isOver ? (
+                          <View style={styles.catOverBadge}>
+                            <Text style={styles.catOverBadgeText}>Over!</Text>
+                          </View>
+                        ) : (
+                          <Text
+                            style={[styles.catPctBadge, { color: textColor }]}
+                          >
+                            {Math.round(cat.pct * 100)}%
+                          </Text>
+                        )}
+                      </View>
 
-                    <Text style={[styles.catName, { color: textColor }]}>
-                      {cat.name}
-                    </Text>
-                    <Text style={[styles.catAmt, { color: textColor }]}>
-                      {fmtPeso(cat.spent)}
-                    </Text>
+                      <View style={styles.catIconCircle}>
+                        <CategoryIcon
+                          categoryKey={cat.name.toLowerCase()}
+                          color={cat.text_colour ?? colors.catIconEmpty}
+                        />
+                      </View>
 
-                    <View style={styles.catBarTrack}>
-                      <View
-                        style={[
-                          styles.catBarFill,
-                          {
-                            width: `${cat.pct * 100}%` as any,
-                            backgroundColor: textColor,
-                          },
-                        ]}
-                      />
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              );
-            })
-          )}
+                      <Text style={[styles.catName, { color: textColor }]}>
+                        {cat.name}
+                      </Text>
+                      <Text style={[styles.catAmt, { color: textColor }]}>
+                        {fmtPeso(cat.spent)}
+                      </Text>
+
+                      <View style={styles.catBarTrack}>
+                        <View
+                          style={[
+                            styles.catBarFill,
+                            {
+                              width: `${cat.pct * 100}%` as any,
+                              backgroundColor: textColor,
+                            },
+                          ]}
+                        />
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                );
+              })}
         </View>
 
         {insight && (
@@ -615,7 +677,7 @@ export default function HomeScreen() {
             onPress={() => navigation.navigate('ChatScreen')}
           >
             <LinearGradient
-              colors={['#F0ECFD', '#EBF2EE']}
+              colors={[colors.lavenderLight, colors.primaryLight]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.insightCard}
@@ -694,7 +756,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     borderWidth: 1,
-    borderColor: 'rgba(45,106,79,0.15)',
+    borderColor: colors.onTrackBorder,
   },
   sparkline: {
     flexDirection: 'row',
@@ -717,11 +779,11 @@ const styles = StyleSheet.create({
   },
   heroWrap: { paddingHorizontal: 20, marginBottom: 20 },
   heroCard: {
-    backgroundColor: '#2a4f3a',
+    backgroundColor: colors.heroCardBg,
     borderRadius: 28,
     overflow: 'hidden',
     padding: 20,
-    shadowColor: '#1a3028',
+    shadowColor: colors.heroCardShadow,
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.4,
     shadowRadius: 40,
@@ -730,18 +792,18 @@ const styles = StyleSheet.create({
   blob: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.white,
   },
   glassPanel: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: colors.whiteTransparent07,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: colors.whiteTransparent18,
     padding: 16,
   },
   heroChip: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: colors.whiteTransparent15,
     borderRadius: 20,
     paddingVertical: 3,
     paddingHorizontal: 10,
@@ -750,12 +812,12 @@ const styles = StyleSheet.create({
   heroChipText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
-    color: 'rgba(255,255,255,0.8)',
+    color: colors.whiteTransparent80,
   },
   heroLabel: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
-    color: 'rgba(255,255,255,0.65)',
+    color: colors.whiteTransparent65,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
     marginBottom: 4,
@@ -768,7 +830,7 @@ const styles = StyleSheet.create({
   heroCurr: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 17,
-    color: 'rgba(255,255,255,0.65)',
+    color: colors.whiteTransparent65,
     marginTop: 6,
     marginRight: 2,
   },
@@ -787,7 +849,7 @@ const styles = StyleSheet.create({
   },
   trendBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(168,213,181,0.25)',
+    backgroundColor: colors.primaryLight25,
     borderRadius: 8,
     paddingVertical: 3,
     paddingHorizontal: 8,
@@ -799,7 +861,7 @@ const styles = StyleSheet.create({
   },
   staleDataBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(239, 68, 68, 0.15)', 
+    backgroundColor: colors.staleDataBg,
     borderRadius: 8,
     paddingVertical: 3,
     paddingHorizontal: 8,
@@ -807,23 +869,23 @@ const styles = StyleSheet.create({
   staleDataText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
-    color: '#FCA5A5', 
+    color: colors.staleDataText,
   },
   heroRow: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(0,0,0,0.15)',
+    backgroundColor: colors.blackTransparent15,
     borderRadius: 12,
     overflow: 'hidden',
   },
   heroCol: { flex: 1, paddingVertical: 10, paddingHorizontal: 12 },
   heroColBorder: {
     borderRightWidth: 1,
-    borderRightColor: 'rgba(255,255,255,0.12)',
+    borderRightColor: colors.whiteTransparent12,
   },
   heroColLabel: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 10,
-    color: 'rgba(255,255,255,0.55)',
+    color: colors.whiteTransparent55,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 2,
@@ -865,7 +927,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: 16,
     padding: 14,
-    shadowColor: '#1E1E2E',
+    shadowColor: colors.cardShadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 10,
@@ -876,16 +938,16 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: 'rgba(30,30,46,0.08)',
+    borderColor: colors.cardBorderTransparent,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     marginBottom: 4,
   },
   acctLogo: { width: 28, height: 28 },
-  acctLetter: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  acctLetter: { fontSize: 16, fontWeight: '700', color: colors.white },
   acctName: {
     fontFamily: 'Nunito_700Bold',
     fontSize: 13,
@@ -915,7 +977,7 @@ const styles = StyleSheet.create({
   catBadgeWrap: { position: 'absolute', top: 10, right: 10 },
   catPctBadge: { fontFamily: 'Inter_700Bold', fontSize: 10 },
   catOverBadge: {
-    backgroundColor: 'rgba(192,80,58,0.12)',
+    backgroundColor: colors.catOverBadgeBg,
     borderRadius: 6,
     paddingVertical: 2,
     paddingHorizontal: 5,
@@ -932,7 +994,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: colors.whiteTransparent80,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -949,7 +1011,7 @@ const styles = StyleSheet.create({
   catBarTrack: {
     height: 4,
     borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: colors.whiteTransparent80,
     overflow: 'hidden',
   },
   catBarFill: { height: '100%', borderRadius: 4, opacity: 0.6 },
@@ -957,7 +1019,7 @@ const styles = StyleSheet.create({
   insightCard: {
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(201,184,245,0.35)',
+    borderColor: colors.insightCardBorder,
     padding: 16,
     flexDirection: 'row',
     gap: 12,
