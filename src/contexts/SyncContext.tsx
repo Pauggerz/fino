@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import NetInfo from '@react-native-community/netinfo';
+import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { processQueue, addToQueue, getPendingQueue } from '@/services/syncService';
 
 export type SyncStatus = 'synced' | 'syncing' | 'offline';
@@ -9,6 +9,7 @@ interface SyncContextProps {
   addOfflineTransaction: (tx: any) => Promise<void>;
   forceSync: () => Promise<void>;
   syncVersion: number;
+  lastSyncedAt: Date | null; 
 }
 
 const SyncContext = createContext<SyncContextProps>({
@@ -16,11 +17,14 @@ const SyncContext = createContext<SyncContextProps>({
   addOfflineTransaction: async () => {},
   forceSync: async () => {},
   syncVersion: 0,
+  lastSyncedAt: null,
 });
 
 export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [status, setStatus] = useState<SyncStatus>('synced');
   const [syncVersion, setSyncVersion] = useState(0);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date()); 
+  
   const isSyncing = useRef(false); 
 
   const triggerSync = useCallback(async (isConnected: boolean) => {
@@ -32,6 +36,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const queue = await getPendingQueue();
     if (queue.length === 0) {
       setStatus('synced'); // Instantly Green
+      setLastSyncedAt(new Date()); 
       return;
     }
 
@@ -44,31 +49,36 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isSyncing.current = false;
     if (success) {
       setStatus('synced'); // Success -> Green
-      setSyncVersion((v) => v + 1); // Trigger the UI to auto-refresh!
+      setLastSyncedAt(new Date()); 
+      setSyncVersion((v) => v + 1); // Trigger the UI to auto-refresh
     } else {
       setStatus('offline'); // Failed (e.g. server down) -> Red
     }
   }, []);
 
   useEffect(() => {
-    // 1. Listens for instant Wi-Fi toggles
+    // Helper function to accurately determine if we are online
+    const checkIsOnline = (state: NetInfoState) => {
+      // isInternetReachable can be null while it's still verifying.
+      // We assume online if connected, unless explicitly told unreachable.
+      return state.isConnected === true && state.isInternetReachable !== false;
+    };
+
+    // 1. Listens for instant Wi-Fi/Cellular toggles
     const unsubscribe = NetInfo.addEventListener((state) => {
-      triggerSync(state.isConnected === true);
+      triggerSync(checkIsOnline(state));
     });
 
     // 2. Check once on boot
     NetInfo.fetch().then((state) => {
-      triggerSync(state.isConnected === true);
+      triggerSync(checkIsOnline(state));
     });
 
     // 3. Robust Polling Fallback (Every 8 seconds)
-    // This perfectly solves the issue where the network reconnects but Supabase 
-    // hasn't loaded its auth token yet. It will automatically catch it on the next tick.
+    // This actively pushes the 'offline' state if the listener missed it
     const interval = setInterval(() => {
       NetInfo.fetch().then((state) => {
-        if (state.isConnected) {
-          triggerSync(true);
-        }
+        triggerSync(checkIsOnline(state));
       });
     }, 8000); 
 
@@ -82,7 +92,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await addToQueue(tx);
     const state = await NetInfo.fetch();
     
-    if (state.isConnected === true) {
+    if (state.isConnected === true && state.isInternetReachable !== false) {
       await triggerSync(true);
     } else {
       setStatus('offline');
@@ -90,7 +100,15 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <SyncContext.Provider value={{ status, addOfflineTransaction, forceSync: () => triggerSync(true), syncVersion }}>
+    <SyncContext.Provider 
+      value={{ 
+        status, 
+        addOfflineTransaction, 
+        forceSync: () => triggerSync(true), 
+        syncVersion,
+        lastSyncedAt 
+      }}
+    >
       {children}
     </SyncContext.Provider>
   );
