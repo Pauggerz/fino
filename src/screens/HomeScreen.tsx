@@ -95,11 +95,24 @@ function calculateSparkline(transactions: FeedTransaction[]): { id: string; val:
   }));
 }
 
+// NEW HELPER: Calculates dynamic relative time 
+function timeSince(date: Date): string {
+  const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min${minutes !== 1 ? 's' : ''} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr${hours !== 1 ? 's' : ''} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days !== 1 ? 's' : ''} ago`;
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
-  const { status: syncStatus, syncVersion } = useSync(); 
+  // Extract lastSyncedAt from Context
+  const { status: syncStatus, syncVersion, lastSyncedAt } = useSync(); 
   const { profile } = useAuth();
   
   const userName = profile?.name || 'User';
@@ -209,6 +222,22 @@ export default function HomeScreen() {
     refetchTotals,
     refetchTransactions
   ]);
+
+  // NEW: Real-time calculation of stale data time difference
+  const [staleTimeText, setStaleTimeText] = useState('');
+  useEffect(() => {
+    if (syncStatus !== 'offline' || !lastSyncedAt) {
+      setStaleTimeText('');
+      return;
+    }
+
+    const updateTime = () => setStaleTimeText(`Last synced ${timeSince(lastSyncedAt)}`);
+    
+    updateTime(); // Initial update
+    const intervalId = setInterval(updateTime, 60000); // Recalculate every minute
+    
+    return () => clearInterval(intervalId); // Cleanup to prevent memory leaks
+  }, [syncStatus, lastSyncedAt]);
 
   const { text: greetText, emoji: greetEmoji } = getGreeting();
   const daysLeft = getDaysLeftInMonth();
@@ -398,8 +427,17 @@ export default function HomeScreen() {
                 </Text>
               </View>
 
-              <View style={styles.trendBadge}>
-                <Text style={styles.trendText}>{deltaLabel}</Text>
+              {/* NEW: Badge Row Container for Trend & Stale Data */}
+              <View style={styles.badgeRow}>
+                {syncStatus === 'offline' && (
+                  <View style={styles.staleDataBadge}>
+                    <Text style={styles.staleDataText}>{staleTimeText || 'Offline - Stale data'}</Text>
+                  </View>
+                )}
+                
+                <View style={styles.trendBadge}>
+                  <Text style={styles.trendText}>{deltaLabel}</Text>
+                </View>
               </View>
 
               <View style={styles.heroRow}>
@@ -741,18 +779,35 @@ const styles = StyleSheet.create({
     letterSpacing: -2,
     lineHeight: 48,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
   trendBadge: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(168,213,181,0.25)',
     borderRadius: 8,
     paddingVertical: 3,
     paddingHorizontal: 8,
-    marginBottom: 12,
   },
   trendText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
     color: colors.mint,
+  },
+  staleDataBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)', 
+    borderRadius: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+  },
+  staleDataText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    color: '#FCA5A5', 
   },
   heroRow: {
     flexDirection: 'row',
