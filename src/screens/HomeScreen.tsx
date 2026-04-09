@@ -923,7 +923,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   acctCard: {
-    width: '47.5%',
+    flexGrow: 1,
+    minWidth: 140, // Replaced width: '47.5%'
     backgroundColor: colors.white,
     borderRadius: 16,
     padding: 14,
@@ -966,7 +967,10 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 20,
   },
-  catTileWrap: { width: '47.5%' },
+  catTileWrap: {
+    flexGrow: 1,
+    minWidth: 140, // Replaced width: '47.5%'
+  },
   catTile: {
     borderRadius: 28,
     height: 120,
