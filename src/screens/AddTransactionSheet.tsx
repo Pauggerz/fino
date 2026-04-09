@@ -1,16 +1,20 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
+  Animated,
   View,
   Text,
   Image,
+  Pressable,
   StyleSheet,
   Keyboard,
+  Vibration,
   useWindowDimensions,
   Platform,
 } from 'react-native';
 // IMPORT FROM GESTURE HANDLER TO FIX CLICKS AND SCROLLING
 import { TouchableOpacity, ScrollView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -46,6 +50,10 @@ export default function AddTransactionSheet({ route }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const initialMode = route.params?.mode ?? 'expense';
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const allowCloseRef = useRef(false);
+  const hasUnsavedInputRef = useRef(false);
+  const showDiscardPromptRef = useRef(false);
+  const discardShakeX = useRef(new Animated.Value(0)).current;
   const numpadKeyWidth = Math.floor((windowWidth - 56) / 3);
   const typeToggleBtnWidth = Math.floor((windowWidth - 48) / 2);
 
@@ -62,6 +70,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const [aiInputFocused, setAiInputFocused] = useState(false);
   const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>('manual');
   const [isSaving, setIsSaving] = useState(false);
+  const [showDiscardPrompt, setShowDiscardPrompt] = useState(false);
 
   const analyzer = useRef(createDebouncedAnalyzer()).current;
 
@@ -81,17 +90,91 @@ export default function AddTransactionSheet({ route }: Props) {
     return () => analyzer.cancel();
   }, [analyzer]);
 
-  // Handle navigation after the sheet has fully closed
-  const handleSheetChanges = useCallback((index: number) => {
-    if (index === -1) {
-      navigation.goBack();
-    }
-  }, [navigation]);
-
   const dismiss = useCallback(() => {
     Keyboard.dismiss();
     bottomSheetRef.current?.close();
   }, []);
+
+  const hasUnsavedInput = amount.trim().length > 0 || aiText.trim().length > 0;
+
+  useEffect(() => {
+    hasUnsavedInputRef.current = hasUnsavedInput;
+  }, [hasUnsavedInput]);
+
+  useEffect(() => {
+    showDiscardPromptRef.current = showDiscardPrompt;
+  }, [showDiscardPrompt]);
+
+  const triggerBlockedFeedback = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+
+    Vibration.vibrate(24);
+    Vibration.vibrate([0, 24, 36, 28]);
+
+    discardShakeX.stopAnimation();
+    discardShakeX.setValue(0);
+    Animated.sequence([
+      Animated.timing(discardShakeX, { toValue: -8, duration: 32, useNativeDriver: true }),
+      Animated.timing(discardShakeX, { toValue: 8, duration: 42, useNativeDriver: true }),
+      Animated.timing(discardShakeX, { toValue: -6, duration: 34, useNativeDriver: true }),
+      Animated.timing(discardShakeX, { toValue: 6, duration: 34, useNativeDriver: true }),
+      Animated.timing(discardShakeX, { toValue: 0, duration: 28, useNativeDriver: true }),
+    ]).start();
+  }, [discardShakeX]);
+
+  const openDiscardPrompt = useCallback(() => {
+    triggerBlockedFeedback();
+
+    if (showDiscardPromptRef.current) return;
+    setShowDiscardPrompt(true);
+  }, [triggerBlockedFeedback]);
+
+  const requestClose = useCallback(() => {
+    if (hasUnsavedInputRef.current) {
+      openDiscardPrompt();
+      bottomSheetRef.current?.snapToIndex(0);
+      return;
+    }
+
+    allowCloseRef.current = true;
+    dismiss();
+  }, [dismiss, openDiscardPrompt]);
+
+  const handleKeepEditing = useCallback(() => {
+    setShowDiscardPrompt(false);
+    bottomSheetRef.current?.snapToIndex(0);
+  }, []);
+
+  const handleDiscard = useCallback(() => {
+    setShowDiscardPrompt(false);
+    allowCloseRef.current = true;
+    dismiss();
+  }, [dismiss]);
+
+  // Handle navigation after the sheet has fully closed
+  const handleSheetChanges = useCallback((index: number) => {
+    if (index !== -1) return;
+
+    if (allowCloseRef.current || !hasUnsavedInputRef.current) {
+      allowCloseRef.current = false;
+      navigation.goBack();
+      return;
+    }
+
+    bottomSheetRef.current?.snapToIndex(0);
+    openDiscardPrompt();
+  }, [navigation, openDiscardPrompt]);
+
+  const handleSheetAnimate = useCallback((_: number, toIndex: number) => {
+    if (toIndex === -1 && !allowCloseRef.current && hasUnsavedInputRef.current) {
+      openDiscardPrompt();
+      bottomSheetRef.current?.snapToIndex(0);
+    }
+  }, [openDiscardPrompt]);
+
+  const handleBackdropPress = useCallback(() => {
+    requestClose();
+  }, [requestClose]);
 
   const handleNumTap = (key: string) => {
     if (key === 'back') {
@@ -176,6 +259,7 @@ export default function AddTransactionSheet({ route }: Props) {
         categoryName: category || 'Other',
       });
 
+      allowCloseRef.current = true;
       dismiss();
     } catch (error) {
       console.error('Save error:', error);
@@ -185,8 +269,10 @@ export default function AddTransactionSheet({ route }: Props) {
   };
 
   const renderBackdrop = useCallback(
-    (props: any) => <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />,
-    []
+    (props: any) => (
+      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="none" onPress={handleBackdropPress} />
+    ),
+    [handleBackdropPress]
   );
 
   const today = new Date();
@@ -204,6 +290,7 @@ export default function AddTransactionSheet({ route }: Props) {
         enablePanDownToClose
         enableBlurKeyboardOnGesture
         onChange={handleSheetChanges}
+        onAnimate={handleSheetAnimate}
         backdropComponent={renderBackdrop}
         backgroundStyle={styles.sheetBackground}
         handleIndicatorStyle={styles.sheetHandle}
@@ -413,11 +500,29 @@ export default function AddTransactionSheet({ route }: Props) {
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={dismiss} style={styles.cancelBtn}>
+          <TouchableOpacity onPress={requestClose} style={styles.cancelBtn}>
             <Text style={styles.cancelBtnText}>Cancel</Text>
           </TouchableOpacity>
         </BottomSheetScrollView>
       </BottomSheet>
+
+      {showDiscardPrompt && (
+        <View style={styles.discardOverlay}>
+          <Pressable style={styles.discardOverlayTap} onPress={handleKeepEditing} />
+          <Animated.View style={[styles.discardCard, { transform: [{ translateX: discardShakeX }] }]}>
+            <Text style={styles.discardTitle}>Discard transaction?</Text>
+            <Text style={styles.discardBody}>You have entered an amount or description. Your draft will be lost.</Text>
+            <View style={styles.discardActions}>
+              <Pressable style={styles.discardKeepBtn} onPress={handleKeepEditing}>
+                <Text style={styles.discardKeepText}>Keep editing</Text>
+              </Pressable>
+              <Pressable style={styles.discardDropBtn} onPress={handleDiscard}>
+                <Text style={styles.discardDropText}>Discard</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </View>
+      )}
     </View>
   );
 }
@@ -749,5 +854,76 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     textDecorationLine: 'underline',
+  },
+  discardOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  discardOverlayTap: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(22, 25, 23, 0.3)',
+  },
+  discardCard: {
+    width: '100%',
+    maxWidth: 360,
+    zIndex: 1,
+    borderRadius: 18,
+    backgroundColor: '#F8F5EF',
+    borderWidth: 1,
+    borderColor: '#E6DDD0',
+    padding: 18,
+    shadowColor: '#1E1E2E',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  discardTitle: {
+    fontFamily: 'Nunito_800ExtraBold',
+    fontSize: 20,
+    color: colors.textPrimary,
+  },
+  discardBody: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 19,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  discardActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  discardKeepBtn: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D8D6D0',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discardKeepText: {
+    fontWeight: '700',
+    fontSize: 13,
+    color: '#1E1E2E',
+  },
+  discardDropBtn: {
+    flex: 1,
+    borderRadius: 12,
+    backgroundColor: '#DE6A45',
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discardDropText: {
+    fontWeight: '700',
+    fontSize: 13,
+    color: '#FFFFFF',
   },
 });
