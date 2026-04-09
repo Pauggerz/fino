@@ -53,6 +53,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const allowCloseRef = useRef(false);
   const hasUnsavedInputRef = useRef(false);
   const showDiscardPromptRef = useRef(false);
+  const amountLimitToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const discardShakeX = useRef(new Animated.Value(0)).current;
   const numpadKeyWidth = Math.floor((windowWidth - 56) / 3);
   const typeToggleBtnWidth = Math.floor((windowWidth - 48) / 2);
@@ -71,6 +72,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>('manual');
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardPrompt, setShowDiscardPrompt] = useState(false);
+  const [showAmountLimitToast, setShowAmountLimitToast] = useState(false);
 
   const analyzer = useRef(createDebouncedAnalyzer()).current;
 
@@ -89,6 +91,14 @@ export default function AddTransactionSheet({ route }: Props) {
   useEffect(() => {
     return () => analyzer.cancel();
   }, [analyzer]);
+
+  useEffect(() => {
+    return () => {
+      if (amountLimitToastTimerRef.current) {
+        clearTimeout(amountLimitToastTimerRef.current);
+      }
+    };
+  }, []);
 
   const dismiss = useCallback(() => {
     Keyboard.dismiss();
@@ -183,12 +193,32 @@ export default function AddTransactionSheet({ route }: Props) {
     setAmount('');
   }, [amount]);
 
+  const triggerAmountLimitFeedback = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    Vibration.vibrate(14);
+    setShowAmountLimitToast(true);
+
+    if (amountLimitToastTimerRef.current) {
+      clearTimeout(amountLimitToastTimerRef.current);
+    }
+
+    amountLimitToastTimerRef.current = setTimeout(() => {
+      setShowAmountLimitToast(false);
+    }, 1100);
+  }, []);
+
   const handleNumTap = (key: string) => {
     if (key === 'back') {
       setAmount((prev) => prev.slice(0, -1));
     } else if (key === '.' && !amount.includes('.')) {
       setAmount((prev) => prev + key);
-    } else if (key !== '.' && amount.replace('.', '').length < 7) {
+    } else if (key !== '.') {
+      const digitCount = amount.replace('.', '').length;
+      if (digitCount >= 7) {
+        triggerAmountLimitFeedback();
+        return;
+      }
+
       setAmount((prev) => prev + key);
     }
   };
@@ -364,6 +394,11 @@ export default function AddTransactionSheet({ route }: Props) {
             </View>
             {!amountHasValue && <Text style={styles.amountSub}>Tap a number to enter amount</Text>}
             {amountHasValue && <Text style={styles.amountSub}>Long-press amount or ⌫ to clear</Text>}
+            {showAmountLimitToast && (
+              <View style={styles.amountLimitToast}>
+                <Text style={styles.amountLimitToastText}>Max 7 digits reached</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
           <View style={styles.numpad}>
@@ -639,6 +674,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  amountLimitToast: {
+    marginTop: 10,
+    alignSelf: 'center',
+    backgroundColor: '#FBF0EC',
+    borderWidth: 1,
+    borderColor: 'rgba(232,133,106,0.45)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  amountLimitToastText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    color: colors.coralDark,
   },
   numpad: {
     flexDirection: 'row',
