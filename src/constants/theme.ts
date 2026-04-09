@@ -1,3 +1,4 @@
+// src/constants/theme.ts
 export const colors = {
   // Core
   primary: '#5B8C6E', // --p
@@ -90,6 +91,38 @@ export const colors = {
   billCardBg: '#fff8f0',
   billCardBorder: '#EF9F27',
   billTagText: '#BA7517',
+  
+  // Sync status
+  syncSynced: '#10B981',
+  syncSyncing: '#F59E0B',
+  syncOffline: '#EF4444',
+  // Fallbacks
+  catTileEmptyBg: '#F5F5F5',
+  catIconEmpty: '#888780',
+  // Home Screen specific
+  heroCardBg: '#2a4f3a',
+  heroCardShadow: '#1a3028',
+  cardShadow: '#1E1E2E',
+  staleDataBg: 'rgba(239, 68, 68, 0.15)',
+  staleDataText: '#FCA5A5',
+  // Transparencies
+  primaryTransparent30: 'rgba(91,140,110,0.3)',
+  primaryTransparent50: 'rgba(91,140,110,0.5)',
+  primaryLight25: 'rgba(168,213,181,0.25)',
+  primaryLight60: 'rgba(168,213,181,0.6)',
+  whiteTransparent07: 'rgba(255,255,255,0.07)',
+  whiteTransparent12: 'rgba(255,255,255,0.12)',
+  whiteTransparent15: 'rgba(255,255,255,0.15)',
+  whiteTransparent18: 'rgba(255,255,255,0.18)',
+  whiteTransparent30: 'rgba(255,255,255,0.3)',
+  whiteTransparent55: 'rgba(255,255,255,0.55)',
+  whiteTransparent65: 'rgba(255,255,255,0.65)',
+  whiteTransparent80: 'rgba(255,255,255,0.8)',
+  blackTransparent15: 'rgba(0,0,0,0.15)',
+  cardBorderTransparent: 'rgba(30,30,46,0.08)',
+  onTrackBorder: 'rgba(45,106,79,0.15)',
+  catOverBadgeBg: 'rgba(192,80,58,0.12)',
+  insightCardBorder: 'rgba(201,184,245,0.35)',
 };
 
 export const spacing = {
@@ -121,4 +154,4 @@ export const gradients = {
   primaryHero: ['#4a7a5e', '#5B8C6E', '#6a9e7f'], // FAB, hero card (blobs), primary btn
   statsHero: ['#2d4a3e', '#1a3028'], // stats-hero card
   onTrack: ['#EFF8F2', '#d4eddf'], // on-track status pill
-} as const; // <-- Add this here
+} as const;
