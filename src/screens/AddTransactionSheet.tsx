@@ -176,6 +176,13 @@ export default function AddTransactionSheet({ route }: Props) {
     requestClose();
   }, [requestClose]);
 
+  const clearAmount = useCallback(() => {
+    if (!amount) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setAmount('');
+  }, [amount]);
+
   const handleNumTap = (key: string) => {
     if (key === 'back') {
       setAmount((prev) => prev.slice(0, -1));
@@ -345,13 +352,19 @@ export default function AddTransactionSheet({ route }: Props) {
             </TouchableOpacity>
           </View>
 
-          <View style={[styles.amountDisplay, { borderColor: amountHasValue ? colors.primary : '#e0dfd7' }]}>
+          <TouchableOpacity
+            activeOpacity={1}
+            onLongPress={clearAmount}
+            delayLongPress={180}
+            style={[styles.amountDisplay, { borderColor: amountHasValue ? colors.primary : '#e0dfd7' }]}
+          >
             <View style={styles.amountRow}>
               <Text style={styles.amountCurr}>₱</Text>
               <Text style={styles.amountVal}>{displayAmount}</Text>
             </View>
             {!amountHasValue && <Text style={styles.amountSub}>Tap a number to enter amount</Text>}
-          </View>
+            {amountHasValue && <Text style={styles.amountSub}>Long-press amount or ⌫ to clear</Text>}
+          </TouchableOpacity>
 
           <View style={styles.numpad}>
             {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'back'].map((key) => {
@@ -361,6 +374,8 @@ export default function AddTransactionSheet({ route }: Props) {
                   key={key}
                   activeOpacity={0.7}
                   onPress={() => handleNumTap(key)}
+                  onLongPress={isDel ? clearAmount : undefined}
+                  delayLongPress={180}
                   style={[styles.numKey, { width: numpadKeyWidth }, isDel && styles.numKeyDel]}
                 >
                   <Text style={[styles.numKeyText, isDel && styles.numKeyTextDel]}>{isDel ? '⌫' : key}</Text>

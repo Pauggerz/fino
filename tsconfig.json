@@ -2,11 +2,13 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
       "@expo/vector-icons": ["node_modules/expo/node_modules/@expo/vector-icons"],
       "@expo/vector-icons/*": ["node_modules/expo/node_modules/@expo/vector-icons/*"]
     }
-  }
+  },
+  "exclude": ["node_modules", "backend/node_modules"]
 }
