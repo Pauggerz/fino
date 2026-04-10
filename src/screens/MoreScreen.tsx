@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// src/screens/MoreScreen.tsx
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,7 +19,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { colors, spacing } from '../constants/theme';
 import { useAccounts } from '@/hooks/useAccounts';
 import {
   ACCOUNT_LOGOS,
@@ -28,6 +28,8 @@ import { supabase } from '@/services/supabase';
 import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Skeleton } from '@/components/Skeleton';
+import { spacing } from '../constants/theme';
+import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Global Theme Context
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -91,6 +93,16 @@ function AddAccountModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { colors, isDark } = useTheme();
+  const modalStyles = useMemo(
+    () => createModalStyles(colors, isDark),
+    [colors, isDark]
+  );
+  const addAccStyles = useMemo(
+    () => createAddAccStyles(colors, isDark),
+    [colors, isDark]
+  );
+
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const [selectedColor, setSelectedColor] = useState(ACCOUNT_COLORS[0]);
@@ -147,12 +159,10 @@ function AddAccountModal({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: colors.background }}
       >
         <View style={modalStyles.sheet}>
-          {/* Handle */}
           <View style={modalStyles.handle} />
-
           <View style={modalStyles.sheetHeader}>
             <Text style={modalStyles.sheetTitle}>Add Account</Text>
             <TouchableOpacity
@@ -170,7 +180,6 @@ function AddAccountModal({
             contentContainerStyle={{ paddingBottom: 40 }}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Preview */}
             <View style={addAccStyles.preview}>
               <View
                 style={[
@@ -256,7 +265,7 @@ function AddAccountModal({
               activeOpacity={0.8}
             >
               {saving ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={modalStyles.primaryBtnText}>Add Account</Text>
               )}
@@ -267,44 +276,6 @@ function AddAccountModal({
     </Modal>
   );
 }
-
-const addAccStyles = StyleSheet.create({
-  preview: { alignItems: 'center', paddingVertical: 24, gap: 6 },
-  previewAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  previewLetter: { fontFamily: 'Nunito_700Bold', fontSize: 28, color: '#fff' },
-  previewName: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 18,
-    color: colors.textPrimary,
-  },
-  previewBalance: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 15,
-    color: colors.textSecondary,
-  },
-  colorRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  colorDot: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  colorDotSelected: {
-    borderWidth: 3,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-});
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -327,6 +298,16 @@ function BillQuickViewModal({
   onClose: () => void;
   onPaid: (id: string) => void;
 }) {
+  const { colors, isDark } = useTheme();
+  const modalStyles = useMemo(
+    () => createModalStyles(colors, isDark),
+    [colors, isDark]
+  );
+  const quickStyles = useMemo(
+    () => createQuickStyles(colors, isDark),
+    [colors, isDark]
+  );
+
   if (!bill) return null;
 
   const dueDate = new Date(bill.due_date);
@@ -354,14 +335,15 @@ function BillQuickViewModal({
     >
       <Pressable style={modalStyles.backdrop} onPress={onClose}>
         <Pressable style={quickStyles.card} onPress={() => {}}>
-          {/* Icon */}
           <View style={quickStyles.iconWrap}>
-            <Ionicons name="notifications" size={28} color="#BA7517" />
+            <Ionicons
+              name="notifications"
+              size={28}
+              color={colors.statWarnBar}
+            />
           </View>
-
           <Text style={quickStyles.tagText}>⏰ BILL REMINDER</Text>
           <Text style={quickStyles.title}>{bill.title}</Text>
-
           {bill.amount != null && (
             <Text style={quickStyles.amount}>
               ₱
@@ -370,11 +352,10 @@ function BillQuickViewModal({
               })}
             </Text>
           )}
-
           <View
             style={[
               quickStyles.dueBadge,
-              isOverdue && { backgroundColor: '#FDE8E0' },
+              isOverdue && quickStyles.dueBadgeOverdue,
             ]}
           >
             <Text
@@ -386,7 +367,6 @@ function BillQuickViewModal({
               {dueLabel}
             </Text>
           </View>
-
           {bill.is_recurring && (
             <Text style={quickStyles.recurringNote}>↻ Recurring monthly</Text>
           )}
@@ -397,7 +377,7 @@ function BillQuickViewModal({
               onPress={handleMarkPaid}
               activeOpacity={0.8}
             >
-              <Ionicons name="checkmark-circle" size={18} color="#fff" />
+              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
               <Text style={quickStyles.paidBtnText}>Mark as Paid</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -414,72 +394,6 @@ function BillQuickViewModal({
   );
 }
 
-const quickStyles = StyleSheet.create({
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 24,
-    width: 320,
-    alignItems: 'center',
-    gap: 8,
-  },
-  iconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#FAEEDA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  tagText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    color: '#BA7517',
-    letterSpacing: 0.5,
-  },
-  title: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 20,
-    color: colors.textPrimary,
-    textAlign: 'center',
-  },
-  amount: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 26,
-    color: colors.textPrimary,
-  },
-  dueBadge: {
-    backgroundColor: '#FFF8F0',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-  },
-  dueText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#BA7517' },
-  recurringNote: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  actions: { width: '100%', gap: 8, marginTop: 8 },
-  paidBtn: {
-    backgroundColor: '#2d6a4f',
-    borderRadius: 12,
-    paddingVertical: 13,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  paidBtnText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: '#fff' },
-  dismissBtn: { paddingVertical: 10, alignItems: 'center' },
-  dismissText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-});
-
 // ─── BUDGET SETTINGS MODAL ────────────────────────────────────────────────────
 
 function BudgetSettingsModal({
@@ -489,6 +403,16 @@ function BudgetSettingsModal({
   visible: boolean;
   onClose: () => void;
 }) {
+  const { colors, isDark } = useTheme();
+  const modalStyles = useMemo(
+    () => createModalStyles(colors, isDark),
+    [colors, isDark]
+  );
+  const budgetStyles = useMemo(
+    () => createBudgetStyles(colors, isDark),
+    [colors, isDark]
+  );
+
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -559,10 +483,9 @@ function BudgetSettingsModal({
               Set monthly spending limits for each category. Leave blank for no
               limit.
             </Text>
-
             {categories.map((cat) => {
-              const color = cat.text_colour ?? '#888780';
-              const bg = cat.tile_bg_colour ?? '#F7F5F2';
+              const color = cat.text_colour ?? colors.textSecondary;
+              const bg = cat.tile_bg_colour ?? colors.catTileEmptyBg;
               return (
                 <View key={cat.id} style={budgetStyles.catRow}>
                   <View
@@ -600,7 +523,6 @@ function BudgetSettingsModal({
                 </View>
               );
             })}
-
             <TouchableOpacity
               style={[modalStyles.primaryBtn, saving && { opacity: 0.6 }]}
               onPress={handleSave}
@@ -608,7 +530,7 @@ function BudgetSettingsModal({
               activeOpacity={0.8}
             >
               {saving ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={modalStyles.primaryBtnText}>Save Budgets</Text>
               )}
@@ -620,56 +542,7 @@ function BudgetSettingsModal({
   );
 }
 
-const budgetStyles = StyleSheet.create({
-  hint: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 20,
-    lineHeight: 19,
-  },
-  catRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-    gap: 12,
-  },
-  catIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  catName: { fontFamily: 'Inter_600SemiBold', fontSize: 15, flex: 1 },
-  budgetInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e0dfd7',
-    borderRadius: 10,
-    overflow: 'hidden',
-    minWidth: 110,
-  },
-  pesoSign: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 14,
-    color: colors.textSecondary,
-    paddingHorizontal: 8,
-    backgroundColor: '#F7F5F2',
-    paddingVertical: 10,
-  },
-  budgetInput: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 14,
-    color: colors.textPrimary,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    minWidth: 70,
-  },
-});
-
-// ─── Stepper (matches TransactionDetailScreen style) ─────────────────────────
+// ─── Stepper ─────────────────────────────────────────────────────────────────
 
 function Stepper({
   label,
@@ -682,12 +555,13 @@ function Stepper({
   onIncrement: () => void;
   onDecrement: () => void;
 }) {
+  const { colors } = useTheme();
   return (
     <View style={{ alignItems: 'center', flex: 1 }}>
       <Text
         style={{
           fontSize: 10,
-          color: '#8A8A9A',
+          color: colors.textSecondary,
           fontFamily: 'Inter_400Regular',
           marginBottom: 4,
           textTransform: 'uppercase',
@@ -708,7 +582,7 @@ function Stepper({
         style={{
           fontFamily: 'DMMono_500Medium',
           fontSize: 17,
-          color: '#1E1E2E',
+          color: colors.textPrimary,
           marginVertical: 2,
           minWidth: 44,
           textAlign: 'center',
@@ -737,6 +611,20 @@ function BillRemindersModal({
   visible: boolean;
   onClose: () => void;
 }) {
+  const { colors, isDark } = useTheme();
+  const modalStyles = useMemo(
+    () => createModalStyles(colors, isDark),
+    [colors, isDark]
+  );
+  const billStyles = useMemo(
+    () => createBillStyles(colors, isDark),
+    [colors, isDark]
+  );
+  const stepperStyles = useMemo(
+    () => createStepperStyles(colors, isDark),
+    [colors, isDark]
+  );
+
   const [bills, setBills] = useState<BillReminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -845,7 +733,6 @@ function BillRemindersModal({
           contentContainerStyle={{ paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Add new bill form */}
           {showAdd ? (
             <View style={billStyles.addForm}>
               <Text style={modalStyles.fieldLabel}>BILL NAME</Text>
@@ -853,7 +740,7 @@ function BillRemindersModal({
                 style={modalStyles.input}
                 value={newTitle}
                 onChangeText={setNewTitle}
-                placeholder="e.g. Meralco, Rent, Netflix"
+                placeholder="e.g. Rent, Netflix"
                 placeholderTextColor={colors.textSecondary}
               />
 
@@ -937,7 +824,7 @@ function BillRemindersModal({
                   activeOpacity={0.8}
                 >
                   {saving ? (
-                    <ActivityIndicator color="#fff" />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={modalStyles.primaryBtnText}>Save Bill</Text>
                   )}
@@ -955,7 +842,6 @@ function BillRemindersModal({
             </TouchableOpacity>
           )}
 
-          {/* Bill list */}
           {loading && (
             <ActivityIndicator
               color={colors.primary}
@@ -985,19 +871,19 @@ function BillRemindersModal({
                   key={bill.id}
                   style={[
                     billStyles.billRow,
-                    isOverdue && { borderColor: '#F2A49B' },
+                    isOverdue && billStyles.billRowOverdue,
                   ]}
                 >
                   <View
                     style={[
                       billStyles.billIconBox,
-                      { backgroundColor: isOverdue ? '#FDE8E0' : '#FAEEDA' },
+                      isOverdue && billStyles.billIconBoxOverdue,
                     ]}
                   >
                     <Ionicons
                       name="notifications"
                       size={20}
-                      color={isOverdue ? colors.expenseRed : '#BA7517'}
+                      color={isOverdue ? colors.expenseRed : colors.statWarnBar}
                     />
                   </View>
                   <View style={{ flex: 1 }}>
@@ -1039,7 +925,7 @@ function BillRemindersModal({
                       <Ionicons
                         name="trash-outline"
                         size={18}
-                        color="#B4B2A9"
+                        color={colors.textSecondary}
                       />
                     </TouchableOpacity>
                   </View>
@@ -1052,238 +938,34 @@ function BillRemindersModal({
   );
 }
 
-const stepperStyles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    backgroundColor: '#F7F5F2',
-    borderRadius: 14,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    borderWidth: 1,
-    borderColor: '#e0dfd7',
-  },
-});
-
-const billStyles = StyleSheet.create({
-  addNewBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: colors.primary,
-    backgroundColor: '#EFF8F2',
-    marginBottom: 20,
-  },
-  addNewText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: colors.primary,
-  },
-  addForm: {
-    backgroundColor: '#F7F5F2',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-  },
-  recurringRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 14,
-  },
-  recurringLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-  addFormActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  cancelBtn: {
-    paddingVertical: 13,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e0dfd7',
-  },
-  cancelText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  emptyState: { alignItems: 'center', paddingVertical: 40, gap: 8 },
-  emptyIcon: { fontSize: 40 },
-  emptyTitle: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 17,
-    color: colors.textPrimary,
-  },
-  emptySubtitle: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  billRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: '#F0EFEA',
-  },
-  billIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  billTitle: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-  billDue: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    color: '#BA7517',
-    marginTop: 1,
-  },
-  billAmt: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 13,
-    color: colors.textPrimary,
-    marginTop: 2,
-  },
-  billActions: { gap: 8, alignItems: 'center' },
-  paidPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#EFF8F2',
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  paidPillText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 11,
-    color: colors.primary,
-  },
-});
-
-// ─── Shared modal styles ──────────────────────────────────────────────────────
-
-const modalStyles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sheet: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 12,
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#e0dfd7',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  sheetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  sheetTitle: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 20,
-    color: colors.textPrimary,
-  },
-  fieldGroup: { marginBottom: 16 },
-  fieldLabel: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 11,
-    color: colors.textSecondary,
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#e0dfd7',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 15,
-    color: colors.textPrimary,
-    backgroundColor: '#FAFAFA',
-  },
-  pesoInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e0dfd7',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  pesoSign: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 15,
-    color: colors.textSecondary,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: '#F7F5F2',
-  },
-  primaryBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 14,
-    paddingVertical: 15,
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  primaryBtnText: { fontFamily: 'Inter_700Bold', fontSize: 16, color: '#fff' },
-});
-
 // ─── MAIN SCREEN ─────────────────────────────────────────────────────────────
 
 export default function MoreScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { accounts, loading, refetch: refetchAccounts } = useAccounts();
+  const { colors, isDark, mode, setMode } = useTheme();
 
-  // Modals
+  const styles = useMemo(
+    () => createMainStyles(colors, isDark),
+    [colors, isDark]
+  );
+  const modalStyles = useMemo(
+    () => createModalStyles(colors, isDark),
+    [colors, isDark]
+  );
+
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showBudgetSettings, setShowBudgetSettings] = useState(false);
   const [showBillReminders, setShowBillReminders] = useState(false);
+  const [showAppSettings, setShowAppSettings] = useState(false);
 
-  // Auth
   const [authEmail, setAuthEmail] = useState<string | null>(null);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // Bill quick view
   const [quickViewBill, setQuickViewBill] = useState<BillReminder | null>(null);
   const [upcomingBills, setUpcomingBills] = useState<BillReminder[]>([]);
 
@@ -1318,19 +1000,16 @@ export default function MoreScreen() {
       Alert.alert('Required', 'Please enter your email and password.');
       return;
     }
-
     setIsLoggingIn(true);
     const { error } = await supabase.auth.signInWithPassword({
       email: loginEmail.trim(),
       password: loginPassword,
     });
     setIsLoggingIn(false);
-
     if (error) {
       Alert.alert('Log in failed', error.message);
       return;
     }
-
     setShowLoginModal(false);
     setLoginPassword('');
     refreshAuthState();
@@ -1340,6 +1019,7 @@ export default function MoreScreen() {
     if (id === 'fino') navigation.navigate('ChatScreen');
     else if (id === 'budget') setShowBudgetSettings(true);
     else if (id === 'bills') setShowBillReminders(true);
+    else if (id === 'settings') setShowAppSettings(true);
   };
 
   const TOOLS = [
@@ -1347,35 +1027,34 @@ export default function MoreScreen() {
       id: 'fino',
       label: 'Ask Fino',
       icon: 'sparkles',
-      color: '#534AB7',
-      bg: '#EEEDFE',
+      color: colors.insightPurple,
+      bg: colors.lavenderLight,
     },
     {
       id: 'budget',
       label: 'Budget settings',
       icon: 'pie-chart',
-      color: '#2d6a4f',
-      bg: '#EFF8F2',
+      color: colors.primary,
+      bg: colors.primaryLight,
     },
     {
       id: 'bills',
       label: 'Bill reminders',
       icon: 'receipt',
-      color: '#BA7517',
-      bg: '#FFF8F0',
+      color: colors.statWarnBar,
+      bg: isDark ? '#3A2E1D' : '#FFF8F0',
     },
     {
       id: 'settings',
       label: 'App settings',
       icon: 'settings-sharp',
-      color: '#555555',
-      bg: '#F0F0F0',
+      color: colors.textSecondary,
+      bg: colors.catTileEmptyBg,
     },
   ];
 
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 16) }]}>
-      {/* ─── HEADER ─── */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
           <Text style={styles.headerTitle}>More</Text>
@@ -1402,7 +1081,6 @@ export default function MoreScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ─── MY ACCOUNTS ─── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>MY ACCOUNTS</Text>
           <View style={styles.acctCard}>
@@ -1461,7 +1139,7 @@ export default function MoreScreen() {
                           <View
                             style={[
                               styles.avatar,
-                              { backgroundColor: '#F7F5F2' },
+                              { backgroundColor: colors.white },
                             ]}
                           >
                             <Image
@@ -1476,7 +1154,10 @@ export default function MoreScreen() {
                         <View
                           style={[
                             styles.avatar,
-                            { backgroundColor: acct.brand_colour ?? '#F0F0F0' },
+                            {
+                              backgroundColor:
+                                acct.brand_colour ?? colors.catTileEmptyBg,
+                            },
                           ]}
                         >
                           <Text
@@ -1500,7 +1181,7 @@ export default function MoreScreen() {
                     <Ionicons
                       name="chevron-forward"
                       size={16}
-                      color="#B4B2A9"
+                      color={colors.textSecondary}
                       style={{ marginLeft: 8 }}
                     />
                   </View>
@@ -1508,21 +1189,18 @@ export default function MoreScreen() {
               ))
             )}
           </View>
-
-          {/* Add Account Button */}
           <TouchableOpacity
             style={styles.addAccountRow}
             activeOpacity={0.7}
             onPress={() => setShowAddAccount(true)}
           >
             <View style={styles.addAccountCircle}>
-              <Ionicons name="add" size={18} color="#2d6a4f" />
+              <Ionicons name="add" size={18} color={colors.primary} />
             </View>
             <Text style={styles.addAccountText}>Add new account</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ─── BILL REMINDER CARD ─── */}
         {nextBill ? (
           <TouchableOpacity
             style={styles.billCard}
@@ -1530,7 +1208,11 @@ export default function MoreScreen() {
             onPress={() => setQuickViewBill(nextBill)}
           >
             <View style={styles.billIconBox}>
-              <Ionicons name="notifications" size={22} color="#BA7517" />
+              <Ionicons
+                name="notifications"
+                size={22}
+                color={colors.statWarnBar}
+              />
             </View>
             <View style={styles.billContent}>
               <Text style={styles.billTag}>⏰ BILL REMINDER</Text>
@@ -1548,11 +1230,14 @@ export default function MoreScreen() {
                 })()}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color="#D9B98A" />
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={colors.statWarnBar}
+            />
           </TouchableOpacity>
         ) : null}
 
-        {/* ─── TOOLS ─── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>TOOLS</Text>
           <View style={styles.toolsCard}>
@@ -1578,14 +1263,58 @@ export default function MoreScreen() {
                   </View>
                   <Text style={styles.toolName}>{tool.label}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color="#B4B2A9" />
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={colors.textSecondary}
+                />
               </TouchableOpacity>
             ))}
           </View>
         </View>
       </ScrollView>
 
-      {/* ─── MODALS ─── */}
+      {/* ─── APP SETTINGS MODAL ─── */}
+      <Modal
+        visible={showAppSettings}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAppSettings(false)}
+      >
+        <View style={modalStyles.sheet}>
+          <View style={modalStyles.handle} />
+          <View style={modalStyles.sheetHeader}>
+            <Text style={modalStyles.sheetTitle}>App Settings</Text>
+            <TouchableOpacity onPress={() => setShowAppSettings(false)}>
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={modalStyles.fieldLabel}>APPEARANCE</Text>
+          <View style={styles.segmentContainer}>
+            {(['system', 'light', 'dark'] as const).map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[
+                  styles.segmentBtn,
+                  mode === t && styles.segmentBtnActive,
+                ]}
+                onPress={() => setMode(t)}
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    mode === t && styles.segmentTextActive,
+                  ]}
+                >
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={showLoginModal}
         animationType="slide"
@@ -1594,11 +1323,10 @@ export default function MoreScreen() {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
+          style={{ flex: 1, backgroundColor: colors.background }}
         >
           <View style={modalStyles.sheet}>
             <View style={modalStyles.handle} />
-
             <View style={modalStyles.sheetHeader}>
               <Text style={modalStyles.sheetTitle}>Log in</Text>
               <TouchableOpacity
@@ -1608,7 +1336,6 @@ export default function MoreScreen() {
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
-
             <View style={modalStyles.fieldGroup}>
               <Text style={modalStyles.fieldLabel}>EMAIL</Text>
               <TextInput
@@ -1621,7 +1348,6 @@ export default function MoreScreen() {
                 placeholderTextColor={colors.textSecondary}
               />
             </View>
-
             <View style={modalStyles.fieldGroup}>
               <Text style={modalStyles.fieldLabel}>PASSWORD</Text>
               <TextInput
@@ -1633,7 +1359,6 @@ export default function MoreScreen() {
                 placeholderTextColor={colors.textSecondary}
               />
             </View>
-
             <TouchableOpacity
               style={[modalStyles.primaryBtn, isLoggingIn && { opacity: 0.6 }]}
               onPress={handleLogin}
@@ -1641,7 +1366,7 @@ export default function MoreScreen() {
               disabled={isLoggingIn}
             >
               {isLoggingIn ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={modalStyles.primaryBtnText}>Log in</Text>
               )}
@@ -1655,7 +1380,6 @@ export default function MoreScreen() {
         onClose={() => setShowAddAccount(false)}
         onSaved={refetchAccounts}
       />
-
       <BillQuickViewModal
         visible={!!quickViewBill}
         bill={quickViewBill}
@@ -1665,12 +1389,10 @@ export default function MoreScreen() {
           fetchUpcomingBills();
         }}
       />
-
       <BudgetSettingsModal
         visible={showBudgetSettings}
         onClose={() => setShowBudgetSettings(false)}
       />
-
       <BillRemindersModal
         visible={showBillReminders}
         onClose={() => {
@@ -1682,210 +1404,624 @@ export default function MoreScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── DYNAMIC STYLES ───────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F7F5F2' },
-  header: {
-    paddingHorizontal: spacing.screenPadding,
-    marginBottom: 24,
-    paddingTop: 12,
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 22,
-    color: colors.textPrimary,
-  },
-  headerSubtitle: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  loginBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: '#2d6a4f',
-  },
-  loginBtnText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
-    color: '#FFFFFF',
-  },
-  loggedInPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#E9F6EF',
-    borderWidth: 1,
-    borderColor: '#B9E1C8',
-  },
-  loggedInPillText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 11,
-    color: '#2d6a4f',
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.screenPadding,
-    paddingBottom: 80,
-  },
+const createMainStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    header: {
+      paddingHorizontal: spacing.screenPadding,
+      marginBottom: 24,
+      paddingTop: 12,
+    },
+    headerTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    headerTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 22,
+      color: colors.textPrimary,
+    },
+    headerSubtitle: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+      marginTop: 4,
+    },
+    loginBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
+    loginBtnText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
+      color: '#FFFFFF',
+    },
+    loggedInPill: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.primaryLight,
+      borderWidth: 1,
+      borderColor: colors.primaryTransparent30,
+    },
+    loggedInPillText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 11,
+      color: colors.primary,
+    },
+    scrollContent: {
+      paddingHorizontal: spacing.screenPadding,
+      paddingBottom: 80,
+    },
+    section: { marginBottom: 28 },
+    sectionLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
+      color: colors.textSecondary,
+      letterSpacing: 0.5,
+      marginBottom: 12,
+      marginLeft: 4,
+    },
+    acctCard: {
+      backgroundColor: colors.white,
+      borderRadius: 16,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+    },
+    loadingAccountsWrap: {
+      paddingVertical: 18,
+      alignItems: 'stretch',
+      justifyContent: 'center',
+    },
+    acctRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 13,
+      paddingHorizontal: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: isDark ? '#333333' : '#e0dfd7',
+    },
+    acctRowLeft: { flexDirection: 'row', alignItems: 'center' },
+    avatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 14,
+      backgroundColor: colors.catTileEmptyBg,
+    },
+    avatarText: { fontFamily: 'Nunito_800ExtraBold', fontSize: 16 },
+    acctName: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 15,
+      color: colors.textPrimary,
+    },
+    acctRowRight: { flexDirection: 'row', alignItems: 'center' },
+    acctBalance: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
+    addAccountRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      borderRadius: 16,
+      borderWidth: 1.5,
+      borderColor: colors.primary,
+      borderStyle: 'dashed',
+      backgroundColor: colors.primaryTransparent30,
+    },
+    addAccountCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      borderWidth: 1.5,
+      borderColor: colors.primary,
+      borderStyle: 'dashed',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 14,
+      backgroundColor: colors.white,
+    },
+    addAccountText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.primary,
+    },
+    billCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.white,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colors.statWarnBar,
+      marginBottom: 32,
+    },
+    billIconBox: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: colors.catTileEmptyBg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 14,
+    },
+    billContent: { flex: 1 },
+    billTag: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.statWarnBar,
+      letterSpacing: 0.5,
+      marginBottom: 4,
+    },
+    billTitle: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 15,
+      color: colors.textPrimary,
+      marginBottom: 2,
+    },
+    billMeta: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    toolsCard: {
+      backgroundColor: colors.white,
+      borderRadius: 16,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+    },
+    toolRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: isDark ? '#333333' : '#e0dfd7',
+    },
+    toolRowLeft: { flexDirection: 'row', alignItems: 'center' },
+    toolIconBox: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 14,
+    },
+    toolName: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 15,
+      color: colors.textPrimary,
+    },
 
-  section: { marginBottom: 28 },
-  sectionLabel: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
-    color: colors.textSecondary,
-    letterSpacing: 0.5,
-    marginBottom: 12,
-    marginLeft: 4,
-  },
+    // App Settings Segments
+    segmentContainer: {
+      flexDirection: 'row',
+      backgroundColor: colors.catTileEmptyBg,
+      borderRadius: 12,
+      padding: 4,
+    },
+    segmentBtn: {
+      flex: 1,
+      paddingVertical: 10,
+      alignItems: 'center',
+      borderRadius: 10,
+    },
+    segmentBtnActive: {
+      backgroundColor: colors.white,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    segmentText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    segmentTextActive: { color: colors.textPrimary },
+  });
 
-  acctCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
-  },
-  loadingAccountsWrap: {
-    paddingVertical: 18,
-    alignItems: 'stretch',
-    justifyContent: 'center',
-  },
-  acctRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 13,
-    paddingHorizontal: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0EFEA',
-  },
-  acctRowLeft: { flexDirection: 'row', alignItems: 'center' },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  avatarText: { fontFamily: 'Nunito_800ExtraBold', fontSize: 16 },
-  acctName: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-  acctRowRight: { flexDirection: 'row', alignItems: 'center' },
-  acctBalance: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
+const createModalStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    sheet: {
+      flex: 1,
+      backgroundColor: colors.white,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingHorizontal: spacing.screenPadding,
+      paddingTop: 12,
+    },
+    handle: {
+      width: 40,
+      height: 4,
+      backgroundColor: isDark ? '#333333' : '#e0dfd7',
+      borderRadius: 2,
+      alignSelf: 'center',
+      marginBottom: 16,
+    },
+    sheetHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 24,
+    },
+    sheetTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 20,
+      color: colors.textPrimary,
+    },
+    fieldGroup: { marginBottom: 16 },
+    fieldLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 11,
+      color: colors.textSecondary,
+      letterSpacing: 0.5,
+      marginBottom: 8,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontFamily: 'Inter_400Regular',
+      fontSize: 15,
+      color: colors.textPrimary,
+      backgroundColor: colors.catTileEmptyBg,
+    },
+    pesoInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
+    pesoSign: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 15,
+      color: colors.textSecondary,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      backgroundColor: colors.catTileEmptyBg,
+    },
+    primaryBtn: {
+      backgroundColor: colors.primary,
+      borderRadius: 14,
+      paddingVertical: 15,
+      alignItems: 'center',
+      marginTop: 24,
+    },
+    primaryBtnText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 16,
+      color: '#FFFFFF',
+    },
+  });
 
-  addAccountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#2d6a4f',
-    borderStyle: 'dashed',
-    backgroundColor: 'rgba(45, 106, 79, 0.02)',
-  },
-  addAccountCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#2d6a4f',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-    backgroundColor: '#FFFFFF',
-  },
-  addAccountText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: '#2d6a4f',
-  },
+const createAddAccStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    preview: { alignItems: 'center', paddingVertical: 24, gap: 6 },
+    previewAvatar: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    previewLetter: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 28,
+      color: '#FFFFFF',
+    },
+    previewName: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 18,
+      color: colors.textPrimary,
+    },
+    previewBalance: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 15,
+      color: colors.textSecondary,
+    },
+    colorRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+    colorDot: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    colorDotSelected: {
+      borderWidth: 3,
+      borderColor: isDark ? '#333333' : '#FFFFFF',
+      shadowColor: '#000',
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 4,
+    },
+  });
 
-  billCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF8F0',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#EF9F27',
-    marginBottom: 32,
-  },
-  billIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#FAEEDA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  billContent: { flex: 1 },
-  billTag: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    color: '#BA7517',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  billTitle: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  billMeta: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
+const createQuickStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    card: {
+      backgroundColor: colors.white,
+      borderRadius: 24,
+      padding: 24,
+      width: 320,
+      alignItems: 'center',
+      gap: 8,
+    },
+    iconWrap: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: colors.catTileEmptyBg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 4,
+    },
+    tagText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.statWarnBar,
+      letterSpacing: 0.5,
+    },
+    title: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 20,
+      color: colors.textPrimary,
+      textAlign: 'center',
+    },
+    amount: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 26,
+      color: colors.textPrimary,
+    },
+    dueBadge: {
+      backgroundColor: isDark ? '#3A2E1D' : '#FFF8F0',
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 5,
+    },
+    dueBadgeOverdue: { backgroundColor: colors.catOverBadgeBg },
+    dueText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.statWarnBar,
+    },
+    recurringNote: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    actions: { width: '100%', gap: 8, marginTop: 8 },
+    paidBtn: {
+      backgroundColor: colors.primary,
+      borderRadius: 12,
+      paddingVertical: 13,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    paidBtnText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 15,
+      color: '#FFFFFF',
+    },
+    dismissBtn: { paddingVertical: 10, alignItems: 'center' },
+    dismissText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+  });
 
-  toolsCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
-  },
-  toolRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0EFEA',
-  },
-  toolRowLeft: { flexDirection: 'row', alignItems: 'center' },
-  toolIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  toolName: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-});
+const createBudgetStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    hint: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      color: colors.textSecondary,
+      marginBottom: 20,
+      lineHeight: 19,
+    },
+    catRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 14,
+      gap: 12,
+    },
+    catIconCircle: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    catName: { fontFamily: 'Inter_600SemiBold', fontSize: 15, flex: 1 },
+    budgetInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderRadius: 10,
+      overflow: 'hidden',
+      minWidth: 110,
+    },
+    pesoSign: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 14,
+      color: colors.textSecondary,
+      paddingHorizontal: 8,
+      backgroundColor: colors.background,
+      paddingVertical: 10,
+    },
+    budgetInput: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 14,
+      color: colors.textPrimary,
+      paddingVertical: 10,
+      paddingHorizontal: 8,
+      minWidth: 70,
+    },
+  });
+
+const createStepperStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    card: {
+      flexDirection: 'row',
+      backgroundColor: colors.background,
+      borderRadius: 14,
+      paddingVertical: 8,
+      paddingHorizontal: 4,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+    },
+  });
+
+const createBillStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    addNewBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+      borderColor: colors.primary,
+      backgroundColor: colors.primaryLight,
+      marginBottom: 20,
+    },
+    addNewText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.primary,
+    },
+    addForm: {
+      backgroundColor: colors.catTileEmptyBg,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 20,
+    },
+    recurringRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 14,
+    },
+    recurringLabel: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
+    addFormActions: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 16,
+      alignItems: 'center',
+    },
+    cancelBtn: {
+      paddingVertical: 13,
+      paddingHorizontal: 20,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+    },
+    cancelText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    emptyState: { alignItems: 'center', paddingVertical: 40, gap: 8 },
+    emptyIcon: { fontSize: 40 },
+    emptyTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 17,
+      color: colors.textPrimary,
+    },
+    emptySubtitle: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    billRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.white,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 10,
+      gap: 12,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+    },
+    billRowOverdue: { borderColor: colors.expenseRed },
+    billIconBox: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: isDark ? '#3A2E1D' : '#FAEEDA',
+    },
+    billIconBoxOverdue: { backgroundColor: colors.catOverBadgeBg },
+    billTitle: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
+    billDue: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.statWarnBar,
+      marginTop: 1,
+    },
+    billAmt: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 13,
+      color: colors.textPrimary,
+      marginTop: 2,
+    },
+    billActions: { gap: 8, alignItems: 'center' },
+    paidPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      backgroundColor: colors.primaryLight,
+      borderRadius: 20,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    paidPillText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 11,
+      color: colors.primary,
+    },
+  });

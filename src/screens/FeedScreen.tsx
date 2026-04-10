@@ -1,3 +1,4 @@
+// src/screens/FeedScreen.tsx
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
@@ -18,7 +19,8 @@ import {
   type RouteProp,
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing } from '../constants/theme';
+import { radius, spacing } from '../constants/theme';
+import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Global Theme Context
 import {
   useTransactions,
   FeedTransaction,
@@ -33,7 +35,7 @@ import {
 import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
-import { Skeleton } from '@/components/Skeleton'; // <-- Added Skeleton Import
+import { Skeleton } from '@/components/Skeleton';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -80,6 +82,12 @@ function SwipeableRow({
   children: React.ReactNode;
   onDelete: () => void;
 }) {
+  const { colors, isDark } = useTheme();
+  const swipeStyles = useMemo(
+    () => createSwipeStyles(colors, isDark),
+    [colors, isDark]
+  );
+
   const translateX = useRef(new Animated.Value(0)).current;
   const isOpen = useRef(false);
 
@@ -132,7 +140,7 @@ function SwipeableRow({
             onDelete();
           }}
         >
-          <Ionicons name="trash" size={22} color="#fff" />
+          <Ionicons name="trash" size={22} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
@@ -145,25 +153,6 @@ function SwipeableRow({
     </View>
   );
 }
-
-const swipeStyles = StyleSheet.create({
-  deleteZone: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: SWIPE_DELETE_WIDTH,
-    backgroundColor: '#E53935',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  deleteBtn: {
-    width: SWIPE_DELETE_WIDTH,
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
 
 // ─── Month picker modal ───────────────────────────────────────────────────────
 
@@ -180,6 +169,12 @@ function MonthPickerModal({
   onConfirm: (y: number, m: number) => void;
   onClose: () => void;
 }) {
+  const { colors, isDark } = useTheme();
+  const pickerStyles = useMemo(
+    () => createPickerStyles(colors, isDark),
+    [colors, isDark]
+  );
+
   const [draftYear, setDraftYear] = useState(year);
   const [draftMonth, setDraftMonth] = useState(month);
 
@@ -283,81 +278,6 @@ function MonthPickerModal({
   );
 }
 
-const pickerStyles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 24,
-    width: 300,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  title: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 17,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  arrow: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F7F5F2',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  monthLabel: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 18,
-    color: colors.textPrimary,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e0dfd7',
-    alignItems: 'center',
-  },
-  cancelText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  confirmBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-  },
-  confirmText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: '#fff',
-  },
-});
-
 // ─── List item type ───────────────────────────────────────────────────────────
 
 type ListItem =
@@ -369,6 +289,10 @@ type ListItem =
 export default function FeedScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<FeedStackParamList, 'FeedMain'>>();
+
+  // 🌙 Dynamic Theme Injection
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   // ── View type: expense or income ──
   const [viewType, setViewType] = useState<'expense' | 'income'>('expense');
@@ -464,7 +388,6 @@ export default function FeedScreen() {
     ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
   ]);
 
-  // 👇 Render Skeleton Rows when Loading 👇
   const renderSkeletonList = () => (
     <View style={{ flex: 1 }}>
       <View style={styles.dateHeaderContainer}>
@@ -472,7 +395,12 @@ export default function FeedScreen() {
       </View>
       {Array.from({ length: 7 }).map((_, i) => (
         <View key={`skel-tx-${i}`} style={styles.transactionItem}>
-          <Skeleton width={44} height={44} borderRadius={22} style={{ marginRight: 14 }} />
+          <Skeleton
+            width={44}
+            height={44}
+            borderRadius={22}
+            style={{ marginRight: 14 }}
+          />
           <View style={styles.txContent}>
             <Skeleton width={140} height={16} style={{ marginBottom: 6 }} />
             <View style={styles.txSubtitleRow}>
@@ -502,20 +430,20 @@ export default function FeedScreen() {
 
     // Icon + color resolution
     let iconKey = 'default';
-    let iconColor = '#888780';
+    let iconColor = colors.textSecondary;
 
     if (isExpense) {
       const catData = categories.find(
         (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
       );
       iconKey = catData?.emoji ?? 'default';
-      iconColor = catData?.text_colour ?? '#888780';
+      iconColor = catData?.text_colour ?? colors.textSecondary;
     } else {
       const incCat = INCOME_CATEGORIES.find(
         (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
       );
       iconKey = incCat?.key ?? 'default';
-      iconColor = CATEGORY_COLOR[iconKey] ?? '#2d6a4f';
+      iconColor = CATEGORY_COLOR[iconKey] ?? colors.incomeGreen;
     }
 
     const time = new Date(tx.date).toLocaleTimeString('en-PH', {
@@ -531,7 +459,11 @@ export default function FeedScreen() {
           }
           style={({ pressed }) => [
             styles.transactionItem,
-            pressed && { backgroundColor: colors.primaryLight },
+            pressed && {
+              backgroundColor: isDark
+                ? 'rgba(255,255,255,0.05)'
+                : colors.primaryLight,
+            },
           ]}
         >
           <View style={{ marginRight: 14 }}>
@@ -648,9 +580,8 @@ export default function FeedScreen() {
           renderItem={({ item }) => {
             const isActive = activeCategory === item;
 
-            // Resolve chip accent color for income categories
             let activeBg = colors.primary;
-            const activeText = colors.white;
+            const activeText = '#FFFFFF';
             if (viewType === 'income' && item !== 'All') {
               const incCat = INCOME_CATEGORIES.find((c) => c.name === item);
               if (incCat) {
@@ -684,7 +615,6 @@ export default function FeedScreen() {
       {/* ─── TRANSACTION LIST ─── */}
       <View style={{ flex: 1 }}>
         {loading ? (
-          // 👇 Replaced ActivityIndicator with Skeleton Rows 👇
           renderSkeletonList()
         ) : (
           <FlatList
@@ -744,195 +674,257 @@ export default function FeedScreen() {
   );
 }
 
-// ─── STYLES ─────────────────────────────────────────────────────────────────
+// ─── DYNAMIC STYLES ──────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingTop: 60,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.screenPadding,
-    marginBottom: 16,
-  },
-  headerTitle: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 22,
-    color: colors.textPrimary,
-  },
-  headerSubtitle: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  monthPill: {
-    backgroundColor: '#EFF8F2',
-    borderWidth: 1,
-    borderColor: '#2d6a4f',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-  },
-  monthPillText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    color: '#2d6a4f',
-  },
-  // ── Income/Expense toggle ──
-  toggleRow: {
-    flexDirection: 'row',
-    marginHorizontal: spacing.screenPadding,
-    marginBottom: 12,
-    backgroundColor: '#F0EFEA',
-    borderRadius: 12,
-    padding: 3,
-  },
-  toggleBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  toggleBtnActive: {
-    backgroundColor: '#C0503A',
-  },
-  toggleBtnIncomeActive: {
-    backgroundColor: '#2d6a4f',
-  },
-  toggleBtnText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  toggleBtnTextActive: {
-    color: '#fff',
-  },
-  // ── Filter chips ──
-  filterWrapper: {
-    height: 36,
-    marginBottom: 16,
-  },
-  chipActive: {
-    paddingHorizontal: 16,
-    height: 34,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-    backgroundColor: colors.primary,
-  },
-  chipInactive: {
-    paddingHorizontal: 16,
-    height: 34,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: '#e0dfd7',
-  },
-  chipTextActive: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    color: colors.white,
-  },
-  chipTextInactive: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  // ── Transaction list ──
-  dateHeaderContainer: {
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  dateHeader: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
-    color: colors.textSecondary,
-    letterSpacing: 0.44,
-  },
-  transactionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.screenPadding,
-    paddingVertical: 12,
-    minHeight: 44,
-    backgroundColor: colors.background,
-  },
-  txContent: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  txTitle: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 15,
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  txSubtitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  txTime: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  metaDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: '#B4B2A9',
-    marginHorizontal: 6,
-  },
-  acctTag: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  acctTagText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 10,
-  },
-  txAmount: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 14,
-  },
-  pos: {
-    color: colors.incomeGreen,
-  },
-  neg: {
-    color: '#C0503A',
-  },
-  emptyText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 60,
-  },
-  loadMoreBtn: {
-    backgroundColor: colors.white,
-    marginHorizontal: spacing.screenPadding,
-    marginTop: 20,
-    paddingVertical: 14,
-    borderRadius: radius.card,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(45, 106, 79, 0.1)',
-  },
-  loadMoreText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: '#2d6a4f',
-  },
-});
+const createSwipeStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    deleteZone: {
+      position: 'absolute',
+      right: 0,
+      top: 0,
+      bottom: 0,
+      width: SWIPE_DELETE_WIDTH,
+      backgroundColor: colors.expenseRed,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    deleteBtn: {
+      width: SWIPE_DELETE_WIDTH,
+      height: '100%',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+  });
+
+const createPickerStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    card: {
+      backgroundColor: colors.white,
+      borderRadius: 20,
+      padding: 24,
+      width: 300,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.15,
+      shadowRadius: 20,
+      elevation: 8,
+    },
+    title: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 17,
+      color: colors.textPrimary,
+      textAlign: 'center',
+      marginBottom: 20,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 24,
+    },
+    arrow: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.catTileEmptyBg,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    monthLabel: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 18,
+      color: colors.textPrimary,
+    },
+    actions: { flexDirection: 'row', gap: 10 },
+    cancelBtn: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+      alignItems: 'center',
+    },
+    cancelText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    confirmBtn: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+    },
+    confirmText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: '#FFFFFF',
+    },
+  });
+
+const createStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background, paddingTop: 60 },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: spacing.screenPadding,
+      marginBottom: 16,
+    },
+    headerTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 22,
+      color: colors.textPrimary,
+    },
+    headerSubtitle: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    monthPill: {
+      backgroundColor: colors.primaryLight25,
+      borderWidth: 1,
+      borderColor: colors.onTrackBorder,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: radius.pill,
+    },
+    monthPillText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.primary,
+    },
+
+    toggleRow: {
+      flexDirection: 'row',
+      marginHorizontal: spacing.screenPadding,
+      marginBottom: 12,
+      backgroundColor: isDark ? '#2A2A2A' : '#F0EFEA',
+      borderRadius: 12,
+      padding: 3,
+    },
+    toggleBtn: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    toggleBtnActive: { backgroundColor: colors.expenseRed },
+    toggleBtnIncomeActive: { backgroundColor: colors.incomeGreen },
+    toggleBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    toggleBtnTextActive: { color: '#FFFFFF' },
+
+    filterWrapper: { height: 36, marginBottom: 16 },
+    chipActive: {
+      paddingHorizontal: 16,
+      height: 34,
+      borderRadius: 12,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 8,
+      backgroundColor: colors.primary,
+    },
+    chipInactive: {
+      paddingHorizontal: 16,
+      height: 34,
+      borderRadius: 12,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 8,
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+    },
+    chipTextActive: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: '#FFFFFF',
+    },
+    chipTextInactive: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+
+    dateHeaderContainer: {
+      backgroundColor: colors.background,
+      paddingHorizontal: spacing.screenPadding,
+      paddingTop: 16,
+      paddingBottom: 8,
+    },
+    dateHeader: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: colors.textSecondary,
+      letterSpacing: 0.44,
+    },
+    transactionItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.screenPadding,
+      paddingVertical: 12,
+      minHeight: 44,
+      backgroundColor: colors.background,
+    },
+    txContent: { flex: 1, justifyContent: 'center' },
+    txTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 15,
+      color: colors.textPrimary,
+      marginBottom: 4,
+    },
+    txSubtitleRow: { flexDirection: 'row', alignItems: 'center' },
+    txTime: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    metaDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 1.5,
+      backgroundColor: colors.textSecondary,
+      marginHorizontal: 6,
+    },
+    acctTag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+    acctTagText: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
+    txAmount: { fontFamily: 'DMMono_500Medium', fontSize: 14 },
+    pos: { color: colors.incomeGreen },
+    neg: { color: colors.expenseRed },
+
+    emptyText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginTop: 60,
+    },
+    loadMoreBtn: {
+      backgroundColor: colors.white,
+      marginHorizontal: spacing.screenPadding,
+      marginTop: 20,
+      paddingVertical: 14,
+      borderRadius: radius.card,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+    },
+    loadMoreText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.primary,
+    },
+  });

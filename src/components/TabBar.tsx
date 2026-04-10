@@ -9,6 +9,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../constants/theme';
+import { useTheme } from '../contexts/ThemeContext';
 
 export type TabRoute = 'home' | 'feed' | 'stats' | 'more';
 
@@ -23,6 +24,7 @@ export default function TabBar({
   onTabPress,
   onFabPress,
 }: TabBarProps) {
+  const { colors, isDark } = useTheme();
   // FAB bounce animation
   const fabScale = useRef(new Animated.Value(1)).current;
 
@@ -61,7 +63,17 @@ export default function TabBar({
   };
 
   return (
-    <BlurView intensity={20} tint="light" style={styles.tabBar}>
+    <BlurView
+      intensity={isDark ? 40 : 20}
+      tint={isDark ? 'dark' : 'light'}
+      style={[
+        styles.tabBar,
+        {
+          backgroundColor: colors.tabBarBg,
+          borderTopColor: colors.cardBorderTransparent,
+        },
+      ]}
+    >
       {renderTab('home', '🏠', 'Home')}
       {renderTab('feed', '📋', 'Txns')}
       {/* ── FAB ── */}

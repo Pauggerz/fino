@@ -1,15 +1,10 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context'; // 👈 Added this import
+import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { FlashList, ListRenderItem } from '@shopify/flash-list';
-import { colors, radius, spacing } from '../constants/theme';
+import { radius, spacing } from '../constants/theme';
+import { useTheme } from '../contexts/ThemeContext';
 import type { Transaction, Account } from '@/types';
 import { supabase } from '@/services/supabase';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -17,16 +12,6 @@ import { Skeleton } from '@/components/Skeleton';
 import type { MoreStackParamList } from '../navigation/RootNavigator';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const ACCOUNT_CONFIG: Record<
-  string,
-  { letter: string; color: string; label: string }
-> = {
-  gcash: { letter: 'G', color: colors.accountGCash, label: 'GCash' },
-  cash: { letter: '₱', color: colors.accountCash, label: 'Cash' },
-  bdo: { letter: 'B', color: colors.accountBDO, label: 'BDO' },
-  maya: { letter: 'M', color: colors.accountMaya, label: 'Maya' },
-};
 
 function fmtPeso(n: number): string {
   return `₱${Math.abs(n).toLocaleString('en-PH', {
@@ -36,10 +21,14 @@ function fmtPeso(n: number): string {
 }
 
 export default function AccountDetailScreen() {
-  const insets = useSafeAreaInsets(); // 👈 Added hook to get safe area measurements
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<MoreStackParamList, 'AccountDetail'>>();
   const { id } = route.params;
+
+  // 🌙 Dynamic Theme Injection
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   const { accounts } = useAccounts();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -80,7 +69,7 @@ export default function AccountDetailScreen() {
   // ─── Data Extraction ───
   const config = {
     letter: selectedAccount?.letter_avatar ?? '?',
-    color: selectedAccount?.brand_colour ?? '#333',
+    color: selectedAccount?.brand_colour ?? colors.primary,
     label: selectedAccount?.name ?? id,
   };
   const balance = selectedAccount?.balance ?? 0;
@@ -157,7 +146,7 @@ export default function AccountDetailScreen() {
           style={[
             styles.hero,
             {
-              backgroundColor: '#D7E4DB',
+              backgroundColor: colors.catTileEmptyBg,
               paddingTop: Math.max(insets.top, 16) + 10,
             },
           ]}
@@ -199,7 +188,11 @@ export default function AccountDetailScreen() {
                   style={{ marginRight: 14 }}
                 />
                 <View>
-                  <Skeleton width={110} height={14} style={{ marginBottom: 6 }} />
+                  <Skeleton
+                    width={110}
+                    height={14}
+                    style={{ marginBottom: 6 }}
+                  />
                   <Skeleton width={72} height={12} />
                 </View>
               </View>
@@ -226,10 +219,8 @@ export default function AccountDetailScreen() {
   }
 
   return (
-    // 👈 Removed SafeAreaView wrapper, just using standard View
     <View style={styles.container}>
       {/* ════════════════ HERO CARD ════════════════ */}
-      {/* 👈 Dynamic padding added here to perfectly dodge the notch */}
       <View
         style={[
           styles.hero,
@@ -352,279 +343,276 @@ export default function AccountDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background, // 👈 Ensures background matches theme entirely
-  },
-  containerCenter: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.screenPadding,
-  },
-  backGhostBtn: {
-    marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(30,30,46,0.15)',
-  },
-  backGhostBtnText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    color: colors.textPrimary,
-  },
-  loadingTopBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 16,
-    marginBottom: 8,
-  },
-  loadingHeroInner: {
-    alignItems: 'center',
-    paddingBottom: 16,
-  },
-  // ── Hero ──
-  hero: {
-    padding: spacing.screenPadding,
-    // paddingTop is now handled dynamically inline
-    borderBottomLeftRadius: radius.cardLg,
-    borderBottomRightRadius: radius.cardLg,
-    shadowColor: '#1E1E2E',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  backBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: radius.pill,
-    marginBottom: 20,
-  },
-  backBtnText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    color: colors.white,
-  },
-  heroBody: {
-    alignItems: 'center',
-    paddingBottom: 16,
-  },
-  avatarWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  avatarLetter: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 22,
-  },
-  accountName: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.9)',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  accountBalance: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 40,
-    color: colors.white,
-    letterSpacing: -1.5,
-  },
+// ─── DYNAMIC STYLES ───────────────────────────────────────────────────────────
 
-  // ── 3 Stat Chips ──
-  statsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.screenPadding,
-    marginTop: 24,
-    gap: 8,
-  },
-  statChip: {
-    flex: 1,
-    backgroundColor: colors.white,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: radius.card,
-    alignItems: 'center',
-  },
-  statLabel: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 10,
-    color: colors.textSecondary,
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  statValue: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
-
-  // ── Recent List ──
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.screenPadding,
-    marginTop: 28,
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-  seeAll: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    color: colors.primary,
-  },
-  listWrap: {
-    minHeight: 200,
-    flex: 1,
-    paddingHorizontal: spacing.screenPadding,
-  },
-  emptyText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 30,
-  },
-  txItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: colors.white,
-    padding: 12,
-    borderRadius: radius.card,
-    marginBottom: 10,
-  },
-  txLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  txAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  txAvatarLetter: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  txCategory: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-  txDate: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  txAmount: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-
-  // ── Actions ──
-  actionWrap: {
-    paddingHorizontal: spacing.screenPadding,
-    paddingBottom: 40,
-    alignItems: 'center',
-  },
-  editBtn: {
-    backgroundColor: colors.lavenderLight,
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: radius.button,
-    alignItems: 'center',
-  },
-  editBtnText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 14,
-    color: colors.lavenderDark,
-  },
-  deleteLink: {
-    marginTop: 28,
-  },
-  deleteLinkText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: colors.coralDark,
-  },
-
-  // ── Modal Sheet ──
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: radius.sheet,
-    borderTopRightRadius: radius.sheet,
-    padding: 24,
-    paddingBottom: 40,
-    alignItems: 'center',
-  },
-  modalTitle: {
-    fontFamily: 'Nunito_800ExtraBold',
-    fontSize: 20,
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  modalSub: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  confirmBtn: {
-    backgroundColor: colors.coralDark,
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: radius.button,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  confirmBtnText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 15,
-    color: colors.white,
-  },
-  cancelBtn: {
-    width: '100%',
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  cancelBtnText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    color: colors.textSecondary,
-  },
-});
+const createStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    containerCenter: {
+      flex: 1,
+      backgroundColor: colors.background,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing.screenPadding,
+    },
+    backGhostBtn: {
+      marginTop: 12,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'rgba(30,30,46,0.15)',
+    },
+    backGhostBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.textPrimary,
+    },
+    loadingTopBar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: spacing.screenPadding,
+      paddingTop: 16,
+      marginBottom: 8,
+    },
+    loadingHeroInner: {
+      alignItems: 'center',
+      paddingBottom: 16,
+    },
+    hero: {
+      padding: spacing.screenPadding,
+      borderBottomLeftRadius: radius.cardLg,
+      borderBottomRightRadius: radius.cardLg,
+      shadowColor: isDark ? '#000000' : '#1E1E2E',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.15,
+      shadowRadius: 16,
+      elevation: 8,
+    },
+    backBtn: {
+      alignSelf: 'flex-start',
+      backgroundColor: 'rgba(255,255,255,0.2)',
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      borderRadius: radius.pill,
+      marginBottom: 20,
+    },
+    backBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: '#FFFFFF',
+    },
+    heroBody: {
+      alignItems: 'center',
+      paddingBottom: 16,
+    },
+    avatarWrap: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 12,
+    },
+    avatarLetter: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 22,
+    },
+    accountName: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 16,
+      color: 'rgba(255,255,255,0.9)',
+      marginBottom: 4,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    accountBalance: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 40,
+      color: '#FFFFFF',
+      letterSpacing: -1.5,
+    },
+    statsRow: {
+      flexDirection: 'row',
+      paddingHorizontal: spacing.screenPadding,
+      marginTop: 24,
+      gap: 8,
+    },
+    statChip: {
+      flex: 1,
+      backgroundColor: colors.white,
+      paddingVertical: 12,
+      paddingHorizontal: 10,
+      borderRadius: radius.card,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'transparent',
+    },
+    statLabel: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 10,
+      color: colors.textSecondary,
+      marginBottom: 4,
+      textAlign: 'center',
+    },
+    statValue: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 13,
+      color: colors.textPrimary,
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: spacing.screenPadding,
+      marginTop: 28,
+      marginBottom: 12,
+    },
+    sectionTitle: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
+    seeAll: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.primary,
+    },
+    listWrap: {
+      minHeight: 200,
+      flex: 1,
+      paddingHorizontal: spacing.screenPadding,
+    },
+    emptyText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginTop: 30,
+    },
+    txItem: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: colors.white,
+      padding: 12,
+      borderRadius: radius.card,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'transparent',
+    },
+    txLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    txAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.background,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    txAvatarLetter: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    txCategory: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
+    txDate: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    txAmount: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
+    actionWrap: {
+      paddingHorizontal: spacing.screenPadding,
+      paddingBottom: 40,
+      alignItems: 'center',
+    },
+    editBtn: {
+      backgroundColor: colors.lavenderLight,
+      width: '100%',
+      paddingVertical: 16,
+      borderRadius: radius.button,
+      alignItems: 'center',
+    },
+    editBtnText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 14,
+      color: colors.lavenderDark,
+    },
+    deleteLink: {
+      marginTop: 28,
+    },
+    deleteLinkText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.coralDark,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'flex-end',
+    },
+    modalSheet: {
+      backgroundColor: colors.white,
+      borderTopLeftRadius: radius.sheet,
+      borderTopRightRadius: radius.sheet,
+      padding: 24,
+      paddingBottom: 40,
+      alignItems: 'center',
+    },
+    modalTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 20,
+      color: colors.textPrimary,
+      marginBottom: 8,
+    },
+    modalSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 20,
+      marginBottom: 24,
+    },
+    confirmBtn: {
+      backgroundColor: colors.coralDark,
+      width: '100%',
+      paddingVertical: 16,
+      borderRadius: radius.button,
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    confirmBtnText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 15,
+      color: '#FFFFFF',
+    },
+    cancelBtn: {
+      width: '100%',
+      paddingVertical: 16,
+      alignItems: 'center',
+    },
+    cancelBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 15,
+      color: colors.textSecondary,
+    },
+  });

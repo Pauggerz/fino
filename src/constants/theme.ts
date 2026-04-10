@@ -1,36 +1,36 @@
 // src/constants/theme.ts
-export const colors = {
+export const lightColors = {
   // Core
-  primary: '#5B8C6E', // --p
-  primaryDark: '#3f6b52', // --pd
-  primaryLight: '#EBF2EE', // --pl
-  background: '#F7F5F2', // --bg
+  primary: '#5B8C6E',
+  primaryDark: '#3f6b52',
+  primaryLight: '#EBF2EE',
+  background: '#F7F5F2',
   white: '#FFFFFF',
   // Accent
-  coral: '#E8856A', // --coral
-  coralLight: '#FBF0EC', // --coral-l
-  coralDark: '#C0503A', // --exp
+  coral: '#E8856A',
+  coralLight: '#FBF0EC',
+  coralDark: '#C0503A',
   // Lavender (AI surfaces)
-  lavender: '#C9B8F5', // --lav
-  lavenderLight: '#F0ECFD', // --lav-l ← AI field bg, MUST NOT be swapped with background
-  lavenderDark: '#4B2DA3', // AI label colour, ✦ prefix
+  lavender: '#C9B8F5',
+  lavenderLight: '#F0ECFD',
+  lavenderDark: '#4B2DA3',
   // Semantic
   peach: '#FFD6C2',
   mint: '#A8D5B5',
-  textPrimary: '#1E1E2E', // --t1
-  textSecondary: '#8A8A9A', // --t2
+  textPrimary: '#1E1E2E',
+  textSecondary: '#8A8A9A',
   expenseRed: '#C0503A',
   incomeGreen: '#3f6b52',
   insightPurple: '#4B2DA3',
-  greetingPurple: '#7B5EA7', // two-tone name: "[Name]!" colour
-  // Account brand colours (from prototype acct-card-icon backgrounds)
+  greetingPurple: '#7B5EA7',
+  // Account brand colours
   accountCash: '#1C9E4B',
   accountGCash: '#007DFF',
   accountBDO: '#CC0000',
   accountMaya: '#F5841F',
   accountGoTyme: '#00C07B',
   accountBPI: '#B22222',
-  // Category tile backgrounds (from prototype cat-tile inline styles)
+  // Category tile backgrounds
   catFoodBg: '#FDF6E3',
   catFoodText: '#C97A20',
   catTransportBg: '#EEF6FF',
@@ -42,7 +42,7 @@ export const colors = {
   catBillsText: '#7A4AB8',
   catHealthBg: '#EFF8F2',
   catHealthText: '#2d6a4f',
-  // Category pill colours (from .pill-food, .pill-transport etc.)
+  // Category pill colours
   pillFoodBg: '#faeeda',
   pillFoodBorder: '#BA7517',
   pillFoodText: '#633806',
@@ -58,7 +58,7 @@ export const colors = {
   pillHealthBg: '#e8f5ee',
   pillHealthBorder: '#2d6a4f',
   pillHealthText: '#27500A',
-  // Stats bar colours (from cat-breakdown-row fills)
+  // Stats bar colours
   statUnderBar: '#3A80C0',
   statWarnBar: '#BA7517',
   statOverBar: '#C0503A',
@@ -69,7 +69,7 @@ export const colors = {
   chatAIText: '#26215C',
   chatAILabel: '#534AB7',
   chatUserBg: '#2d6a4f',
-  // Merchant tag colours (from .acct-tag-*)
+  // Merchant tag colours
   tagGCashBg: '#e1f0fb',
   tagGCashText: '#185FA5',
   tagCashBg: '#e8f5ee',
@@ -91,7 +91,6 @@ export const colors = {
   billCardBg: '#fff8f0',
   billCardBorder: '#EF9F27',
   billTagText: '#BA7517',
-  
   // Sync status
   syncSynced: '#10B981',
   syncSyncing: '#F59E0B',
@@ -123,6 +122,137 @@ export const colors = {
   onTrackBorder: 'rgba(45,106,79,0.15)',
   catOverBadgeBg: 'rgba(192,80,58,0.12)',
   insightCardBorder: 'rgba(201,184,245,0.35)',
+  surfaceSubdued: '#F0EFEA',
+  border: '#e0dfd7',
+  tabBarBg: 'rgba(255,255,255,0.95)',
+};
+
+export const darkColors: typeof lightColors = {
+  // Core
+  primary: '#6a9e7f', 
+  primaryDark: '#4a7a5e', 
+  primaryLight: '#2a4f3a', 
+  background: '#121212', 
+  white: '#1E1E1E', // Elevates cards above pure black background
+  // Accent
+  coral: '#E8856A', 
+  coralLight: '#3D221C', 
+  coralDark: '#E8856A', 
+  // Lavender (AI surfaces)
+  lavender: '#8A73C1', 
+  lavenderLight: '#2D2342', 
+  lavenderDark: '#C9B8F5', 
+  // Semantic
+  peach: '#FFD6C2',
+  mint: '#A8D5B5',
+  textPrimary: '#F7F5F2', 
+  textSecondary: '#A0A0A0', 
+  expenseRed: '#FF6B6B',
+  incomeGreen: '#6a9e7f',
+  insightPurple: '#C9B8F5',
+  greetingPurple: '#C9B8F5', 
+  // Account brand colours (Same for brand identity)
+  accountCash: '#1C9E4B',
+  accountGCash: '#007DFF',
+  accountBDO: '#CC0000',
+  accountMaya: '#F5841F',
+  accountGoTyme: '#00C07B',
+  accountBPI: '#B22222',
+  // Category tile backgrounds
+  catFoodBg: '#3A2E1D',
+  catFoodText: '#F7C986',
+  catTransportBg: '#1D2A3A',
+  catTransportText: '#86C5F7',
+  catShoppingBg: '#3A1D23',
+  catShoppingText: '#F7869E',
+  catBillsBg: '#2D2342',
+  catBillsBg2: '#231B33',
+  catBillsText: '#C9B8F5',
+  catHealthBg: '#1D3A2A',
+  catHealthText: '#86F7C9',
+  // Category pill colours
+  pillFoodBg: '#3A2E1D',
+  pillFoodBorder: '#BA7517',
+  pillFoodText: '#F7C986',
+  pillTransportBg: '#1D2A3A',
+  pillTransportBorder: '#2E7AB8',
+  pillTransportText: '#86C5F7',
+  pillShoppingBg: '#3A1D23',
+  pillShoppingBorder: '#C0503A',
+  pillShoppingText: '#F7869E',
+  pillBillsBg: '#2D2342',
+  pillBillsBorder: '#7A4AB8',
+  pillBillsText: '#C9B8F5',
+  pillHealthBg: '#1D3A2A',
+  pillHealthBorder: '#2d6a4f',
+  pillHealthText: '#86F7C9',
+  // Stats bar colours 
+  statUnderBar: '#3A80C0',
+  statWarnBar: '#BA7517',
+  statOverBar: '#FF6B6B',
+  statBillsBar: '#7A4AB8',
+  // AI chat colours
+  chatAIBubbleBg: '#2D2342',
+  chatAIBubbleBorder: '#4B2DA3',
+  chatAIText: '#EBF2EE',
+  chatAILabel: '#C9B8F5',
+  chatUserBg: '#2a4f3a',
+  // Merchant tag colours
+  tagGCashBg: '#1D2A3A',
+  tagGCashText: '#86C5F7',
+  tagCashBg: '#1D3A2A',
+  tagCashText: '#86F7C9',
+  tagBDOBg: '#3A1D1D',
+  tagBDOText: '#F78686',
+  tagMayaBg: '#3A2E1D',
+  tagMayaText: '#F7C986',
+  // On-track status pill
+  onTrackBg1: '#1A2E22',
+  onTrackBg2: '#121212',
+  onTrackTitle: '#6a9e7f',
+  onTrackSub: '#5B8C6E',
+  // Stats hero card
+  statsHeroBg1: '#1E1E1E',
+  statsHeroBg2: '#121212',
+  statsHeroBar: '#97C459',
+  // Bill reminder
+  billCardBg: '#3A2E1D',
+  billCardBorder: '#EF9F27',
+  billTagText: '#F7C986',
+  // Sync status
+  syncSynced: '#10B981',
+  syncSyncing: '#F59E0B',
+  syncOffline: '#EF4444',
+  // Fallbacks
+  catTileEmptyBg: '#2A2A2A',
+  catIconEmpty: '#A0A0A0',
+  // Home Screen specific
+  heroCardBg: '#1A3028',
+  heroCardShadow: '#000000',
+  cardShadow: '#000000',
+  staleDataBg: 'rgba(239, 68, 68, 0.2)',
+  staleDataText: '#FCA5A5',
+  // Transparencies
+  primaryTransparent30: 'rgba(106, 158, 127, 0.3)',
+  primaryTransparent50: 'rgba(106, 158, 127, 0.5)',
+  primaryLight25: 'rgba(106, 158, 127, 0.25)',
+  primaryLight60: 'rgba(106, 158, 127, 0.6)',
+  whiteTransparent07: 'rgba(255,255,255,0.07)', 
+  whiteTransparent12: 'rgba(255,255,255,0.12)',
+  whiteTransparent15: 'rgba(255,255,255,0.15)',
+  whiteTransparent18: 'rgba(255,255,255,0.18)',
+  whiteTransparent30: 'rgba(255,255,255,0.1)', // Dimmed for dark mode blobs
+  whiteTransparent55: 'rgba(255,255,255,0.55)',
+  whiteTransparent65: 'rgba(255,255,255,0.65)',
+  whiteTransparent80: 'rgba(255,255,255,0.8)',
+  blackTransparent15: 'rgba(0,0,0,0.3)', // Darker hero row bg
+  cardBorderTransparent: 'rgba(255,255,255,0.08)',
+  onTrackBorder: 'rgba(106, 158, 127, 0.15)',
+  catOverBadgeBg: 'rgba(255, 107, 107, 0.15)',
+  insightCardBorder: 'rgba(201, 184, 245, 0.15)',
+  surfaceSubdued: '#2A2A2A',
+  border: '#333333',
+  tabBarBg: 'rgba(18,18,18,0.95)',
 };
 
 export const spacing = {
@@ -137,21 +267,17 @@ export const spacing = {
 };
 
 export const radius = {
-  heroCard: 28, // hero-card-wrap
-  card: 16, // acct-card, more-acct-card, cat-breakdown
-  cardLg: 20, // stats-hero, detail-hero
-  categoryTile: 28, // cat-tile border-radius from prototype
-  button: 16, // btn-p
-  pill: 9999, // wallet-chip, filter-chip, prompt-chip
-  input: 16, // amount-display, sheet-panel
-  sheet: 24, // sheet-panel border-radius
-  pill20: 20, // type-btn, date-pill
+  heroCard: 28, 
+  card: 16, 
+  cardLg: 20, 
+  categoryTile: 28, 
+  button: 16, 
+  pill: 9999, 
+  input: 16, 
+  sheet: 24, 
+  pill20: 20, 
   chatBubbleAI: [4, 16, 16, 16],
   chatBubbleUser: [16, 4, 16, 16],
 };
 
-export const gradients = {
-  primaryHero: ['#4a7a5e', '#5B8C6E', '#6a9e7f'], // FAB, hero card (blobs), primary btn
-  statsHero: ['#2d4a3e', '#1a3028'], // stats-hero card
-  onTrack: ['#EFF8F2', '#d4eddf'], // on-track status pill
-} as const;
+export const colors = lightColors; // Fallback for un-migrated components
