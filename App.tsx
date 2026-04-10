@@ -30,6 +30,7 @@ import RootNavigator from './src/navigation/RootNavigator';
 import { SyncProvider } from './src/contexts/SyncContext';
 import { supabase } from './src/services/supabase';
 import { ACCOUNT_LOGOS } from './src/constants/accountLogos';
+import { ThemeProvider } from './src/contexts/ThemeContext';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -103,12 +104,14 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <SafeAreaProvider>
-        <SyncProvider>
-          <RootNavigator />
-          <StatusBar style="auto" />
-        </SyncProvider>
-      </SafeAreaProvider>
+      <ThemeProvider>
+        <SafeAreaProvider>
+          <SyncProvider>
+            <RootNavigator />
+            <StatusBar style="auto" />
+          </SyncProvider>
+        </SafeAreaProvider>
+      </ThemeProvider>
     </GestureHandlerRootView>
   );
 }

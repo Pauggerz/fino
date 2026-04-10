@@ -122,6 +122,9 @@ export const lightColors = {
   onTrackBorder: 'rgba(45,106,79,0.15)',
   catOverBadgeBg: 'rgba(192,80,58,0.12)',
   insightCardBorder: 'rgba(201,184,245,0.35)',
+  surfaceSubdued: '#F0EFEA',
+  border: '#e0dfd7',
+  tabBarBg: 'rgba(255,255,255,0.95)',
 };
 
 export const darkColors: typeof lightColors = {
@@ -247,6 +250,9 @@ export const darkColors: typeof lightColors = {
   onTrackBorder: 'rgba(106, 158, 127, 0.15)',
   catOverBadgeBg: 'rgba(255, 107, 107, 0.15)',
   insightCardBorder: 'rgba(201, 184, 245, 0.15)',
+  surfaceSubdued: '#2A2A2A',
+  border: '#333333',
+  tabBarBg: 'rgba(18,18,18,0.95)',
 };
 
 export const spacing = {
@@ -274,4 +280,4 @@ export const radius = {
   chatBubbleUser: [16, 4, 16, 16],
 };
 
-export const colors = darkColors; // Fallback for un-migrated components
+export const colors = lightColors; // Fallback for un-migrated components

@@ -17,12 +17,10 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
-  useColorScheme,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { lightColors, darkColors } from '../constants/theme';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import {
   ACCOUNT_LOGOS,
@@ -37,6 +35,7 @@ import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
 import { Skeleton } from '@/components/Skeleton';
+import { useTheme } from '../contexts/ThemeContext';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,32 +71,22 @@ function calculateSparkline(
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
     d.setDate(d.getDate() - (6 - i));
-    return {
-      id: `day${i}`,
-      timestamp: d.getTime(),
-      total: 0,
-    };
+    return { id: `day${i}`, timestamp: d.getTime(), total: 0 };
   });
 
-  if (!transactions || transactions.length === 0) {
+  if (!transactions || transactions.length === 0)
     return days.map((d) => ({ id: d.id, val: 0 }));
-  }
 
   transactions.forEach((tx) => {
     if (tx.type === 'expense' && tx.date) {
       const txDate = new Date(tx.date);
       txDate.setHours(0, 0, 0, 0);
-      const txTime = txDate.getTime();
-
-      const dayMatch = days.find((d) => d.timestamp === txTime);
-      if (dayMatch) {
-        dayMatch.total += Number(tx.amount) || 0;
-      }
+      const dayMatch = days.find((d) => d.timestamp === txDate.getTime());
+      if (dayMatch) dayMatch.total += Number(tx.amount) || 0;
     }
   });
 
   const maxSpend = Math.max(...days.map((d) => d.total));
-
   return days.map((d) => ({
     id: d.id,
     val: maxSpend > 0 ? d.total / maxSpend : 0,
@@ -108,11 +97,11 @@ function timeSince(date: Date): string {
   const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} min${minutes !== 1 ? 's' : ''} ago`;
+  if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hr${hours !== 1 ? 's' : ''} ago`;
+  if (hours < 24) return `${hours} hr ago`;
   const days = Math.floor(hours / 24);
-  return `${days} day${days !== 1 ? 's' : ''} ago`;
+  return `${days} day ago`;
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
@@ -120,15 +109,11 @@ function timeSince(date: Date): string {
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
 
-  // Dynamic Theme
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const colors = isDark ? darkColors : lightColors;
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   const { status: syncStatus, syncVersion, lastSyncedAt } = useSync();
   const { profile } = useAuth();
-
   const userName = profile?.name || 'User';
 
   const {
@@ -187,16 +172,14 @@ export default function HomeScreen() {
   const [displayBalance, setDisplayBalance] = useState(totalBalance);
 
   useEffect(() => {
-    const listenerId = animBalance.addListener(({ value }) => {
-      setDisplayBalance(value);
-    });
-
+    const listenerId = animBalance.addListener(({ value }) =>
+      setDisplayBalance(value)
+    );
     Animated.timing(animBalance, {
       toValue: totalBalance,
       duration: BALANCE_ANIMATE_MS,
       useNativeDriver: false,
     }).start();
-
     return () => animBalance.removeListener(listenerId);
   }, [totalBalance, animBalance]);
 
@@ -205,10 +188,6 @@ export default function HomeScreen() {
   const [toastSubtitle, setToastSubtitle] = useState('');
   const [toastIsUndo, setToastIsUndo] = useState(false);
   const [undoTxId, setUndoTxId] = useState<string | null>(null);
-  const [undoAccountId, setUndoAccountId] = useState<string | null>(null);
-  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(
-    null
-  );
 
   useFocusEffect(
     useCallback(() => {
@@ -219,48 +198,15 @@ export default function HomeScreen() {
       const last = getLastSaved();
       if (!last) return;
       clearLastSaved();
-      const typeLabel = last.type === 'expense' ? 'Expense' : 'Income';
-      setToastTitle(`${typeLabel} saved`);
+      setToastTitle(`${last.type === 'expense' ? 'Expense' : 'Income'} saved`);
       setToastSubtitle(
         `${fmtPeso(last.amount)} · ${last.categoryName} · ${last.accountName}`
       );
       setToastIsUndo(false);
       setUndoTxId(last.id);
-      setUndoAccountId(last.accountId);
-      setUndoPreviousBalance(last.previousBalance);
       setToastVisible(true);
     }, [refetchAccounts, refetchCategories, refetchTotals, refetchTransactions])
   );
-
-  const handleUndo = useCallback(async () => {
-    if (!undoTxId) return;
-    await supabase.from('transactions').delete().eq('id', undoTxId);
-    if (undoAccountId !== null && undoPreviousBalance !== null) {
-      await supabase
-        .from('accounts')
-        .update({ balance: undoPreviousBalance })
-        .eq('id', undoAccountId);
-    }
-    refetchAccounts();
-    refetchCategories();
-    refetchTotals();
-    refetchTransactions();
-    setUndoTxId(null);
-    setUndoAccountId(null);
-    setUndoPreviousBalance(null);
-    setToastTitle('Removed');
-    setToastSubtitle('Transaction undone');
-    setToastIsUndo(true);
-    setToastVisible(true);
-  }, [
-    undoTxId,
-    undoAccountId,
-    undoPreviousBalance,
-    refetchAccounts,
-    refetchCategories,
-    refetchTotals,
-    refetchTransactions,
-  ]);
 
   const [staleTimeText, setStaleTimeText] = useState('');
   useEffect(() => {
@@ -268,13 +214,10 @@ export default function HomeScreen() {
       setStaleTimeText('');
       return;
     }
-
     const updateTime = () =>
       setStaleTimeText(`Last synced ${timeSince(lastSyncedAt)}`);
-
     updateTime();
     const intervalId = setInterval(updateTime, 60000);
-
     return () => clearInterval(intervalId);
   }, [syncStatus, lastSyncedAt]);
 
@@ -282,48 +225,8 @@ export default function HomeScreen() {
   const daysLeft = getDaysLeftInMonth();
   const totalBudget = categories.reduce((s, c) => s + (c.budget_limit ?? 0), 0);
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
-  const statusLabel = onTrackLabel(pctSpent);
-
   const delta = totalIncome - monthlyExpense;
-  const LAST_MONTH_TOTAL = totalBalance - delta;
   const deltaLabel = `${delta >= 0 ? '↑' : '↓'} ${delta >= 0 ? '+' : ''}${fmtPeso(delta)} vs last month`;
-
-  const insight = useMemo(() => {
-    if (isCategoriesLoading) return null;
-
-    if (categories.length === 0 && monthlyExpense === 0) {
-      return {
-        headline: 'Welcome to Fino! 👋',
-        body: 'Start adding transactions to get personalized insights on your spending.',
-      };
-    }
-
-    const overBudget = categories.find((c) => c.state === 'over' || c.pct >= 1);
-    if (overBudget) {
-      const overAmt = overBudget.spent - (overBudget.budget_limit || 0);
-      return {
-        headline: `${overBudget.name} budget exceeded ⚠️`,
-        body: `You are ${fmtPeso(overAmt)} over your limit for ${overBudget.name}. Try to hold off on purchases.`,
-      };
-    }
-
-    const topSpend = [...categories].sort((a, b) => b.spent - a.spent)[0];
-    if (topSpend && topSpend.spent > 0) {
-      const pctOfTotal =
-        monthlyExpense > 0
-          ? Math.round((topSpend.spent / monthlyExpense) * 100)
-          : 0;
-      return {
-        headline: `${topSpend.name} is your top spend 📊`,
-        body: `It makes up ${pctOfTotal}% of your expenses. Want to adjust your budget?`,
-      };
-    }
-
-    return {
-      headline: 'On track this month 🌟',
-      body: "You're keeping your expenses low. Keep up the good work!",
-    };
-  }, [categories, monthlyExpense, isCategoriesLoading]);
 
   return (
     <View style={styles.container}>
@@ -332,6 +235,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        {/* Header Greeting */}
         <View style={styles.greeting}>
           <View style={styles.greetingTop}>
             <View style={styles.greetingLeft}>
@@ -381,6 +285,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Status Pill */}
         <View style={styles.onTrackWrap}>
           <LinearGradient
             colors={[colors.onTrackBg1, colors.onTrackBg2]}
@@ -405,9 +310,8 @@ export default function HomeScreen() {
                 />
               ))}
             </View>
-
             <View style={styles.onTrackText}>
-              <Text style={styles.onTrackTitle}>{statusLabel}</Text>
+              <Text style={styles.onTrackTitle}>{onTrackLabel(pctSpent)}</Text>
               <Text style={styles.onTrackSub}>
                 {daysLeft} days left · {fmtPeso(monthlyExpense)} spent
               </Text>
@@ -415,6 +319,7 @@ export default function HomeScreen() {
           </LinearGradient>
         </View>
 
+        {/* Hero Card */}
         <TouchableOpacity
           activeOpacity={0.9}
           style={styles.heroWrap}
@@ -436,20 +341,12 @@ export default function HomeScreen() {
                   { bottom: -20, left: -20, width: 100, height: 100 },
                 ]}
               />
-              <LinearGradient
-                colors={[colors.primaryTransparent50, 'transparent']}
-                style={[
-                  styles.blob,
-                  { top: 20, left: '45%', width: 80, height: 80 },
-                ]}
-              />
               <BlurView
-                intensity={60}
+                intensity={isDark ? 30 : 60}
                 tint="dark"
                 style={StyleSheet.absoluteFill}
               />
             </View>
-
             <View style={styles.glassPanel}>
               <View style={styles.heroChip}>
                 <Text style={styles.heroChipText}>
@@ -459,9 +356,7 @@ export default function HomeScreen() {
                   })}
                 </Text>
               </View>
-
               <Text style={styles.heroLabel}>Total balance</Text>
-
               <View style={styles.heroAmountRow}>
                 <Text style={styles.heroCurr}>₱</Text>
                 <Text style={styles.heroAmount}>
@@ -471,7 +366,6 @@ export default function HomeScreen() {
                   })}
                 </Text>
               </View>
-
               <View style={styles.badgeRow}>
                 {syncStatus === 'offline' && (
                   <View style={styles.staleDataBadge}>
@@ -480,12 +374,10 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 )}
-
                 <View style={styles.trendBadge}>
                   <Text style={styles.trendText}>{deltaLabel}</Text>
                 </View>
               </View>
-
               <View style={styles.heroRow}>
                 <View style={[styles.heroCol, styles.heroColBorder]}>
                   <Text style={styles.heroColLabel}>Income</Text>
@@ -502,11 +394,11 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
 
+        {/* Accounts Grid */}
         <View style={styles.sectionLabelRow}>
           <View style={styles.sectionDot} />
           <Text style={styles.sectionLabel}>Accounts</Text>
         </View>
-
         <View style={styles.acctGrid}>
           {isAccountsLoading
             ? Array.from({ length: 4 }).map((_, i) => (
@@ -539,29 +431,27 @@ export default function HomeScreen() {
                       })
                     }
                   >
-                    {(() => {
-                      const logo = ACCOUNT_LOGOS[acc.name];
-                      const avatarLetter =
-                        ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
-                      return logo ? (
-                        <View style={styles.acctIconWrap}>
-                          <Image
-                            source={logo}
-                            style={styles.acctLogo}
-                            resizeMode="contain"
-                          />
-                        </View>
-                      ) : (
-                        <View
-                          style={[
-                            styles.acctIconWrap,
-                            { backgroundColor: acc.brand_colour },
-                          ]}
-                        >
-                          <Text style={styles.acctLetter}>{avatarLetter}</Text>
-                        </View>
-                      );
-                    })()}
+                    {ACCOUNT_LOGOS[acc.name] ? (
+                      <View style={styles.acctIconWrap}>
+                        <Image
+                          source={ACCOUNT_LOGOS[acc.name]}
+                          style={styles.acctLogo}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    ) : (
+                      <View
+                        style={[
+                          styles.acctIconWrap,
+                          { backgroundColor: acc.brand_colour },
+                        ]}
+                      >
+                        <Text style={styles.acctLetter}>
+                          {ACCOUNT_AVATAR_OVERRIDE[acc.name] ??
+                            acc.letter_avatar}
+                        </Text>
+                      </View>
+                    )}
                     <Text style={styles.acctName}>{acc.name}</Text>
                     <Text
                       style={[
@@ -577,11 +467,11 @@ export default function HomeScreen() {
               })}
         </View>
 
+        {/* Budgets Grid */}
         <View style={styles.sectionLabelRow}>
           <View style={styles.sectionDot} />
           <Text style={styles.sectionLabel}>Monthly budgets</Text>
         </View>
-
         <View style={styles.catGrid}>
           {isCategoriesLoading
             ? Array.from({ length: 4 }).map((_, i) => (
@@ -592,35 +482,38 @@ export default function HomeScreen() {
                       { backgroundColor: colors.catTileEmptyBg },
                     ]}
                   >
-                    <View style={styles.catBadgeWrap}>
-                      <Skeleton width={32} height={14} borderRadius={4} />
-                    </View>
-                    <View
-                      style={[
-                        styles.catIconCircle,
-                        { backgroundColor: 'transparent' },
-                      ]}
-                    >
-                      <Skeleton width={32} height={32} borderRadius={16} />
-                    </View>
-                    <Skeleton
-                      width={70}
-                      height={14}
-                      style={{ marginBottom: 4 }}
-                    />
-                    <Skeleton
-                      width={50}
-                      height={12}
-                      style={{ marginBottom: 8 }}
-                    />
-                    <Skeleton width="100%" height={4} borderRadius={4} />
+                    <Skeleton width="100%" height="100%" borderRadius={28} />
                   </View>
                 </View>
               ))
             : categories.map((cat) => {
-                const bgColor = cat.tile_bg_colour ?? colors.catTileEmptyBg;
-                const textColor = cat.text_colour ?? colors.textPrimary;
+                // ─── OVERRIDE DATABASE COLORS WITH DYNAMIC THEME ───
+                let bgColor = cat.tile_bg_colour ?? colors.catTileEmptyBg;
+                let textColor = cat.text_colour ?? colors.textPrimary;
+
+                const catKey = cat.name.toLowerCase();
+                if (catKey === 'food') {
+                  bgColor = colors.catFoodBg;
+                  textColor = colors.catFoodText;
+                } else if (catKey === 'transport') {
+                  bgColor = colors.catTransportBg;
+                  textColor = colors.catTransportText;
+                } else if (catKey === 'shopping') {
+                  bgColor = colors.catShoppingBg;
+                  textColor = colors.catShoppingText;
+                } else if (catKey === 'bills') {
+                  bgColor = colors.catBillsBg;
+                  textColor = colors.catBillsText;
+                } else if (catKey === 'health') {
+                  bgColor = colors.catHealthBg;
+                  textColor = colors.catHealthText;
+                } else if (isDark) {
+                  bgColor = '#2A2A2A'; // Fallback for custom categories in dark mode
+                  textColor = colors.textPrimary;
+                }
+
                 const isOver = cat.state === 'over';
+
                 return (
                   <TouchableOpacity
                     key={cat.id}
@@ -630,8 +523,6 @@ export default function HomeScreen() {
                   >
                     <LinearGradient
                       colors={[bgColor, bgColor]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
                       style={styles.catTile}
                     >
                       <View style={styles.catBadgeWrap}>
@@ -647,21 +538,15 @@ export default function HomeScreen() {
                           </Text>
                         )}
                       </View>
-
                       <View style={styles.catIconCircle}>
-                        <CategoryIcon
-                          categoryKey={cat.name.toLowerCase()}
-                          color={cat.text_colour ?? colors.catIconEmpty}
-                        />
+                        <CategoryIcon categoryKey={catKey} color={textColor} />
                       </View>
-
                       <Text style={[styles.catName, { color: textColor }]}>
                         {cat.name}
                       </Text>
                       <Text style={[styles.catAmt, { color: textColor }]}>
                         {fmtPeso(cat.spent)}
                       </Text>
-
                       <View style={styles.catBarTrack}>
                         <View
                           style={[
@@ -678,43 +563,12 @@ export default function HomeScreen() {
                 );
               })}
         </View>
-
-        {insight && (
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={styles.insightWrap}
-            onPress={() => navigation.navigate('ChatScreen')}
-          >
-            <LinearGradient
-              colors={[colors.lavenderLight, colors.primaryLight]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.insightCard}
-            >
-              <View style={styles.insightAvatar}>
-                <Text style={styles.insightAvatarIcon}>✦</Text>
-              </View>
-
-              <View style={styles.insightBody}>
-                <Text style={styles.insightLabel}>Fino Intelligence</Text>
-                <Text style={styles.insightHeadline}>{insight.headline}</Text>
-                <Text style={styles.insightSub}>{insight.body}</Text>
-
-                <View style={styles.insightChip}>
-                  <Text style={styles.insightChipText}>Ask Fino →</Text>
-                </View>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
       </ScrollView>
-
       <Toast
         visible={toastVisible}
         title={toastTitle}
         subtitle={toastSubtitle}
-        type={toastIsUndo ? 'undo' : 'success'}
-        onUndo={!toastIsUndo && undoTxId ? handleUndo : undefined}
+        type="success"
         onDismiss={() => setToastVisible(false)}
       />
     </View>
@@ -723,7 +577,7 @@ export default function HomeScreen() {
 
 // ─── Dynamic Styles ──────────────────────────────────────────────────────────
 
-const createStyles = (colors: typeof lightColors) =>
+const createStyles = (colors: any, isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     scroll: { flex: 1 },
@@ -757,7 +611,7 @@ const createStyles = (colors: typeof lightColors) =>
     avatarLetter: {
       fontFamily: 'Inter_700Bold',
       fontSize: 15,
-      color: '#FFFFFF', // explicitly white for the avatar gradient
+      color: '#FFFFFF',
     },
     onTrackWrap: { paddingHorizontal: 20, marginBottom: 14 },
     onTrackPill: {
@@ -804,7 +658,7 @@ const createStyles = (colors: typeof lightColors) =>
     blob: {
       position: 'absolute',
       borderRadius: 999,
-      backgroundColor: colors.white, // In dark mode, this correctly maps to a subtle dark tint
+      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : colors.white,
     },
     glassPanel: {
       backgroundColor: colors.whiteTransparent07,
@@ -849,7 +703,7 @@ const createStyles = (colors: typeof lightColors) =>
     heroAmount: {
       fontFamily: 'DMMono_500Medium',
       fontSize: 42,
-      color: '#FFFFFF', // Strict white regardless of theme for the glass panel
+      color: '#FFFFFF',
       letterSpacing: -2,
       lineHeight: 48,
     },
@@ -939,6 +793,8 @@ const createStyles = (colors: typeof lightColors) =>
       backgroundColor: colors.white,
       borderRadius: 16,
       padding: 14,
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
       shadowColor: colors.cardShadow,
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.06,
@@ -950,7 +806,7 @@ const createStyles = (colors: typeof lightColors) =>
       width: 40,
       height: 40,
       borderRadius: 20,
-      backgroundColor: colors.white, // Brand colors injected dynamically override this
+      backgroundColor: isDark ? '#2A2A2A' : '#FFFFFF',
       borderWidth: 1,
       borderColor: colors.cardBorderTransparent,
       alignItems: 'center',
@@ -985,6 +841,8 @@ const createStyles = (colors: typeof lightColors) =>
       padding: 14,
       justifyContent: 'flex-end',
       overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
     },
     catBadgeWrap: { position: 'absolute', top: 10, right: 10 },
     catPctBadge: { fontFamily: 'Inter_700Bold', fontSize: 10 },
@@ -1006,7 +864,8 @@ const createStyles = (colors: typeof lightColors) =>
       width: 32,
       height: 32,
       borderRadius: 16,
-      backgroundColor: colors.whiteTransparent80,
+      // Use translucent black in dark mode, frosted white in light mode
+      backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : colors.whiteTransparent80,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -1015,11 +874,7 @@ const createStyles = (colors: typeof lightColors) =>
       fontSize: 12,
       marginBottom: 1,
     },
-    catAmt: {
-      fontFamily: 'DMMono_500Medium',
-      fontSize: 11,
-      marginBottom: 6,
-    },
+    catAmt: { fontFamily: 'DMMono_500Medium', fontSize: 11, marginBottom: 6 },
     catBarTrack: {
       height: 4,
       borderRadius: 4,
@@ -1027,62 +882,4 @@ const createStyles = (colors: typeof lightColors) =>
       overflow: 'hidden',
     },
     catBarFill: { height: '100%', borderRadius: 4, opacity: 0.6 },
-    insightWrap: { paddingHorizontal: 20, marginBottom: 16 },
-    insightCard: {
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: colors.insightCardBorder,
-      padding: 16,
-      flexDirection: 'row',
-      gap: 12,
-      alignItems: 'flex-start',
-    },
-    insightAvatar: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: colors.lavenderLight,
-      borderWidth: 1,
-      borderColor: colors.lavender,
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexShrink: 0,
-    },
-    insightAvatarIcon: { fontSize: 15, color: colors.lavenderDark },
-    insightBody: { flex: 1 },
-    insightLabel: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 10,
-      color: colors.lavenderDark,
-      textTransform: 'uppercase',
-      letterSpacing: 0.7,
-      marginBottom: 4,
-    },
-    insightHeadline: {
-      fontFamily: 'Nunito_800ExtraBold',
-      fontSize: 14,
-      color: colors.textPrimary,
-      marginBottom: 4,
-    },
-    insightSub: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 12,
-      color: colors.textSecondary,
-      lineHeight: 18,
-      marginBottom: 10,
-    },
-    insightChip: {
-      alignSelf: 'flex-start',
-      backgroundColor: colors.lavenderLight,
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: colors.lavender,
-      paddingVertical: 5,
-      paddingHorizontal: 12,
-    },
-    insightChipText: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 12,
-      color: colors.lavenderDark,
-    },
   });

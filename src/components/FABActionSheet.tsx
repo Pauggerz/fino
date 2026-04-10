@@ -1,9 +1,18 @@
 import React, { useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Keyboard, InteractionManager } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Keyboard,
+  InteractionManager,
+} from 'react-native';
 import { TouchableOpacity } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
+import BottomSheet, {
+  BottomSheetBackdrop,
+  BottomSheetView,
+} from '@gorhom/bottom-sheet';
 import { colors } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 
@@ -82,7 +91,12 @@ export default function FABActionSheet() {
 
   const renderBackdrop = useCallback(
     (props: any) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        pressBehavior="close"
+      />
     ),
     []
   );
@@ -94,7 +108,9 @@ export default function FABActionSheet() {
         index={0}
         enableDynamicSizing={true}
         enablePanDownToClose
-        onChange={handleSheetChanges} /* 👈 FIX: Uses onChange instead of onClose */
+        onChange={
+          handleSheetChanges
+        } /* 👈 FIX: Uses onChange instead of onClose */
         backdropComponent={renderBackdrop}
         backgroundStyle={styles.sheetBackground}
         handleIndicatorStyle={styles.handle}
@@ -109,8 +125,12 @@ export default function FABActionSheet() {
               onPress={() => handleAction(action.key)}
               style={[styles.row, idx < ACTIONS.length - 1 && styles.rowBorder]}
             >
-              <View style={[styles.iconWrap, { backgroundColor: action.iconBg }]}>
-                <Text style={[styles.iconText, { color: action.iconColor }]}>{action.icon}</Text>
+              <View
+                style={[styles.iconWrap, { backgroundColor: action.iconBg }]}
+              >
+                <Text style={[styles.iconText, { color: action.iconColor }]}>
+                  {action.icon}
+                </Text>
               </View>
 
               <View style={styles.rowText}>

@@ -21,7 +21,8 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
-import { colors, spacing } from '../constants/theme';
+import { spacing } from '../constants/theme';
+import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Dynamic Theme Hook
 import { supabase } from '@/services/supabase';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import {
@@ -81,7 +82,7 @@ const CATEGORY_THEME: Record<
     badgeBg: '#EFF8F2',
   },
   other: {
-    nameColor: colors.textSecondary,
+    nameColor: '#8A8A9A',
     barColor: '#B4B2A9',
     iconGrad: ['#F7F5F2', '#efece8'],
     badgeBg: '#F7F5F2',
@@ -134,7 +135,7 @@ const INCOME_THEME: Record<
     badgeBg: '#E8F6F5',
   },
   default: {
-    nameColor: colors.textSecondary,
+    nameColor: '#8A8A9A',
     barColor: '#B4B2A9',
     iconGrad: ['#F7F5F2', '#efece8'],
     badgeBg: '#F7F5F2',
@@ -170,7 +171,7 @@ const MONTH_NAMES = [
 const normalizeCategoryKey = (value: string | null): string =>
   (value ?? '').trim().toLowerCase();
 
-// ─── Month picker modal (matches FeedScreen style) ────────────────────────────
+// ─── Month picker modal ───────────────────────────────────────────────────────
 
 function MonthPickerModal({
   visible,
@@ -185,6 +186,12 @@ function MonthPickerModal({
   onConfirm: (y: number, m: number) => void;
   onClose: () => void;
 }) {
+  const { colors, isDark } = useTheme();
+  const pickerStyles = useMemo(
+    () => createPickerStyles(colors, isDark),
+    [colors, isDark]
+  );
+
   const [draftYear, setDraftYear] = useState(year);
   const [draftMonth, setDraftMonth] = useState(month);
 
@@ -279,78 +286,12 @@ function MonthPickerModal({
   );
 }
 
-const pickerStyles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 24,
-    width: 300,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  title: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 17,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  arrow: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F7F5F2',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  monthLabel: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 18,
-    color: colors.textPrimary,
-  },
-  actions: { flexDirection: 'row', gap: 10 },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e0dfd7',
-    alignItems: 'center',
-  },
-  cancelText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  confirmBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-  },
-  confirmText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#fff' },
-});
-
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function StatsScreen() {
   const navigation = useNavigation<any>();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   // ── Date state ──
   const now = new Date();
@@ -398,23 +339,18 @@ export default function StatsScreen() {
   const fetchStats = useCallback(async () => {
     try {
       setLoading(true);
-
-      // ── Expense categories & spend ──
       const { data: catData } = await supabase
         .from('categories')
         .select(
           'name, budget_limit, emoji, text_colour, tile_bg_colour, sort_order'
         )
         .eq('is_active', true);
-
       const { data: txData } = await supabase
         .from('transactions')
         .select('category, amount, type')
         .eq('type', 'expense')
         .gte('date', monthRange.from)
         .lte('date', monthRange.to);
-
-      // ── Income transactions ──
       const { data: incomeTxData } = await supabase
         .from('transactions')
         .select('category, amount')
@@ -422,7 +358,6 @@ export default function StatsScreen() {
         .gte('date', monthRange.from)
         .lte('date', monthRange.to);
 
-      // Build expense maps — exclude income-keyed categories
       const nextTotals: Record<string, number> = {};
       const nextBudgets: Record<string, number> = {};
       const nextKeys: string[] = [];
@@ -431,7 +366,7 @@ export default function StatsScreen() {
       (catData ?? []).forEach((cat) => {
         const key = normalizeCategoryKey(cat.name);
         const emojiKey = normalizeCategoryKey(cat.emoji);
-        if (!key || INCOME_KEYS.has(emojiKey)) return; // skip income categories
+        if (!key || INCOME_KEYS.has(emojiKey)) return;
         nextKeys.push(key);
         nextTotals[key] = 0;
         nextBudgets[key] =
@@ -458,14 +393,11 @@ export default function StatsScreen() {
       setExpenseTotals(nextTotals);
       setExpenseBudgets(nextBudgets);
 
-      // Build income map by INCOME_CATEGORIES keys
       const nextIncomeTotals: Record<string, number> = {};
       INCOME_CATEGORIES.forEach((c) => {
         nextIncomeTotals[c.key] = 0;
       });
-
       (incomeTxData ?? []).forEach((tx) => {
-        // match by category name → income key
         const nameKey = normalizeCategoryKey(tx.category);
         const incDef = INCOME_CATEGORIES.find(
           (c) => c.name.toLowerCase() === nameKey || c.key === nameKey
@@ -488,13 +420,10 @@ export default function StatsScreen() {
     }, [fetchStats])
   );
 
-  // Reset donut selection when switching tabs
   const handleViewTypeSwitch = (type: 'expense' | 'income') => {
     setViewType(type);
     setActiveDonutIndex(-1);
   };
-
-  // ─── Expense derived ──────────────────────────────────────────────────────
 
   const totalExpenseSpent = Object.values(expenseTotals).reduce(
     (s, v) => s + v,
@@ -506,24 +435,18 @@ export default function StatsScreen() {
       ? Math.min((totalExpenseSpent / totalBudget) * 100, 100)
       : 0;
   const remaining = Math.max(totalBudget - totalExpenseSpent, 0);
-
-  // ─── Income derived ───────────────────────────────────────────────────────
-
   const totalIncome = Object.values(incomeTotals).reduce((s, v) => s + v, 0);
-  // Only income categories that actually received money (for donut)
   const incomeActiveKeys = INCOME_CATEGORIES.filter(
     (c) => (incomeTotals[c.key] ?? 0) > 0
   );
 
   // ─── SVG Donut segments ───────────────────────────────────────────────────
-
   const donutRadius = 60;
   const donutStrokeWidth = 14;
   const donutCircumference = 2 * Math.PI * donutRadius;
 
   const donutSegments = useMemo(() => {
     let cumulativeOffset = 0;
-
     if (viewType === 'expense') {
       return expenseCategoryKeys
         .filter((k) => expenseTotals[k] > 0)
@@ -549,13 +472,12 @@ export default function StatsScreen() {
           return segment;
         });
     }
-    // Income donut
     const denom = totalIncome > 0 ? totalIncome : 1;
     return incomeActiveKeys.map((incCat) => {
       const amount = incomeTotals[incCat.key] ?? 0;
       const strokeLength = (amount / denom) * donutCircumference;
       const gapLength = donutCircumference - strokeLength;
-      const color = CATEGORY_COLOR[incCat.key] ?? '#888780';
+      const color = CATEGORY_COLOR[incCat.key] ?? colors.textSecondary;
       const segment = {
         key: incCat.key,
         color,
@@ -576,6 +498,7 @@ export default function StatsScreen() {
     incomeActiveKeys,
     incomeTotals,
     donutCircumference,
+    colors.textSecondary,
   ]);
 
   const selectedDonut =
@@ -583,7 +506,6 @@ export default function StatsScreen() {
   const selectedCategory = selectedDonut?.key ?? null;
 
   // ─── PAN RESPONDER ────────────────────────────────────────────────────────
-
   const activeDonutIndexRef = useRef(activeDonutIndex);
   const startIndexRef = useRef(activeDonutIndex);
   const segmentsLengthRef = useRef(donutSegments.length);
@@ -649,7 +571,6 @@ export default function StatsScreen() {
   ).current;
 
   // ─── Donut center text ────────────────────────────────────────────────────
-
   let centerPctText: string;
   let centerSubText: string;
   let centerTextColor = colors.textPrimary;
@@ -685,13 +606,14 @@ export default function StatsScreen() {
   const selectedThemeColor = selectedDonut?.color ?? null;
 
   // ─── Renderers ────────────────────────────────────────────────────────────
-
   const renderExpenseCategoryRow = (catKey: string) => {
     const meta = expenseCategoryMeta[catKey];
     const title = meta?.label ?? catKey;
     const theme = CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other;
     const color = meta?.textColor ?? theme.nameColor;
-    const bg = meta?.tileBg ?? theme.badgeBg;
+    const rawBg = meta?.tileBg ?? theme.badgeBg;
+    const bg = isDark ? colors.surfaceSubdued : rawBg; // Soften background for dark mode
+
     const iconKey = catKey;
     const catSpent = expenseTotals[catKey] || 0;
     const catBudget =
@@ -713,7 +635,13 @@ export default function StatsScreen() {
         }
         style={styles.progRow}
       >
-        <LinearGradient colors={[bg, bg]} style={styles.catIconWrap}>
+        <LinearGradient
+          colors={isDark ? ['transparent', 'transparent'] : [bg, bg]}
+          style={[
+            styles.catIconWrap,
+            isDark && { borderWidth: 1, borderColor: colors.border },
+          ]}
+        >
           <CategoryIcon
             categoryKey={iconKey}
             color={activeTextColor}
@@ -761,12 +689,16 @@ export default function StatsScreen() {
     const theme = INCOME_THEME[incKey] ?? INCOME_THEME.default;
     const amount = incomeTotals[incKey] || 0;
     const pct = totalIncome > 0 ? (amount / totalIncome) * 100 : 0;
+    const bg = isDark ? colors.surfaceSubdued : theme.badgeBg;
 
     return (
       <View key={incKey} style={styles.progRow}>
         <LinearGradient
-          colors={[theme.badgeBg, theme.badgeBg]}
-          style={styles.catIconWrap}
+          colors={isDark ? ['transparent', 'transparent'] : [bg, bg]}
+          style={[
+            styles.catIconWrap,
+            isDark && { borderWidth: 1, borderColor: colors.border },
+          ]}
         >
           <CategoryIcon
             categoryKey={incKey}
@@ -781,9 +713,7 @@ export default function StatsScreen() {
               {incDef.name}
             </Text>
             <View style={styles.progMetaWrap}>
-              <View
-                style={[styles.progBadge, { backgroundColor: theme.badgeBg }]}
-              >
+              <View style={[styles.progBadge, { backgroundColor: bg }]}>
                 <Text
                   style={[styles.progBadgeText, { color: theme.nameColor }]}
                 >
@@ -812,8 +742,6 @@ export default function StatsScreen() {
   };
 
   const monthLabel = `${MONTH_NAMES[selectedMonth].slice(0, 3)} ${selectedYear}`;
-
-  // Expense card labels
   const expSpentLabel =
     selectedCategory && viewType === 'expense'
       ? `Spent · ${expenseCategoryMeta[selectedCategory]?.label ?? selectedCategory}`
@@ -835,7 +763,6 @@ export default function StatsScreen() {
         )
       : remaining;
 
-  // Income card labels
   const selIncDef = selectedCategory
     ? INCOME_CATEGORIES.find((c) => c.key === selectedCategory)
     : null;
@@ -860,11 +787,9 @@ export default function StatsScreen() {
           </View>
           <Skeleton width={92} height={32} borderRadius={999} />
         </View>
-
         <View style={styles.toggleRow}>
           <Skeleton width="100%" height={28} borderRadius={10} />
         </View>
-
         <View style={styles.loadingOverallCard}>
           <View style={styles.loadingDonutRow}>
             <Skeleton width={132} height={132} borderRadius={66} />
@@ -873,7 +798,6 @@ export default function StatsScreen() {
               <Skeleton width={88} height={12} />
             </View>
           </View>
-
           <View style={styles.loadingMetricRow}>
             <View style={styles.loadingMetricCol}>
               <Skeleton width={84} height={11} style={{ marginBottom: 8 }} />
@@ -885,10 +809,8 @@ export default function StatsScreen() {
               <Skeleton width={96} height={18} />
             </View>
           </View>
-
           <Skeleton width={168} height={11} style={{ marginTop: 12 }} />
         </View>
-
         <Skeleton width={88} height={11} style={{ marginBottom: 12 }} />
         <View style={{ marginBottom: 16 }}>
           {Array.from({ length: 5 }).map((_, index) => (
@@ -909,7 +831,6 @@ export default function StatsScreen() {
             </View>
           ))}
         </View>
-
         <View style={styles.loadingInsightCard}>
           <Skeleton
             width={36}
@@ -944,8 +865,6 @@ export default function StatsScreen() {
               : `₱${totalIncome.toLocaleString('en-PH', { minimumFractionDigits: 2 })} received`}
           </Text>
         </View>
-
-        {/* Green pill — same as Transactions screen */}
         <TouchableOpacity
           style={styles.monthPill}
           activeOpacity={0.7}
@@ -1009,7 +928,6 @@ export default function StatsScreen() {
           }
         }}
       >
-        {/* eslint-disable-next-line react/jsx-props-no-spreading */}
         <View {...panResponder.panHandlers} style={styles.donutContainer}>
           <Svg width={160} height={160} viewBox="0 0 160 160">
             <G transform="rotate(-90, 80, 80)">
@@ -1017,7 +935,7 @@ export default function StatsScreen() {
                 cx="80"
                 cy="80"
                 r={donutRadius}
-                stroke="rgba(30,30,46,0.06)"
+                stroke={isDark ? '#333333' : 'rgba(30,30,46,0.06)'}
                 strokeWidth={donutStrokeWidth}
                 fill="transparent"
               />
@@ -1051,7 +969,12 @@ export default function StatsScreen() {
             <Text
               style={[
                 styles.donutCenterSub,
-                { color: activeDonutIndex >= 0 ? centerTextColor : '#6B6B7A' },
+                {
+                  color:
+                    activeDonutIndex >= 0
+                      ? centerTextColor
+                      : colors.textSecondary,
+                },
               ]}
             >
               {centerSubText.charAt(0).toUpperCase() + centerSubText.slice(1)}
@@ -1162,13 +1085,13 @@ export default function StatsScreen() {
         onPress={() => navigation.navigate('ChatScreen')}
       >
         <LinearGradient
-          colors={['#F0ECFD', '#EBF2EE']}
+          colors={[colors.lavenderLight, colors.primaryLight]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.insightCard}
         >
           <View style={styles.insightAvatar}>
-            <Text style={styles.insightAvatarIcon}>✦</Text>
+            <Ionicons name="sparkles" size={16} color={colors.lavenderDark} />
           </View>
           <View style={styles.insightBody}>
             <Text style={styles.insightLabel}>Fino Intelligence</Text>
@@ -1185,7 +1108,6 @@ export default function StatsScreen() {
         </LinearGradient>
       </TouchableOpacity>
 
-      {/* ─── MONTH PICKER ─── */}
       <MonthPickerModal
         visible={monthPickerVisible}
         year={selectedYear}
@@ -1204,309 +1126,369 @@ export default function StatsScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.screenPadding, paddingBottom: 100 },
+const createPickerStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.4)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    card: {
+      backgroundColor: colors.white,
+      borderRadius: 20,
+      padding: 24,
+      width: 300,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.15,
+      shadowRadius: 20,
+      elevation: 8,
+    },
+    title: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 17,
+      color: colors.textPrimary,
+      textAlign: 'center',
+      marginBottom: 20,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 24,
+    },
+    arrow: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.catTileEmptyBg,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    monthLabel: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 18,
+      color: colors.textPrimary,
+    },
+    actions: { flexDirection: 'row', gap: 10 },
+    cancelBtn: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+      alignItems: 'center',
+    },
+    cancelText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    confirmBtn: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+    },
+    confirmText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: '#fff',
+    },
+  });
 
-  header: {
-    paddingTop: 16,
-    paddingBottom: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 24,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  headerSub: { fontSize: 13, color: '#6B6B7A' },
-
-  // Green pill — matches Transactions screen
-  monthPill: {
-    backgroundColor: '#EFF8F2',
-    borderWidth: 1,
-    borderColor: '#2d6a4f',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  monthPillText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    color: '#2d6a4f',
-  },
-
-  // Income/Expense toggle
-  toggleRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    backgroundColor: '#F0EFEA',
-    borderRadius: 12,
-    padding: 3,
-  },
-  toggleBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  toggleBtnExpenseActive: { backgroundColor: '#C0503A' },
-  toggleBtnIncomeActive: { backgroundColor: '#2d6a4f' },
-  toggleBtnText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  toggleBtnTextActive: { color: '#fff' },
-
-  overallCard: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: 'rgba(30,30,46,0.08)',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  donutContainer: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  donutCenterText: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  donutCenterPct: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 28,
-    fontWeight: '800',
-  },
-  donutCenterSub: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-
-  budgetMetrics: { width: '100%', alignItems: 'center', marginBottom: 6 },
-  budgetMetricsRow: {
-    flexDirection: 'row',
-    width: '100%',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  metricCol: { alignItems: 'center' },
-  metricLabel: {
-    fontSize: 11,
-    color: '#6B6B7A',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  metricVal: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  metricDivider: {
-    width: 1,
-    height: '100%',
-    backgroundColor: 'rgba(30,30,46,0.08)',
-  },
-  tapHint: {
-    marginTop: 12,
-    fontSize: 11,
-    color: '#A0A0AA',
-    fontFamily: 'Inter_500Medium',
-  },
-
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#6B6B7A',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    paddingVertical: 12,
-  },
-  loadingWrap: { paddingVertical: 16, alignItems: 'center' },
-  loadingText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  loadingHeader: {
-    paddingTop: 16,
-    paddingBottom: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  loadingOverallCard: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: 'rgba(30,30,46,0.08)',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  loadingDonutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    gap: 18,
-  },
-  loadingDonutText: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingMetricRow: {
-    flexDirection: 'row',
-    width: '100%',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  loadingMetricCol: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  loadingProgRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  loadingProgContent: {
-    flex: 1,
-  },
-  loadingProgHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  loadingInsightCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(201,184,245,0.35)',
-    padding: 16,
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-start',
-    backgroundColor: '#F0ECFD',
-  },
-  emptyText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-
-  progRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  catIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  progRowContent: { flex: 1 },
-  chevron: {
-    fontSize: 20,
-    color: 'rgba(30,30,46,0.2)',
-    paddingLeft: 12,
-    marginBottom: 8,
-  },
-  progHd: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  progName: { fontFamily: 'Nunito_700Bold', fontSize: 15, fontWeight: '700' },
-  progMetaWrap: { flexDirection: 'row', alignItems: 'center' },
-  progBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 20,
-    marginRight: 6,
-  },
-  progBadgeText: { fontSize: 10, fontWeight: '700' },
-  progMeta: { fontFamily: 'DMMono_400Regular', fontSize: 11, color: '#6B6B7A' },
-  progTrack: {
-    height: 6,
-    backgroundColor: 'rgba(30,30,46,0.06)',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progFillBar: { height: '100%', borderRadius: 4 },
-
-  insightWrap: { marginBottom: 16 },
-  insightCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(201,184,245,0.35)',
-    padding: 16,
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-start',
-  },
-  insightAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F0ECFD',
-    borderWidth: 1,
-    borderColor: '#C9B8F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  insightAvatarIcon: { fontSize: 15, color: '#4B2DA3' },
-  insightBody: { flex: 1 },
-  insightLabel: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    color: '#4B2DA3',
-    textTransform: 'uppercase',
-    letterSpacing: 0.7,
-    marginBottom: 4,
-  },
-  insightHeadline: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 14,
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  insightSub: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 18,
-    marginBottom: 10,
-  },
-  insightChip: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#F0ECFD',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#C9B8F5',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-  },
-  insightChipText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    color: '#4B2DA3',
-    textTransform: 'uppercase',
-  },
-});
+const createStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    content: { padding: spacing.screenPadding, paddingBottom: 100 },
+    header: {
+      paddingTop: 16,
+      paddingBottom: 16,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    headerTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 24,
+      fontWeight: '800',
+      color: colors.textPrimary,
+      marginBottom: 2,
+    },
+    headerSub: { fontSize: 13, color: colors.textSecondary },
+    monthPill: {
+      backgroundColor: colors.primaryLight25,
+      borderWidth: 1,
+      borderColor: colors.onTrackBorder,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+    },
+    monthPillText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.primary,
+    },
+    toggleRow: {
+      flexDirection: 'row',
+      marginBottom: 16,
+      backgroundColor: isDark ? '#2A2A2A' : '#F0EFEA',
+      borderRadius: 12,
+      padding: 3,
+    },
+    toggleBtn: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    toggleBtnExpenseActive: { backgroundColor: colors.expenseRed },
+    toggleBtnIncomeActive: { backgroundColor: colors.incomeGreen },
+    toggleBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    toggleBtnTextActive: { color: '#fff' },
+    overallCard: {
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'rgba(30,30,46,0.08)',
+      borderRadius: 24,
+      padding: 20,
+      marginBottom: 16,
+      alignItems: 'center',
+    },
+    donutContainer: {
+      position: 'relative',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 20,
+    },
+    donutCenterText: {
+      position: 'absolute',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    donutCenterPct: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 28,
+      fontWeight: '800',
+    },
+    donutCenterSub: {
+      fontSize: 12,
+      fontWeight: '600',
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    budgetMetrics: { width: '100%', alignItems: 'center', marginBottom: 6 },
+    budgetMetricsRow: {
+      flexDirection: 'row',
+      width: '100%',
+      justifyContent: 'space-around',
+      alignItems: 'center',
+    },
+    metricCol: { alignItems: 'center' },
+    metricLabel: {
+      fontSize: 11,
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      marginBottom: 4,
+    },
+    metricVal: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 18,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    metricDivider: {
+      width: 1,
+      height: '100%',
+      backgroundColor: isDark ? '#333333' : 'rgba(30,30,46,0.08)',
+    },
+    tapHint: {
+      marginTop: 12,
+      fontSize: 11,
+      color: colors.textSecondary,
+      fontFamily: 'Inter_500Medium',
+    },
+    sectionLabel: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+      paddingVertical: 12,
+    },
+    loadingWrap: { paddingVertical: 16, alignItems: 'center' },
+    loadingText: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    loadingHeader: {
+      paddingTop: 16,
+      paddingBottom: 16,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    loadingOverallCard: {
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'rgba(30,30,46,0.08)',
+      borderRadius: 24,
+      padding: 20,
+      marginBottom: 16,
+      alignItems: 'center',
+    },
+    loadingDonutRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 20,
+      gap: 18,
+    },
+    loadingDonutText: { alignItems: 'center', justifyContent: 'center' },
+    loadingMetricRow: {
+      flexDirection: 'row',
+      width: '100%',
+      justifyContent: 'space-around',
+      alignItems: 'center',
+    },
+    loadingMetricCol: { flex: 1, alignItems: 'center' },
+    loadingProgRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 20,
+    },
+    loadingProgContent: { flex: 1 },
+    loadingProgHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    loadingInsightCard: {
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.insightCardBorder,
+      padding: 16,
+      flexDirection: 'row',
+      gap: 12,
+      alignItems: 'flex-start',
+      backgroundColor: colors.lavenderLight,
+    },
+    emptyText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      paddingVertical: 20,
+    },
+    progRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+    catIconWrap: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    progRowContent: { flex: 1 },
+    chevron: {
+      fontSize: 20,
+      color: 'rgba(138,138,154,0.4)',
+      paddingLeft: 12,
+      marginBottom: 8,
+    },
+    progHd: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    progName: { fontFamily: 'Nunito_700Bold', fontSize: 15, fontWeight: '700' },
+    progMetaWrap: { flexDirection: 'row', alignItems: 'center' },
+    progBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 20,
+      marginRight: 6,
+    },
+    progBadgeText: { fontSize: 10, fontWeight: '700' },
+    progMeta: {
+      fontFamily: 'DMMono_400Regular',
+      fontSize: 11,
+      color: colors.textSecondary,
+    },
+    progTrack: {
+      height: 6,
+      backgroundColor: isDark ? '#333333' : 'rgba(30,30,46,0.06)',
+      borderRadius: 4,
+      overflow: 'hidden',
+    },
+    progFillBar: { height: '100%', borderRadius: 4 },
+    insightWrap: { marginBottom: 16 },
+    insightCard: {
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.insightCardBorder,
+      padding: 16,
+      flexDirection: 'row',
+      gap: 12,
+      alignItems: 'flex-start',
+    },
+    insightAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.lavenderLight,
+      borderWidth: 1,
+      borderColor: colors.lavender,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    insightAvatarIcon: { fontSize: 15, color: colors.lavenderDark },
+    insightBody: { flex: 1 },
+    insightLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.lavenderDark,
+      textTransform: 'uppercase',
+      letterSpacing: 0.7,
+      marginBottom: 4,
+    },
+    insightHeadline: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 14,
+      color: colors.textPrimary,
+      marginBottom: 4,
+    },
+    insightSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+      lineHeight: 18,
+      marginBottom: 10,
+    },
+    insightChip: {
+      alignSelf: 'flex-start',
+      backgroundColor: colors.lavenderLight,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.lavender,
+      paddingVertical: 5,
+      paddingHorizontal: 10,
+    },
+    insightChipText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.lavenderDark,
+      textTransform: 'uppercase',
+    },
+  });
