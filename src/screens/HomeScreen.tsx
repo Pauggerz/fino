@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import Svg, { Path as SvgPath } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSync } from '@/contexts/SyncContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -415,6 +416,7 @@ export default function HomeScreen() {
               activeOpacity={0.7}
               onPress={() => navigation.navigate('more')}
               style={styles.unifiedSeeAll}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.seeAll}>See all →</Text>
             </TouchableOpacity>
@@ -489,12 +491,14 @@ export default function HomeScreen() {
                     <View style={styles.catBadgeWrap}>
                       {isOver ? (
                         <View style={styles.catOverBadge}>
-                          <Text style={[styles.catOverBadgeText, { color: solidColor }]}>Over!</Text>
+                          <Text style={styles.catOverBadgeText}>Over!</Text>
                         </View>
                       ) : (
-                        <Text style={[styles.catPctBadge, { color: solidColor }]}>
-                          {Math.round(cat.pct * 100)}%
-                        </Text>
+                        <View style={[styles.catPctPill, { backgroundColor: `${solidColor}18` }]}>
+                          <Text style={[styles.catPctBadge, { color: solidColor }]}>
+                            {Math.round(cat.pct * 100)}%
+                          </Text>
+                        </View>
                       )}
                     </View>
 
@@ -519,9 +523,14 @@ export default function HomeScreen() {
               style={styles.insightWrap}
               onPress={() => navigation.navigate('ChatScreen')}
             >
-              <View style={styles.insightCard}>
+              <LinearGradient
+                colors={[colors.lavenderLight, colors.primaryLight]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.insightCard}
+              >
                 <View style={styles.insightAvatar}>
-                  <Text style={styles.insightAvatarIcon}>✦</Text>
+                  <Ionicons name="sparkles" size={16} color={colors.lavenderDark} />
                 </View>
 
                 <View style={styles.insightBody}>
@@ -533,7 +542,7 @@ export default function HomeScreen() {
                     <Text style={styles.insightChipText}>Ask Fino →</Text>
                   </View>
                 </View>
-              </View>
+              </LinearGradient>
             </TouchableOpacity>
           )}
         </View>
@@ -661,7 +670,15 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1.2,
   },
-  unifiedSeeAll: { marginLeft: 4 },
+  unifiedSeeAll: {
+    marginLeft: 4,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
   frostScroll: {
     paddingHorizontal: 20,
     gap: 10,
@@ -740,8 +757,8 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   heroColVal: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 15,
+    fontFamily: 'Nunito_700Bold',
+    fontSize: 17,
     color: colors.white,
   },
   // ── Accounts section ────────────────────────────────────────────────────────
@@ -791,14 +808,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   catBadgeWrap: { position: 'absolute', top: 10, right: 10 },
-  catPctBadge: { fontFamily: 'Inter_700Bold', fontSize: 10 },
-  catOverBadge: {
-    backgroundColor: 'rgba(192,80,58,0.12)',
+  catPctPill: {
     borderRadius: 6,
     paddingVertical: 2,
     paddingHorizontal: 5,
   },
-  catOverBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10 },
+  catPctBadge: { fontFamily: 'Inter_700Bold', fontSize: 11 },
+  catOverBadge: {
+    backgroundColor: colors.coralLight,
+    borderRadius: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(200,80,58,0.3)',
+  },
+  catOverBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10, color: colors.coralDark },
   catIconCircle: {
     position: 'absolute',
     top: 14,
@@ -812,14 +836,13 @@ const styles = StyleSheet.create({
   catName: { fontFamily: 'Nunito_800ExtraBold', fontSize: 12, marginBottom: 1 },
   catAmt: { fontFamily: 'DMMono_500Medium', fontSize: 11 },
   belowCard: {
-    marginTop: 24,
+    marginTop: 32,
   },
   insightWrap: { paddingHorizontal: 20, marginTop: 8, marginBottom: 16 },
   insightCard: {
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(91,140,110,0.15)',
-    backgroundColor: 'rgba(235,242,238,0.6)',
+    borderColor: colors.insightCardBorder,
     padding: 16,
     flexDirection: 'row',
     gap: 12,
@@ -829,19 +852,18 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(91,140,110,0.12)',
+    backgroundColor: colors.lavenderLight,
     borderWidth: 1,
-    borderColor: 'rgba(91,140,110,0.25)',
+    borderColor: colors.lavender,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  insightAvatarIcon: { fontSize: 15, color: colors.primary },
   insightBody: { flex: 1 },
   insightLabel: {
     fontFamily: 'Inter_700Bold',
     fontSize: 10,
-    color: colors.primaryDark,
+    color: colors.lavenderDark,
     textTransform: 'uppercase',
     letterSpacing: 0.7,
     marginBottom: 4,
@@ -861,16 +883,17 @@ const styles = StyleSheet.create({
   },
   insightChip: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(91,140,110,0.12)',
+    backgroundColor: colors.lavenderLight,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(91,140,110,0.25)',
+    borderColor: colors.lavender,
     paddingVertical: 5,
     paddingHorizontal: 12,
   },
   insightChipText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 12,
-    color: colors.primaryDark,
+    color: colors.lavenderDark,
+    textTransform: 'uppercase',
   },
 });
