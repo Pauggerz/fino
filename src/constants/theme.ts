@@ -3,7 +3,7 @@ export const colors = {
   primary: '#5B8C6E', // --p
   primaryDark: '#3f6b52', // --pd
   primaryLight: '#EBF2EE', // --pl
-  background: '#F7F5F2', // --bg
+  background: '#F5F0E8', // --bg warm parchment
   white: '#FFFFFF',
   // Accent
   coral: '#E8856A', // --coral

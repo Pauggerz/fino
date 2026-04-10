@@ -1,36 +1,34 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { useSync } from '@/contexts/SyncContext';
-
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   Animated,
-  Button,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+import Svg, { Path as SvgPath } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { colors } from '../constants/theme';
+import { useSync } from '@/contexts/SyncContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
-import {
-  ACCOUNT_LOGOS,
-  ACCOUNT_AVATAR_OVERRIDE,
-} from '../constants/accountLogos';
-import { isNegativeBalance, BALANCE_ANIMATE_MS } from '../services/balanceCalc';
+import Toast from '../components/Toast';
+import WalletCard, { CARD_WIDTH, CARD_HEIGHT } from '../components/WalletCard';
+import { colors } from '../constants/theme';
+import { BALANCE_ANIMATE_MS } from '../services/balanceCalc';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
-import Toast from '../components/Toast';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const USER_NAME = 'Christian';
+const CARD_SCALE = 0.78;
+const SCALED_CARD_W = Math.round(CARD_WIDTH * CARD_SCALE);
+const SCALED_CARD_H = Math.round(CARD_HEIGHT * CARD_SCALE);
+
 const SPARKLINE = [
   { id: 'day0', val: 0.38 },
   { id: 'day1', val: 0.6 },
@@ -66,12 +64,85 @@ function onTrackLabel(pct: number): string {
   return 'Over budget';
 }
 
+// ─── WaveFill ─────────────────────────────────────────────────────────────────
+
+const TILE_W = 160;
+const TILE_H = 120;
+// SVG must be wide enough that translating by -TILE_W never exposes a gap.
+// 4× gives plenty of headroom.
+const WAVE_SVG_W = TILE_W * 4;
+
+/**
+ * Builds a filled wave path using quadratic beziers.
+ * Wavelength = TILE_W, so translating by -TILE_W is a seamless loop.
+ */
+function makeWavePath(yBase: number, amp: number): string {
+  const halfWl = TILE_W / 2; // half-wavelength = one arc
+  const numArcs = (WAVE_SVG_W / halfWl) + 2; // a couple extra for safety
+  let d = `M 0 ${yBase}`;
+  for (let i = 0; i < numArcs; i++) {
+    const x0 = i * halfWl;
+    const xMid = x0 + halfWl / 2;
+    const x1 = x0 + halfWl;
+    const yPeak = i % 2 === 0 ? yBase - amp : yBase + amp;
+    d += ` Q ${xMid} ${yPeak} ${x1} ${yBase}`;
+  }
+  d += ` L ${WAVE_SVG_W + halfWl} ${TILE_H} L 0 ${TILE_H} Z`;
+  return d;
+}
+
+function WaveFill({ pct, color }: { pct: number; color: string }) {
+  const anim1 = useRef(new Animated.Value(0)).current;
+  const anim2 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(anim1, { toValue: 1, duration: 3000, useNativeDriver: true })
+    ).start();
+    Animated.loop(
+      Animated.timing(anim2, { toValue: 1, duration: 4600, useNativeDriver: true })
+    ).start();
+  }, [anim1, anim2]);
+
+  const clampedPct = Math.min(Math.max(pct, 0), 1);
+  const yBase = TILE_H - TILE_H * clampedPct;
+
+  // Translate exactly one wavelength — start and end frames are identical → no snap
+  const tx1 = anim1.interpolate({ inputRange: [0, 1], outputRange: [0, -TILE_W] });
+  const tx2 = anim2.interpolate({ inputRange: [0, 1], outputRange: [0, -TILE_W] });
+
+  const waveStyle = {
+    position: 'absolute' as const,
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: WAVE_SVG_W,
+  };
+
+  return (
+    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
+      {/* Back wave — slower, subtler */}
+      <Animated.View style={[waveStyle, { transform: [{ translateX: tx2 }] }]}>
+        <Svg width={WAVE_SVG_W} height={TILE_H}>
+          <SvgPath d={makeWavePath(yBase + 6, 8)} fill={color} opacity={0.18} />
+        </Svg>
+      </Animated.View>
+      {/* Front wave — faster, more opaque */}
+      <Animated.View style={[waveStyle, { transform: [{ translateX: tx1 }] }]}>
+        <Svg width={WAVE_SVG_W} height={TILE_H}>
+          <SvgPath d={makeWavePath(yBase, 10)} fill={color} opacity={0.42} />
+        </Svg>
+      </Animated.View>
+    </View>
+  );
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   // 👇 Pull in the new syncVersion 👇
-  const { status: syncStatus, syncVersion } = useSync(); 
+  const { status: syncStatus, syncVersion } = useSync();
 
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
   const { categories, refetch: refetchCategories } = useCategories();
@@ -93,10 +164,14 @@ export default function HomeScreen() {
   // Exact requested color logic
   const getSyncColor = () => {
     switch (syncStatus) {
-      case 'synced': return '#10B981'; // Green (Online, Everything saved)
-      case 'syncing': return '#F59E0B'; // Orange (Actively pushing to database)
-      case 'offline': return '#EF4444'; // Red (No connection)
-      default: return '#10B981';
+      case 'synced':
+        return '#10B981'; // Green (Online, Everything saved)
+      case 'syncing':
+        return '#F59E0B'; // Orange (Actively pushing to database)
+      case 'offline':
+        return '#EF4444'; // Red (No connection)
+      default:
+        return '#10B981';
     }
   };
 
@@ -105,9 +180,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const getMyId = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      await supabase.auth.getUser();
     };
     getMyId();
   }, []);
@@ -132,7 +205,9 @@ export default function HomeScreen() {
   const [toastIsUndo, setToastIsUndo] = useState(false);
   const [undoTxId, setUndoTxId] = useState<string | null>(null);
   const [undoAccountId, setUndoAccountId] = useState<string | null>(null);
-  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(null);
+  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(
+    null
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -208,20 +283,26 @@ export default function HomeScreen() {
         <View style={styles.greeting}>
           <View style={styles.greetingTop}>
             <View style={styles.greetingLeft}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginBottom: 6,
+                }}
+              >
                 <Text style={[styles.greetingPill, { marginBottom: 0 }]}>
                   {greetText} {greetEmoji}
                 </Text>
                 {/* Sync Status Dot */}
-                <View 
+                <View
                   style={{
                     width: 8,
                     height: 8,
                     borderRadius: 4,
                     backgroundColor: getSyncColor(),
                     marginLeft: 8,
-                    marginTop: 2
-                  }} 
+                    marginTop: 2,
+                  }}
                 />
               </View>
               <Text style={styles.greetingName}>
@@ -248,12 +329,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.onTrackWrap}>
-          <LinearGradient
-            colors={['#EFF8F2', '#d4eddf']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.onTrackPill}
-          >
+          <View style={styles.onTrackPill}>
             <View style={styles.sparkline}>
               {SPARKLINE.map((bar, i) => (
                 <View
@@ -278,99 +354,87 @@ export default function HomeScreen() {
                 {daysLeft} days left · {fmtPeso(monthlyExpense)} spent
               </Text>
             </View>
-          </LinearGradient>
-        </View>
-
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={styles.heroWrap}
-          onPress={() => navigation.navigate('stats')}
-        >
-          <View style={styles.heroCard}>
-            <View style={StyleSheet.absoluteFill}>
-              <LinearGradient
-                colors={['rgba(168,213,181,0.6)', 'transparent']}
-                style={[
-                  styles.blob,
-                  { top: -40, right: -30, width: 140, height: 140 },
-                ]}
-              />
-              <LinearGradient
-                colors={['rgba(255,255,255,0.3)', 'transparent']}
-                style={[
-                  styles.blob,
-                  { bottom: -20, left: -20, width: 100, height: 100 },
-                ]}
-              />
-              <LinearGradient
-                colors={['rgba(91,140,110,0.5)', 'transparent']}
-                style={[
-                  styles.blob,
-                  { top: 20, left: '45%', width: 80, height: 80 },
-                ]}
-              />
-              <BlurView
-                intensity={60}
-                tint="dark"
-                style={StyleSheet.absoluteFill}
-              />
-            </View>
-
-            <View style={styles.glassPanel}>
-              <View style={styles.heroChip}>
-                <Text style={styles.heroChipText}>
-                  {new Date().toLocaleDateString('en-US', {
-                    month: 'long',
-                    year: 'numeric',
-                  })}
-                </Text>
-              </View>
-
-              <Text style={styles.heroLabel}>Total balance</Text>
-
-              <View style={styles.heroAmountRow}>
-                <Text style={styles.heroCurr}>₱</Text>
-                <Text style={styles.heroAmount}>
-                  {displayBalance.toLocaleString('en-PH', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </Text>
-              </View>
-
-              <View style={styles.trendBadge}>
-                <Text style={styles.trendText}>{deltaLabel}</Text>
-              </View>
-
-              <View style={styles.heroRow}>
-                <View style={[styles.heroCol, styles.heroColBorder]}>
-                  <Text style={styles.heroColLabel}>Income</Text>
-                  <Text style={styles.heroColVal}>+{fmtPeso(totalIncome)}</Text>
-                </View>
-                <View style={styles.heroCol}>
-                  <Text style={styles.heroColLabel}>Spent</Text>
-                  <Text style={styles.heroColVal}>
-                    −{fmtPeso(monthlyExpense)}
-                  </Text>
-                </View>
-              </View>
-            </View>
           </View>
-        </TouchableOpacity>
-
-        <View style={styles.sectionLabelRow}>
-          <View style={styles.sectionDot} />
-          <Text style={styles.sectionLabel}>Accounts</Text>
         </View>
 
-        <View style={styles.acctGrid}>
-          {accounts.map((acc) => {
-            const neg = isNegativeBalance(acc.balance);
-            return (
+        {/* ── Unified dark card: balance + accounts ── */}
+        <View style={styles.unifiedCard}>
+          {/* Ambient blobs */}
+          <LinearGradient
+            colors={['rgba(168,213,181,0.45)', 'transparent']}
+            style={[styles.blob, { top: -30, right: -20, width: 160, height: 160 }]}
+          />
+          <LinearGradient
+            colors={['rgba(91,140,110,0.4)', 'transparent']}
+            style={[styles.blob, { bottom: 80, left: -20, width: 110, height: 110 }]}
+          />
+
+          {/* ── Balance section ── */}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('stats')}
+            style={styles.balanceSection}
+          >
+            <View style={styles.heroChip}>
+              <Text style={styles.heroChipText}>
+                {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </Text>
+            </View>
+
+            <Text style={styles.heroLabel}>Total balance</Text>
+
+            <View style={styles.heroAmountRow}>
+              <Text style={styles.heroCurr}>₱</Text>
+              <Text style={styles.heroAmount}>
+                {displayBalance.toLocaleString('en-PH', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </Text>
+            </View>
+
+            <View style={styles.trendBadge}>
+              <Text style={styles.trendText}>{deltaLabel}</Text>
+            </View>
+
+            <View style={styles.heroRow}>
+              <View style={[styles.heroCol, styles.heroColBorder]}>
+                <Text style={styles.heroColLabel}>Income</Text>
+                <Text style={styles.heroColVal}>+{fmtPeso(totalIncome)}</Text>
+              </View>
+              <View style={styles.heroCol}>
+                <Text style={styles.heroColLabel}>Spent</Text>
+                <Text style={styles.heroColVal}>−{fmtPeso(monthlyExpense)}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {/* ── Hairline divider + accounts label ── */}
+          <View style={styles.unifiedDividerRow}>
+            <View style={styles.unifiedHairline} />
+            <Text style={styles.unifiedDividerLabel}>Accounts</Text>
+            <View style={styles.unifiedHairline} />
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => navigation.navigate('more')}
+              style={styles.unifiedSeeAll}
+            >
+              <Text style={styles.seeAll}>See all →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Scaled wallet cards ── */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.frostScroll}
+            snapToInterval={SCALED_CARD_W + 14}
+            decelerationRate="fast"
+          >
+            {accounts.map((acc) => (
               <TouchableOpacity
                 key={acc.id}
-                activeOpacity={0.8}
-                style={styles.acctCard}
+                activeOpacity={0.88}
                 onPress={() =>
                   navigation.navigate('more', {
                     screen: 'AccountDetail',
@@ -378,138 +442,101 @@ export default function HomeScreen() {
                   })
                 }
               >
-                {(() => {
-                  const logo = ACCOUNT_LOGOS[acc.name];
-                  const avatarLetter =
-                    ACCOUNT_AVATAR_OVERRIDE[acc.name] ?? acc.letter_avatar;
-                  return logo ? (
-                    <View style={styles.acctIconWrap}>
-                      <Image
-                        source={logo}
-                        style={styles.acctLogo}
-                        resizeMode="contain"
+                <View style={{ width: SCALED_CARD_W, height: SCALED_CARD_H, overflow: 'hidden', borderRadius: Math.round(22 * CARD_SCALE) }}>
+                  <View style={{
+                    width: CARD_WIDTH,
+                    height: CARD_HEIGHT,
+                    transform: [{ scale: CARD_SCALE }],
+                    left: -Math.round(CARD_WIDTH * (1 - CARD_SCALE) / 2),
+                    top: -Math.round(CARD_HEIGHT * (1 - CARD_SCALE) / 2),
+                  }}>
+                    <WalletCard account={acc} />
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* ── Budgets + insight, directly on background ── */}
+        <View style={styles.belowCard}>
+          {/* Monthly budgets */}
+          <View style={styles.acctHeader}>
+            <View style={styles.acctHeaderLeft}>
+              <View style={styles.sectionDot} />
+              <Text style={styles.sectionLabel}>Monthly budgets</Text>
+            </View>
+          </View>
+
+          <View style={styles.catGrid}>
+            {categories.map((cat) => {
+              const bgColor = cat.tile_bg_colour ?? '#F5F5F5';
+              const solidColor = cat.text_colour ?? colors.primary;
+              const isOver = cat.state === 'over';
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  activeOpacity={0.8}
+                  style={styles.catTileWrap}
+                  onPress={() => navigation.navigate('stats')}
+                >
+                  <View style={[styles.catTile, { backgroundColor: bgColor }]}>
+                    {/* Animated wave liquid fill in solid brand color */}
+                    <WaveFill pct={cat.pct} color={solidColor} />
+
+                    <View style={styles.catBadgeWrap}>
+                      {isOver ? (
+                        <View style={styles.catOverBadge}>
+                          <Text style={[styles.catOverBadgeText, { color: solidColor }]}>Over!</Text>
+                        </View>
+                      ) : (
+                        <Text style={[styles.catPctBadge, { color: solidColor }]}>
+                          {Math.round(cat.pct * 100)}%
+                        </Text>
+                      )}
+                    </View>
+
+                    <View style={[styles.catIconCircle, { backgroundColor: `${solidColor}22` }]}>
+                      <CategoryIcon
+                        categoryKey={cat.name.toLowerCase()}
+                        color={solidColor}
                       />
                     </View>
-                  ) : (
-                    <View
-                      style={[
-                        styles.acctIconWrap,
-                        { backgroundColor: acc.brand_colour },
-                      ]}
-                    >
-                      <Text style={styles.acctLetter}>{avatarLetter}</Text>
-                    </View>
-                  );
-                })()}
-                <Text style={styles.acctName}>{acc.name}</Text>
-                <Text
-                  style={[
-                    styles.acctBalance,
-                    neg && { color: colors.expenseRed },
-                  ]}
-                >
-                  {neg && <Text style={styles.negBang}>! </Text>}
-                  {fmtPeso(acc.balance)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
 
-        <View style={styles.sectionLabelRow}>
-          <View style={styles.sectionDot} />
-          <Text style={styles.sectionLabel}>Monthly budgets</Text>
-        </View>
+                    <Text style={[styles.catName, { color: solidColor }]}>{cat.name}</Text>
+                    <Text style={[styles.catAmt, { color: solidColor }]}>{fmtPeso(cat.spent)}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-        <View style={styles.catGrid}>
-          {categories.map((cat) => {
-            const bgColor = cat.tile_bg_colour ?? '#F5F5F5';
-            const textColor = cat.text_colour ?? colors.textPrimary;
-            const isOver = cat.state === 'over';
-            return (
+          {insight && (
+            <>
               <TouchableOpacity
-                key={cat.id}
-                activeOpacity={0.8}
-                style={styles.catTileWrap}
-                onPress={() => navigation.navigate('stats')}
+                activeOpacity={0.9}
+                style={styles.insightWrap}
+                onPress={() => navigation.navigate('ChatScreen')}
               >
-                <LinearGradient
-                  colors={[bgColor, bgColor]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.catTile}
-                >
-                  <View style={styles.catBadgeWrap}>
-                    {isOver ? (
-                      <View style={styles.catOverBadge}>
-                        <Text style={styles.catOverBadgeText}>Over!</Text>
-                      </View>
-                    ) : (
-                      <Text style={[styles.catPctBadge, { color: textColor }]}>
-                        {Math.round(cat.pct * 100)}%
-                      </Text>
-                    )}
+                <View style={styles.insightCard}>
+                  <View style={styles.insightAvatar}>
+                    <Text style={styles.insightAvatarIcon}>✦</Text>
                   </View>
 
-                  <View style={styles.catIconCircle}>
-                    <CategoryIcon
-                      categoryKey={cat.name.toLowerCase()}
-                      color={cat.text_colour ?? '#888780'}
-                    />
+                  <View style={styles.insightBody}>
+                    <Text style={styles.insightLabel}>Fino Intelligence</Text>
+                    <Text style={styles.insightHeadline}>{insight.headline}</Text>
+                    <Text style={styles.insightSub}>{insight.body}</Text>
+
+                    <View style={styles.insightChip}>
+                      <Text style={styles.insightChipText}>Ask Fino →</Text>
+                    </View>
                   </View>
-
-                  <Text style={[styles.catName, { color: textColor }]}>
-                    {cat.name}
-                  </Text>
-                  <Text style={[styles.catAmt, { color: textColor }]}>
-                    {fmtPeso(cat.spent)}
-                  </Text>
-
-                  <View style={styles.catBarTrack}>
-                    <View
-                      style={[
-                        styles.catBarFill,
-                        {
-                          width: `${cat.pct * 100}%` as any,
-                          backgroundColor: textColor,
-                        },
-                      ]}
-                    />
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {insight && (
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={styles.insightWrap}
-            onPress={() => navigation.navigate('ChatScreen')}
-          >
-            <LinearGradient
-              colors={['#F0ECFD', '#EBF2EE']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.insightCard}
-            >
-              <View style={styles.insightAvatar}>
-                <Text style={styles.insightAvatarIcon}>✦</Text>
-              </View>
-
-              <View style={styles.insightBody}>
-                <Text style={styles.insightLabel}>Fino Intelligence</Text>
-                <Text style={styles.insightHeadline}>{insight.headline}</Text>
-                <Text style={styles.insightSub}>{insight.body}</Text>
-
-                <View style={styles.insightChip}>
-                  <Text style={styles.insightChipText}>Ask Fino →</Text>
                 </View>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </ScrollView>
 
       <Toast
@@ -570,7 +597,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     borderWidth: 1,
-    borderColor: 'rgba(45,106,79,0.15)',
+    borderColor: 'rgba(91,140,110,0.2)',
+    backgroundColor: 'rgba(235,242,238,0.7)',
   },
   sparkline: {
     flexDirection: 'row',
@@ -591,29 +619,113 @@ const styles = StyleSheet.create({
     color: colors.onTrackSub,
     marginTop: 1,
   },
-  heroWrap: { paddingHorizontal: 20, marginBottom: 20 },
-  heroCard: {
-    backgroundColor: '#2a4f3a',
+  // ── Unified dark card ────────────────────────────────────────────────────────
+  unifiedCard: {
+    marginHorizontal: 20,
+    marginBottom: 0,
+    backgroundColor: '#1e3d2f',
     borderRadius: 28,
     overflow: 'hidden',
-    padding: 20,
-    shadowColor: '#1a3028',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 40,
-    elevation: 10,
+    paddingTop: 20,
+    paddingBottom: 16,
+    shadowColor: '#0f2419',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.45,
+    shadowRadius: 32,
+    elevation: 12,
   },
   blob: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: '#ffffff',
   },
-  glassPanel: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 18,
+  balanceSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 4,
+  },
+  unifiedDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  unifiedHairline: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  unifiedDividerLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.45)',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
+  unifiedSeeAll: { marginLeft: 4 },
+  frostScroll: {
+    paddingHorizontal: 20,
+    gap: 10,
+    paddingBottom: 4,
+  },
+  frostCard: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    padding: 16,
+    borderColor: 'rgba(255,255,255,0.12)',
+    overflow: 'hidden',
+    width: 150,
+    height: 86,
+  },
+  frostEdge: {
+    width: 4,
+    alignSelf: 'stretch',
+    opacity: 0.85,
+  },
+  frostInner: {
+    flex: 1,
+    padding: 11,
+    justifyContent: 'space-between',
+  },
+  frostName: {
+    fontFamily: 'Nunito_700Bold',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.92)',
+    letterSpacing: -0.2,
+  },
+  frostType: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 8,
+    color: 'rgba(255,255,255,0.38)',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    marginTop: 1,
+  },
+  frostBalance: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.88)',
+    letterSpacing: -0.3,
+  },
+  unifiedTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+    marginTop: 12,
+  },
+  unifiedTotalLabel: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.45)',
+  },
+  unifiedTotalAmt: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.75)',
   },
   heroChip: {
     alignSelf: 'flex-start',
@@ -692,12 +804,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.white,
   },
-  sectionLabelRow: {
+  // ── Accounts section ──────────────────────────────────────────────────────
+  acctHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  acctHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 20,
-    marginBottom: 10,
   },
   sectionDot: {
     width: 6,
@@ -712,60 +830,44 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-  acctGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  seeAll: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: colors.primary,
+  },
+  acctScroll: {
     paddingHorizontal: 20,
-    gap: 10,
+    gap: 14,
+    paddingBottom: 8, // shadow bleed buffer
+  },
+  acctTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginTop: 12,
     marginBottom: 20,
   },
-  acctCard: {
-    width: '47.5%',
-    backgroundColor: colors.white,
-    borderRadius: 16,
-    padding: 14,
-    shadowColor: '#1E1E2E',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2,
-    gap: 4,
-  },
-  acctIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: 'rgba(30,30,46,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    marginBottom: 4,
-  },
-  acctLogo: { width: 28, height: 28 },
-  acctLetter: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  acctName: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 13,
-    color: colors.textPrimary,
-  },
-  acctBalance: {
-    fontFamily: 'DMMono_500Medium',
+  acctTotalLabel: {
+    fontFamily: 'Inter_400Regular',
     fontSize: 13,
     color: colors.textSecondary,
   },
-  negBang: { color: colors.expenseRed, fontFamily: 'Inter_700Bold' },
+  acctTotalAmt: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
   catGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 20,
     gap: 10,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   catTileWrap: { width: '47.5%' },
   catTile: {
-    borderRadius: 28,
+    borderRadius: 24,
     height: 120,
     padding: 14,
     justifyContent: 'flex-end',
@@ -779,11 +881,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     paddingHorizontal: 5,
   },
-  catOverBadgeText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    color: colors.expenseRed,
-  },
+  catOverBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10 },
   catIconCircle: {
     position: 'absolute',
     top: 14,
@@ -795,28 +893,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  catName: {
-    fontFamily: 'Nunito_800ExtraBold',
-    fontSize: 12,
-    marginBottom: 1,
+  catName: { fontFamily: 'Nunito_800ExtraBold', fontSize: 12, marginBottom: 1 },
+  catAmt: { fontFamily: 'DMMono_500Medium', fontSize: 11 },
+  belowCard: {
+    marginTop: 24,
   },
-  catAmt: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 11,
-    marginBottom: 6,
+  sectionDivider: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    marginHorizontal: 20,
+    marginBottom: 20,
   },
-  catBarTrack: {
-    height: 4,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    overflow: 'hidden',
-  },
-  catBarFill: { height: '100%', borderRadius: 4, opacity: 0.6 },
-  insightWrap: { paddingHorizontal: 20, marginBottom: 16 },
+  insightWrap: { paddingHorizontal: 20, marginTop: 8, marginBottom: 16 },
   insightCard: {
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(201,184,245,0.35)',
+    borderColor: 'rgba(91,140,110,0.15)',
+    backgroundColor: 'rgba(235,242,238,0.6)',
     padding: 16,
     flexDirection: 'row',
     gap: 12,
@@ -826,19 +919,19 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.lavenderLight,
+    backgroundColor: 'rgba(91,140,110,0.12)',
     borderWidth: 1,
-    borderColor: colors.lavender,
+    borderColor: 'rgba(91,140,110,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  insightAvatarIcon: { fontSize: 15, color: colors.lavenderDark },
+  insightAvatarIcon: { fontSize: 15, color: colors.primary },
   insightBody: { flex: 1 },
   insightLabel: {
     fontFamily: 'Inter_700Bold',
     fontSize: 10,
-    color: colors.lavenderDark,
+    color: colors.primaryDark,
     textTransform: 'uppercase',
     letterSpacing: 0.7,
     marginBottom: 4,
@@ -858,16 +951,16 @@ const styles = StyleSheet.create({
   },
   insightChip: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.lavenderLight,
+    backgroundColor: 'rgba(91,140,110,0.12)',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: colors.lavender,
+    borderColor: 'rgba(91,140,110,0.25)',
     paddingVertical: 5,
     paddingHorizontal: 12,
   },
   insightChipText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 12,
-    color: colors.lavenderDark,
+    color: colors.primaryDark,
   },
 });
