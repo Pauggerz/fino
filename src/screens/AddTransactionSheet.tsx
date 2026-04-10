@@ -4,6 +4,7 @@ import {
   View,
   Text,
   Image,
+  Modal,
   Pressable,
   StyleSheet,
   Keyboard,
@@ -19,6 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { Calendar } from 'react-native-calendars';
 
 import { colors } from '../constants/theme';
 import {
@@ -73,6 +75,9 @@ export default function AddTransactionSheet({ route }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardPrompt, setShowDiscardPrompt] = useState(false);
   const [showAmountLimitToast, setShowAmountLimitToast] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [tempSelectedDate, setTempSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [showDatePickerModal, setShowDatePickerModal] = useState(false);
 
   const analyzer = useRef(createDebouncedAnalyzer()).current;
 
@@ -161,7 +166,6 @@ export default function AddTransactionSheet({ route }: Props) {
     dismiss();
   }, [dismiss]);
 
-  // Handle navigation after the sheet has fully closed
   const handleSheetChanges = useCallback((index: number) => {
     if (index !== -1) return;
 
@@ -205,6 +209,29 @@ export default function AddTransactionSheet({ route }: Props) {
     amountLimitToastTimerRef.current = setTimeout(() => {
       setShowAmountLimitToast(false);
     }, 1100);
+  }, []);
+
+  const openDatePicker = useCallback(() => {
+    setTempSelectedDate(selectedDate.toISOString().split('T')[0]);
+    setShowDatePickerModal(true);
+  }, [selectedDate]);
+
+  const cancelDatePicker = useCallback(() => {
+    setShowDatePickerModal(false);
+  }, []);
+
+  const applyDatePicker = useCallback(() => {
+    const nextDate = new Date(tempSelectedDate);
+    nextDate.setHours(12, 0, 0, 0);
+    setSelectedDate(nextDate);
+    setShowDatePickerModal(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, [tempSelectedDate]);
+
+  const toTransactionDateIso = useCallback((date: Date) => {
+    const normalized = new Date(date);
+    normalized.setHours(12, 0, 0, 0);
+    return normalized.toISOString();
   }, []);
 
   const handleNumTap = (key: string) => {
@@ -269,7 +296,7 @@ export default function AddTransactionSheet({ route }: Props) {
         display_name: aiText || category || null,
         transaction_note: aiText || null,
         signal_source: signalSource === 'ai_description' ? 'description' : 'manual',
-        date: new Date().toISOString(),
+        date: toTransactionDateIso(selectedDate),
         account_deleted: false,
       };
 
@@ -313,7 +340,10 @@ export default function AddTransactionSheet({ route }: Props) {
   );
 
   const today = new Date();
-  const dateLabel = `📅 Today, ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  const isToday = selectedDate.toDateString() === today.toDateString();
+  const dateLabel = isToday
+    ? `📅 Today, ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+    : `📅 ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   const amountHasValue = amount.length > 0 && amount !== '0';
   const displayAmount = amount || '0';
   const saveLabel = isSaving ? 'Saving…' : type === 'exp' ? 'Save expense' : 'Save income';
@@ -341,7 +371,7 @@ export default function AddTransactionSheet({ route }: Props) {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         >
-          <TouchableOpacity activeOpacity={0.7} style={styles.datePill}>
+          <TouchableOpacity activeOpacity={0.7} onPress={openDatePicker} style={styles.datePill}>
             <Text style={styles.datePillText}>{dateLabel}</Text>
           </TouchableOpacity>
 
@@ -573,6 +603,58 @@ export default function AddTransactionSheet({ route }: Props) {
           </Animated.View>
         </View>
       )}
+
+      <Modal visible={showDatePickerModal} transparent animationType="fade" onRequestClose={cancelDatePicker}>
+        <View style={styles.dateModalOverlay}>
+          <Pressable style={styles.dateModalBackdrop} onPress={cancelDatePicker} />
+          <View style={styles.dateModalCard}>
+            <Text style={styles.dateModalTitle}>Select date</Text>
+
+            <View style={styles.dateModalBody}>
+              <Calendar
+                current={tempSelectedDate}
+                onDayPress={(day) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setTempSelectedDate(day.dateString);
+                }}
+                maxDate={new Date().toISOString().split('T')[0]}
+                markedDates={{
+                  [tempSelectedDate]: { selected: true, disableTouchEvent: true },
+                }}
+                theme={{
+                  backgroundColor: colors.background,
+                  calendarBackground: colors.background,
+                  textSectionTitleColor: colors.textSecondary,
+                  selectedDayBackgroundColor: colors.primary,
+                  selectedDayTextColor: colors.white,
+                  todayTextColor: colors.primary,
+                  dayTextColor: colors.textPrimary,
+                  textDisabledColor: '#d9e1e8',
+                  arrowColor: colors.primary,
+                  monthTextColor: colors.textPrimary,
+                  indicatorColor: colors.primary,
+                  textDayFontFamily: 'Inter_600SemiBold',
+                  textMonthFontFamily: 'Nunito_800ExtraBold',
+                  textDayHeaderFontFamily: 'Inter_700Bold',
+                  textDayFontSize: 14,
+                  textMonthFontSize: 16,
+                  textDayHeaderFontSize: 12,
+                }}
+                style={styles.calendarComponent}
+              />
+            </View>
+
+            <View style={styles.dateModalActions}>
+              <Pressable onPress={cancelDatePicker} style={styles.dateModalCancelBtn}>
+                <Text style={styles.dateModalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={applyDatePicker} style={styles.dateModalApplyBtn}>
+                <Text style={styles.dateModalApplyText}>Apply</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -580,7 +662,7 @@ export default function AddTransactionSheet({ route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    height: '100%', /* 👈 FIX: Ensures proper height calculation for bottom content */
+    height: '100%', 
   },
   sheetBackground: {
     backgroundColor: colors.background,
@@ -597,12 +679,13 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 60 : 40, /* 👈 FIX: Added extra padding to clear home indicator */
+    paddingBottom: Platform.OS === 'ios' ? 60 : 40, 
   },
   datePill: {
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: '#e0dfd7',
+    borderColor: colors.primaryTransparent30,
+    backgroundColor: colors.primaryLight,
     borderRadius: 20,
     paddingVertical: 5,
     paddingHorizontal: 12,
@@ -611,7 +694,7 @@ const styles = StyleSheet.create({
   datePillText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
-    color: colors.textSecondary,
+    color: colors.primaryDark,
   },
   sheetTitle: {
     fontFamily: 'Nunito_800ExtraBold',
@@ -990,5 +1073,81 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
     color: '#FFFFFF',
+  },
+  dateModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  dateModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(22, 25, 23, 0.3)',
+  },
+  dateModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
+    borderRadius: 18,
+    backgroundColor: '#F8F5EF',
+    borderWidth: 1,
+    borderColor: '#E6DDD0',
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    shadowColor: '#1E1E2E',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  dateModalTitle: {
+    fontFamily: 'Nunito_800ExtraBold',
+    fontSize: 18,
+    color: colors.textPrimary,
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
+  dateModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+    width: '100%',
+  },
+  dateModalCancelBtn: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D8D6D0',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateModalCancelText: {
+    fontWeight: '700',
+    fontSize: 13,
+    color: '#1E1E2E',
+  },
+  dateModalApplyBtn: {
+    flex: 1,
+    borderRadius: 12,
+    backgroundColor: '#5B8C6E',
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateModalApplyText: {
+    fontWeight: '700',
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
+  calendarComponent: {
+    backgroundColor: '#F8F5EF',
+    borderRadius: 12,
+  },
+  dateModalBody: {
+    marginTop: 10,
+    marginBottom: 2,
   },
 });
