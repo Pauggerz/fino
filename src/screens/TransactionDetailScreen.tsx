@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,12 @@ import {
   Modal,
   ScrollView,
   TextInput,
+  StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { colors } from '../constants/theme';
-import { CATEGORY_TILE_BG, CATEGORY_COLOR } from '@/constants/categoryMappings';
+import { useTheme } from '../contexts/ThemeContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Skeleton } from '@/components/Skeleton';
 import { supabase } from '@/services/supabase';
@@ -60,19 +60,23 @@ function Stepper({
   onIncrement,
   onDecrement,
   accentColor,
+  textColor,
+  labelColor,
 }: {
   label: string;
   display: string;
   onIncrement: () => void;
   onDecrement: () => void;
   accentColor: string;
+  textColor: string;
+  labelColor: string;
 }) {
   return (
     <View style={{ alignItems: 'center', flex: 1 }}>
       <Text
         style={{
           fontSize: 10,
-          color: '#8A8A9A',
+          color: labelColor,
           fontFamily: 'Inter_400Regular',
           marginBottom: 4,
           textTransform: 'uppercase',
@@ -91,9 +95,9 @@ function Stepper({
       </TouchableOpacity>
       <Text
         style={{
-          fontFamily: 'DMMonoMedium',
+          fontFamily: 'DMMono_500Medium',
           fontSize: 17,
-          color: '#1E1E2E',
+          color: textColor,
           marginVertical: 2,
           minWidth: 40,
           textAlign: 'center',
@@ -117,6 +121,10 @@ export default function TransactionDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<DetailRouteProp>();
   const transactionId = route.params?.id;
+
+  // 🌙 Dynamic Theme Injection
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   const { accounts } = useAccounts();
 
@@ -150,6 +158,27 @@ export default function TransactionDetailScreen() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showDateModal, setShowDateModal] = useState(false);
 
+  // ─── DYNAMIC THEME RESOLVER ───
+  const resolveCategoryStyle = useCallback(
+    (key: string) => {
+      switch (key.toLowerCase()) {
+        case 'food':
+          return { bg: colors.catFoodBg, text: colors.catFoodText };
+        case 'transport':
+          return { bg: colors.catTransportBg, text: colors.catTransportText };
+        case 'shopping':
+          return { bg: colors.catShoppingBg, text: colors.catShoppingText };
+        case 'bills':
+          return { bg: colors.catBillsBg, text: colors.catBillsText };
+        case 'health':
+          return { bg: colors.catHealthBg, text: colors.catHealthText };
+        default:
+          return { bg: colors.catTileEmptyBg, text: colors.textSecondary };
+      }
+    },
+    [colors]
+  );
+
   const initEditState = (row: TransactionWithAccount) => {
     setEditedName(row.display_name ?? row.merchant_name ?? '');
     setEditedNote(row.transaction_note ?? '');
@@ -163,11 +192,8 @@ export default function TransactionDetailScreen() {
     setDraftYear(d.getFullYear());
     const amPm = h >= 12 ? 'PM' : 'AM';
     let hour = h;
-    if (h > 12) {
-      hour = h - 12;
-    } else if (h === 0) {
-      hour = 12;
-    }
+    if (h > 12) hour = h - 12;
+    else if (h === 0) hour = 12;
     setDraftAmPm(amPm);
     setDraftHour(hour);
     setDraftMinute(d.getMinutes());
@@ -187,13 +213,14 @@ export default function TransactionDetailScreen() {
         ...data,
         accounts: undefined,
         account_name: (data.accounts as any)?.name ?? '',
-        account_brand_colour: (data.accounts as any)?.brand_colour ?? '#888',
+        account_brand_colour:
+          (data.accounts as any)?.brand_colour ?? colors.textSecondary,
       };
       setTx(row);
       initEditState(row);
     }
     setLoading(false);
-  }, [transactionId]);
+  }, [transactionId, colors]);
 
   useEffect(() => {
     fetchTx();
@@ -219,11 +246,8 @@ export default function TransactionDetailScreen() {
     setDraftYear(d.getFullYear());
     const amPm = h >= 12 ? 'PM' : 'AM';
     let hour = h;
-    if (h > 12) {
-      hour = h - 12;
-    } else if (h === 0) {
-      hour = 12;
-    }
+    if (h > 12) hour = h - 12;
+    else if (h === 0) hour = 12;
     setDraftAmPm(amPm);
     setDraftHour(hour);
     setDraftMinute(d.getMinutes());
@@ -245,7 +269,6 @@ export default function TransactionDetailScreen() {
       })
       .eq('id', tx.id);
 
-    // If account changed, adjust balances
     if (editedAccountId !== tx.account_id && !tx.account_deleted) {
       const { data: oldAcct } = await supabase
         .from('accounts')
@@ -331,42 +354,52 @@ export default function TransactionDetailScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView
-        style={{ flex: 1, backgroundColor: '#F7F5F2' }}
-      >
+      <SafeAreaView style={styles.loadingContainer}>
         <ScrollView
           contentContainerStyle={{ paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
         >
-          <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' }}>
+          <View style={styles.loadingTopBar}>
             <Skeleton width={56} height={36} borderRadius={10} />
-            <Skeleton width={120} height={18} style={{ marginLeft: 16, flex: 1 }} />
+            <Skeleton
+              width={120}
+              height={18}
+              style={{ marginLeft: 16, flex: 1 }}
+            />
             <Skeleton width={56} height={18} />
           </View>
-
-          <View style={{ alignItems: 'center', paddingTop: 16, paddingBottom: 32, paddingHorizontal: 24 }}>
-            <Skeleton width={80} height={80} borderRadius={22} style={{ marginBottom: 16 }} />
+          <View style={styles.loadingHero}>
+            <Skeleton
+              width={80}
+              height={80}
+              borderRadius={22}
+              style={{ marginBottom: 16 }}
+            />
             <Skeleton width={230} height={18} style={{ marginBottom: 10 }} />
             <Skeleton width={180} height={12} />
           </View>
-
-          <View style={{ marginHorizontal: 16, backgroundColor: '#FFFFFF', borderRadius: 20, overflow: 'hidden' }}>
+          <View style={styles.loadingListWrap}>
             {Array.from({ length: 4 }).map((_, index) => (
               <View
                 key={`tx-detail-skel-${index}`}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingVertical: 14,
-                  paddingHorizontal: 16,
-                  borderBottomWidth: index === 3 ? 0 : 1,
-                  borderBottomColor: 'rgba(30,30,46,0.07)',
-                  minHeight: 52,
-                }}
+                style={[
+                  styles.loadingRow,
+                  index === 3 && { borderBottomWidth: 0 },
+                ]}
               >
                 <Skeleton width={92} height={14} />
-                <Skeleton width={index === 0 ? 120 : index === 1 ? 150 : index === 2 ? 100 : 130} height={14} />
+                <Skeleton
+                  width={
+                    index === 0
+                      ? 120
+                      : index === 1
+                        ? 150
+                        : index === 2
+                          ? 100
+                          : 130
+                  }
+                  height={14}
+                />
               </View>
             ))}
           </View>
@@ -377,31 +410,13 @@ export default function TransactionDetailScreen() {
 
   if (!tx) {
     return (
-      <SafeAreaView
-        style={{
-          flex: 1,
-          backgroundColor: '#F7F5F2',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        <Text
-          style={{
-            fontFamily: 'Inter_400Regular',
-            color: colors.textSecondary,
-          }}
-        >
-          Transaction not found.
-        </Text>
+      <SafeAreaView style={styles.notFoundContainer}>
+        <Text style={styles.notFoundText}>Transaction not found.</Text>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={{ marginTop: 20 }}
         >
-          <Text
-            style={{ color: colors.primary, fontFamily: 'Inter_600SemiBold' }}
-          >
-            Go Back
-          </Text>
+          <Text style={styles.notFoundBtn}>Go Back</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -410,8 +425,8 @@ export default function TransactionDetailScreen() {
   const displayCategoryKey = (
     isEditing ? editedCategory : (tx.category ?? 'default')
   ).toLowerCase();
-  const heroBg = CATEGORY_TILE_BG[displayCategoryKey] ?? '#F7F5F2';
-  const heroColor = CATEGORY_COLOR[displayCategoryKey] ?? '#888780';
+  const { bg: heroBg, text: heroColor } =
+    resolveCategoryStyle(displayCategoryKey);
 
   const displayTitle = isEditing
     ? editedName
@@ -426,7 +441,6 @@ export default function TransactionDetailScreen() {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-
   const displayAccountName = isEditing
     ? (accounts.find((a) => a.id === editedAccountId)?.name ?? tx.account_name)
     : tx.account_name;
@@ -440,100 +454,47 @@ export default function TransactionDetailScreen() {
     minute: '2-digit',
     hour12: true,
   });
-
   const daysInMonth = new Date(draftYear, draftMonth + 1, 0).getDate();
 
-  const rowStyle = {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(30,30,46,0.07)',
-    minHeight: 52,
-  };
-
-  const labelStyle = {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: '#8A8A9A',
-  };
-
-  const valueStyle = {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: '#1E1E2E',
-    textAlign: 'right' as const,
-    flex: 1,
-    marginLeft: 16,
-  };
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: heroBg }}>
+    <SafeAreaView style={[styles.container, { backgroundColor: heroBg }]}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: 20,
-            paddingTop: 12,
-            paddingBottom: 8,
-          }}
-        >
-          {/* Left button */}
+        {/* ─── HEADER ─── */}
+        <View style={styles.header}>
           {isEditing ? (
             <TouchableOpacity
               onPress={handleCancelEdit}
               style={{ minWidth: 60 }}
             >
-              <Text
-                style={{
-                  fontFamily: 'Inter_600SemiBold',
-                  fontSize: 15,
-                  color: heroColor,
-                }}
-              >
+              <Text style={[styles.headerBtnText, { color: heroColor }]}>
                 Cancel
               </Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
               onPress={() => navigation.goBack()}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                backgroundColor: 'rgba(255,255,255,0.8)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+              style={[
+                styles.backBtnWrap,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(0,0,0,0.2)'
+                    : 'rgba(255,255,255,0.8)',
+                },
+              ]}
             >
-              <Text style={{ fontSize: 20, color: heroColor, lineHeight: 24 }}>
-                ←
-              </Text>
+              <Text style={[styles.backBtnIcon, { color: heroColor }]}>←</Text>
             </TouchableOpacity>
           )}
 
-          {/* Title */}
-          <Text
-            style={{
-              flex: 1,
-              textAlign: 'center',
-              fontFamily: 'Nunito_800ExtraBold',
-              fontSize: 18,
-              color: '#1E1E2E',
-            }}
-          >
+          <Text style={styles.headerTitle}>
             {isEditing ? 'Edit Transaction' : 'Transaction'}
           </Text>
 
-          {/* Right button */}
           {isEditing ? (
             <TouchableOpacity
               onPress={handleSave}
@@ -541,12 +502,10 @@ export default function TransactionDetailScreen() {
               style={{ minWidth: 60, alignItems: 'flex-end' }}
             >
               <Text
-                style={{
-                  fontFamily: 'Nunito_700Bold',
-                  fontSize: 15,
-                  color: heroColor,
-                  opacity: isSaving ? 0.5 : 1,
-                }}
+                style={[
+                  styles.headerBtnText,
+                  { color: heroColor, opacity: isSaving ? 0.5 : 1 },
+                ]}
               >
                 {isSaving ? 'Saving…' : 'Save'}
               </Text>
@@ -556,30 +515,9 @@ export default function TransactionDetailScreen() {
           )}
         </View>
 
-        <View
-          style={{
-            alignItems: 'center',
-            paddingTop: 16,
-            paddingBottom: 32,
-            paddingHorizontal: 24,
-          }}
-        >
-          <View
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: 22,
-              backgroundColor: 'rgba(255,255,255,0.9)',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 16,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.08,
-              shadowRadius: 12,
-              elevation: 3,
-            }}
-          >
+        {/* ─── HERO SECTION ─── */}
+        <View style={styles.heroSection}>
+          <View style={[styles.heroIconBox, { backgroundColor: colors.white }]}>
             <CategoryIcon
               categoryKey={displayCategoryKey}
               color={heroColor}
@@ -588,163 +526,81 @@ export default function TransactionDetailScreen() {
             />
           </View>
 
-          {/* Amount */}
-          <Text style={{ marginBottom: 4 }}>
-            <Text
-              style={{
-                fontFamily: 'Inter_600SemiBold',
-                fontSize: 22,
-                color: heroColor,
-              }}
-            >
+          <Text style={styles.heroAmountWrap}>
+            <Text style={[styles.heroCurrency, { color: heroColor }]}>
               {tx.type === 'expense' ? '−₱' : '+₱'}
             </Text>
-            <Text
-              style={{
-                fontFamily: 'DMMonoMedium',
-                fontSize: 42,
-                fontWeight: '700',
-                color: heroColor,
-                letterSpacing: -2,
-              }}
-            >
+            <Text style={[styles.heroAmount, { color: heroColor }]}>
               {formattedAmount}
             </Text>
           </Text>
 
-          {/* Merchant name - editable in edit mode */}
           {isEditing ? (
             <TextInput
               value={editedName}
               onChangeText={setEditedName}
-              style={{
-                fontFamily: 'Nunito_700Bold',
-                fontSize: 18,
-                color: '#1E1E2E',
-                textAlign: 'center',
-                borderBottomWidth: 1.5,
-                borderBottomColor: heroColor,
-                paddingBottom: 4,
-                paddingHorizontal: 8,
-                minWidth: 200,
-                marginBottom: 4,
-              }}
+              style={[
+                styles.heroTitleInput,
+                { color: colors.textPrimary, borderBottomColor: heroColor },
+              ]}
               placeholder="Merchant name"
-              placeholderTextColor="rgba(30,30,46,0.3)"
+              placeholderTextColor={colors.textSecondary}
             />
           ) : (
-            <Text
-              style={{
-                fontFamily: 'Nunito_700Bold',
-                fontSize: 18,
-                color: '#1E1E2E',
-                marginBottom: 4,
-                textAlign: 'center',
-              }}
-            >
+            <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>
               {displayTitle}
             </Text>
           )}
 
-          <Text
-            style={{
-              fontFamily: 'Inter_400Regular',
-              fontSize: 12,
-              color: '#8A8A9A',
-              textAlign: 'center',
-            }}
-          >
-            {formattedDate}
-          </Text>
+          <Text style={styles.heroDate}>{formattedDate}</Text>
         </View>
 
-        <View
-          style={{
-            marginHorizontal: 16,
-            backgroundColor: '#FFFFFF',
-            borderRadius: 20,
-            overflow: 'hidden',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.06,
-            shadowRadius: 12,
-            elevation: 2,
-          }}
-        >
-          {/* Account row */}
+        {/* ─── DETAILS CARD ─── */}
+        <View style={styles.detailsCard}>
           <TouchableOpacity
-            style={rowStyle}
+            style={styles.detailRow}
             onPress={() => isEditing && setShowAccountModal(true)}
             activeOpacity={isEditing ? 0.6 : 1}
           >
-            <Text style={labelStyle}>Account</Text>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                flex: 1,
-                justifyContent: 'flex-end',
-              }}
-            >
-              <Text style={[valueStyle, { flex: 0 }]}>
+            <Text style={styles.detailLabel}>Account</Text>
+            <View style={styles.detailValueWrap}>
+              <Text style={styles.detailValue}>
                 {displayAccountName || 'None'}
               </Text>
               {isEditing && (
-                <Text style={{ fontSize: 18, color: heroColor, opacity: 0.7 }}>
-                  ✎
-                </Text>
+                <Text style={[styles.editIcon, { color: heroColor }]}>✎</Text>
               )}
             </View>
           </TouchableOpacity>
 
-          {/* Date & time row */}
           <TouchableOpacity
-            style={rowStyle}
+            style={styles.detailRow}
             onPress={() => isEditing && openDateModal()}
             activeOpacity={isEditing ? 0.6 : 1}
           >
-            <Text style={labelStyle}>Date & time</Text>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                flex: 1,
-                justifyContent: 'flex-end',
-              }}
-            >
-              <Text style={[valueStyle, { flex: 0 }]}>{formattedDate}</Text>
+            <Text style={styles.detailLabel}>Date & time</Text>
+            <View style={styles.detailValueWrap}>
+              <Text style={styles.detailValue}>{formattedDate}</Text>
               {isEditing && (
-                <Text style={{ fontSize: 18, color: heroColor, opacity: 0.7 }}>
-                  ✎
-                </Text>
+                <Text style={[styles.editIcon, { color: heroColor }]}>✎</Text>
               )}
             </View>
           </TouchableOpacity>
 
-          {/* Category row */}
           <TouchableOpacity
-            style={rowStyle}
+            style={styles.detailRow}
             onPress={() => isEditing && setShowCategoryModal(true)}
             activeOpacity={isEditing ? 0.6 : 1}
           >
-            <Text style={labelStyle}>Category</Text>
+            <Text style={styles.detailLabel}>Category</Text>
             <View
               style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
             >
               <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  backgroundColor: heroBg,
-                  borderColor: heroColor,
-                  borderWidth: 1,
-                  borderRadius: 8,
-                  paddingHorizontal: 10,
-                  paddingVertical: 5,
-                }}
+                style={[
+                  styles.categoryPill,
+                  { backgroundColor: heroBg, borderColor: heroColor },
+                ]}
               >
                 <CategoryIcon
                   categoryKey={displayCategoryKey}
@@ -752,51 +608,43 @@ export default function TransactionDetailScreen() {
                   size={12}
                   wrapperSize={20}
                 />
-                <Text
-                  style={{
-                    fontFamily: 'Inter_600SemiBold',
-                    fontSize: 13,
-                    color: heroColor,
-                  }}
-                >
+                <Text style={[styles.categoryPillText, { color: heroColor }]}>
                   {displayCategoryKey.charAt(0).toUpperCase() +
                     displayCategoryKey.slice(1)}
                 </Text>
               </View>
               {isEditing && (
-                <Text style={{ fontSize: 18, color: heroColor, opacity: 0.7 }}>
-                  ✎
-                </Text>
+                <Text style={[styles.editIcon, { color: heroColor }]}>✎</Text>
               )}
             </View>
           </TouchableOpacity>
 
-          {/* Note row */}
-          <View style={[rowStyle, { borderBottomWidth: 0 }]}>
-            <Text style={labelStyle}>Note</Text>
+          <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
+            <Text style={styles.detailLabel}>Note</Text>
             {isEditing ? (
               <TextInput
                 value={editedNote}
                 onChangeText={setEditedNote}
                 style={[
-                  valueStyle,
+                  styles.noteInput,
                   {
-                    flex: 1,
-                    borderBottomWidth: 1,
-                    borderBottomColor: 'rgba(30,30,46,0.2)',
-                    paddingBottom: 2,
+                    color: colors.textPrimary,
+                    borderBottomColor: colors.border,
                   },
                 ]}
                 placeholder="Add a note…"
-                placeholderTextColor="#B4B2A9"
+                placeholderTextColor={colors.textSecondary}
                 returnKeyType="done"
               />
             ) : (
               <Text
                 style={[
-                  valueStyle,
+                  styles.detailValue,
                   {
-                    color: tx.transaction_note ? '#1E1E2E' : '#B4B2A9',
+                    flex: 1,
+                    color: tx.transaction_note
+                      ? colors.textPrimary
+                      : colors.textSecondary,
                     fontStyle: tx.transaction_note ? 'normal' : 'italic',
                   },
                 ]}
@@ -807,88 +655,33 @@ export default function TransactionDetailScreen() {
           </View>
         </View>
 
+        {/* ─── ACTIONS ─── */}
         {!isEditing && (
-          <View style={{ paddingHorizontal: 16, marginTop: 20, gap: 12 }}>
+          <View style={styles.actionsWrap}>
             <TouchableOpacity
               onPress={() => setIsEditing(true)}
-              style={{
-                backgroundColor: '#F0ECFD',
-                borderRadius: 16,
-                paddingVertical: 16,
-                alignItems: 'center',
-                borderWidth: 1,
-                borderColor: '#C9B8F5',
-              }}
+              style={styles.editBtn}
             >
-              <Text
-                style={{
-                  fontFamily: 'Nunito_700Bold',
-                  fontSize: 16,
-                  color: '#4B2DA3',
-                }}
-              >
-                Edit transaction
-              </Text>
+              <Text style={styles.editBtnText}>Edit transaction</Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               onPress={() => setIsDeleteConfirmVisible(true)}
-              style={{ alignItems: 'center', paddingVertical: 12 }}
+              style={styles.deleteBtn}
             >
-              <Text
-                style={{
-                  fontFamily: 'Inter_400Regular',
-                  fontSize: 13,
-                  color: '#C8A09A',
-                  textDecorationLine: 'underline',
-                }}
-              >
-                Delete transaction
-              </Text>
+              <Text style={styles.deleteBtnText}>Delete transaction</Text>
             </TouchableOpacity>
           </View>
         )}
       </ScrollView>
 
+      {/* ─── MODALS ─── */}
       <Modal visible={showAccountModal} transparent animationType="slide">
         <TouchableWithoutFeedback onPress={() => setShowAccountModal(false)}>
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: 'rgba(30,30,46,0.45)',
-              justifyContent: 'flex-end',
-            }}
-          >
+          <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
-              <View
-                style={{
-                  backgroundColor: '#F7F5F2',
-                  borderTopLeftRadius: 24,
-                  borderTopRightRadius: 24,
-                  padding: 20,
-                  paddingBottom: 40,
-                }}
-              >
-                <View
-                  style={{
-                    width: 36,
-                    height: 4,
-                    backgroundColor: '#D8D6D0',
-                    borderRadius: 2,
-                    alignSelf: 'center',
-                    marginBottom: 20,
-                  }}
-                />
-                <Text
-                  style={{
-                    fontFamily: 'Nunito_800ExtraBold',
-                    fontSize: 18,
-                    color: '#1E1E2E',
-                    marginBottom: 16,
-                  }}
-                >
-                  Select Account
-                </Text>
+              <View style={styles.modalSheet}>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>Select Account</Text>
                 {accounts.map((acct) => {
                   const isSelected = acct.id === editedAccountId;
                   const logo = ACCOUNT_LOGOS[acct.name];
@@ -903,31 +696,23 @@ export default function TransactionDetailScreen() {
                         setEditedAccountId(acct.id);
                         setShowAccountModal(false);
                       }}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 12,
-                        paddingVertical: 12,
-                        paddingHorizontal: 16,
-                        borderRadius: 12,
-                        marginBottom: 8,
-                        backgroundColor: isSelected ? '#EBF2EE' : '#FFFFFF',
-                        borderWidth: isSelected ? 1.5 : 1,
-                        borderColor: isSelected
-                          ? colors.primary
-                          : 'rgba(30,30,46,0.08)',
-                      }}
+                      style={[
+                        styles.modalItemRow,
+                        {
+                          backgroundColor: isSelected
+                            ? colors.primaryLight
+                            : colors.white,
+                          borderColor: isSelected
+                            ? colors.primary
+                            : colors.cardBorderTransparent,
+                        },
+                      ]}
                     >
                       <View
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 12,
-                          backgroundColor: `${acct.brand_colour}20`,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          overflow: 'hidden',
-                        }}
+                        style={[
+                          styles.modalItemAvatar,
+                          { backgroundColor: `${acct.brand_colour}20` },
+                        ]}
                       >
                         {logo ? (
                           <Image
@@ -937,33 +722,18 @@ export default function TransactionDetailScreen() {
                           />
                         ) : (
                           <Text
-                            style={{
-                              fontFamily: 'Nunito_800ExtraBold',
-                              fontSize: 16,
-                              color: acct.brand_colour,
-                            }}
+                            style={[
+                              styles.modalItemAvatarText,
+                              { color: acct.brand_colour },
+                            ]}
                           >
                             {avatarChar}
                           </Text>
                         )}
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text
-                          style={{
-                            fontFamily: 'Nunito_700Bold',
-                            fontSize: 15,
-                            color: '#1E1E2E',
-                          }}
-                        >
-                          {acct.name}
-                        </Text>
-                        <Text
-                          style={{
-                            fontFamily: 'Inter_400Regular',
-                            fontSize: 12,
-                            color: '#8A8A9A',
-                          }}
-                        >
+                        <Text style={styles.modalItemTitle}>{acct.name}</Text>
+                        <Text style={styles.modalItemSub}>
                           ₱
                           {acct.balance.toLocaleString('en-PH', {
                             minimumFractionDigits: 2,
@@ -972,15 +742,7 @@ export default function TransactionDetailScreen() {
                         </Text>
                       </View>
                       {isSelected && (
-                        <Text
-                          style={{
-                            fontFamily: 'Inter_600SemiBold',
-                            fontSize: 16,
-                            color: colors.primary,
-                          }}
-                        >
-                          ✓
-                        </Text>
+                        <Text style={styles.modalItemCheck}>✓</Text>
                       )}
                     </TouchableOpacity>
                   );
@@ -993,50 +755,15 @@ export default function TransactionDetailScreen() {
 
       <Modal visible={showCategoryModal} transparent animationType="slide">
         <TouchableWithoutFeedback onPress={() => setShowCategoryModal(false)}>
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: 'rgba(30,30,46,0.45)',
-              justifyContent: 'flex-end',
-            }}
-          >
+          <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
-              <View
-                style={{
-                  backgroundColor: '#F7F5F2',
-                  borderTopLeftRadius: 24,
-                  borderTopRightRadius: 24,
-                  padding: 20,
-                  paddingBottom: 40,
-                }}
-              >
-                <View
-                  style={{
-                    width: 36,
-                    height: 4,
-                    backgroundColor: '#D8D6D0',
-                    borderRadius: 2,
-                    alignSelf: 'center',
-                    marginBottom: 20,
-                  }}
-                />
-                <Text
-                  style={{
-                    fontFamily: 'Nunito_800ExtraBold',
-                    fontSize: 18,
-                    color: '#1E1E2E',
-                    marginBottom: 16,
-                  }}
-                >
-                  Select Category
-                </Text>
-                <View
-                  style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}
-                >
+              <View style={styles.modalSheet}>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>Select Category</Text>
+                <View style={styles.catGrid}>
                   {CATEGORIES.map((key) => {
                     const isSelected = editedCategory.toLowerCase() === key;
-                    const bg = CATEGORY_TILE_BG[key];
-                    const col = CATEGORY_COLOR[key];
+                    const { bg, text } = resolveCategoryStyle(key);
                     return (
                       <TouchableOpacity
                         key={key}
@@ -1044,30 +771,28 @@ export default function TransactionDetailScreen() {
                           setEditedCategory(key);
                           setShowCategoryModal(false);
                         }}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 8,
-                          paddingHorizontal: 16,
-                          paddingVertical: 12,
-                          borderRadius: 12,
-                          backgroundColor: isSelected ? bg : '#FFFFFF',
-                          borderWidth: isSelected ? 2 : 1,
-                          borderColor: isSelected ? col : 'rgba(30,30,46,0.12)',
-                        }}
+                        style={[
+                          styles.catPill,
+                          {
+                            backgroundColor: isSelected ? bg : colors.white,
+                            borderColor: isSelected
+                              ? text
+                              : colors.cardBorderTransparent,
+                            borderWidth: isSelected ? 2 : 1,
+                          },
+                        ]}
                       >
                         <CategoryIcon
                           categoryKey={key}
-                          color={col}
+                          color={isSelected ? text : colors.textSecondary}
                           size={16}
                           wrapperSize={26}
                         />
                         <Text
-                          style={{
-                            fontFamily: 'Inter_600SemiBold',
-                            fontSize: 14,
-                            color: isSelected ? col : '#8A8A9A',
-                          }}
+                          style={[
+                            styles.catPillText,
+                            { color: isSelected ? text : colors.textSecondary },
+                          ]}
                         >
                           {key.charAt(0).toUpperCase() + key.slice(1)}
                         </Text>
@@ -1083,64 +808,14 @@ export default function TransactionDetailScreen() {
 
       <Modal visible={showDateModal} transparent animationType="slide">
         <TouchableWithoutFeedback onPress={() => setShowDateModal(false)}>
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: 'rgba(30,30,46,0.45)',
-              justifyContent: 'flex-end',
-            }}
-          >
+          <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
-              <View
-                style={{
-                  backgroundColor: '#F7F5F2',
-                  borderTopLeftRadius: 24,
-                  borderTopRightRadius: 24,
-                  padding: 20,
-                  paddingBottom: 40,
-                }}
-              >
-                <View
-                  style={{
-                    width: 36,
-                    height: 4,
-                    backgroundColor: '#D8D6D0',
-                    borderRadius: 2,
-                    alignSelf: 'center',
-                    marginBottom: 20,
-                  }}
-                />
-                <Text
-                  style={{
-                    fontFamily: 'Nunito_800ExtraBold',
-                    fontSize: 18,
-                    color: '#1E1E2E',
-                    marginBottom: 16,
-                  }}
-                >
-                  Date & Time
-                </Text>
+              <View style={styles.modalSheet}>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>Date & Time</Text>
 
-                <View
-                  style={{
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: 16,
-                    padding: 16,
-                    marginBottom: 10,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontFamily: 'Inter_700Bold',
-                      fontSize: 10,
-                      color: '#8A8A9A',
-                      letterSpacing: 0.8,
-                      textTransform: 'uppercase',
-                      marginBottom: 10,
-                    }}
-                  >
-                    Date
-                  </Text>
+                <View style={styles.pickerCard}>
+                  <Text style={styles.pickerLabel}>Date</Text>
                   <View style={{ flexDirection: 'row' }}>
                     <Stepper
                       label="Month"
@@ -1148,6 +823,8 @@ export default function TransactionDetailScreen() {
                       onIncrement={() => setDraftMonth((m) => (m + 1) % 12)}
                       onDecrement={() => setDraftMonth((m) => (m + 11) % 12)}
                       accentColor={heroColor}
+                      textColor={colors.textPrimary}
+                      labelColor={colors.textSecondary}
                     />
                     <Stepper
                       label="Day"
@@ -1159,6 +836,8 @@ export default function TransactionDetailScreen() {
                         setDraftDay((d) => (d > 1 ? d - 1 : daysInMonth))
                       }
                       accentColor={heroColor}
+                      textColor={colors.textPrimary}
+                      labelColor={colors.textSecondary}
                     />
                     <Stepper
                       label="Year"
@@ -1166,30 +845,14 @@ export default function TransactionDetailScreen() {
                       onIncrement={() => setDraftYear((y) => y + 1)}
                       onDecrement={() => setDraftYear((y) => y - 1)}
                       accentColor={heroColor}
+                      textColor={colors.textPrimary}
+                      labelColor={colors.textSecondary}
                     />
                   </View>
                 </View>
 
-                <View
-                  style={{
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: 16,
-                    padding: 16,
-                    marginBottom: 16,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontFamily: 'Inter_700Bold',
-                      fontSize: 10,
-                      color: '#8A8A9A',
-                      letterSpacing: 0.8,
-                      textTransform: 'uppercase',
-                      marginBottom: 10,
-                    }}
-                  >
-                    Time
-                  </Text>
+                <View style={styles.pickerCard}>
+                  <Text style={styles.pickerLabel}>Time</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Stepper
                       label="Hour"
@@ -1201,15 +864,10 @@ export default function TransactionDetailScreen() {
                         setDraftHour((h) => (h > 1 ? h - 1 : 12))
                       }
                       accentColor={heroColor}
+                      textColor={colors.textPrimary}
+                      labelColor={colors.textSecondary}
                     />
-                    <Text
-                      style={{
-                        fontFamily: 'DMMonoMedium',
-                        fontSize: 22,
-                        color: '#1E1E2E',
-                        marginTop: 14,
-                      }}
-                    >
+                    <Text style={[styles.colon, { color: colors.textPrimary }]}>
                       :
                     </Text>
                     <Stepper
@@ -1218,67 +876,33 @@ export default function TransactionDetailScreen() {
                       onIncrement={() => setDraftMinute((m) => (m + 1) % 60)}
                       onDecrement={() => setDraftMinute((m) => (m + 59) % 60)}
                       accentColor={heroColor}
+                      textColor={colors.textPrimary}
+                      labelColor={colors.textSecondary}
                     />
-                    {/* AM/PM toggle */}
                     <View style={{ flex: 1, alignItems: 'center' }}>
-                      <Text
-                        style={{
-                          fontSize: 10,
-                          color: '#8A8A9A',
-                          fontFamily: 'Inter_400Regular',
-                          marginBottom: 4,
-                          textTransform: 'uppercase',
-                          letterSpacing: 0.5,
-                        }}
-                      >
+                      <Text style={[styles.pickerLabel, { marginBottom: 4 }]}>
                         AM/PM
                       </Text>
                       <TouchableOpacity
                         onPress={() =>
                           setDraftAmPm((ap) => (ap === 'AM' ? 'PM' : 'AM'))
                         }
-                        style={{
-                          backgroundColor: heroColor,
-                          borderRadius: 10,
-                          paddingHorizontal: 14,
-                          paddingVertical: 10,
-                          minWidth: 52,
-                          alignItems: 'center',
-                        }}
+                        style={[styles.amPmBtn, { backgroundColor: heroColor }]}
                       >
-                        <Text
-                          style={{
-                            fontFamily: 'Nunito_700Bold',
-                            fontSize: 16,
-                            color: '#FFFFFF',
-                          }}
-                        >
-                          {draftAmPm}
-                        </Text>
+                        <Text style={styles.amPmText}>{draftAmPm}</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
                 </View>
 
-                {/* Confirm button */}
                 <TouchableOpacity
                   onPress={confirmDate}
-                  style={{
-                    backgroundColor: heroColor,
-                    borderRadius: 16,
-                    paddingVertical: 16,
-                    alignItems: 'center',
-                  }}
+                  style={[
+                    styles.confirmDateBtn,
+                    { backgroundColor: heroColor },
+                  ]}
                 >
-                  <Text
-                    style={{
-                      fontFamily: 'Nunito_700Bold',
-                      fontSize: 16,
-                      color: '#FFFFFF',
-                    }}
-                  >
-                    Confirm
-                  </Text>
+                  <Text style={styles.confirmDateText}>Confirm</Text>
                 </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
@@ -1286,86 +910,35 @@ export default function TransactionDetailScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* DELETE CONFIRM MODAL */}
       <Modal visible={isDeleteConfirmVisible} transparent animationType="fade">
         <TouchableWithoutFeedback
           onPress={() => !isDeleting && setIsDeleteConfirmVisible(false)}
         >
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: 'rgba(30,30,46,0.5)',
-              justifyContent: 'center',
-              alignItems: 'center',
-              paddingHorizontal: 24,
-            }}
-          >
+          <View style={styles.modalFadeOverlay}>
             <TouchableWithoutFeedback>
-              <View
-                style={{
-                  backgroundColor: '#FFFFFF',
-                  borderRadius: 20,
-                  padding: 24,
-                  width: '100%',
-                }}
-              >
-                <Text
-                  style={{
-                    fontFamily: 'Nunito_800ExtraBold',
-                    fontSize: 18,
-                    color: '#1E1E2E',
-                    marginBottom: 8,
-                  }}
-                >
-                  Delete transaction?
-                </Text>
-                <Text
-                  style={{
-                    fontFamily: 'Inter_400Regular',
-                    fontSize: 14,
-                    color: '#8A8A9A',
-                    marginBottom: 24,
-                    lineHeight: 20,
-                  }}
-                >
+              <View style={styles.deleteCard}>
+                <Text style={styles.deleteTitle}>Delete transaction?</Text>
+                <Text style={styles.deleteSub}>
                   This will permanently remove this transaction and restore the
                   account balance.
                 </Text>
                 <TouchableOpacity
                   onPress={handleDelete}
                   disabled={isDeleting}
-                  style={{
-                    backgroundColor: '#C0503A',
-                    borderRadius: 12,
-                    paddingVertical: 14,
-                    alignItems: 'center',
-                    marginBottom: 10,
-                    opacity: isDeleting ? 0.6 : 1,
-                  }}
+                  style={[
+                    styles.deleteConfirmBtn,
+                    { opacity: isDeleting ? 0.6 : 1 },
+                  ]}
                 >
-                  <Text
-                    style={{
-                      fontFamily: 'Nunito_700Bold',
-                      fontSize: 15,
-                      color: '#FFFFFF',
-                    }}
-                  >
+                  <Text style={styles.deleteConfirmText}>
                     {isDeleting ? 'Deleting…' : 'Delete'}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setIsDeleteConfirmVisible(false)}
-                  style={{ paddingVertical: 12, alignItems: 'center' }}
+                  style={styles.deleteCancelBtn}
                 >
-                  <Text
-                    style={{
-                      fontFamily: 'Inter_600SemiBold',
-                      fontSize: 15,
-                      color: '#8A8A9A',
-                    }}
-                  >
-                    Cancel
-                  </Text>
+                  <Text style={styles.deleteCancelText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
@@ -1373,31 +946,17 @@ export default function TransactionDetailScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* RECEIPT MODAL */}
       <Modal visible={isReceiptVisible} transparent animationType="fade">
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(0,0,0,0.9)',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        >
+        <View style={styles.receiptOverlay}>
           <TouchableOpacity
-            style={{
-              position: 'absolute',
-              top: 60,
-              right: 24,
-              zIndex: 10,
-              padding: 8,
-            }}
+            style={styles.receiptCloseBtn}
             onPress={() => setIsReceiptVisible(false)}
           >
             <Ionicons name="close" size={32} color="#FFF" />
           </TouchableOpacity>
           <Image
             source={{ uri: tx.receipt_url! }}
-            style={{ width: '100%', height: '80%' }}
+            style={styles.receiptImg}
             resizeMode="contain"
           />
         </View>
@@ -1405,3 +964,384 @@ export default function TransactionDetailScreen() {
     </SafeAreaView>
   );
 }
+
+// ─── DYNAMIC STYLES ───────────────────────────────────────────────────────────
+
+const createStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    container: { flex: 1 },
+    loadingContainer: { flex: 1, backgroundColor: colors.background },
+    loadingTopBar: {
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    loadingHero: {
+      alignItems: 'center',
+      paddingTop: 16,
+      paddingBottom: 32,
+      paddingHorizontal: 24,
+    },
+    loadingListWrap: {
+      marginHorizontal: 16,
+      backgroundColor: colors.white,
+      borderRadius: 20,
+      overflow: 'hidden',
+    },
+    loadingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: isDark ? '#333333' : 'rgba(30,30,46,0.07)',
+      minHeight: 52,
+    },
+
+    notFoundContainer: {
+      flex: 1,
+      backgroundColor: colors.background,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    notFoundText: {
+      fontFamily: 'Inter_400Regular',
+      color: colors.textSecondary,
+    },
+    notFoundBtn: { color: colors.primary, fontFamily: 'Inter_600SemiBold' },
+
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 8,
+    },
+    headerBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+    backBtnWrap: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    backBtnIcon: { fontSize: 20, lineHeight: 24 },
+    headerTitle: {
+      flex: 1,
+      textAlign: 'center',
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 18,
+      color: colors.textPrimary,
+    },
+
+    heroSection: {
+      alignItems: 'center',
+      paddingTop: 16,
+      paddingBottom: 32,
+      paddingHorizontal: 24,
+    },
+    heroIconBox: {
+      width: 80,
+      height: 80,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 16,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
+      elevation: 3,
+    },
+    heroAmountWrap: { marginBottom: 4 },
+    heroCurrency: { fontFamily: 'Inter_600SemiBold', fontSize: 22 },
+    heroAmount: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 42,
+      fontWeight: '700',
+      letterSpacing: -2,
+    },
+    heroTitleInput: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 18,
+      textAlign: 'center',
+      borderBottomWidth: 1.5,
+      paddingBottom: 4,
+      paddingHorizontal: 8,
+      minWidth: 200,
+      marginBottom: 4,
+    },
+    heroTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 18,
+      marginBottom: 4,
+      textAlign: 'center',
+    },
+    heroDate: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+
+    detailsCard: {
+      marginHorizontal: 16,
+      backgroundColor: colors.white,
+      borderRadius: 20,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 12,
+      elevation: 2,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'transparent',
+    },
+    detailRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: isDark ? '#333333' : 'rgba(30,30,46,0.07)',
+      minHeight: 52,
+    },
+    detailLabel: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    detailValueWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    detailValue: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.textPrimary,
+      textAlign: 'right',
+      flex: 0,
+      marginLeft: 16,
+    },
+    editIcon: { fontSize: 18, opacity: 0.7 },
+    categoryPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    categoryPillText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+    noteInput: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      textAlign: 'right',
+      flex: 1,
+      marginLeft: 16,
+      borderBottomWidth: 1,
+      paddingBottom: 2,
+    },
+
+    actionsWrap: { paddingHorizontal: 16, marginTop: 20, gap: 12 },
+    editBtn: {
+      backgroundColor: colors.lavenderLight,
+      borderRadius: 16,
+      paddingVertical: 16,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.lavender,
+    },
+    editBtnText: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 16,
+      color: colors.lavenderDark,
+    },
+    deleteBtn: { alignItems: 'center', paddingVertical: 12 },
+    deleteBtnText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      color: colors.coralDark,
+      textDecorationLine: 'underline',
+    },
+
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(30,30,46,0.45)',
+      justifyContent: 'flex-end',
+    },
+    modalSheet: {
+      backgroundColor: colors.background,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      padding: 20,
+      paddingBottom: 40,
+    },
+    modalHandle: {
+      width: 36,
+      height: 4,
+      backgroundColor: colors.border,
+      borderRadius: 2,
+      alignSelf: 'center',
+      marginBottom: 20,
+    },
+    modalTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 18,
+      color: colors.textPrimary,
+      marginBottom: 16,
+    },
+
+    modalItemRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      marginBottom: 8,
+      borderWidth: 1,
+    },
+    modalItemAvatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+    },
+    modalItemAvatarText: { fontFamily: 'Nunito_800ExtraBold', fontSize: 16 },
+    modalItemTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 15,
+      color: colors.textPrimary,
+    },
+    modalItemSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    modalItemCheck: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 16,
+      color: colors.primary,
+    },
+
+    catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    catPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    catPillText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+
+    pickerCard: {
+      backgroundColor: colors.white,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'transparent',
+    },
+    pickerLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.textSecondary,
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+      marginBottom: 10,
+    },
+    colon: { fontFamily: 'DMMono_500Medium', fontSize: 22, marginTop: 14 },
+    amPmBtn: {
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      minWidth: 52,
+      alignItems: 'center',
+    },
+    amPmText: { fontFamily: 'Nunito_700Bold', fontSize: 16, color: '#FFFFFF' },
+    confirmDateBtn: {
+      borderRadius: 16,
+      paddingVertical: 16,
+      alignItems: 'center',
+      marginTop: 6,
+    },
+    confirmDateText: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 16,
+      color: '#FFFFFF',
+    },
+
+    modalFadeOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(30,30,46,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+    },
+    deleteCard: {
+      backgroundColor: colors.white,
+      borderRadius: 20,
+      padding: 24,
+      width: '100%',
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'transparent',
+    },
+    deleteTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 18,
+      color: colors.textPrimary,
+      marginBottom: 8,
+    },
+    deleteSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginBottom: 24,
+      lineHeight: 20,
+    },
+    deleteConfirmBtn: {
+      backgroundColor: colors.expenseRed,
+      borderRadius: 12,
+      paddingVertical: 14,
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    deleteConfirmText: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 15,
+      color: '#FFFFFF',
+    },
+    deleteCancelBtn: { paddingVertical: 12, alignItems: 'center' },
+    deleteCancelText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 15,
+      color: colors.textSecondary,
+    },
+
+    receiptOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.9)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    receiptCloseBtn: {
+      position: 'absolute',
+      top: 60,
+      right: 24,
+      zIndex: 10,
+      padding: 8,
+    },
+    receiptImg: { width: '100%', height: '80%' },
+  });
