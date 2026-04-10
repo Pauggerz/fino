@@ -1,41 +1,43 @@
-// src/screens/HomeScreen.tsx
-import React, {
-  useRef,
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-} from 'react';
-import { useSync } from '@/contexts/SyncContext';
-import { useAuth } from '@/contexts/AuthContext';
-
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   Animated,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+import Svg, { Path as SvgPath } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useSync } from '@/contexts/SyncContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
-import {
-  ACCOUNT_LOGOS,
-  ACCOUNT_AVATAR_OVERRIDE,
-} from '../constants/accountLogos';
-import { isNegativeBalance, BALANCE_ANIMATE_MS } from '../services/balanceCalc';
+import Toast from '../components/Toast';
+import WalletCard, { CARD_WIDTH, CARD_HEIGHT } from '../components/WalletCard';
+import { colors } from '../constants/theme';
+import { BALANCE_ANIMATE_MS } from '../services/balanceCalc';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
-import { useTransactions, FeedTransaction } from '@/hooks/useTransactions';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
-import Toast from '../components/Toast';
-import { Skeleton } from '@/components/Skeleton';
-import { useTheme } from '../contexts/ThemeContext';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const CARD_SCALE = 0.78;
+const SCALED_CARD_W = Math.round(CARD_WIDTH * CARD_SCALE);
+const SCALED_CARD_H = Math.round(CARD_HEIGHT * CARD_SCALE);
+
+const SPARKLINE = [
+  { id: 'day0', val: 0.38 },
+  { id: 'day1', val: 0.6 },
+  { id: 'day2', val: 0.27 },
+  { id: 'day3', val: 0.74 },
+  { id: 'day4', val: 0.45 },
+  { id: 'day5', val: 0.88 },
+  { id: 'day6', val: 0.52 },
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,109 +64,112 @@ function onTrackLabel(pct: number): string {
   return 'Over budget';
 }
 
-function calculateSparkline(
-  transactions: FeedTransaction[]
-): { id: string; val: number }[] {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+// ─── WaveFill ─────────────────────────────────────────────────────────────────
 
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (6 - i));
-    return { id: `day${i}`, timestamp: d.getTime(), total: 0 };
-  });
+const TILE_W = 160;
+const TILE_H = 120;
+// SVG must be wide enough that translating by -TILE_W never exposes a gap.
+const WAVE_SVG_W = TILE_W * 4;
 
-  if (!transactions || transactions.length === 0)
-    return days.map((d) => ({ id: d.id, val: 0 }));
-
-  transactions.forEach((tx) => {
-    if (tx.type === 'expense' && tx.date) {
-      const txDate = new Date(tx.date);
-      txDate.setHours(0, 0, 0, 0);
-      const dayMatch = days.find((d) => d.timestamp === txDate.getTime());
-      if (dayMatch) dayMatch.total += Number(tx.amount) || 0;
-    }
-  });
-
-  const maxSpend = Math.max(...days.map((d) => d.total));
-  return days.map((d) => ({
-    id: d.id,
-    val: maxSpend > 0 ? d.total / maxSpend : 0,
-  }));
+/**
+ * Builds a filled wave path using quadratic beziers.
+ * Wavelength = TILE_W, so translating by -TILE_W is a seamless loop.
+ */
+function makeWavePath(yBase: number, amp: number): string {
+  const halfWl = TILE_W / 2;
+  const numArcs = (WAVE_SVG_W / halfWl) + 2;
+  let d = `M 0 ${yBase}`;
+  for (let i = 0; i < numArcs; i++) {
+    const x0 = i * halfWl;
+    const xMid = x0 + halfWl / 2;
+    const x1 = x0 + halfWl;
+    const yPeak = i % 2 === 0 ? yBase - amp : yBase + amp;
+    d += ` Q ${xMid} ${yPeak} ${x1} ${yBase}`;
+  }
+  d += ` L ${WAVE_SVG_W + halfWl} ${TILE_H} L 0 ${TILE_H} Z`;
+  return d;
 }
 
-function timeSince(date: Date): string {
-  const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hr ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} day ago`;
+function WaveFill({ pct, color }: { pct: number; color: string }) {
+  const anim1 = useRef(new Animated.Value(0)).current;
+  const anim2 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(anim1, { toValue: 1, duration: 3000, useNativeDriver: true })
+    ).start();
+    Animated.loop(
+      Animated.timing(anim2, { toValue: 1, duration: 4600, useNativeDriver: true })
+    ).start();
+  }, [anim1, anim2]);
+
+  const clampedPct = Math.min(Math.max(pct, 0), 1);
+  const yBase = TILE_H - TILE_H * clampedPct;
+
+  // Translate exactly one wavelength → start and end frames are identical → no snap
+  const tx1 = anim1.interpolate({ inputRange: [0, 1], outputRange: [0, -TILE_W] });
+  const tx2 = anim2.interpolate({ inputRange: [0, 1], outputRange: [0, -TILE_W] });
+
+  const waveStyle = {
+    position: 'absolute' as const,
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: WAVE_SVG_W,
+  };
+
+  return (
+    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
+      {/* Back wave — slower, subtler */}
+      <Animated.View style={[waveStyle, { transform: [{ translateX: tx2 }] }]}>
+        <Svg width={WAVE_SVG_W} height={TILE_H}>
+          <SvgPath d={makeWavePath(yBase + 6, 8)} fill={color} opacity={0.18} />
+        </Svg>
+      </Animated.View>
+      {/* Front wave — faster, more opaque */}
+      <Animated.View style={[waveStyle, { transform: [{ translateX: tx1 }] }]}>
+        <Svg width={WAVE_SVG_W} height={TILE_H}>
+          <SvgPath d={makeWavePath(yBase, 10)} fill={color} opacity={0.42} />
+        </Svg>
+      </Animated.View>
+    </View>
+  );
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
-
-  const { colors, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
-
-  const { status: syncStatus, syncVersion, lastSyncedAt } = useSync();
+  const { status: syncStatus, syncVersion } = useSync();
   const { profile } = useAuth();
   const userName = profile?.name || 'User';
 
-  const {
-    accounts,
-    totalBalance,
-    refetch: refetchAccounts,
-    loading: isAccountsLoading = false,
-  } = useAccounts();
-  const {
-    categories,
-    refetch: refetchCategories,
-    loading: isCategoriesLoading = false,
-  } = useCategories();
+  const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
+  const { categories, refetch: refetchCategories } = useCategories();
   const {
     totalIncome,
     totalExpense: monthlyExpense,
     refetch: refetchTotals,
   } = useMonthlyTotals();
-  const { items: transactions, refetch: refetchTransactions } =
-    useTransactions();
-
-  const sparklineData = useMemo(
-    () => calculateSparkline(transactions),
-    [transactions]
-  );
 
   useEffect(() => {
     if (syncVersion > 0) {
       refetchAccounts();
       refetchCategories();
       refetchTotals();
-      refetchTransactions();
     }
-  }, [
-    syncVersion,
-    refetchAccounts,
-    refetchCategories,
-    refetchTotals,
-    refetchTransactions,
-  ]);
+  }, [syncVersion, refetchAccounts, refetchCategories, refetchTotals]);
 
   const getSyncColor = () => {
     switch (syncStatus) {
       case 'synced':
-        return colors.syncSynced;
+        return '#10B981';
       case 'syncing':
-        return colors.syncSyncing;
+        return '#F59E0B';
       case 'offline':
-        return colors.syncOffline;
+        return '#EF4444';
       default:
-        return colors.syncSynced;
+        return '#10B981';
     }
   };
 
@@ -172,14 +177,23 @@ export default function HomeScreen() {
   const [displayBalance, setDisplayBalance] = useState(totalBalance);
 
   useEffect(() => {
-    const listenerId = animBalance.addListener(({ value }) =>
-      setDisplayBalance(value)
-    );
+    const getMyId = async () => {
+      await supabase.auth.getUser();
+    };
+    getMyId();
+  }, []);
+
+  useEffect(() => {
+    const listenerId = animBalance.addListener(({ value }) => {
+      setDisplayBalance(value);
+    });
+
     Animated.timing(animBalance, {
       toValue: totalBalance,
       duration: BALANCE_ANIMATE_MS,
       useNativeDriver: false,
     }).start();
+
     return () => animBalance.removeListener(listenerId);
   }, [totalBalance, animBalance]);
 
@@ -188,45 +202,71 @@ export default function HomeScreen() {
   const [toastSubtitle, setToastSubtitle] = useState('');
   const [toastIsUndo, setToastIsUndo] = useState(false);
   const [undoTxId, setUndoTxId] = useState<string | null>(null);
+  const [undoAccountId, setUndoAccountId] = useState<string | null>(null);
+  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       refetchAccounts();
       refetchCategories();
       refetchTotals();
-      refetchTransactions();
       const last = getLastSaved();
       if (!last) return;
       clearLastSaved();
-      setToastTitle(`${last.type === 'expense' ? 'Expense' : 'Income'} saved`);
+      const typeLabel = last.type === 'expense' ? 'Expense' : 'Income';
+      setToastTitle(`${typeLabel} saved`);
       setToastSubtitle(
         `${fmtPeso(last.amount)} · ${last.categoryName} · ${last.accountName}`
       );
       setToastIsUndo(false);
       setUndoTxId(last.id);
+      setUndoAccountId(last.accountId);
+      setUndoPreviousBalance(last.previousBalance);
       setToastVisible(true);
-    }, [refetchAccounts, refetchCategories, refetchTotals, refetchTransactions])
+    }, [refetchAccounts, refetchCategories, refetchTotals])
   );
 
-  const [staleTimeText, setStaleTimeText] = useState('');
-  useEffect(() => {
-    if (syncStatus !== 'offline' || !lastSyncedAt) {
-      setStaleTimeText('');
-      return;
+  const handleUndo = useCallback(async () => {
+    if (!undoTxId) return;
+    await supabase.from('transactions').delete().eq('id', undoTxId);
+    if (undoAccountId !== null && undoPreviousBalance !== null) {
+      await supabase
+        .from('accounts')
+        .update({ balance: undoPreviousBalance })
+        .eq('id', undoAccountId);
     }
-    const updateTime = () =>
-      setStaleTimeText(`Last synced ${timeSince(lastSyncedAt)}`);
-    updateTime();
-    const intervalId = setInterval(updateTime, 60000);
-    return () => clearInterval(intervalId);
-  }, [syncStatus, lastSyncedAt]);
+    refetchAccounts();
+    refetchCategories();
+    refetchTotals();
+    setUndoTxId(null);
+    setUndoAccountId(null);
+    setUndoPreviousBalance(null);
+    setToastTitle('Removed');
+    setToastSubtitle('Transaction undone');
+    setToastIsUndo(true);
+    setToastVisible(true);
+  }, [
+    undoTxId,
+    undoAccountId,
+    undoPreviousBalance,
+    refetchAccounts,
+    refetchCategories,
+    refetchTotals,
+  ]);
 
   const { text: greetText, emoji: greetEmoji } = getGreeting();
   const daysLeft = getDaysLeftInMonth();
   const totalBudget = categories.reduce((s, c) => s + (c.budget_limit ?? 0), 0);
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
+  const statusLabel = onTrackLabel(pctSpent);
+
   const delta = totalIncome - monthlyExpense;
   const deltaLabel = `${delta >= 0 ? '↑' : '↓'} ${delta >= 0 ? '+' : ''}${fmtPeso(delta)} vs last month`;
+
+  const insight = {
+    headline: 'You spend most on Tuesdays 📊',
+    body: 'Food is 42% of weekly spend. Want to set a lower limit?',
+  };
 
   return (
     <View style={styles.container}>
@@ -235,7 +275,6 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Header Greeting */}
         <View style={styles.greeting}>
           <View style={styles.greetingTop}>
             <View style={styles.greetingLeft}>
@@ -249,6 +288,7 @@ export default function HomeScreen() {
                 <Text style={[styles.greetingPill, { marginBottom: 0 }]}>
                   {greetText} {greetEmoji}
                 </Text>
+                {/* Sync Status Dot */}
                 <View
                   style={{
                     width: 8,
@@ -275,7 +315,7 @@ export default function HomeScreen() {
               </Text>
             </View>
             <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
+              colors={['#5B8C6E', '#3f6b52']}
               style={styles.avatar}
             >
               <Text style={styles.avatarLetter}>
@@ -285,16 +325,10 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Status Pill */}
         <View style={styles.onTrackWrap}>
-          <LinearGradient
-            colors={[colors.onTrackBg1, colors.onTrackBg2]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.onTrackPill}
-          >
+          <View style={styles.onTrackPill}>
             <View style={styles.sparkline}>
-              {sparklineData.map((bar, i) => (
+              {SPARKLINE.map((bar, i) => (
                 <View
                   key={bar.id}
                   style={[
@@ -302,364 +336,541 @@ export default function HomeScreen() {
                     {
                       height: Math.max(4, bar.val * 20),
                       backgroundColor:
-                        i === sparklineData.length - 1
+                        i === SPARKLINE.length - 1
                           ? colors.primary
-                          : colors.primaryTransparent30,
+                          : 'rgba(91,140,110,0.3)',
                     },
                   ]}
                 />
               ))}
             </View>
+
             <View style={styles.onTrackText}>
-              <Text style={styles.onTrackTitle}>{onTrackLabel(pctSpent)}</Text>
+              <Text style={styles.onTrackTitle}>{statusLabel}</Text>
               <Text style={styles.onTrackSub}>
                 {daysLeft} days left · {fmtPeso(monthlyExpense)} spent
               </Text>
             </View>
-          </LinearGradient>
+          </View>
         </View>
 
-        {/* Hero Card */}
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={styles.heroWrap}
-          onPress={() => navigation.navigate('stats')}
-        >
-          <View style={styles.heroCard}>
-            <View style={StyleSheet.absoluteFill}>
-              <LinearGradient
-                colors={[colors.primaryLight60, 'transparent']}
-                style={[
-                  styles.blob,
-                  { top: -40, right: -30, width: 140, height: 140 },
-                ]}
-              />
-              <LinearGradient
-                colors={[colors.whiteTransparent30, 'transparent']}
-                style={[
-                  styles.blob,
-                  { bottom: -20, left: -20, width: 100, height: 100 },
-                ]}
-              />
-              <BlurView
-                intensity={isDark ? 30 : 60}
-                tint="dark"
-                style={StyleSheet.absoluteFill}
-              />
+        {/* ── Unified dark card: balance + accounts ── */}
+        <View style={styles.unifiedCard}>
+          {/* Ambient blobs */}
+          <LinearGradient
+            colors={['rgba(168,213,181,0.45)', 'transparent']}
+            style={[styles.blob, { top: -30, right: -20, width: 160, height: 160 }]}
+          />
+          <LinearGradient
+            colors={['rgba(91,140,110,0.4)', 'transparent']}
+            style={[styles.blob, { bottom: 80, left: -20, width: 110, height: 110 }]}
+          />
+
+          {/* ── Balance section ── */}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('stats')}
+            style={styles.balanceSection}
+          >
+            <View style={styles.heroChip}>
+              <Text style={styles.heroChipText}>
+                {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </Text>
             </View>
-            <View style={styles.glassPanel}>
-              <View style={styles.heroChip}>
-                <Text style={styles.heroChipText}>
-                  {new Date().toLocaleDateString('en-US', {
-                    month: 'long',
-                    year: 'numeric',
-                  })}
-                </Text>
+
+            <Text style={styles.heroLabel}>Total balance</Text>
+
+            <View style={styles.heroAmountRow}>
+              <Text style={styles.heroCurr}>₱</Text>
+              <Text style={styles.heroAmount}>
+                {displayBalance.toLocaleString('en-PH', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </Text>
+            </View>
+
+            <View style={styles.trendBadge}>
+              <Text style={styles.trendText}>{deltaLabel}</Text>
+            </View>
+
+            <View style={styles.heroRow}>
+              <View style={[styles.heroCol, styles.heroColBorder]}>
+                <Text style={styles.heroColLabel}>Income</Text>
+                <Text style={styles.heroColVal}>+{fmtPeso(totalIncome)}</Text>
               </View>
-              <Text style={styles.heroLabel}>Total balance</Text>
-              <View style={styles.heroAmountRow}>
-                <Text style={styles.heroCurr}>₱</Text>
-                <Text style={styles.heroAmount}>
-                  {displayBalance.toLocaleString('en-PH', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </Text>
+              <View style={styles.heroCol}>
+                <Text style={styles.heroColLabel}>Spent</Text>
+                <Text style={styles.heroColVal}>−{fmtPeso(monthlyExpense)}</Text>
               </View>
-              <View style={styles.badgeRow}>
-                {syncStatus === 'offline' && (
-                  <View style={styles.staleDataBadge}>
-                    <Text style={styles.staleDataText}>
-                      {staleTimeText || 'Offline - Stale data'}
-                    </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* ── Hairline divider + accounts label ── */}
+          <View style={styles.unifiedDividerRow}>
+            <View style={styles.unifiedHairline} />
+            <Text style={styles.unifiedDividerLabel}>Accounts</Text>
+            <View style={styles.unifiedHairline} />
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => navigation.navigate('more')}
+              style={styles.unifiedSeeAll}
+            >
+              <Text style={styles.seeAll}>See all →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Scaled wallet cards ── */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.frostScroll}
+            snapToInterval={SCALED_CARD_W + 14}
+            decelerationRate="fast"
+          >
+            {accounts.map((acc) => (
+              <TouchableOpacity
+                key={acc.id}
+                activeOpacity={0.88}
+                onPress={() =>
+                  navigation.navigate('more', {
+                    screen: 'AccountDetail',
+                    params: { id: acc.id },
+                  })
+                }
+              >
+                <View style={{
+                  width: SCALED_CARD_W,
+                  height: SCALED_CARD_H,
+                  overflow: 'hidden',
+                  borderRadius: Math.round(22 * CARD_SCALE),
+                }}>
+                  <View style={{
+                    width: CARD_WIDTH,
+                    height: CARD_HEIGHT,
+                    transform: [{ scale: CARD_SCALE }],
+                    left: -Math.round(CARD_WIDTH * (1 - CARD_SCALE) / 2),
+                    top: -Math.round(CARD_HEIGHT * (1 - CARD_SCALE) / 2),
+                  }}>
+                    <WalletCard account={acc} />
                   </View>
-                )}
-                <View style={styles.trendBadge}>
-                  <Text style={styles.trendText}>{deltaLabel}</Text>
                 </View>
-              </View>
-              <View style={styles.heroRow}>
-                <View style={[styles.heroCol, styles.heroColBorder]}>
-                  <Text style={styles.heroColLabel}>Income</Text>
-                  <Text style={styles.heroColVal}>+{fmtPeso(totalIncome)}</Text>
-                </View>
-                <View style={styles.heroCol}>
-                  <Text style={styles.heroColLabel}>Spent</Text>
-                  <Text style={styles.heroColVal}>
-                    −{fmtPeso(monthlyExpense)}
-                  </Text>
-                </View>
-              </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* ── Budgets + insight, directly on background ── */}
+        <View style={styles.belowCard}>
+          {/* Monthly budgets */}
+          <View style={styles.acctHeader}>
+            <View style={styles.acctHeaderLeft}>
+              <View style={styles.sectionDot} />
+              <Text style={styles.sectionLabel}>Monthly budgets</Text>
             </View>
           </View>
-        </TouchableOpacity>
 
-        {/* Accounts Grid */}
-        <View style={styles.sectionLabelRow}>
-          <View style={styles.sectionDot} />
-          <Text style={styles.sectionLabel}>Accounts</Text>
-        </View>
-        <View style={styles.acctGrid}>
-          {isAccountsLoading
-            ? Array.from({ length: 4 }).map((_, i) => (
-                <View key={`skel-acc-${i}`} style={styles.acctCard}>
-                  <Skeleton
-                    width={40}
-                    height={40}
-                    borderRadius={20}
-                    style={{ marginBottom: 4 }}
-                  />
-                  <Skeleton
-                    width={80}
-                    height={14}
-                    style={{ marginBottom: 4 }}
-                  />
-                  <Skeleton width={60} height={14} />
-                </View>
-              ))
-            : accounts.map((acc) => {
-                const neg = isNegativeBalance(acc.balance);
-                return (
-                  <TouchableOpacity
-                    key={acc.id}
-                    activeOpacity={0.8}
-                    style={styles.acctCard}
-                    onPress={() =>
-                      navigation.navigate('more', {
-                        screen: 'AccountDetail',
-                        params: { id: acc.id },
-                      })
-                    }
-                  >
-                    {ACCOUNT_LOGOS[acc.name] ? (
-                      <View style={styles.acctIconWrap}>
-                        <Image
-                          source={ACCOUNT_LOGOS[acc.name]}
-                          style={styles.acctLogo}
-                          resizeMode="contain"
-                        />
-                      </View>
-                    ) : (
-                      <View
-                        style={[
-                          styles.acctIconWrap,
-                          { backgroundColor: acc.brand_colour },
-                        ]}
-                      >
-                        <Text style={styles.acctLetter}>
-                          {ACCOUNT_AVATAR_OVERRIDE[acc.name] ??
-                            acc.letter_avatar}
+          <View style={styles.catGrid}>
+            {categories.map((cat) => {
+              const bgColor = cat.tile_bg_colour ?? '#F5F5F5';
+              const solidColor = cat.text_colour ?? colors.primary;
+              const isOver = cat.state === 'over';
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  activeOpacity={0.8}
+                  style={styles.catTileWrap}
+                  onPress={() => navigation.navigate('stats')}
+                >
+                  <View style={[styles.catTile, { backgroundColor: bgColor }]}>
+                    {/* Animated wave liquid fill in solid brand color */}
+                    <WaveFill pct={cat.pct} color={solidColor} />
+
+                    <View style={styles.catBadgeWrap}>
+                      {isOver ? (
+                        <View style={styles.catOverBadge}>
+                          <Text style={[styles.catOverBadgeText, { color: solidColor }]}>Over!</Text>
+                        </View>
+                      ) : (
+                        <Text style={[styles.catPctBadge, { color: solidColor }]}>
+                          {Math.round(cat.pct * 100)}%
                         </Text>
-                      </View>
-                    )}
-                    <Text style={styles.acctName}>{acc.name}</Text>
-                    <Text
-                      style={[
-                        styles.acctBalance,
-                        neg && { color: colors.expenseRed },
-                      ]}
-                    >
-                      {neg && <Text style={styles.negBang}>! </Text>}
-                      {fmtPeso(acc.balance)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-        </View>
+                      )}
+                    </View>
 
-        {/* Budgets Grid */}
-        <View style={styles.sectionLabelRow}>
-          <View style={styles.sectionDot} />
-          <Text style={styles.sectionLabel}>Monthly budgets</Text>
-        </View>
-        <View style={styles.catGrid}>
-          {isCategoriesLoading
-            ? Array.from({ length: 4 }).map((_, i) => (
-                <View key={`skel-cat-${i}`} style={styles.catTileWrap}>
-                  <View
-                    style={[
-                      styles.catTile,
-                      { backgroundColor: colors.catTileEmptyBg },
-                    ]}
-                  >
-                    <Skeleton width="100%" height="100%" borderRadius={28} />
+                    <View style={[styles.catIconCircle, { backgroundColor: `${solidColor}22` }]}>
+                      <CategoryIcon
+                        categoryKey={cat.name.toLowerCase()}
+                        color={solidColor}
+                      />
+                    </View>
+
+                    <Text style={[styles.catName, { color: solidColor }]}>{cat.name}</Text>
+                    <Text style={[styles.catAmt, { color: solidColor }]}>{fmtPeso(cat.spent)}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {insight && (
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={styles.insightWrap}
+              onPress={() => navigation.navigate('ChatScreen')}
+            >
+              <View style={styles.insightCard}>
+                <View style={styles.insightAvatar}>
+                  <Text style={styles.insightAvatarIcon}>✦</Text>
+                </View>
+
+                <View style={styles.insightBody}>
+                  <Text style={styles.insightLabel}>Fino Intelligence</Text>
+                  <Text style={styles.insightHeadline}>{insight.headline}</Text>
+                  <Text style={styles.insightSub}>{insight.body}</Text>
+
+                  <View style={styles.insightChip}>
+                    <Text style={styles.insightChipText}>Ask Fino →</Text>
                   </View>
                 </View>
-              ))
-            : categories.map((cat) => {
-                // ─── OVERRIDE DATABASE COLORS WITH DYNAMIC THEME ───
-                let bgColor = cat.tile_bg_colour ?? colors.catTileEmptyBg;
-                let textColor = cat.text_colour ?? colors.textPrimary;
-
-                const catKey = cat.name.toLowerCase();
-                if (catKey === 'food') {
-                  bgColor = colors.catFoodBg;
-                  textColor = colors.catFoodText;
-                } else if (catKey === 'transport') {
-                  bgColor = colors.catTransportBg;
-                  textColor = colors.catTransportText;
-                } else if (catKey === 'shopping') {
-                  bgColor = colors.catShoppingBg;
-                  textColor = colors.catShoppingText;
-                } else if (catKey === 'bills') {
-                  bgColor = colors.catBillsBg;
-                  textColor = colors.catBillsText;
-                } else if (catKey === 'health') {
-                  bgColor = colors.catHealthBg;
-                  textColor = colors.catHealthText;
-                } else if (isDark) {
-                  bgColor = '#2A2A2A'; // Fallback for custom categories in dark mode
-                  textColor = colors.textPrimary;
-                }
-
-                const isOver = cat.state === 'over';
-
-                return (
-                  <TouchableOpacity
-                    key={cat.id}
-                    activeOpacity={0.8}
-                    style={styles.catTileWrap}
-                    onPress={() => navigation.navigate('stats')}
-                  >
-                    <LinearGradient
-                      colors={[bgColor, bgColor]}
-                      style={styles.catTile}
-                    >
-                      <View style={styles.catBadgeWrap}>
-                        {isOver ? (
-                          <View style={styles.catOverBadge}>
-                            <Text style={styles.catOverBadgeText}>Over!</Text>
-                          </View>
-                        ) : (
-                          <Text
-                            style={[styles.catPctBadge, { color: textColor }]}
-                          >
-                            {Math.round(cat.pct * 100)}%
-                          </Text>
-                        )}
-                      </View>
-                      <View style={styles.catIconCircle}>
-                        <CategoryIcon categoryKey={catKey} color={textColor} />
-                      </View>
-                      <Text style={[styles.catName, { color: textColor }]}>
-                        {cat.name}
-                      </Text>
-                      <Text style={[styles.catAmt, { color: textColor }]}>
-                        {fmtPeso(cat.spent)}
-                      </Text>
-                      <View style={styles.catBarTrack}>
-                        <View
-                          style={[
-                            styles.catBarFill,
-                            {
-                              width: `${cat.pct * 100}%` as any,
-                              backgroundColor: textColor,
-                            },
-                          ]}
-                        />
-                      </View>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                );
-              })}
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
+
       <Toast
         visible={toastVisible}
         title={toastTitle}
         subtitle={toastSubtitle}
-        type="success"
+        type={toastIsUndo ? 'undo' : 'success'}
+        onUndo={!toastIsUndo && undoTxId ? handleUndo : undefined}
         onDismiss={() => setToastVisible(false)}
       />
     </View>
   );
 }
 
-// ─── Dynamic Styles ──────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
-const createStyles = (colors: any, isDark: boolean) => StyleSheet.create({
+const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 100 },
   greeting: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
-  greetingTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  greetingTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
   greetingLeft: { flex: 1 },
-  greetingPill: { fontFamily: 'Inter_500Medium', fontSize: 13, color: colors.textSecondary, marginBottom: 6 },
-  greetingName: { fontFamily: 'Nunito_400Regular', fontSize: 26, lineHeight: 32 },
-  avatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  avatarLetter: { fontFamily: 'Inter_700Bold', fontSize: 15, color: '#FFFFFF' },
+  greetingPill: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  greetingName: {
+    fontFamily: 'Nunito_400Regular',
+    fontSize: 26,
+    lineHeight: 32,
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  avatarLetter: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+    color: colors.white,
+  },
   onTrackWrap: { paddingHorizontal: 20, marginBottom: 14 },
-  onTrackPill: { borderRadius: 14, paddingVertical: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: colors.onTrackBorder },
-  sparkline: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 20 },
+  onTrackPill: {
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(91,140,110,0.2)',
+    backgroundColor: 'rgba(235,242,238,0.7)',
+  },
+  sparkline: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 3,
+    height: 20,
+  },
   sparkBar: { width: 4, borderRadius: 2 },
   onTrackText: { flex: 1 },
-  onTrackTitle: { fontFamily: 'Nunito_700Bold', fontSize: 13, color: colors.onTrackTitle },
-  onTrackSub: { fontFamily: 'Inter_400Regular', fontSize: 11, color: colors.onTrackSub, marginTop: 1 },
-  heroWrap: { paddingHorizontal: 20, marginBottom: 20 },
-  heroCard: { backgroundColor: colors.heroCardBg, borderRadius: 28, overflow: 'hidden', padding: 20, shadowColor: colors.heroCardShadow, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.4, shadowRadius: 40, elevation: 10 },
-  blob: { position: 'absolute', borderRadius: 999, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : colors.white },
-  glassPanel: { backgroundColor: colors.whiteTransparent07, borderRadius: 18, borderWidth: 1, borderColor: colors.whiteTransparent18, padding: 16 },
-  heroChip: { alignSelf: 'flex-start', backgroundColor: colors.whiteTransparent15, borderRadius: 20, paddingVertical: 3, paddingHorizontal: 10, marginBottom: 8 },
-  heroChipText: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: colors.whiteTransparent80 },
-  heroLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: colors.whiteTransparent65, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
-  heroAmountRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
-  heroCurr: { fontFamily: 'Inter_600SemiBold', fontSize: 17, color: colors.whiteTransparent65, marginTop: 6, marginRight: 2 },
-  heroAmount: { fontFamily: 'DMMono_500Medium', fontSize: 42, color: '#FFFFFF', letterSpacing: -2, lineHeight: 48 },
-  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  trendBadge: { alignSelf: 'flex-start', backgroundColor: colors.primaryLight25, borderRadius: 8, paddingVertical: 3, paddingHorizontal: 8 },
-  trendText: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: colors.mint },
-  staleDataBadge: { alignSelf: 'flex-start', backgroundColor: colors.staleDataBg, borderRadius: 8, paddingVertical: 3, paddingHorizontal: 8 },
-  staleDataText: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: colors.staleDataText },
-  heroRow: { flexDirection: 'row', backgroundColor: colors.blackTransparent15, borderRadius: 12, overflow: 'hidden' },
+  onTrackTitle: {
+    fontFamily: 'Nunito_700Bold',
+    fontSize: 13,
+    color: colors.onTrackTitle,
+  },
+  onTrackSub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    color: colors.onTrackSub,
+    marginTop: 1,
+  },
+  // ── Unified dark card ──────────────────────────────────────────────────────
+  unifiedCard: {
+    marginHorizontal: 20,
+    marginBottom: 0,
+    backgroundColor: '#1e3d2f',
+    borderRadius: 28,
+    overflow: 'hidden',
+    paddingTop: 20,
+    paddingBottom: 16,
+    shadowColor: '#0f2419',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.45,
+    shadowRadius: 32,
+    elevation: 12,
+  },
+  blob: {
+    position: 'absolute',
+    borderRadius: 999,
+  },
+  balanceSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 4,
+  },
+  unifiedDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  unifiedHairline: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  unifiedDividerLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.45)',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
+  unifiedSeeAll: { marginLeft: 4 },
+  frostScroll: {
+    paddingHorizontal: 20,
+    gap: 10,
+    paddingBottom: 4,
+  },
+  heroChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 20,
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  heroChipText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  heroLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.65)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  heroAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  heroCurr: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 17,
+    color: 'rgba(255,255,255,0.65)',
+    marginTop: 6,
+    marginRight: 2,
+  },
+  heroAmount: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 42,
+    color: colors.white,
+    letterSpacing: -2,
+    lineHeight: 48,
+  },
+  trendBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(168,213,181,0.25)',
+    borderRadius: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    marginBottom: 12,
+  },
+  trendText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    color: colors.mint,
+  },
+  heroRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
   heroCol: { flex: 1, paddingVertical: 10, paddingHorizontal: 12 },
-  heroColBorder: { borderRightWidth: 1, borderRightColor: colors.whiteTransparent12 },
-  heroColLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10, color: colors.whiteTransparent55, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
-  heroColVal: { fontFamily: 'DMMono_500Medium', fontSize: 15, color: '#FFFFFF' },
-  sectionLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, marginBottom: 10 },
-  sectionDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
-  sectionLabel: { fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8 },
-  acctGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 10, marginBottom: 20 },
-  
-  // MERGED: Flex layout from main + borders from DynamicTheme
-  acctCard: { 
-    flexGrow: 1, 
-    minWidth: 140, 
-    backgroundColor: colors.white, 
-    borderRadius: 16, 
-    padding: 14, 
-    borderWidth: 1, 
-    borderColor: colors.cardBorderTransparent, 
-    shadowColor: colors.cardShadow, 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.06, 
-    shadowRadius: 10, 
-    elevation: 2, 
-    gap: 4 
+  heroColBorder: {
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255,255,255,0.12)',
   },
-  
-  acctIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: isDark ? '#2A2A2A' : '#FFFFFF', borderWidth: 1, borderColor: colors.cardBorderTransparent, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 4 },
-  acctLogo: { width: 28, height: 28 },
-  acctLetter: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  acctName: { fontFamily: 'Nunito_700Bold', fontSize: 13, color: colors.textPrimary },
-  acctBalance: { fontFamily: 'DMMono_500Medium', fontSize: 13, color: colors.textSecondary },
-  negBang: { color: colors.expenseRed, fontFamily: 'Inter_700Bold' },
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 10, marginBottom: 20 },
-  
-  // MERGED: Flex layout from main
-  catTileWrap: { 
-    flexGrow: 1, 
-    minWidth: 140 
+  heroColLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.55)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
-  
-  // MERGED: Borders from DynamicTheme
-  catTile: { borderRadius: 28, height: 120, padding: 14, justifyContent: 'flex-end', overflow: 'hidden', borderWidth: 1, borderColor: colors.cardBorderTransparent },
+  heroColVal: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 15,
+    color: colors.white,
+  },
+  // ── Accounts section ────────────────────────────────────────────────────────
+  acctHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  acctHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sectionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  sectionLabel: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  seeAll: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: colors.primary,
+  },
+  catGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    gap: 10,
+    marginBottom: 16,
+  },
+  catTileWrap: { width: '47.5%' },
+  catTile: {
+    borderRadius: 24,
+    height: 120,
+    padding: 14,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
   catBadgeWrap: { position: 'absolute', top: 10, right: 10 },
   catPctBadge: { fontFamily: 'Inter_700Bold', fontSize: 10 },
-  catOverBadge: { backgroundColor: colors.catOverBadgeBg, borderRadius: 6, paddingVertical: 2, paddingHorizontal: 5 },
-  catOverBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10, color: colors.expenseRed },
-  catIconCircle: { position: 'absolute', top: 14, left: 14, width: 32, height: 32, borderRadius: 16, backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : colors.whiteTransparent80, alignItems: 'center', justifyContent: 'center' },
+  catOverBadge: {
+    backgroundColor: 'rgba(192,80,58,0.12)',
+    borderRadius: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 5,
+  },
+  catOverBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10 },
+  catIconCircle: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   catName: { fontFamily: 'Nunito_800ExtraBold', fontSize: 12, marginBottom: 1 },
-  catAmt: { fontFamily: 'DMMono_500Medium', fontSize: 11, marginBottom: 6 },
-  catBarTrack: { height: 4, borderRadius: 4, backgroundColor: colors.whiteTransparent80, overflow: 'hidden' },
-  catBarFill: { height: '100%', borderRadius: 4, opacity: 0.6 },
+  catAmt: { fontFamily: 'DMMono_500Medium', fontSize: 11 },
+  belowCard: {
+    marginTop: 24,
+  },
+  insightWrap: { paddingHorizontal: 20, marginTop: 8, marginBottom: 16 },
+  insightCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(91,140,110,0.15)',
+    backgroundColor: 'rgba(235,242,238,0.6)',
+    padding: 16,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  insightAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(91,140,110,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(91,140,110,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  insightAvatarIcon: { fontSize: 15, color: colors.primary },
+  insightBody: { flex: 1 },
+  insightLabel: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    color: colors.primaryDark,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    marginBottom: 4,
+  },
+  insightHeadline: {
+    fontFamily: 'Nunito_800ExtraBold',
+    fontSize: 14,
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  insightSub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  insightChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(91,140,110,0.12)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(91,140,110,0.25)',
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+  },
+  insightChipText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    color: colors.primaryDark,
+  },
 });
