@@ -197,9 +197,9 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderBottomColor: isDark ? '#333333' : 'rgba(30,30,46,0.06)',
     },
     iconWrap: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
     },

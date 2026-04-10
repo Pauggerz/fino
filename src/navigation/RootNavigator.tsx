@@ -10,7 +10,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import FABActionSheet from '../components/FABActionSheet';
 import HomeScreen from '../screens/HomeScreen';
 import FeedScreen from '../screens/FeedScreen';
-import StatsScreen from '../screens/StatsScreen';
+import InsightsScreen from '../screens/StatsScreen';
 import TransactionDetailScreen from '../screens/TransactionDetailScreen';
 import AddTransactionSheet from '../screens/AddTransactionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
@@ -111,7 +111,7 @@ function TabNavigator() {
       <Tab.Screen name="home" component={HomeScreen} />
       {/* unmountOnBlur safely removed to satisfy TypeScript */}
       <Tab.Screen name="feed" component={FeedNavigator} />
-      <Tab.Screen name="stats" component={StatsScreen} />
+      <Tab.Screen name="stats" component={InsightsScreen} />
       <Tab.Screen name="more" component={MoreNavigator} />
     </Tab.Navigator>
   );

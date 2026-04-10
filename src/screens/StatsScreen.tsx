@@ -6,6 +6,7 @@ import React, {
   useMemo,
 } from 'react';
 import {
+  Animated,
   View,
   Text,
   StyleSheet,
@@ -20,7 +21,7 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, G } from 'react-native-svg';
+import Svg, { Circle, G, Path as SvgPath } from 'react-native-svg';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Dynamic Theme Hook
 import { supabase } from '@/services/supabase';
@@ -171,6 +172,93 @@ const MONTH_NAMES = [
 const normalizeCategoryKey = (value: string | null): string =>
   (value ?? '').trim().toLowerCase();
 
+const withAlpha = (hex: string, alpha: number): string => {
+  if (!hex.startsWith('#')) return hex;
+  const normalized = hex.length === 4
+    ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+    : hex;
+  const value = normalized.replace('#', '');
+  const bigint = Number.parseInt(value, 16);
+  if (Number.isNaN(bigint)) return hex;
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+};
+
+// ─── WaveFill (shared with HomeScreen style) ───────────────────────────────
+
+const TILE_W = 160;
+const TILE_H = 122;
+const WAVE_SVG_W = TILE_W * 4;
+
+function makeWavePath(yBase: number, amp: number): string {
+  const halfWl = TILE_W / 2;
+  const numArcs = (WAVE_SVG_W / halfWl) + 2;
+  let d = `M 0 ${yBase}`;
+  for (let i = 0; i < numArcs; i++) {
+    const x0 = i * halfWl;
+    const xMid = x0 + halfWl / 2;
+    const x1 = x0 + halfWl;
+    const yPeak = i % 2 === 0 ? yBase - amp : yBase + amp;
+    d += ` Q ${xMid} ${yPeak} ${x1} ${yBase}`;
+  }
+  d += ` L ${WAVE_SVG_W + halfWl} ${TILE_H} L 0 ${TILE_H} Z`;
+  return d;
+}
+
+function WaveFill({ pct, color }: { pct: number; color: string }) {
+  const anim1 = useRef(new Animated.Value(0)).current;
+  const anim2 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop1 = Animated.loop(
+      Animated.timing(anim1, { toValue: 1, duration: 3000, useNativeDriver: true })
+    );
+    const loop2 = Animated.loop(
+      Animated.timing(anim2, { toValue: 1, duration: 4600, useNativeDriver: true })
+    );
+    loop1.start();
+    loop2.start();
+
+    return () => {
+      loop1.stop();
+      loop2.stop();
+      anim1.stopAnimation();
+      anim2.stopAnimation();
+    };
+  }, [anim1, anim2]);
+
+  const clampedPct = Math.min(Math.max(pct, 0), 1);
+  const yBase = TILE_H - TILE_H * clampedPct;
+
+  const tx1 = anim1.interpolate({ inputRange: [0, 1], outputRange: [0, -TILE_W] });
+  const tx2 = anim2.interpolate({ inputRange: [0, 1], outputRange: [0, -TILE_W] });
+
+  const waveStyle = {
+    position: 'absolute' as const,
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: WAVE_SVG_W,
+  };
+
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Animated.View style={[waveStyle, { transform: [{ translateX: tx2 }] }]}>
+        <Svg width={WAVE_SVG_W} height={TILE_H}>
+          <SvgPath d={makeWavePath(yBase + 6, 8)} fill={color} opacity={0.18} />
+        </Svg>
+      </Animated.View>
+      <Animated.View style={[waveStyle, { transform: [{ translateX: tx1 }] }]}>
+        <Svg width={WAVE_SVG_W} height={TILE_H}>
+          <SvgPath d={makeWavePath(yBase, 10)} fill={color} opacity={0.42} />
+        </Svg>
+      </Animated.View>
+    </View>
+  );
+}
+
 // ─── Month picker modal ───────────────────────────────────────────────────────
 
 function MonthPickerModal({
@@ -288,7 +376,7 @@ function MonthPickerModal({
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
-export default function StatsScreen() {
+export default function InsightsScreen() {
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
@@ -573,7 +661,7 @@ export default function StatsScreen() {
   // ─── Donut center text ────────────────────────────────────────────────────
   let centerPctText: string;
   let centerSubText: string;
-  let centerTextColor = colors.textPrimary;
+  let centerTextColor = colors.white;
 
   if (viewType === 'expense') {
     if (selectedDonut && selectedCategory) {
@@ -588,7 +676,7 @@ export default function StatsScreen() {
       centerTextColor = selectedDonut.color;
     } else {
       centerPctText = `${budgetUsedPct.toFixed(0)}%`;
-      centerSubText = 'used overall';
+      centerSubText = 'of budget';
     }
   } else if (selectedDonut && selectedCategory) {
     const incDef = INCOME_CATEGORIES.find((c) => c.key === selectedCategory);
@@ -600,178 +688,273 @@ export default function StatsScreen() {
   } else {
     centerPctText =
       totalIncome > 0 ? `₱${(totalIncome / 1000).toFixed(1)}k` : '₱0';
-    centerSubText = 'total income';
+    centerSubText = 'this month';
   }
 
   const selectedThemeColor = selectedDonut?.color ?? null;
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const isAtMaxMonth =
+    selectedYear > currentYear ||
+    (selectedYear === currentYear && selectedMonth >= currentMonth);
 
-  // ─── Renderers ────────────────────────────────────────────────────────────
-  const renderExpenseCategoryRow = (catKey: string) => {
-    const meta = expenseCategoryMeta[catKey];
-    const title = meta?.label ?? catKey;
-    const theme = CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other;
-    const color = meta?.textColor ?? theme.nameColor;
-    const rawBg = meta?.tileBg ?? theme.badgeBg;
-    const bg = isDark ? colors.surfaceSubdued : rawBg; // Soften background for dark mode
+  const handlePrevMonth = useCallback(() => {
+    setActiveDonutIndex(-1);
+    if (selectedMonth === 0) {
+      setSelectedYear((year) => year - 1);
+      setSelectedMonth(11);
+      return;
+    }
+    setSelectedMonth((month) => month - 1);
+  }, [selectedMonth]);
 
-    const iconKey = catKey;
-    const catSpent = expenseTotals[catKey] || 0;
-    const catBudget =
-      expenseBudgets[catKey] || DEFAULT_CATEGORY_BUDGETS.default;
-    const pct = catBudget > 0 ? (catSpent / catBudget) * 100 : 0;
-    const isOver = pct >= 100;
-    const displayPct = isOver ? 'Over!' : `${pct.toFixed(0)}%`;
-    const activeTextColor = isOver ? colors.expenseRed : color;
+  const handleNextMonth = useCallback(() => {
+    if (isAtMaxMonth) return;
+    setActiveDonutIndex(-1);
+    if (selectedMonth === 11) {
+      setSelectedYear((year) => year + 1);
+      setSelectedMonth(0);
+      return;
+    }
+    setSelectedMonth((month) => month + 1);
+  }, [isAtMaxMonth, selectedMonth]);
+
+  const expenseTiles = useMemo(() => {
+    return expenseCategoryKeys
+      .map((catKey, index) => {
+        const meta = expenseCategoryMeta[catKey];
+        const theme = CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other;
+        const amount = expenseTotals[catKey] ?? 0;
+        const budget =
+          expenseBudgets[catKey] ?? DEFAULT_CATEGORY_BUDGETS.default;
+        const pct = budget > 0 ? (amount / budget) * 100 : 0;
+        const color = meta?.textColor ?? theme.nameColor;
+        const tileBg = meta?.tileBg ?? theme.badgeBg;
+
+        return {
+          key: catKey,
+          index,
+          title: meta?.label ?? catKey,
+          amount,
+          budget,
+          pct,
+          isOver: pct >= 100,
+          color,
+          tileBg,
+          iconKey: catKey,
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+  }, [expenseCategoryKeys, expenseCategoryMeta, expenseTotals, expenseBudgets]);
+
+  const incomeTiles = useMemo(() => {
+    const denom = totalIncome > 0 ? totalIncome : 1;
+    return INCOME_CATEGORIES.map((incDef) => {
+      const theme = INCOME_THEME[incDef.key] ?? INCOME_THEME.default;
+      const amount = incomeTotals[incDef.key] ?? 0;
+      return {
+        key: incDef.key,
+        title: incDef.name,
+        amount,
+        pct: (amount / denom) * 100,
+        color: theme.nameColor,
+        tileBg: theme.badgeBg,
+      };
+    })
+      .filter((tile) => tile.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+  }, [incomeTotals, totalIncome]);
+
+  const mostOverBudgetTile = useMemo(() => {
+    return expenseTiles
+      .filter((tile) => tile.isOver)
+      .sort((a, b) => b.pct - a.pct)[0] ?? null;
+  }, [expenseTiles]);
+
+  const monthLabel = `${MONTH_NAMES[selectedMonth]} ${selectedYear}`;
+
+  const selectedExpenseBudget =
+    selectedCategory && viewType === 'expense'
+      ? (expenseBudgets[selectedCategory] ?? 0)
+      : null;
+  const selectedExpenseSpent =
+    selectedCategory && viewType === 'expense'
+      ? (expenseTotals[selectedCategory] ?? 0)
+      : null;
+
+  const selectedIncomeDef = selectedCategory
+    ? INCOME_CATEGORIES.find((cat) => cat.key === selectedCategory)
+    : null;
+  const selectedIncomeAmount =
+    selectedIncomeDef && selectedCategory
+      ? (incomeTotals[selectedCategory] ?? 0)
+      : null;
+  const selectedIncomePct =
+    selectedIncomeAmount && totalIncome > 0
+      ? (selectedIncomeAmount / totalIncome) * 100
+      : 0;
+
+  const heroMetricOneLabel =
+    viewType === 'expense'
+      ? selectedCategory
+        ? `${expenseCategoryMeta[selectedCategory]?.label ?? selectedCategory} spent`
+        : 'Spent'
+      : selectedIncomeDef
+        ? `${selectedIncomeDef.name} income`
+        : 'Income';
+  const heroMetricOneValue =
+    viewType === 'expense'
+      ? selectedExpenseSpent ?? totalExpenseSpent
+      : selectedIncomeAmount ?? totalIncome;
+
+  const heroMetricTwoLabel =
+    viewType === 'expense'
+      ? selectedCategory
+        ? 'Remaining'
+        : 'Remaining'
+      : selectedIncomeDef
+        ? 'Share'
+        : 'Sources';
+  const heroMetricTwoValue =
+    viewType === 'expense'
+      ? Math.max((selectedExpenseBudget ?? totalBudget) - heroMetricOneValue, 0)
+      : selectedIncomeDef
+        ? selectedIncomePct
+        : incomeActiveKeys.length;
+
+  const showBudgetMetric = viewType === 'expense';
+
+  const insightHeadline = mostOverBudgetTile
+    ? `${mostOverBudgetTile.title} is ${(mostOverBudgetTile.pct - 100).toFixed(0)}% over budget this month`
+    : 'Your spending trend looks stable this month';
+  const insightSub = mostOverBudgetTile
+    ? 'Tap to get personalized savings tips from Fino.'
+    : 'Ask Fino for custom insights and ways to improve your budget.';
+
+  const renderExpenseTile = (catKey: string) => {
+    const tile = expenseTiles.find((item) => item.key === catKey);
+    if (!tile) return null;
+    const wavePct = tile.isOver ? 100 : Math.max(10, Math.min(tile.pct, 100));
+    const waveHeight = (122 * wavePct) / 100;
+    const tileTextColor = tile.isOver ? colors.expenseRed : tile.color;
 
     return (
       <TouchableOpacity
-        key={catKey}
-        activeOpacity={0.7}
+        key={tile.key}
+        activeOpacity={0.85}
+        style={styles.catTileWrap}
         onPress={() =>
           navigation.navigate('feed', {
             screen: 'FeedMain',
-            params: { filterCategory: title },
+            params: { filterCategory: tile.title },
           })
         }
-        style={styles.progRow}
       >
-        <LinearGradient
-          colors={isDark ? ['transparent', 'transparent'] : [bg, bg]}
+        <View
           style={[
-            styles.catIconWrap,
-            isDark && { borderWidth: 1, borderColor: colors.border },
+            styles.catTile,
+            { backgroundColor: isDark ? colors.surfaceSubdued : tile.tileBg },
           ]}
         >
-          <CategoryIcon
-            categoryKey={iconKey}
-            color={activeTextColor}
-            size={14}
-            wrapperSize={24}
-          />
-        </LinearGradient>
-        <View style={styles.progRowContent}>
-          <View style={styles.progHd}>
-            <Text style={[styles.progName, { color: activeTextColor }]}>
-              {title}
-            </Text>
-            <View style={styles.progMetaWrap}>
-              <View style={[styles.progBadge, { backgroundColor: bg }]}>
-                <Text
-                  style={[styles.progBadgeText, { color: activeTextColor }]}
-                >
-                  {displayPct}
-                </Text>
-              </View>
-              <Text
-                style={[styles.progMeta, isOver && { color: activeTextColor }]}
-              >
-                ₱{catSpent.toLocaleString()} / ₱{catBudget.toLocaleString()}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.progTrack}>
-            <View
-              style={[
-                styles.progFillBar,
-                { width: `${Math.min(pct, 100)}%`, backgroundColor: color },
-              ]}
+          <WaveFill pct={waveHeight / TILE_H} color={tile.color} />
+
+          <View
+            style={[
+              styles.catIconCircle,
+              { backgroundColor: withAlpha(tile.color, 0.16) },
+            ]}
+          >
+            <CategoryIcon
+              categoryKey={tile.iconKey}
+              color={tileTextColor}
+              size={15}
+              wrapperSize={22}
             />
           </View>
+
+          <View style={styles.catBadgeWrap}>
+            {tile.isOver ? (
+              <View style={styles.catOverBadge}>
+                <Text style={styles.catOverBadgeText}>Over!</Text>
+              </View>
+            ) : (
+              <View
+                style={[
+                  styles.catPctPill,
+                  { backgroundColor: withAlpha(tile.color, 0.13) },
+                ]}
+              >
+                <Text style={[styles.catPctPillText, { color: tileTextColor }]}>
+                  {`${tile.pct.toFixed(0)}%`}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={[styles.catName, { color: tileTextColor }]} numberOfLines={1}>
+            {tile.title}
+          </Text>
+          <Text style={[styles.catAmt, { color: tileTextColor }]}>
+            ₱{tile.amount.toLocaleString()}
+          </Text>
         </View>
-        <Text style={styles.chevron}>›</Text>
       </TouchableOpacity>
     );
   };
 
-  const renderIncomeCategoryRow = (incKey: string) => {
-    const incDef = INCOME_CATEGORIES.find((c) => c.key === incKey);
-    if (!incDef) return null;
-    const theme = INCOME_THEME[incKey] ?? INCOME_THEME.default;
-    const amount = incomeTotals[incKey] || 0;
-    const pct = totalIncome > 0 ? (amount / totalIncome) * 100 : 0;
-    const bg = isDark ? colors.surfaceSubdued : theme.badgeBg;
+  const renderIncomeTile = (incKey: string) => {
+    const tile = incomeTiles.find((item) => item.key === incKey);
+    if (!tile) return null;
+    const wavePct = Math.max(8, Math.min(tile.pct, 100));
+    const waveHeight = (122 * wavePct) / 100;
 
     return (
-      <View key={incKey} style={styles.progRow}>
-        <LinearGradient
-          colors={isDark ? ['transparent', 'transparent'] : [bg, bg]}
+      <View key={tile.key} style={styles.catTileWrap}>
+        <View
           style={[
-            styles.catIconWrap,
-            isDark && { borderWidth: 1, borderColor: colors.border },
+            styles.catTile,
+            { backgroundColor: isDark ? colors.surfaceSubdued : tile.tileBg },
           ]}
         >
-          <CategoryIcon
-            categoryKey={incKey}
-            color={theme.nameColor}
-            size={14}
-            wrapperSize={24}
-          />
-        </LinearGradient>
-        <View style={styles.progRowContent}>
-          <View style={styles.progHd}>
-            <Text style={[styles.progName, { color: theme.nameColor }]}>
-              {incDef.name}
-            </Text>
-            <View style={styles.progMetaWrap}>
-              <View style={[styles.progBadge, { backgroundColor: bg }]}>
-                <Text
-                  style={[styles.progBadgeText, { color: theme.nameColor }]}
-                >
-                  {pct.toFixed(0)}%
-                </Text>
-              </View>
-              <Text style={styles.progMeta}>
-                ₱{amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+          <WaveFill pct={waveHeight / TILE_H} color={tile.color} />
+
+          <View
+            style={[
+              styles.catIconCircle,
+              { backgroundColor: withAlpha(tile.color, 0.16) },
+            ]}
+          >
+            <CategoryIcon
+              categoryKey={tile.key}
+              color={tile.color}
+              size={15}
+              wrapperSize={22}
+            />
+          </View>
+
+          <View style={styles.catBadgeWrap}>
+            <View
+              style={[
+                styles.catPctPill,
+                { backgroundColor: withAlpha(tile.color, 0.13) },
+              ]}
+            >
+              <Text style={[styles.catPctPillText, { color: tile.color }]}>
+                {`${tile.pct.toFixed(0)}%`}
               </Text>
             </View>
           </View>
-          <View style={styles.progTrack}>
-            <View
-              style={[
-                styles.progFillBar,
-                {
-                  width: `${Math.min(pct, 100)}%`,
-                  backgroundColor: theme.barColor,
-                },
-              ]}
-            />
-          </View>
+
+          <Text style={[styles.catName, { color: tile.color }]} numberOfLines={1}>
+            {tile.title}
+          </Text>
+          <Text style={[styles.catAmt, { color: tile.color }]}>
+            ₱{tile.amount.toLocaleString()}
+          </Text>
         </View>
       </View>
     );
   };
-
-  const monthLabel = `${MONTH_NAMES[selectedMonth].slice(0, 3)} ${selectedYear}`;
-  const expSpentLabel =
-    selectedCategory && viewType === 'expense'
-      ? `Spent · ${expenseCategoryMeta[selectedCategory]?.label ?? selectedCategory}`
-      : 'Spent so far';
-  const expRemainingLabel =
-    selectedCategory && viewType === 'expense'
-      ? `Remaining · ${expenseCategoryMeta[selectedCategory]?.label ?? selectedCategory}`
-      : 'Remaining budget';
-  const expSpentValue =
-    selectedCategory && viewType === 'expense'
-      ? (expenseTotals[selectedCategory] ?? 0)
-      : totalExpenseSpent;
-  const expRemainingValue =
-    selectedCategory && viewType === 'expense'
-      ? Math.max(
-          (expenseBudgets[selectedCategory] ?? 0) -
-            (expenseTotals[selectedCategory] ?? 0),
-          0
-        )
-      : remaining;
-
-  const selIncDef = selectedCategory
-    ? INCOME_CATEGORIES.find((c) => c.key === selectedCategory)
-    : null;
-  const incSpentLabel = selIncDef
-    ? `Received · ${selIncDef.name}`
-    : 'Total received';
-  const incSpentValue = selIncDef
-    ? (incomeTotals[selectedCategory!] ?? 0)
-    : totalIncome;
 
   if (loading) {
     return (
@@ -854,259 +1037,280 @@ export default function StatsScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       scrollEnabled={scrollEnabled}
+      showsVerticalScrollIndicator={false}
     >
-      {/* ─── HEADER ─── */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Stats</Text>
-          <Text style={styles.headerSub}>
-            {viewType === 'expense'
-              ? `₱${totalBudget.toLocaleString()} monthly budget`
-              : `₱${totalIncome.toLocaleString('en-PH', { minimumFractionDigits: 2 })} received`}
-          </Text>
-        </View>
+      <View style={styles.screenTitleRow}>
+        <Text style={styles.headerTitle}>Insights</Text>
         <TouchableOpacity
-          style={styles.monthPill}
-          activeOpacity={0.7}
-          onPress={() => setMonthPickerVisible(true)}
+          activeOpacity={0.75}
+          onPress={() => navigation.navigate('ChatScreen')}
+          style={styles.notifBtn}
         >
-          <Text style={styles.monthPillText}>{monthLabel} ▾</Text>
+          <Ionicons
+            name="notifications-outline"
+            size={18}
+            color={colors.textPrimary}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* ─── INCOME / EXPENSE TOGGLE ─── */}
-      <View style={styles.toggleRow}>
-        <TouchableOpacity
-          style={[
-            styles.toggleBtn,
-            viewType === 'expense' && styles.toggleBtnExpenseActive,
-          ]}
-          onPress={() => handleViewTypeSwitch('expense')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.toggleBtnText,
-              viewType === 'expense' && styles.toggleBtnTextActive,
-            ]}
-          >
-            Expenses
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.toggleBtn,
-            viewType === 'income' && styles.toggleBtnIncomeActive,
-          ]}
-          onPress={() => handleViewTypeSwitch('income')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.toggleBtnText,
-              viewType === 'income' && styles.toggleBtnTextActive,
-            ]}
-          >
-            Income
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ─── OVERALL CARD (donut) ─── */}
-      <Pressable
-        style={[
-          styles.overallCard,
-          selectedThemeColor && { borderColor: selectedThemeColor },
-        ]}
-        onPress={() => {
-          if (isInteractingWithDonutRef.current) return;
-          if (activeDonutIndex !== -1) {
-            setActiveDonutIndex(-1);
-            LayoutAnimation.configureNext(
-              LayoutAnimation.Presets.easeInEaseOut
-            );
-          }
-        }}
+      <LinearGradient
+        colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
+        style={styles.heroCard}
       >
-        <View {...panResponder.panHandlers} style={styles.donutContainer}>
-          <Svg width={160} height={160} viewBox="0 0 160 160">
-            <G transform="rotate(-90, 80, 80)">
-              <Circle
-                cx="80"
-                cy="80"
-                r={donutRadius}
-                stroke={isDark ? '#333333' : 'rgba(30,30,46,0.06)'}
-                strokeWidth={donutStrokeWidth}
-                fill="transparent"
-              />
-              {donutSegments.map((segment, index) => {
-                const isFocused = activeDonutIndex === index;
-                const isDimmed = activeDonutIndex >= 0 && !isFocused;
-                return (
-                  <Circle
-                    key={segment.key}
-                    cx="80"
-                    cy="80"
-                    r={donutRadius}
-                    stroke={segment.color}
-                    strokeWidth={
-                      isFocused ? donutStrokeWidth + 6 : donutStrokeWidth
-                    }
-                    opacity={isDimmed ? 0.2 : 1}
-                    fill="transparent"
-                    strokeDasharray={segment.strokeDasharray}
-                    strokeDashoffset={segment.strokeDashoffset}
-                    strokeLinecap="butt"
-                  />
-                );
-              })}
-            </G>
-          </Svg>
-          <View style={styles.donutCenterText} pointerEvents="none">
-            <Text style={[styles.donutCenterPct, { color: centerTextColor }]}>
-              {centerPctText}
-            </Text>
-            <Text
-              style={[
-                styles.donutCenterSub,
-                {
-                  color:
-                    activeDonutIndex >= 0
-                      ? centerTextColor
-                      : colors.textSecondary,
-                },
-              ]}
+        <View style={styles.heroBlobOne} />
+        <View style={styles.heroBlobTwo} />
+
+        <View style={styles.heroTopRow}>
+          <View style={styles.monthNavPill}>
+            <TouchableOpacity
+              style={styles.monthArrow}
+              activeOpacity={0.75}
+              onPress={handlePrevMonth}
             >
-              {centerSubText.charAt(0).toUpperCase() + centerSubText.slice(1)}
-            </Text>
+              <Ionicons
+                name="chevron-back"
+                size={14}
+                color={colors.whiteTransparent80}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => setMonthPickerVisible(true)}
+            >
+              <Text style={styles.monthNavLabel}>{monthLabel}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.monthArrow, isAtMaxMonth && { opacity: 0.35 }]}
+              activeOpacity={0.75}
+              onPress={handleNextMonth}
+              disabled={isAtMaxMonth}
+            >
+              <Ionicons
+                name="chevron-forward"
+                size={14}
+                color={colors.whiteTransparent80}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.heroToggleWrap}>
+            <TouchableOpacity
+              style={[
+                styles.heroToggleBtn,
+                viewType === 'expense' && styles.heroToggleBtnActive,
+              ]}
+              activeOpacity={0.8}
+              onPress={() => handleViewTypeSwitch('expense')}
+            >
+              <Text
+                style={[
+                  styles.heroToggleText,
+                  viewType === 'expense' && styles.heroToggleTextActive,
+                ]}
+              >
+                Expenses
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.heroToggleBtn,
+                viewType === 'income' && styles.heroToggleBtnActive,
+              ]}
+              activeOpacity={0.8}
+              onPress={() => handleViewTypeSwitch('income')}
+            >
+              <Text
+                style={[
+                  styles.heroToggleText,
+                  viewType === 'income' && styles.heroToggleTextActive,
+                ]}
+              >
+                Income
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.budgetMetrics} pointerEvents="none">
+        <Pressable
+          style={styles.donutSection}
+          onPress={() => {
+            if (isInteractingWithDonutRef.current) return;
+            if (activeDonutIndex !== -1) {
+              setActiveDonutIndex(-1);
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            }
+          }}
+        >
+          <View {...panResponder.panHandlers} style={styles.donutContainer}>
+            <Svg width={160} height={160} viewBox="0 0 160 160">
+              <G transform="rotate(-90, 80, 80)">
+                <Circle
+                  cx="80"
+                  cy="80"
+                  r={donutRadius}
+                  stroke={colors.whiteTransparent15}
+                  strokeWidth={18}
+                  fill="transparent"
+                />
+                {donutSegments.map((segment, index) => {
+                  const isFocused = activeDonutIndex === index;
+                  const isDimmed = activeDonutIndex >= 0 && !isFocused;
+                  return (
+                    <Circle
+                      key={segment.key}
+                      cx="80"
+                      cy="80"
+                      r={donutRadius}
+                      stroke={segment.color}
+                      strokeWidth={isFocused ? 22 : 18}
+                      opacity={isDimmed ? 0.2 : 1}
+                      fill="transparent"
+                      strokeDasharray={segment.strokeDasharray}
+                      strokeDashoffset={segment.strokeDashoffset}
+                      strokeLinecap="butt"
+                    />
+                  );
+                })}
+              </G>
+            </Svg>
+            <View style={styles.donutCenterText} pointerEvents="none">
+              <Text style={[styles.donutCenterPct, { color: centerTextColor }]}>
+                {centerPctText}
+              </Text>
+              <Text
+                style={[
+                  styles.donutCenterSub,
+                  {
+                    color:
+                      activeDonutIndex >= 0
+                        ? centerTextColor
+                        : colors.whiteTransparent65,
+                  },
+                ]}
+              >
+                {centerSubText.charAt(0).toUpperCase() + centerSubText.slice(1)}
+              </Text>
+            </View>
+          </View>
+        </Pressable>
+
+        <Text style={styles.tapHint} pointerEvents="none">
+          {donutSegments.length > 0
+            ? 'Tap or drag chart to explore'
+            : 'No data for this period'}
+        </Text>
+
+        <View style={styles.heroMetricsBar} pointerEvents="none">
           <View style={styles.budgetMetricsRow}>
-            {viewType === 'expense' ? (
+            <View style={styles.metricCol}>
+              <Text style={styles.metricLabel}>{heroMetricOneLabel}</Text>
+              <Text
+                style={[
+                  styles.metricVal,
+                  viewType === 'expense'
+                    ? styles.metricValCoral
+                    : styles.metricValAccent,
+                  selectedThemeColor && { color: selectedThemeColor },
+                ]}
+              >
+                ₱{heroMetricOneValue.toLocaleString()}
+              </Text>
+            </View>
+
+            <View style={styles.metricDivider} />
+
+            <View style={styles.metricCol}>
+              <Text style={styles.metricLabel}>{heroMetricTwoLabel}</Text>
+              <Text
+                style={[
+                  styles.metricVal,
+                  viewType === 'expense'
+                    ? styles.metricValAccent
+                    : undefined,
+                ]}
+              >
+                {viewType === 'expense'
+                  ? `₱${heroMetricTwoValue.toLocaleString()}`
+                  : selectedIncomeDef
+                    ? `${heroMetricTwoValue.toFixed(0)}%`
+                    : `${heroMetricTwoValue} active`}
+              </Text>
+            </View>
+
+            {showBudgetMetric && (
               <>
-                <View style={styles.metricCol}>
-                  <Text style={styles.metricLabel}>{expSpentLabel}</Text>
-                  <Text
-                    style={[
-                      styles.metricVal,
-                      selectedThemeColor && { color: selectedThemeColor },
-                    ]}
-                  >
-                    ₱{expSpentValue.toLocaleString()}
-                  </Text>
-                </View>
                 <View style={styles.metricDivider} />
                 <View style={styles.metricCol}>
-                  <Text style={styles.metricLabel}>{expRemainingLabel}</Text>
-                  <Text
-                    style={[
-                      styles.metricVal,
-                      { color: selectedThemeColor ?? colors.primary },
-                    ]}
-                  >
-                    ₱{expRemainingValue.toLocaleString()}
+                  <Text style={styles.metricLabel}>Budget</Text>
+                  <Text style={styles.metricVal}>
+                    ₱{(selectedExpenseBudget ?? totalBudget).toLocaleString()}
                   </Text>
                 </View>
-              </>
-            ) : (
-              <>
-                <View style={styles.metricCol}>
-                  <Text style={styles.metricLabel}>{incSpentLabel}</Text>
-                  <Text
-                    style={[
-                      styles.metricVal,
-                      selectedThemeColor && { color: selectedThemeColor },
-                    ]}
-                  >
-                    ₱
-                    {incSpentValue.toLocaleString('en-PH', {
-                      minimumFractionDigits: 2,
-                    })}
-                  </Text>
-                </View>
-                {!selIncDef && (
-                  <>
-                    <View style={styles.metricDivider} />
-                    <View style={styles.metricCol}>
-                      <Text style={styles.metricLabel}>Sources</Text>
-                      <Text
-                        style={[styles.metricVal, { color: colors.primary }]}
-                      >
-                        {incomeActiveKeys.length}
-                      </Text>
-                    </View>
-                  </>
-                )}
               </>
             )}
           </View>
         </View>
-        <Text style={styles.tapHint} pointerEvents="none">
-          {donutSegments.length > 0
-            ? 'Tap or drag circle to explore'
-            : 'No data for this period'}
-        </Text>
-      </Pressable>
+      </LinearGradient>
 
-      {/* ─── BY CATEGORY ─── */}
-      <Text style={styles.sectionLabel}>By category</Text>
-      <View style={{ marginBottom: 16 }}>
-        {loading && (
-          <View style={styles.loadingWrap}>
-            <Text style={styles.loadingText}>Loading...</Text>
-          </View>
-        )}
-        {!loading &&
-          viewType === 'expense' &&
-          (expenseCategoryKeys.length > 0 ? (
-            expenseCategoryKeys.map((k) => renderExpenseCategoryRow(k))
-          ) : (
-            <Text style={styles.emptyText}>
-              No expense data for this period.
-            </Text>
-          ))}
-        {!loading &&
-          viewType === 'income' &&
-          (INCOME_CATEGORIES.length > 0 ? (
-            INCOME_CATEGORIES.map((c) => renderIncomeCategoryRow(c.key))
-          ) : (
-            <Text style={styles.emptyText}>
-              No income data for this period.
-            </Text>
-          ))}
-      </View>
+      <View style={styles.belowCard}>
+        <View style={styles.sectionHeaderRow}>
+          <View style={styles.sectionDot} />
+          <Text style={styles.sectionLabel}>
+            {viewType === 'expense' ? 'By Category' : 'Income Sources'}
+          </Text>
+        </View>
 
-      {/* ─── FINO INTELLIGENCE CARD ─── */}
-      <TouchableOpacity
-        activeOpacity={0.9}
-        style={styles.insightWrap}
-        onPress={() => navigation.navigate('ChatScreen')}
-      >
-        <LinearGradient
-          colors={[colors.lavenderLight, colors.primaryLight]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.insightCard}
-        >
-          <View style={styles.insightAvatar}>
-            <Ionicons name="sparkles" size={16} color={colors.lavenderDark} />
-          </View>
-          <View style={styles.insightBody}>
-            <Text style={styles.insightLabel}>Fino Intelligence</Text>
-            <Text style={styles.insightHeadline}>
-              You spend most on Tuesdays 🍜
-            </Text>
-            <Text style={styles.insightSub}>
-              Food is 42% of weekly spend. Want to set a lower limit?
-            </Text>
-            <View style={styles.insightChip}>
-              <Text style={styles.insightChipText}>Ask Fino →</Text>
+        {viewType === 'expense' ? (
+          expenseTiles.length > 0 ? (
+            <View style={styles.catGrid}>
+              {expenseTiles.map((tile) => renderExpenseTile(tile.key))}
             </View>
+          ) : (
+            <Text style={styles.emptyText}>No expense data for this period.</Text>
+          )
+        ) : incomeTiles.length > 0 ? (
+          <View style={styles.catGrid}>
+            {incomeTiles.map((tile) => renderIncomeTile(tile.key))}
           </View>
-        </LinearGradient>
-      </TouchableOpacity>
+        ) : (
+          <Text style={styles.emptyText}>No income data for this period.</Text>
+        )}
+
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={styles.insightWrap}
+          onPress={() => navigation.navigate('ChatScreen')}
+        >
+          <LinearGradient
+            colors={[colors.lavenderLight, colors.primaryLight]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.insightCard}
+          >
+            <View style={styles.insightAvatar}>
+              <Ionicons
+                name="sparkles"
+                size={18}
+                color={colors.lavenderDark}
+              />
+            </View>
+            <View style={styles.insightBody}>
+              <Text style={styles.insightLabel}>Fino Intelligence</Text>
+              <Text style={styles.insightHeadline}>{insightHeadline}</Text>
+              <Text style={styles.insightSub}>{insightSub}</Text>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={colors.textSecondary}
+              style={styles.insightArrow}
+            />
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
 
       <MonthPickerModal
         visible={monthPickerVisible}
@@ -1201,127 +1405,356 @@ const createPickerStyles = (colors: any, isDark: boolean) =>
 
 const createStyles = (colors: any, isDark: boolean) =>
   StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    content: { padding: spacing.screenPadding, paddingBottom: 100 },
-    header: {
-      paddingTop: 16,
-      paddingBottom: 16,
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      paddingHorizontal: spacing.screenPadding,
+      paddingTop: 6,
+      paddingBottom: 108,
+    },
+    screenTitleRow: {
+      paddingTop: 8,
+      paddingBottom: 12,
       flexDirection: 'row',
-      justifyContent: 'space-between',
       alignItems: 'center',
+      justifyContent: 'space-between',
     },
     headerTitle: {
-      fontFamily: 'Nunito_700Bold',
-      fontSize: 24,
-      fontWeight: '800',
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 27,
       color: colors.textPrimary,
-      marginBottom: 2,
+      letterSpacing: -0.4,
     },
-    headerSub: { fontSize: 13, color: colors.textSecondary },
-    monthPill: {
-      backgroundColor: colors.primaryLight25,
-      borderWidth: 1,
-      borderColor: colors.onTrackBorder,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 999,
-    },
-    monthPillText: {
-      fontFamily: 'Inter_600SemiBold',
-      fontSize: 12,
-      color: colors.primary,
-    },
-    toggleRow: {
-      flexDirection: 'row',
-      marginBottom: 16,
-      backgroundColor: isDark ? '#2A2A2A' : '#F0EFEA',
+    notifBtn: {
+      width: 36,
+      height: 36,
       borderRadius: 12,
-      padding: 3,
-    },
-    toggleBtn: {
-      flex: 1,
-      paddingVertical: 8,
-      borderRadius: 10,
-      alignItems: 'center',
-    },
-    toggleBtnExpenseActive: { backgroundColor: colors.expenseRed },
-    toggleBtnIncomeActive: { backgroundColor: colors.incomeGreen },
-    toggleBtnText: {
-      fontFamily: 'Inter_600SemiBold',
-      fontSize: 13,
-      color: colors.textSecondary,
-    },
-    toggleBtnTextActive: { color: '#fff' },
-    overallCard: {
-      backgroundColor: colors.white,
-      borderWidth: 1,
-      borderColor: isDark ? '#333333' : 'rgba(30,30,46,0.08)',
-      borderRadius: 24,
-      padding: 20,
-      marginBottom: 16,
-      alignItems: 'center',
-    },
-    donutContainer: {
-      position: 'relative',
+      backgroundColor: isDark ? colors.blackTransparent15 : 'rgba(30,30,46,0.06)',
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: 20,
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+    },
+    heroCard: {
+      borderRadius: 28,
+      padding: 20,
+      overflow: 'hidden',
+      shadowColor: colors.statsHeroBg2,
+      shadowOffset: { width: 0, height: 14 },
+      shadowOpacity: 0.45,
+      shadowRadius: 28,
+      elevation: 8,
+      marginBottom: 22,
+    },
+    heroBlobOne: {
+      position: 'absolute',
+      width: 160,
+      height: 160,
+      borderRadius: 80,
+      top: -30,
+      right: -20,
+      backgroundColor: colors.primaryTransparent30,
+    },
+    heroBlobTwo: {
+      position: 'absolute',
+      width: 110,
+      height: 110,
+      borderRadius: 55,
+      left: -20,
+      bottom: 44,
+      backgroundColor: colors.primaryTransparent30,
+      opacity: 0.6,
+    },
+    heroTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 18,
+      zIndex: 2,
+    },
+    monthNavPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: 999,
+      paddingVertical: 4,
+      paddingHorizontal: 4,
+      backgroundColor: colors.whiteTransparent12,
+      borderWidth: 1,
+      borderColor: colors.whiteTransparent18,
+      gap: 2,
+    },
+    monthArrow: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    monthNavLabel: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.whiteTransparent80,
+      paddingHorizontal: 6,
+    },
+    heroToggleWrap: {
+      flexDirection: 'row',
+      borderRadius: 999,
+      padding: 3,
+      gap: 2,
+      backgroundColor: colors.blackTransparent15,
+    },
+    heroToggleBtn: {
+      borderRadius: 999,
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+    },
+    heroToggleBtnActive: {
+      backgroundColor: colors.whiteTransparent18,
+    },
+    heroToggleText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.whiteTransparent55,
+    },
+    heroToggleTextActive: {
+      color: colors.whiteTransparent80,
+    },
+    donutSection: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 2,
+      marginBottom: 6,
+    },
+    donutContainer: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
     },
     donutCenterText: {
       position: 'absolute',
       alignItems: 'center',
-      justifyContent: 'center',
     },
     donutCenterPct: {
-      fontFamily: 'Nunito_700Bold',
-      fontSize: 28,
-      fontWeight: '800',
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 27,
+      letterSpacing: -0.4,
+      color: colors.white,
     },
     donutCenterSub: {
-      fontSize: 12,
-      fontWeight: '600',
+      marginTop: 3,
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
       textTransform: 'uppercase',
-      letterSpacing: 0.5,
+      letterSpacing: 0.6,
     },
-    budgetMetrics: { width: '100%', alignItems: 'center', marginBottom: 6 },
+    tapHint: {
+      textAlign: 'center',
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11,
+      color: colors.whiteTransparent55,
+      marginTop: 4,
+      marginBottom: 10,
+      zIndex: 2,
+    },
+    heroMetricsBar: {
+      borderRadius: 14,
+      backgroundColor: colors.blackTransparent15,
+      overflow: 'hidden',
+      zIndex: 2,
+    },
     budgetMetricsRow: {
       flexDirection: 'row',
+      alignItems: 'stretch',
       width: '100%',
-      justifyContent: 'space-around',
-      alignItems: 'center',
     },
-    metricCol: { alignItems: 'center' },
+    metricCol: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 8,
+    },
     metricLabel: {
-      fontSize: 11,
+      fontFamily: 'Inter_700Bold',
+      fontSize: 9,
+      color: colors.whiteTransparent55,
+      textTransform: 'uppercase',
+      letterSpacing: 0.55,
+      marginBottom: 4,
+      textAlign: 'center',
+    },
+    metricVal: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 15,
+      color: colors.white,
+      letterSpacing: -0.3,
+      textAlign: 'center',
+    },
+    metricValAccent: {
+      color: colors.statsHeroBar,
+    },
+    metricValCoral: {
+      color: '#FFAF9B',
+    },
+    metricDivider: {
+      width: 1,
+      backgroundColor: colors.whiteTransparent15,
+      marginVertical: 10,
+    },
+    belowCard: {
+      marginTop: 6,
+    },
+    sectionHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 12,
+    },
+    sectionDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: colors.primary,
+    },
+    sectionLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
       color: colors.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    catGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'space-between',
+      marginBottom: 20,
+      rowGap: 10,
+    },
+    catTileWrap: {
+      width: '48.7%',
+    },
+    catTile: {
+      borderRadius: 24,
+      height: 122,
+      padding: 14,
+      justifyContent: 'flex-end',
+      overflow: 'hidden',
+      position: 'relative',
+    },
+    catIconCircle: {
+      position: 'absolute',
+      top: 14,
+      left: 14,
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    catBadgeWrap: {
+      position: 'absolute',
+      top: 10,
+      right: 10,
+    },
+    catPctPill: {
+      borderRadius: 6,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+    },
+    catPctPillText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 11,
+    },
+    catOverBadge: {
+      backgroundColor: colors.coralLight,
+      borderWidth: 1,
+      borderColor: withAlpha(colors.coralDark, 0.3),
+      borderRadius: 6,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+    },
+    catOverBadgeText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.coralDark,
+    },
+    catName: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
+      zIndex: 2,
+    },
+    catAmt: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 11,
+      marginTop: 2,
+      zIndex: 2,
+    },
+    emptyText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      paddingVertical: 20,
+    },
+    insightWrap: {
+      marginTop: 8,
+      marginBottom: 18,
+    },
+    insightCard: {
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.insightCardBorder,
+      padding: 16,
+      flexDirection: 'row',
+      gap: 12,
+      alignItems: 'flex-start',
+    },
+    insightAvatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: withAlpha(colors.lavender, 0.24),
+      borderWidth: 1.5,
+      borderColor: withAlpha(colors.lavender, 0.6),
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    insightBody: {
+      flex: 1,
+    },
+    insightLabel: {
+      alignSelf: 'flex-start',
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.lavenderDark,
       textTransform: 'uppercase',
       letterSpacing: 0.5,
       marginBottom: 4,
     },
-    metricVal: {
-      fontFamily: 'DMMono_500Medium',
-      fontSize: 18,
-      fontWeight: '700',
+    insightHeadline: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 14,
       color: colors.textPrimary,
+      marginBottom: 4,
+      lineHeight: 20,
     },
-    metricDivider: {
-      width: 1,
-      height: '100%',
-      backgroundColor: isDark ? '#333333' : 'rgba(30,30,46,0.08)',
+    insightSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+      lineHeight: 18,
     },
-    tapHint: {
+    insightArrow: {
       marginTop: 12,
-      fontSize: 11,
-      color: colors.textSecondary,
-      fontFamily: 'Inter_500Medium',
+      alignSelf: 'center',
     },
-    sectionLabel: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: colors.textSecondary,
-      textTransform: 'uppercase',
-      letterSpacing: 0.8,
-      paddingVertical: 12,
+
+    // Loading styles kept for skeleton state
+    toggleRow: {
+      marginBottom: 16,
     },
     loadingWrap: { paddingVertical: 16, alignItems: 'center' },
     loadingText: {
@@ -1381,114 +1814,5 @@ const createStyles = (colors: any, isDark: boolean) =>
       gap: 12,
       alignItems: 'flex-start',
       backgroundColor: colors.lavenderLight,
-    },
-    emptyText: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 14,
-      color: colors.textSecondary,
-      textAlign: 'center',
-      paddingVertical: 20,
-    },
-    progRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-    catIconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 12,
-    },
-    progRowContent: { flex: 1 },
-    chevron: {
-      fontSize: 20,
-      color: 'rgba(138,138,154,0.4)',
-      paddingLeft: 12,
-      marginBottom: 8,
-    },
-    progHd: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 6,
-    },
-    progName: { fontFamily: 'Nunito_700Bold', fontSize: 15, fontWeight: '700' },
-    progMetaWrap: { flexDirection: 'row', alignItems: 'center' },
-    progBadge: {
-      paddingHorizontal: 8,
-      paddingVertical: 2,
-      borderRadius: 20,
-      marginRight: 6,
-    },
-    progBadgeText: { fontSize: 10, fontWeight: '700' },
-    progMeta: {
-      fontFamily: 'DMMono_400Regular',
-      fontSize: 11,
-      color: colors.textSecondary,
-    },
-    progTrack: {
-      height: 6,
-      backgroundColor: isDark ? '#333333' : 'rgba(30,30,46,0.06)',
-      borderRadius: 4,
-      overflow: 'hidden',
-    },
-    progFillBar: { height: '100%', borderRadius: 4 },
-    insightWrap: { marginBottom: 16 },
-    insightCard: {
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: colors.insightCardBorder,
-      padding: 16,
-      flexDirection: 'row',
-      gap: 12,
-      alignItems: 'flex-start',
-    },
-    insightAvatar: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: colors.lavenderLight,
-      borderWidth: 1,
-      borderColor: colors.lavender,
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexShrink: 0,
-    },
-    insightAvatarIcon: { fontSize: 15, color: colors.lavenderDark },
-    insightBody: { flex: 1 },
-    insightLabel: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 10,
-      color: colors.lavenderDark,
-      textTransform: 'uppercase',
-      letterSpacing: 0.7,
-      marginBottom: 4,
-    },
-    insightHeadline: {
-      fontFamily: 'Nunito_700Bold',
-      fontSize: 14,
-      color: colors.textPrimary,
-      marginBottom: 4,
-    },
-    insightSub: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 12,
-      color: colors.textSecondary,
-      lineHeight: 18,
-      marginBottom: 10,
-    },
-    insightChip: {
-      alignSelf: 'flex-start',
-      backgroundColor: colors.lavenderLight,
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: colors.lavender,
-      paddingVertical: 5,
-      paddingHorizontal: 10,
-    },
-    insightChipText: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 10,
-      color: colors.lavenderDark,
-      textTransform: 'uppercase',
     },
   });

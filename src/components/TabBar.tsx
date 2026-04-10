@@ -92,7 +92,7 @@ export default function TabBar({
         </TouchableOpacity>
       </Animated.View>
 
-      {renderTab('stats', '📊', 'Stats')}
+      {renderTab('stats', '📊', 'Insights')}
       {renderTab('more', '⋯', 'More')}
     </BlurView>
   );
