@@ -108,3 +108,18 @@ ${financialContext.recentTransactions
   const result = await chat.sendMessage(messageWithContext);
   return result.response.text();
 };
+
+export const generateBulletInsights = async (
+  prompt: string
+): Promise<string[]> => {
+  try {
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text().trim();
+    const match = raw.match(/\[[\s\S]*\]/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (Array.isArray(parsed)) return parsed.slice(0, 3).map(String);
+    }
+  } catch (_) {}
+  return [];
+};
