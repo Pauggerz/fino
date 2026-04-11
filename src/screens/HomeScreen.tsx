@@ -55,7 +55,8 @@ function getDaysLeftInMonth(): number {
   return last - now.getDate();
 }
 
-function fmtPeso(n: number): string {
+function fmtPeso(n: number, isPrivacyMode: boolean = false): string {
+  if (isPrivacyMode) return '₱***';
   return `₱${Math.abs(n).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
@@ -78,7 +79,7 @@ const WAVE_SVG_W = TILE_W * 4;
  */
 function makeWavePath(yBase: number, amp: number): string {
   const halfWl = TILE_W / 2;
-  const numArcs = (WAVE_SVG_W / halfWl) + 2;
+  const numArcs = WAVE_SVG_W / halfWl + 2;
   let d = `M 0 ${yBase}`;
   for (let i = 0; i < numArcs; i++) {
     const x0 = i * halfWl;
@@ -97,10 +98,18 @@ function WaveFill({ pct, color }: { pct: number; color: string }) {
 
   useEffect(() => {
     Animated.loop(
-      Animated.timing(anim1, { toValue: 1, duration: 3000, useNativeDriver: true })
+      Animated.timing(anim1, {
+        toValue: 1,
+        duration: 3000,
+        useNativeDriver: true,
+      })
     ).start();
     Animated.loop(
-      Animated.timing(anim2, { toValue: 1, duration: 4600, useNativeDriver: true })
+      Animated.timing(anim2, {
+        toValue: 1,
+        duration: 4600,
+        useNativeDriver: true,
+      })
     ).start();
   }, [anim1, anim2]);
 
@@ -108,8 +117,14 @@ function WaveFill({ pct, color }: { pct: number; color: string }) {
   const yBase = TILE_H - TILE_H * clampedPct;
 
   // Translate exactly one wavelength → start and end frames are identical → no snap
-  const tx1 = anim1.interpolate({ inputRange: [0, 1], outputRange: [0, -TILE_W] });
-  const tx2 = anim2.interpolate({ inputRange: [0, 1], outputRange: [0, -TILE_W] });
+  const tx1 = anim1.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -TILE_W],
+  });
+  const tx2 = anim2.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -TILE_W],
+  });
 
   const waveStyle = {
     position: 'absolute' as const,
@@ -120,7 +135,10 @@ function WaveFill({ pct, color }: { pct: number; color: string }) {
   };
 
   return (
-    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
+    <View
+      style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}
+      pointerEvents="none"
+    >
       {/* Back wave — slower, subtler */}
       <Animated.View style={[waveStyle, { transform: [{ translateX: tx2 }] }]}>
         <Svg width={WAVE_SVG_W} height={TILE_H}>
@@ -144,6 +162,8 @@ export default function HomeScreen() {
   const { status: syncStatus, syncVersion } = useSync();
   const { profile } = useAuth();
   const userName = profile?.name || 'User';
+
+  const [isPrivacyMode, setIsPrivacyMode] = useState(false);
 
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
   const { categories, refetch: refetchCategories } = useCategories();
@@ -204,7 +224,9 @@ export default function HomeScreen() {
   const [toastIsUndo, setToastIsUndo] = useState(false);
   const [undoTxId, setUndoTxId] = useState<string | null>(null);
   const [undoAccountId, setUndoAccountId] = useState<string | null>(null);
-  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(null);
+  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(
+    null
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -217,14 +239,14 @@ export default function HomeScreen() {
       const typeLabel = last.type === 'expense' ? 'Expense' : 'Income';
       setToastTitle(`${typeLabel} saved`);
       setToastSubtitle(
-        `${fmtPeso(last.amount)} · ${last.categoryName} · ${last.accountName}`
+        `${fmtPeso(last.amount, isPrivacyMode)} · ${last.categoryName} · ${last.accountName}`
       );
       setToastIsUndo(false);
       setUndoTxId(last.id);
       setUndoAccountId(last.accountId);
       setUndoPreviousBalance(last.previousBalance);
       setToastVisible(true);
-    }, [refetchAccounts, refetchCategories, refetchTotals])
+    }, [refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode])
   );
 
   const handleUndo = useCallback(async () => {
@@ -262,7 +284,9 @@ export default function HomeScreen() {
   const statusLabel = onTrackLabel(pctSpent);
 
   const delta = totalIncome - monthlyExpense;
-  const deltaLabel = `${delta >= 0 ? '↑' : '↓'} ${delta >= 0 ? '+' : ''}${fmtPeso(delta)} vs last month`;
+  const deltaLabel = isPrivacyMode
+    ? `*** vs last month`
+    : `${delta >= 0 ? '↑' : '↓'} ${delta >= 0 ? '+' : ''}${fmtPeso(delta)} vs last month`;
 
   const insight = {
     headline: 'You spend most on Tuesdays 📊',
@@ -349,7 +373,8 @@ export default function HomeScreen() {
             <View style={styles.onTrackText}>
               <Text style={styles.onTrackTitle}>{statusLabel}</Text>
               <Text style={styles.onTrackSub}>
-                {daysLeft} days left · {fmtPeso(monthlyExpense)} spent
+                {daysLeft} days left · {fmtPeso(monthlyExpense, isPrivacyMode)}{' '}
+                spent
               </Text>
             </View>
           </View>
@@ -360,11 +385,17 @@ export default function HomeScreen() {
           {/* Ambient blobs */}
           <LinearGradient
             colors={['rgba(168,213,181,0.45)', 'transparent']}
-            style={[styles.blob, { top: -30, right: -20, width: 160, height: 160 }]}
+            style={[
+              styles.blob,
+              { top: -30, right: -20, width: 160, height: 160 },
+            ]}
           />
           <LinearGradient
             colors={['rgba(91,140,110,0.4)', 'transparent']}
-            style={[styles.blob, { bottom: 80, left: -20, width: 110, height: 110 }]}
+            style={[
+              styles.blob,
+              { bottom: 80, left: -20, width: 110, height: 110 },
+            ]}
           />
 
           {/* ── Balance section ── */}
@@ -373,10 +404,28 @@ export default function HomeScreen() {
             onPress={() => navigation.navigate('stats')}
             style={styles.balanceSection}
           >
-            <View style={styles.heroChip}>
-              <Text style={styles.heroChipText}>
-                {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-              </Text>
+            <View style={styles.heroHeaderRow}>
+              <View style={styles.heroChip}>
+                <Text style={styles.heroChipText}>
+                  {new Date().toLocaleDateString('en-US', {
+                    month: 'long',
+                    year: 'numeric',
+                  })}
+                </Text>
+              </View>
+
+              {/* EYE ICON TOGGLE */}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setIsPrivacyMode(!isPrivacyMode)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons
+                  name={isPrivacyMode ? 'eye-off' : 'eye'}
+                  size={22}
+                  color="rgba(255,255,255,0.65)"
+                />
+              </TouchableOpacity>
             </View>
 
             <Text style={styles.heroLabel}>Total balance</Text>
@@ -384,10 +433,12 @@ export default function HomeScreen() {
             <View style={styles.heroAmountRow}>
               <Text style={styles.heroCurr}>₱</Text>
               <Text style={styles.heroAmount}>
-                {displayBalance.toLocaleString('en-PH', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
+                {isPrivacyMode
+                  ? '***'
+                  : displayBalance.toLocaleString('en-PH', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
               </Text>
             </View>
 
@@ -398,11 +449,15 @@ export default function HomeScreen() {
             <View style={styles.heroRow}>
               <View style={[styles.heroCol, styles.heroColBorder]}>
                 <Text style={styles.heroColLabel}>Income</Text>
-                <Text style={styles.heroColVal}>+{fmtPeso(totalIncome)}</Text>
+                <Text style={styles.heroColVal}>
+                  {isPrivacyMode ? '₱***' : `+${fmtPeso(totalIncome)}`}
+                </Text>
               </View>
               <View style={styles.heroCol}>
                 <Text style={styles.heroColLabel}>Spent</Text>
-                <Text style={styles.heroColVal}>−{fmtPeso(monthlyExpense)}</Text>
+                <Text style={styles.heroColVal}>
+                  {isPrivacyMode ? '₱***' : `−${fmtPeso(monthlyExpense)}`}
+                </Text>
               </View>
             </View>
           </TouchableOpacity>
@@ -441,20 +496,25 @@ export default function HomeScreen() {
                   })
                 }
               >
-                <View style={{
-                  width: SCALED_CARD_W,
-                  height: SCALED_CARD_H,
-                  overflow: 'hidden',
-                  borderRadius: Math.round(22 * CARD_SCALE),
-                }}>
-                  <View style={{
-                    width: CARD_WIDTH,
-                    height: CARD_HEIGHT,
-                    transform: [{ scale: CARD_SCALE }],
-                    left: -Math.round(CARD_WIDTH * (1 - CARD_SCALE) / 2),
-                    top: -Math.round(CARD_HEIGHT * (1 - CARD_SCALE) / 2),
-                  }}>
-                    <WalletCard account={acc} />
+                <View
+                  style={{
+                    width: SCALED_CARD_W,
+                    height: SCALED_CARD_H,
+                    overflow: 'hidden',
+                    borderRadius: Math.round(22 * CARD_SCALE),
+                  }}
+                >
+                  <View
+                    style={{
+                      width: CARD_WIDTH,
+                      height: CARD_HEIGHT,
+                      transform: [{ scale: CARD_SCALE }],
+                      left: -Math.round((CARD_WIDTH * (1 - CARD_SCALE)) / 2),
+                      top: -Math.round((CARD_HEIGHT * (1 - CARD_SCALE)) / 2),
+                    }}
+                  >
+                    {/* Passed isPrivacyMode to WalletCard */}
+                    <WalletCard account={acc} isPrivacyMode={isPrivacyMode} />
                   </View>
                 </View>
               </TouchableOpacity>
@@ -494,23 +554,39 @@ export default function HomeScreen() {
                           <Text style={styles.catOverBadgeText}>Over!</Text>
                         </View>
                       ) : (
-                        <View style={[styles.catPctPill, { backgroundColor: `${solidColor}18` }]}>
-                          <Text style={[styles.catPctBadge, { color: solidColor }]}>
+                        <View
+                          style={[
+                            styles.catPctPill,
+                            { backgroundColor: `${solidColor}18` },
+                          ]}
+                        >
+                          <Text
+                            style={[styles.catPctBadge, { color: solidColor }]}
+                          >
                             {Math.round(cat.pct * 100)}%
                           </Text>
                         </View>
                       )}
                     </View>
 
-                    <View style={[styles.catIconCircle, { backgroundColor: `${solidColor}22` }]}>
+                    <View
+                      style={[
+                        styles.catIconCircle,
+                        { backgroundColor: `${solidColor}22` },
+                      ]}
+                    >
                       <CategoryIcon
                         categoryKey={cat.name.toLowerCase()}
                         color={solidColor}
                       />
                     </View>
 
-                    <Text style={[styles.catName, { color: solidColor }]}>{cat.name}</Text>
-                    <Text style={[styles.catAmt, { color: solidColor }]}>{fmtPeso(cat.spent)}</Text>
+                    <Text style={[styles.catName, { color: solidColor }]}>
+                      {cat.name}
+                    </Text>
+                    <Text style={[styles.catAmt, { color: solidColor }]}>
+                      {fmtPeso(cat.spent, isPrivacyMode)}
+                    </Text>
                   </View>
                 </TouchableOpacity>
               );
@@ -530,7 +606,11 @@ export default function HomeScreen() {
                 style={styles.insightCard}
               >
                 <View style={styles.insightAvatar}>
-                  <Ionicons name="sparkles" size={16} color={colors.lavenderDark} />
+                  <Ionicons
+                    name="sparkles"
+                    size={16}
+                    color={colors.lavenderDark}
+                  />
                 </View>
 
                 <View style={styles.insightBody}>
@@ -651,6 +731,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 4,
   },
+  heroHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   unifiedDividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -690,7 +776,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingVertical: 3,
     paddingHorizontal: 10,
-    marginBottom: 8,
   },
   heroChipText: {
     fontFamily: 'Inter_600SemiBold',
@@ -822,7 +907,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(200,80,58,0.3)',
   },
-  catOverBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10, color: colors.coralDark },
+  catOverBadgeText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    color: colors.coralDark,
+  },
   catIconCircle: {
     position: 'absolute',
     top: 14,

@@ -2,12 +2,12 @@
  * WalletCard — premium landscape payment-card for the Home screen.
  *
  * Styling lifted directly from onboarding/AccountsSlide:
- *   - Full 3-stop LinearGradient per brand
- *   - Gold EMV chip (silver for Maya) + contactless NFC arcs
- *   - Masked PAN: ● ● ● ●  ● ● ● ●  ● ● ● ●  XXXX
- *   - DM Mono tabular balance display
- *   - Per-brand bg decorations: GCash/Cash watermark letter, BDO geometric
- *     blocks, BPI radial glow + crest, Maya neon right-edge strip
+ * - Full 3-stop LinearGradient per brand
+ * - Gold EMV chip (silver for Maya) + contactless NFC arcs
+ * - Masked PAN: ● ● ● ●  ● ● ● ●  ● ● ● ●  XXXX
+ * - DM Mono tabular balance display
+ * - Per-brand bg decorations: GCash/Cash watermark letter, BDO geometric
+ * blocks, BPI radial glow + crest, Maya neon right-edge strip
  */
 
 import React from 'react';
@@ -134,7 +134,13 @@ function getCfg(acc: Account): CardCfg {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function WalletCard({ account }: { account: Account }) {
+export default function WalletCard({
+  account,
+  isPrivacyMode = false,
+}: {
+  account: Account;
+  isPrivacyMode?: boolean;
+}) {
   const cfg = getCfg(account);
   const token = pseudo4(account.id);
   const isNeg = account.balance < 0;
@@ -280,7 +286,7 @@ export default function WalletCard({ account }: { account: Account }) {
           <View style={s.balanceBlock}>
             <Text style={s.balLabel}>TOTAL BALANCE</Text>
             <Text style={[s.balanceAmt, { color: balColor }]}>
-              {fmtBalance(account.balance)}
+              {isPrivacyMode ? '₱ ••••••' : fmtBalance(account.balance)}
             </Text>
           </View>
         </View>
