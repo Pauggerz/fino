@@ -11,6 +11,8 @@ import {
   Animated,
   PanResponder,
   Modal,
+  TextInput,
+  ScrollView,
 } from 'react-native';
 import {
   useNavigation,
@@ -19,14 +21,18 @@ import {
   type RouteProp,
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { radius, spacing } from '../constants/theme';
-import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Global Theme Context
+import { useTheme } from '../contexts/ThemeContext';
 import {
   useTransactions,
   FeedTransaction,
   DateRange,
+  SortOrder,
 } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
+import { useAccounts } from '@/hooks/useAccounts';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import {
   INCOME_CATEGORIES,
@@ -281,6 +287,9 @@ function MonthPickerModal({
 // ─── List item type ───────────────────────────────────────────────────────────
 
 type ListItem =
+  | { type: 'hero' }
+  | { type: 'sticky' }
+  | { type: 'controls' }
   | { type: 'header'; title: string }
   | { type: 'transaction'; data: FeedTransaction };
 
@@ -289,10 +298,15 @@ type ListItem =
 export default function FeedScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<FeedStackParamList, 'FeedMain'>>();
+  const insets = useSafeAreaInsets();
+  // hero is index 0 in listData; search bar is index 1 (sticky via stickyHeaderIndices)
 
   // 🌙 Dynamic Theme Injection
   const { colors, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
+  const styles = useMemo(
+    () => createStyles(colors, isDark, insets.top),
+    [colors, isDark, insets.top]
+  );
 
   // ── View type: expense or income ──
   const [viewType, setViewType] = useState<'expense' | 'income'>('expense');
@@ -313,21 +327,57 @@ export default function FeedScreen() {
   const [toastTitle, setToastTitle] = useState('');
   const [toastSubtitle, setToastSubtitle] = useState('');
 
-  const dateRange = useMemo(
+  // ── Search & Advanced Filters ──
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterPanelVisible, setFilterPanelVisible] = useState(false);
+  const [filterAccountId, setFilterAccountId] = useState<string | undefined>(undefined);
+  const [filterSortOrder, setFilterSortOrder] = useState<SortOrder>('date_desc');
+  // draft state while panel is open
+  const [draftAccountId, setDraftAccountId] = useState<string | undefined>(undefined);
+  const [draftSortOrder, setDraftSortOrder] = useState<SortOrder>('date_desc');
+  const [draftDatePreset, setDraftDatePreset] = useState<'month' | '30d' | '90d' | 'custom'>('month');
+  const [filterDatePreset, setFilterDatePreset] = useState<'month' | '30d' | '90d' | 'custom'>('month');
+
+  // ── Swipe hint ──
+  const [swipeHintVisible, setSwipeHintVisible] = useState(true);
+  const searchInputRef = useRef<TextInput>(null);
+
+  const monthDateRange = useMemo(
     () => getMonthRange(selectedYear, selectedMonth),
     [selectedYear, selectedMonth]
   );
 
-  // Build effective category filter for the hook
-  let hookCategory = activeCategory;
-  if (viewType === 'income' && activeCategory === 'All') {
-    hookCategory = 'Income';
-  }
+  const dateRange: DateRange = useMemo(() => {
+    if (filterDatePreset === '30d') {
+      const to = new Date();
+      const from = new Date();
+      from.setDate(from.getDate() - 30);
+      return { from: from.toISOString(), to: to.toISOString() };
+    }
+    if (filterDatePreset === '90d') {
+      const to = new Date();
+      const from = new Date();
+      from.setDate(from.getDate() - 90);
+      return { from: from.toISOString(), to: to.toISOString() };
+    }
+    return monthDateRange;
+  }, [filterDatePreset, monthDateRange]);
+
+  const hookCategory = activeCategory;
+  const transactionType = viewType;
 
   const { sections, loading, loadMore, hasMore, loadingMore, refetch } =
-    useTransactions(hookCategory, dateRange);
+    useTransactions(
+      hookCategory,
+      dateRange,
+      searchQuery,
+      filterAccountId,
+      filterSortOrder,
+      transactionType
+    );
 
   const { categories } = useCategories();
+  const { accounts } = useAccounts();
 
   useFocusEffect(
     useCallback(() => {
@@ -382,11 +432,91 @@ export default function FeedScreen() {
     setToastVisible(true);
   };
 
+  const isAtMaxMonth =
+    selectedYear > now.getFullYear() ||
+    (selectedYear === now.getFullYear() && selectedMonth >= now.getMonth());
+
+  const monthLabel = `${MONTH_NAMES[selectedMonth]} ${selectedYear}`;
+
+  const handlePrevMonth = () => {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear((y) => y - 1);
+    } else {
+      setSelectedMonth((m) => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (isAtMaxMonth) return;
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear((y) => y + 1);
+    } else {
+      setSelectedMonth((m) => m + 1);
+    }
+  };
+
+  // ── Apply / reset advanced filters ──
+  const applyFilters = () => {
+    setFilterAccountId(draftAccountId);
+    setFilterSortOrder(draftSortOrder);
+    setFilterDatePreset(draftDatePreset);
+    setFilterPanelVisible(false);
+  };
+
+  const resetFilters = () => {
+    setDraftAccountId(undefined);
+    setDraftSortOrder('date_desc');
+    setDraftDatePreset('month');
+    setFilterAccountId(undefined);
+    setFilterSortOrder('date_desc');
+    setFilterDatePreset('month');
+    setFilterPanelVisible(false);
+  };
+
+  const hasActiveFilters =
+    filterAccountId !== undefined ||
+    filterSortOrder !== 'date_desc' ||
+    filterDatePreset !== 'month';
+
+  // ── Per-account spending for the hero card ──
+  const accountSpend = useMemo(() => {
+    const map: Record<string, { name: string; colour: string; amount: number }> = {};
+    sections
+      .flatMap((s) => s.data)
+      .filter((tx) => tx.type === viewType)
+      .forEach((tx) => {
+        if (!map[tx.account_id]) {
+          map[tx.account_id] = {
+            name: tx.account_name,
+            colour: tx.account_brand_colour,
+            amount: 0,
+          };
+        }
+        map[tx.account_id].amount += tx.amount;
+      });
+    return Object.values(map);
+  }, [sections, viewType]);
+
+  const heroInfoTitle =
+    viewType === 'expense' ? 'Spending by Account' : 'Income by Account';
+  const heroInfoSubtitle = `${monthLabel} · ${accountSpend.length} account${
+    accountSpend.length === 1 ? '' : 's'
+  }`;
+  const heroAmountLabel = viewType === 'expense' ? 'Spent' : 'Received';
+  const heroAmountPrefix = viewType === 'expense' ? '-' : '+';
+
   // ── Flatten sections → FlatList items ──
-  const listData: ListItem[] = sections.flatMap((s) => [
-    { type: 'header', title: s.title },
-    ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
-  ]);
+  const listData: ListItem[] = [
+    { type: 'hero' },
+    { type: 'sticky' },
+    { type: 'controls' },
+    ...sections.flatMap((s) => [
+      { type: 'header' as const, title: s.title },
+      ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
+    ]),
+  ];
 
   const renderSkeletonList = () => (
     <View style={{ flex: 1 }}>
@@ -417,6 +547,298 @@ export default function FeedScreen() {
 
   // ── Render row ──
   const renderItem = ({ item }: { item: ListItem }) => {
+    // ── Hero card (scrolls away) ──
+    if (item.type === 'hero') {
+      return (
+        <LinearGradient
+          colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
+          style={styles.heroCard}
+        >
+          <View style={styles.heroBlobOne} />
+          <View style={styles.heroBlobTwo} />
+
+          <View style={styles.heroTopRow}>
+            <View style={styles.monthNavPill}>
+              <TouchableOpacity style={styles.monthArrow} activeOpacity={0.75} onPress={handlePrevMonth}>
+                <Ionicons name="chevron-back" size={14} color={colors.whiteTransparent80} />
+              </TouchableOpacity>
+              <TouchableOpacity activeOpacity={0.75} onPress={() => setMonthPickerVisible(true)}>
+                <Text style={styles.monthNavLabel}>{monthLabel}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.monthArrow, isAtMaxMonth && { opacity: 0.35 }]}
+                activeOpacity={0.75}
+                onPress={handleNextMonth}
+                disabled={isAtMaxMonth}
+              >
+                <Ionicons name="chevron-forward" size={14} color={colors.whiteTransparent80} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.heroToggleWrap}>
+              <TouchableOpacity
+                style={[styles.heroToggleBtn, viewType === 'expense' && styles.heroToggleBtnActive]}
+                activeOpacity={0.8}
+                onPress={() => handleViewTypeSwitch('expense')}
+              >
+                <Text style={[styles.heroToggleText, viewType === 'expense' && styles.heroToggleTextActive]}>
+                  Expenses
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.heroToggleBtn, viewType === 'income' && styles.heroToggleBtnActive]}
+                activeOpacity={0.8}
+                onPress={() => handleViewTypeSwitch('income')}
+              >
+                <Text style={[styles.heroToggleText, viewType === 'income' && styles.heroToggleTextActive]}>
+                  Income
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.heroInfoHeader}>
+            <Text style={styles.heroInfoTitle}>{heroInfoTitle}</Text>
+            <Text style={styles.heroInfoSubtitle}>{heroInfoSubtitle}</Text>
+          </View>
+
+          {accountSpend.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.balanceCarousel}
+            >
+              {accountSpend.map((acc, i) => (
+                <View key={i} style={styles.balanceCard}>
+                  <View style={styles.balanceCardLabel}>
+                    <View style={[styles.balanceCardDot, { backgroundColor: acc.colour }]} />
+                    <Text style={styles.balanceCardLabelText}>{acc.name.toUpperCase()}</Text>
+                  </View>
+                  <Text style={styles.balanceCardMeta}>{heroAmountLabel}</Text>
+                  <Text style={styles.balanceCardAmount}>
+                    {heroAmountPrefix}
+                    {fmtPeso(acc.amount)}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            <Text style={styles.heroEmptyHint}>No {viewType} transactions for this period</Text>
+          )}
+        </LinearGradient>
+      );
+    }
+
+    // ── Sticky search bar ──
+    if (item.type === 'sticky') {
+      return (
+        <View style={styles.stickyBar}>
+          <View style={styles.searchRow}>
+            <View style={styles.searchBar}>
+              <Ionicons name="search-outline" size={16} color={colors.textSecondary} />
+              <TextInput
+                ref={searchInputRef}
+                style={styles.searchInput}
+                placeholder="Search by name, amount…"
+                placeholderTextColor={colors.textSecondary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7}>
+                  <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity
+              style={[styles.filterTriggerBtn, hasActiveFilters && styles.filterTriggerBtnActive]}
+              activeOpacity={0.8}
+              onPress={() => {
+                setDraftAccountId(filterAccountId);
+                setDraftSortOrder(filterSortOrder);
+                setDraftDatePreset(filterDatePreset);
+                setFilterPanelVisible((v) => !v);
+              }}
+            >
+              <Ionicons
+                name="options-outline"
+                size={18}
+                color={hasActiveFilters ? colors.primary : colors.textSecondary}
+              />
+              {hasActiveFilters && <View style={styles.filterBadge} />}
+            </TouchableOpacity>
+          </View>
+
+          {filterPanelVisible && (
+            <View style={styles.filterPanel}>
+              <View style={styles.filterPanelHeader}>
+                <Text style={styles.filterPanelTitle}>Filters</Text>
+                <TouchableOpacity onPress={resetFilters} activeOpacity={0.7}>
+                  <Text style={styles.filterResetText}>Reset all</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.filterSectionLabel}>Date Range</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(['month', '30d', '90d', 'custom'] as const).map((preset) => {
+                    const labels = { month: 'This Month', '30d': 'Last 30 Days', '90d': 'Last 3 Months', custom: 'Custom…' };
+                    const isSelected = draftDatePreset === preset;
+                    return (
+                      <TouchableOpacity
+                        key={preset}
+                        style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (preset === 'custom') { setDraftDatePreset('custom'); setMonthPickerVisible(true); }
+                          else { setDraftDatePreset(preset); }
+                        }}
+                      >
+                        <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{labels[preset]}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+
+              <Text style={styles.filterSectionLabel}>Account</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TouchableOpacity
+                    style={[styles.filterChip, draftAccountId === undefined && styles.filterChipSelected]}
+                    activeOpacity={0.8}
+                    onPress={() => setDraftAccountId(undefined)}
+                  >
+                    <Text style={[styles.filterChipText, draftAccountId === undefined && styles.filterChipTextSelected]}>All</Text>
+                  </TouchableOpacity>
+                  {accounts.map((acc) => {
+                    const isSelected = draftAccountId === acc.id;
+                    return (
+                      <TouchableOpacity
+                        key={acc.id}
+                        style={[styles.filterChip, isSelected && { backgroundColor: `${acc.brand_colour}18`, borderColor: acc.brand_colour }]}
+                        activeOpacity={0.8}
+                        onPress={() => setDraftAccountId(isSelected ? undefined : acc.id)}
+                      >
+                        <Text style={[styles.filterChipText, isSelected && { color: acc.brand_colour }]}>{acc.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+
+              <Text style={styles.filterSectionLabel}>Sort By</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {([
+                    { key: 'date_desc', label: 'Newest First' },
+                    { key: 'date_asc', label: 'Oldest First' },
+                    { key: 'amount_desc', label: 'Highest Amount' },
+                  ] as { key: SortOrder; label: string }[]).map(({ key, label }) => {
+                    const isSelected = draftSortOrder === key;
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                        activeOpacity={0.8}
+                        onPress={() => setDraftSortOrder(key)}
+                      >
+                        <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+
+              <View style={styles.filterPanelActions}>
+                <TouchableOpacity style={styles.filterCancelBtn} activeOpacity={0.7} onPress={() => setFilterPanelVisible(false)}>
+                  <Text style={styles.filterCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.filterApplyBtn} activeOpacity={0.8} onPress={applyFilters}>
+                  <Text style={styles.filterApplyText}>Apply</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    // ── Toggle + chips + swipe hint (scrolls away with hero) ──
+    if (item.type === 'controls') {
+      if (loading) return renderSkeletonList();
+      return (
+        <View>
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={[styles.toggleBtn, viewType === 'expense' && styles.toggleBtnActive]}
+              onPress={() => handleViewTypeSwitch('expense')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.toggleBtnText, viewType === 'expense' && styles.toggleBtnTextActive]}>Expenses</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleBtn, viewType === 'income' && styles.toggleBtnIncomeActive]}
+              onPress={() => handleViewTypeSwitch('income')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.toggleBtnText, viewType === 'income' && styles.toggleBtnTextActive]}>Income</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.filterWrapper}>
+            <FlatList
+              data={filterOptions}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(it) => it}
+              contentContainerStyle={{ paddingHorizontal: spacing.screenPadding }}
+              renderItem={({ item: chip }) => {
+                const isActive = activeCategory === chip;
+                let activeBg = colors.primary;
+                if (viewType === 'income' && chip !== 'All') {
+                  const incCat = INCOME_CATEGORIES.find((c) => c.name === chip);
+                  if (incCat) activeBg = CATEGORY_COLOR[incCat.key] ?? colors.primary;
+                } else if (viewType === 'expense' && chip !== 'All') {
+                  const expCat = categories.find((c) => c.name === chip);
+                  if (expCat?.text_colour) activeBg = expCat.text_colour;
+                }
+                const catData = viewType === 'expense' && chip !== 'All'
+                  ? categories.find((c) => c.name === chip) : null;
+                const pct = catData && catData.budget_limit
+                  ? Math.min((catData as any).spent / catData.budget_limit, 1) : 0;
+                const ringColor = pct > 0.9 ? '#C0503A' : pct > 0.7 ? '#C97A20' : colors.primary;
+                return (
+                  <View style={{ position: 'relative', marginRight: 8 }}>
+                    <TouchableOpacity
+                      style={[isActive ? styles.chipActive : styles.chipInactive, isActive && { backgroundColor: activeBg }]}
+                      onPress={() => setActiveCategory(chip)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={isActive ? styles.chipTextActive : styles.chipTextInactive}>{chip}</Text>
+                      {!isActive && pct > 0 && (
+                        <View style={styles.chipProgressTrack}>
+                          <View style={[styles.chipProgressFill, { width: `${Math.round(pct * 100)}%` as any, backgroundColor: ringColor }]} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              }}
+            />
+          </View>
+
+          {swipeHintVisible && totalEntries > 0 && (
+            <View style={styles.swipeHint}>
+              <Ionicons name="arrow-back-outline" size={12} color={colors.textSecondary} />
+              <Text style={styles.swipeHintText}>Swipe left on a transaction to delete</Text>
+            </View>
+          )}
+        </View>
+      );
+    }
+
     if (item.type === 'header') {
       return (
         <View style={styles.dateHeaderContainer}>
@@ -452,7 +874,7 @@ export default function FeedScreen() {
     });
 
     return (
-      <SwipeableRow onDelete={() => handleDelete(tx)}>
+      <SwipeableRow onDelete={() => { setSwipeHintVisible(false); handleDelete(tx); }}>
         <Pressable
           onPress={() =>
             navigation.navigate('TransactionDetail', { id: tx.id })
@@ -509,145 +931,53 @@ export default function FeedScreen() {
     );
   };
 
-  const monthLabel = `${MONTH_NAMES[selectedMonth]} ${selectedYear}`;
   const totalEntries = sections.reduce((s, sec) => s + sec.data.length, 0);
+  const listBottomPadding = Math.max(insets.bottom + 96, 120);
 
   return (
     <View style={styles.container}>
-      {/* ─── HEADER ─── */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Transactions</Text>
-          <Text style={styles.headerSubtitle}>
-            {monthLabel} · {totalEntries} entries
-          </Text>
-        </View>
+      {/* ─── SCREEN TITLE ROW — pinned ─── */}
+      <View style={styles.screenTitleRow}>
+        <Text style={styles.headerTitle}>Transactions</Text>
         <TouchableOpacity
-          style={styles.monthPill}
-          activeOpacity={0.7}
-          onPress={() => setMonthPickerVisible(true)}
+          style={styles.notifBtn}
+          activeOpacity={0.75}
+          onPress={() => searchInputRef.current?.focus()}
         >
-          <Text style={styles.monthPillText}>{monthLabel} ▾</Text>
+          <Ionicons name="search-outline" size={18} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
-      {/* ─── INCOME / EXPENSE TOGGLE ─── */}
-      <View style={styles.toggleRow}>
-        <TouchableOpacity
-          style={[
-            styles.toggleBtn,
-            viewType === 'expense' && styles.toggleBtnActive,
-          ]}
-          onPress={() => handleViewTypeSwitch('expense')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.toggleBtnText,
-              viewType === 'expense' && styles.toggleBtnTextActive,
-            ]}
-          >
-            Expenses
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.toggleBtn,
-            viewType === 'income' && styles.toggleBtnIncomeActive,
-          ]}
-          onPress={() => handleViewTypeSwitch('income')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.toggleBtnText,
-              viewType === 'income' && styles.toggleBtnTextActive,
-            ]}
-          >
-            Income
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ─── FILTER CHIPS ─── */}
-      <View style={styles.filterWrapper}>
-        <FlatList
-          data={filterOptions}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item}
-          contentContainerStyle={{ paddingHorizontal: spacing.screenPadding }}
-          renderItem={({ item }) => {
-            const isActive = activeCategory === item;
-
-            let activeBg = colors.primary;
-            const activeText = '#FFFFFF';
-            if (viewType === 'income' && item !== 'All') {
-              const incCat = INCOME_CATEGORIES.find((c) => c.name === item);
-              if (incCat) {
-                activeBg = CATEGORY_COLOR[incCat.key] ?? colors.primary;
+      {/* ─── SINGLE FLATLIST — hero scrolls away, search bar sticks ─── */}
+      <FlatList
+        data={listData}
+        renderItem={renderItem}
+        keyExtractor={(item, index) => {
+          if (item.type === 'hero') return 'hero';
+          if (item.type === 'sticky') return 'sticky';
+          if (item.type === 'controls') return 'controls';
+          if (item.type === 'header') return `header-${item.title}`;
+          return `tx-${item.data.id}-${index}`;
+        }}
+        stickyHeaderIndices={[1]}
+        contentContainerStyle={{ paddingBottom: listBottomPadding }}
+        ListEmptyComponent={null}
+        ListFooterComponent={() =>
+          !loading && listData.length > 3 && hasMore ? (
+            <TouchableOpacity
+              style={styles.loadMoreBtn}
+              activeOpacity={0.7}
+              onPress={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore
+                ? <ActivityIndicator color={colors.primary} />
+                : <Text style={styles.loadMoreText}>Load 20 more</Text>
               }
-            }
-
-            return (
-              <TouchableOpacity
-                style={[
-                  isActive ? styles.chipActive : styles.chipInactive,
-                  isActive && { backgroundColor: activeBg },
-                ]}
-                onPress={() => setActiveCategory(item)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    isActive ? styles.chipTextActive : styles.chipTextInactive,
-                    isActive && { color: activeText },
-                  ]}
-                >
-                  {item}
-                </Text>
-              </TouchableOpacity>
-            );
-          }}
-        />
-      </View>
-
-      {/* ─── TRANSACTION LIST ─── */}
-      <View style={{ flex: 1 }}>
-        {loading ? (
-          renderSkeletonList()
-        ) : (
-          <FlatList
-            data={listData}
-            renderItem={renderItem}
-            keyExtractor={(item, index) =>
-              item.type === 'header'
-                ? `header-${item.title}`
-                : `tx-${item.data.id}-${index}`
-            }
-            contentContainerStyle={{ paddingBottom: 120 }}
-            ListEmptyComponent={
-              <Text style={styles.emptyText}>No transactions found.</Text>
-            }
-            ListFooterComponent={() =>
-              listData.length > 0 && hasMore ? (
-                <TouchableOpacity
-                  style={styles.loadMoreBtn}
-                  activeOpacity={0.7}
-                  onPress={loadMore}
-                  disabled={loadingMore}
-                >
-                  {loadingMore ? (
-                    <ActivityIndicator color={colors.primary} />
-                  ) : (
-                    <Text style={styles.loadMoreText}>Load 20 more</Text>
-                  )}
-                </TouchableOpacity>
-              ) : null
-            }
-          />
-        )}
-      </View>
+            </TouchableOpacity>
+          ) : null
+        }
+      />
 
       {/* ─── MONTH PICKER MODAL ─── */}
       <MonthPickerModal
@@ -657,6 +987,7 @@ export default function FeedScreen() {
         onConfirm={(y, m) => {
           setSelectedYear(y);
           setSelectedMonth(m);
+          if (filterPanelVisible) setDraftDatePreset('custom');
           setMonthPickerVisible(false);
         }}
         onClose={() => setMonthPickerVisible(false)}
@@ -769,41 +1100,373 @@ const createPickerStyles = (colors: any, isDark: boolean) =>
     },
   });
 
-const createStyles = (colors: any, isDark: boolean) =>
+const createStyles = (colors: any, isDark: boolean, topInset: number) =>
   StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background, paddingTop: 60 },
-    header: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingHorizontal: spacing.screenPadding,
-      marginBottom: 16,
-    },
-    headerTitle: {
-      fontFamily: 'Nunito_700Bold',
-      fontSize: 22,
-      color: colors.textPrimary,
-    },
-    headerSubtitle: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 13,
-      color: colors.textSecondary,
-      marginTop: 2,
-    },
-    monthPill: {
-      backgroundColor: colors.primaryLight25,
-      borderWidth: 1,
-      borderColor: colors.onTrackBorder,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: radius.pill,
-    },
-    monthPillText: {
-      fontFamily: 'Inter_600SemiBold',
-      fontSize: 12,
-      color: colors.primary,
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+      paddingTop: Math.max(topInset + 8, 20),
     },
 
+    // ── StatsScreen-style title row ──
+    screenTitleRow: {
+      paddingTop: 8,
+      paddingBottom: 12,
+      paddingHorizontal: spacing.screenPadding,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    headerTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 27,
+      color: colors.textPrimary,
+      letterSpacing: -0.4,
+    },
+    notifBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      backgroundColor: isDark ? colors.blackTransparent15 : 'rgba(30,30,46,0.06)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+    },
+
+    // ── Hero card ──
+    heroClipper: {
+      marginHorizontal: spacing.screenPadding,
+      borderRadius: 28,
+      overflow: 'hidden',
+    },
+    heroCard: {
+      borderRadius: 28,
+      padding: 20,
+      marginHorizontal: spacing.screenPadding,
+      marginBottom: 0,
+      overflow: 'hidden',
+      shadowColor: colors.statsHeroBg2 ?? '#1a3028',
+      shadowOffset: { width: 0, height: 14 },
+      shadowOpacity: 0.45,
+      shadowRadius: 28,
+      elevation: 8,
+    },
+    heroBlobOne: {
+      position: 'absolute',
+      width: 160, height: 160,
+      borderRadius: 80,
+      top: -30, right: -20,
+      backgroundColor: colors.primaryTransparent30,
+    },
+    heroBlobTwo: {
+      position: 'absolute',
+      width: 110, height: 110,
+      borderRadius: 55,
+      left: -20, bottom: 44,
+      backgroundColor: colors.primaryTransparent30,
+      opacity: 0.6,
+    },
+    heroTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 16,
+      zIndex: 2,
+    },
+    monthNavPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: 999,
+      paddingVertical: 4,
+      paddingHorizontal: 4,
+      backgroundColor: colors.whiteTransparent12,
+      borderWidth: 1,
+      borderColor: colors.whiteTransparent18,
+      gap: 2,
+    },
+    monthArrow: {
+      width: 28, height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    monthNavLabel: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.whiteTransparent80,
+      paddingHorizontal: 6,
+    },
+    heroToggleWrap: {
+      flexDirection: 'row',
+      borderRadius: 999,
+      padding: 3,
+      gap: 2,
+      backgroundColor: colors.blackTransparent15,
+    },
+    heroToggleBtn: {
+      borderRadius: 999,
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+    },
+    heroToggleBtnActive: { backgroundColor: colors.whiteTransparent18 },
+    heroToggleText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.whiteTransparent55,
+    },
+    heroToggleTextActive: { color: colors.whiteTransparent80 },
+
+    heroInfoHeader: {
+      marginTop: 2,
+      marginBottom: 10,
+      zIndex: 2,
+    },
+    heroInfoTitle: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.whiteTransparent80,
+      marginBottom: 1,
+    },
+    heroInfoSubtitle: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 10,
+      color: colors.whiteTransparent55,
+    },
+
+    // ── Balance carousel ──
+    balanceCarousel: { gap: 8 },
+    balanceCard: {
+      minWidth: 100,
+      backgroundColor: colors.whiteTransparent10 ?? 'rgba(255,255,255,0.10)',
+      borderWidth: 1,
+      borderColor: colors.whiteTransparent15 ?? 'rgba(255,255,255,0.15)',
+      borderRadius: 14,
+      padding: 10,
+    },
+    balanceCardLabel: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      marginBottom: 4,
+    },
+    balanceCardDot: { width: 6, height: 6, borderRadius: 3 },
+    balanceCardLabelText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 10,
+      color: colors.whiteTransparent55 ?? 'rgba(255,255,255,0.55)',
+      letterSpacing: 0.5,
+    },
+    balanceCardMeta: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 10,
+      color: colors.whiteTransparent55 ?? 'rgba(255,255,255,0.55)',
+      marginBottom: 2,
+    },
+    balanceCardAmount: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 15,
+      color: colors.whiteTransparent80 ?? 'rgba(255,255,255,0.90)',
+    },
+
+    // ── Hero metric row ──
+    heroMetricRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      zIndex: 2,
+    },
+    heroMetricCol: { flex: 1 },
+    heroMetricLabel: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 11,
+      color: colors.whiteTransparent55 ?? 'rgba(255,255,255,0.55)',
+      marginBottom: 3,
+    },
+    heroMetricVal: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 17,
+      color: colors.whiteTransparent80 ?? 'rgba(255,255,255,0.90)',
+    },
+    heroMetricDivider: {
+      width: 1,
+      height: 32,
+      backgroundColor: colors.whiteTransparent15 ?? 'rgba(255,255,255,0.15)',
+      marginHorizontal: 12,
+    },
+
+    // ── Budget bar ──
+    budgetBarTrack: {
+      height: 5,
+      borderRadius: 3,
+      backgroundColor: colors.whiteTransparent15 ?? 'rgba(255,255,255,0.15)',
+      overflow: 'hidden',
+    },
+    budgetBarFill: {
+      height: '100%',
+      borderRadius: 3,
+      backgroundColor: 'rgba(255,255,255,0.65)',
+    },
+    budgetBarHint: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 10,
+      color: colors.whiteTransparent55 ?? 'rgba(255,255,255,0.45)',
+      marginTop: 5,
+      textAlign: 'right',
+    },
+
+    // ── Savings badge ──
+    savingsBadge: {
+      marginTop: 12,
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(106,200,140,0.20)',
+      borderWidth: 1,
+      borderColor: 'rgba(106,200,140,0.30)',
+      borderRadius: 999,
+      paddingVertical: 4,
+      paddingHorizontal: 10,
+    },
+    savingsBadgeText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: '#7ED8A0',
+    },
+
+    // ── Sticky search wrapper ──
+    stickyBar: {
+      backgroundColor: colors.background,
+      paddingTop: 10,
+    },
+
+    // ── Search bar ──
+    searchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: spacing.screenPadding,
+      marginBottom: 12,
+    },
+    searchBar: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderRadius: 14,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    searchInput: {
+      flex: 1,
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.textPrimary,
+      padding: 0,
+    },
+    filterTriggerBtn: {
+      width: 44, height: 44,
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    filterTriggerBtnActive: {
+      backgroundColor: colors.primaryLight ?? '#EBF2EE',
+      borderColor: colors.primary,
+    },
+    filterBadge: {
+      position: 'absolute',
+      top: 8, right: 8,
+      width: 7, height: 7,
+      borderRadius: 4,
+      backgroundColor: colors.primary,
+    },
+
+    // ── Advanced filter panel ──
+    filterPanel: {
+      marginHorizontal: spacing.screenPadding,
+      marginBottom: 14,
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderRadius: 18,
+      padding: 16,
+    },
+    filterPanelHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 14,
+    },
+    filterPanelTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 15,
+      color: colors.textPrimary,
+    },
+    filterResetText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    filterSectionLabel: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      marginBottom: 8,
+    },
+    filterChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+      backgroundColor: isDark ? '#1E1E1E' : '#F7F5F2',
+    },
+    filterChipSelected: {
+      backgroundColor: colors.primaryLight ?? '#EBF2EE',
+      borderColor: colors.primary,
+    },
+    filterChipText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    filterChipTextSelected: { color: colors.primary },
+    filterPanelActions: { flexDirection: 'row', gap: 8 },
+    filterCancelBtn: {
+      flex: 1,
+      paddingVertical: 11,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
+      alignItems: 'center',
+    },
+    filterCancelText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    filterApplyBtn: {
+      flex: 1,
+      paddingVertical: 11,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+    },
+    filterApplyText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: '#FFFFFF',
+    },
+
+    // ── Expense / Income toggle ──
     toggleRow: {
       flexDirection: 'row',
       marginHorizontal: spacing.screenPadding,
@@ -827,6 +1490,16 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     toggleBtnTextActive: { color: '#FFFFFF' },
 
+    // ── Hero empty hint ──
+    heroEmptyHint: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: 'rgba(255,255,255,0.45)',
+      marginTop: 4,
+      marginBottom: 4,
+    },
+
+    // ── Category filter chips ──
     filterWrapper: { height: 36, marginBottom: 16 },
     chipActive: {
       paddingHorizontal: 16,
@@ -834,7 +1507,6 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderRadius: 12,
       justifyContent: 'center',
       alignItems: 'center',
-      marginRight: 8,
       backgroundColor: colors.primary,
     },
     chipInactive: {
@@ -843,10 +1515,10 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderRadius: 12,
       justifyContent: 'center',
       alignItems: 'center',
-      marginRight: 8,
       backgroundColor: colors.white,
       borderWidth: 1,
       borderColor: isDark ? '#333333' : '#e0dfd7',
+      overflow: 'hidden',
     },
     chipTextActive: {
       fontFamily: 'Inter_600SemiBold',
@@ -858,7 +1530,36 @@ const createStyles = (colors: any, isDark: boolean) =>
       fontSize: 13,
       color: colors.textSecondary,
     },
+    chipProgressTrack: {
+      position: 'absolute',
+      left: 7,
+      right: 7,
+      bottom: 4,
+      height: 2,
+      borderRadius: 1,
+      backgroundColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)',
+      overflow: 'hidden',
+    },
+    chipProgressFill: {
+      height: '100%',
+      borderRadius: 1,
+    },
 
+    // ── Swipe hint ──
+    swipeHint: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: spacing.screenPadding,
+      paddingBottom: 8,
+    },
+    swipeHintText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11,
+      color: colors.textSecondary,
+    },
+
+    // ── Transaction list ──
     dateHeaderContainer: {
       backgroundColor: colors.background,
       paddingHorizontal: spacing.screenPadding,
