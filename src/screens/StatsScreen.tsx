@@ -17,11 +17,13 @@ import {
   PanResponder,
   Vibration,
   Modal,
+  Image,
+  Dimensions,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, G, Path as SvgPath } from 'react-native-svg';
+import Svg, { Circle, G, Path as SvgPath, Rect, Line, Text as SvgText } from 'react-native-svg';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Dynamic Theme Hook
 import { supabase } from '@/services/supabase';
@@ -31,6 +33,9 @@ import {
   CATEGORY_COLOR,
 } from '@/constants/categoryMappings';
 import { Skeleton } from '@/components/Skeleton';
+import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
+import { useAccounts } from '@/hooks/useAccounts';
+import { generateBulletInsights } from '@/services/gemini';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -40,6 +45,17 @@ type DbCategoryMeta = {
   textColor: string | null;
   tileBg: string | null;
 };
+
+type TopTx = {
+  display_name: string | null;
+  merchant_name: string | null;
+  amount: number;
+  category: string | null;
+  date: string;
+  account_id: string;
+};
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 // ─── Theme maps ──────────────────────────────────────────────────────────────
 
@@ -374,6 +390,278 @@ function MonthPickerModal({
   );
 }
 
+// ─── DailySpendChart ─────────────────────────────────────────────────────────
+
+const PEAK_AMBER = '#E07B2E';
+
+function DailySpendChart({
+  data,
+  maxAmount,
+  colors,
+}: {
+  data: { day: number; amount: number }[];
+  maxAmount: number;
+  colors: any;
+}) {
+  const Y_LABEL_W = 34;
+  const PADDING = 16;
+  const CHART_W = SCREEN_WIDTH - 32 - PADDING * 2 - Y_LABEL_W;
+  const CHART_H = 80;
+  const BAR_GAP = 2;
+  const barCount = data.length;
+  const BAR_W = Math.max(2, (CHART_W - BAR_GAP * (barCount - 1)) / barCount);
+  const peakIndex = data.reduce(
+    (best, d, i) => (d.amount > data[best].amount ? i : best),
+    0
+  );
+
+  const formatYLabel = (value: number): string => {
+    if (value === 0) return '₱0';
+    if (value >= 1000) return `₱${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
+    return `₱${Math.round(value)}`;
+  };
+
+  const ySteps = [
+    { label: formatYLabel(maxAmount), y: 4 },
+    { label: formatYLabel(maxAmount / 2), y: CHART_H / 2 + 4 },
+    { label: '₱0', y: CHART_H },
+  ];
+
+  return (
+    <Svg width={Y_LABEL_W + CHART_W} height={CHART_H + 14}>
+      {/* Y-axis labels */}
+      {ySteps.map((step, idx) => (
+        <SvgText
+          key={idx}
+          x={Y_LABEL_W - 4}
+          y={step.y}
+          fontSize={8}
+          fill={withAlpha(colors.textSecondary, 0.5)}
+          textAnchor="end"
+          fontWeight="500"
+        >
+          {step.label}
+        </SvgText>
+      ))}
+      {/* Gridlines */}
+      {[0.25, 0.5, 0.75, 1].map((pct) => {
+        const y = CHART_H - CHART_H * pct;
+        return (
+          <Line
+            key={pct}
+            x1={Y_LABEL_W}
+            y1={y}
+            x2={Y_LABEL_W + CHART_W}
+            y2={y}
+            stroke={withAlpha(colors.textSecondary, 0.1)}
+            strokeWidth={1}
+          />
+        );
+      })}
+      {/* Bars */}
+      {data.map((d, i) => {
+        const barH = maxAmount > 0 ? (d.amount / maxAmount) * CHART_H : 0;
+        const x = Y_LABEL_W + i * (BAR_W + BAR_GAP);
+        const y = CHART_H - Math.max(barH, d.amount > 0 ? 2 : 0);
+        const isPeak = i === peakIndex && d.amount > 0;
+        const barColor = isPeak ? PEAK_AMBER : colors.primary;
+        const opacity = d.amount === 0 ? 0.15 : isPeak ? 1 : 0.6;
+        const showLabel = d.day % 10 === 1 || isPeak;
+        return (
+          <React.Fragment key={d.day}>
+            <Rect
+              x={x}
+              y={y}
+              width={BAR_W}
+              height={Math.max(barH, d.amount > 0 ? 2 : 1)}
+              fill={barColor}
+              opacity={opacity}
+              rx={1.5}
+            />
+            {showLabel && (
+              <SvgText
+                x={x + BAR_W / 2}
+                y={CHART_H + 12}
+                fontSize={8}
+                fill={isPeak ? PEAK_AMBER : colors.textSecondary}
+                textAnchor="middle"
+                fontWeight="600"
+              >
+                {d.day}
+              </SvgText>
+            )}
+          </React.Fragment>
+        );
+      })}
+    </Svg>
+  );
+}
+
+// ─── DowPatternChart ─────────────────────────────────────────────────────────
+
+function DowPatternChart({
+  dowAvg,
+  colors,
+}: {
+  dowAvg: number[];
+  colors: any;
+}) {
+  const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const maxDow = Math.max(...dowAvg, 1);
+  const BAR_H_MAX = 48;
+  const peakDow = dowAvg.indexOf(Math.max(...dowAvg));
+
+  const formatAvg = (v: number): string => {
+    if (v === 0) return '';
+    if (v >= 1000) return `₱${(v / 1000).toFixed(1)}k`;
+    return `₱${Math.round(v)}`;
+  };
+
+  return (
+    <View>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-end',
+          height: BAR_H_MAX + 32,
+        }}
+      >
+        {DOW_LABELS.map((label, i) => {
+          const pct = dowAvg[i] / maxDow;
+          const barH = Math.max(pct * BAR_H_MAX, dowAvg[i] > 0 ? 3 : 2);
+          const isWeekend = i >= 5;
+          const isPeak = i === peakDow && dowAvg[i] > 0;
+          const barColor = isPeak
+            ? PEAK_AMBER
+            : isWeekend
+              ? colors.lavender
+              : colors.primary;
+          return (
+            <View key={i} style={{ alignItems: 'center', flex: 1 }}>
+              {isPeak && dowAvg[i] > 0 && (
+                <Text
+                  style={{
+                    fontFamily: 'Inter_700Bold',
+                    fontSize: 8,
+                    color: PEAK_AMBER,
+                    marginBottom: 3,
+                  }}
+                >
+                  {formatAvg(dowAvg[i])}
+                </Text>
+              )}
+              <View
+                style={{
+                  width: 22,
+                  height: barH,
+                  backgroundColor: barColor,
+                  borderRadius: 5,
+                  opacity: dowAvg[i] === 0 ? 0.2 : 0.82,
+                }}
+              />
+              <Text
+                style={{
+                  fontFamily: 'Inter_700Bold',
+                  fontSize: 9,
+                  color: isPeak ? PEAK_AMBER : colors.textSecondary,
+                  marginTop: 5,
+                }}
+              >
+                {label}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      {/* Legend */}
+      <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: colors.primary }} />
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary }}>
+            Weekday
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: colors.lavender }} />
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary }}>
+            Weekend
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: PEAK_AMBER }} />
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary }}>
+            Peak day
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ─── AccountActivityCard ─────────────────────────────────────────────────────
+
+function AccountActivityCard({
+  account,
+  expense,
+  income,
+  colors,
+  styles,
+}: {
+  account: any;
+  expense: number;
+  income: number;
+  colors: any;
+  styles: any;
+}) {
+  const net = income - expense;
+  const logo = ACCOUNT_LOGOS[account.name as string];
+
+  return (
+    <View style={styles.acctCardWrap}>
+      {logo ? (
+        <Image source={logo} style={styles.acctLogo} resizeMode="contain" />
+      ) : (
+        <View
+          style={[
+            styles.acctAvatar,
+            { backgroundColor: account.brand_colour ?? colors.primary },
+          ]}
+        >
+          <Text style={styles.acctAvatarText}>
+            {account.letter_avatar ?? account.name?.charAt(0) ?? '?'}
+          </Text>
+        </View>
+      )}
+      <Text style={styles.acctName} numberOfLines={1}>
+        {account.name}
+      </Text>
+      <Text style={styles.acctExpAmt}>-₱{expense.toLocaleString()}</Text>
+      <Text style={styles.acctIncAmt}>+₱{income.toLocaleString()}</Text>
+      <View
+        style={[
+          styles.acctNetPill,
+          {
+            backgroundColor:
+              net >= 0
+                ? withAlpha(colors.incomeGreen, 0.12)
+                : withAlpha(colors.expenseRed, 0.1),
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.acctNetText,
+            { color: net >= 0 ? colors.incomeGreen : colors.expenseRed },
+          ]}
+        >
+          {net >= 0 ? '+' : ''}₱{net.toLocaleString()}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function InsightsScreen() {
@@ -389,6 +677,9 @@ export default function InsightsScreen() {
 
   // ── View type ──
   const [viewType, setViewType] = useState<'expense' | 'income'>('expense');
+
+  // ── Tab navigation ──
+  const [activeTab, setActiveTab] = useState<'spend' | 'patterns' | 'categories'>('spend');
 
   // ── UI state ──
   const [activeDonutIndex, setActiveDonutIndex] = useState<number>(-1);
@@ -410,6 +701,25 @@ export default function InsightsScreen() {
   // ── Income data ──
   const [incomeTotals, setIncomeTotals] = useState<Record<string, number>>({});
 
+  // ── Enhanced insight data ──
+  const [dailySpend, setDailySpend] = useState<Record<string, number>>({});
+  const [dowAvgSpend, setDowAvgSpend] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+  const [topTransactions, setTopTransactions] = useState<TopTx[]>([]);
+  const [accountActivity, setAccountActivity] = useState<{
+    expense: Record<string, number>;
+    income: Record<string, number>;
+  }>({ expense: {}, income: {} });
+  const [prevMonthExpenseTotals, setPrevMonthExpenseTotals] = useState<
+    Record<string, number>
+  >({});
+  const [prevMonthTxCount, setPrevMonthTxCount] = useState(0);
+  const [totalTxCount, setTotalTxCount] = useState(0);
+  const [aiInsights, setAiInsights] = useState<string[] | null>(null);
+  const [aiInsightsLoading, setAiInsightsLoading] = useState(false);
+  const lastAiMonthRef = useRef<string>('');
+
+  const { accounts } = useAccounts();
+
   const monthRange = useMemo(() => {
     const from = new Date(selectedYear, selectedMonth, 1).toISOString();
     const to = new Date(
@@ -427,24 +737,74 @@ export default function InsightsScreen() {
   const fetchStats = useCallback(async () => {
     try {
       setLoading(true);
-      const { data: catData } = await supabase
-        .from('categories')
-        .select(
-          'name, budget_limit, emoji, text_colour, tile_bg_colour, sort_order'
-        )
-        .eq('is_active', true);
-      const { data: txData } = await supabase
-        .from('transactions')
-        .select('category, amount, type')
-        .eq('type', 'expense')
-        .gte('date', monthRange.from)
-        .lte('date', monthRange.to);
-      const { data: incomeTxData } = await supabase
-        .from('transactions')
-        .select('category, amount')
-        .eq('type', 'income')
-        .gte('date', monthRange.from)
-        .lte('date', monthRange.to);
+
+      // Compute prev month range for delta badges
+      const prevMonthNum = selectedMonth === 0 ? 11 : selectedMonth - 1;
+      const prevYearNum = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+      const prevFrom = new Date(prevYearNum, prevMonthNum, 1).toISOString();
+      const prevTo = new Date(
+        prevYearNum,
+        prevMonthNum + 1,
+        0,
+        23,
+        59,
+        59,
+        999
+      ).toISOString();
+
+      const [
+        { data: catData },
+        { data: txData },
+        { data: incomeTxData },
+        { data: dailyTxData },
+        { data: topTxData },
+        { data: acctTxData },
+        { data: prevTxData },
+      ] = await Promise.all([
+        supabase
+          .from('categories')
+          .select(
+            'name, budget_limit, emoji, text_colour, tile_bg_colour, sort_order'
+          )
+          .eq('is_active', true),
+        supabase
+          .from('transactions')
+          .select('category, amount, type')
+          .eq('type', 'expense')
+          .gte('date', monthRange.from)
+          .lte('date', monthRange.to),
+        supabase
+          .from('transactions')
+          .select('category, amount')
+          .eq('type', 'income')
+          .gte('date', monthRange.from)
+          .lte('date', monthRange.to),
+        supabase
+          .from('transactions')
+          .select('date, amount')
+          .eq('type', 'expense')
+          .gte('date', monthRange.from)
+          .lte('date', monthRange.to),
+        supabase
+          .from('transactions')
+          .select('display_name, merchant_name, amount, category, date, account_id')
+          .eq('type', 'expense')
+          .gte('date', monthRange.from)
+          .lte('date', monthRange.to)
+          .order('amount', { ascending: false })
+          .limit(5),
+        supabase
+          .from('transactions')
+          .select('account_id, amount, type')
+          .gte('date', monthRange.from)
+          .lte('date', monthRange.to),
+        supabase
+          .from('transactions')
+          .select('category, amount')
+          .eq('type', 'expense')
+          .gte('date', prevFrom)
+          .lte('date', prevTo),
+      ]);
 
       const nextTotals: Record<string, number> = {};
       const nextBudgets: Record<string, number> = {};
@@ -494,10 +854,54 @@ export default function InsightsScreen() {
       });
 
       setIncomeTotals(nextIncomeTotals);
+
+      // ── Daily spend + day-of-week aggregation ──
+      const dailyMap: Record<string, number> = {};
+      const dowTotals = [0, 0, 0, 0, 0, 0, 0];
+      const dowCounts = [0, 0, 0, 0, 0, 0, 0];
+      (dailyTxData ?? []).forEach((tx) => {
+        const day = tx.date.slice(0, 10);
+        dailyMap[day] = (dailyMap[day] ?? 0) + Number(tx.amount);
+        const d = new Date(tx.date);
+        const dow = (d.getDay() + 6) % 7; // Mon=0 … Sun=6
+        dowTotals[dow] += Number(tx.amount);
+        dowCounts[dow]++;
+      });
+      const dowAvg = dowTotals.map((total, i) =>
+        dowCounts[i] > 0 ? total / dowCounts[i] : 0
+      );
+      setDailySpend(dailyMap);
+      setDowAvgSpend(dowAvg);
+      setTotalTxCount(dailyTxData?.length ?? 0);
+
+      // ── Top transactions ──
+      setTopTransactions((topTxData ?? []) as TopTx[]);
+
+      // ── Account-level activity ──
+      const acctExpense: Record<string, number> = {};
+      const acctIncome: Record<string, number> = {};
+      (acctTxData ?? []).forEach((tx) => {
+        const id = tx.account_id as string;
+        if (tx.type === 'expense') {
+          acctExpense[id] = (acctExpense[id] ?? 0) + Number(tx.amount);
+        } else {
+          acctIncome[id] = (acctIncome[id] ?? 0) + Number(tx.amount);
+        }
+      });
+      setAccountActivity({ expense: acctExpense, income: acctIncome });
+
+      // ── Previous month totals for delta badges ──
+      const prevTotals: Record<string, number> = {};
+      (prevTxData ?? []).forEach((tx) => {
+        const key = normalizeCategoryKey(tx.category);
+        prevTotals[key] = (prevTotals[key] ?? 0) + Number(tx.amount);
+      });
+      setPrevMonthExpenseTotals(prevTotals);
+      setPrevMonthTxCount(prevTxData?.length ?? 0);
     } finally {
       setLoading(false);
     }
-  }, [monthRange]);
+  }, [monthRange, selectedMonth, selectedYear]);
 
   useEffect(() => {
     fetchStats();
@@ -511,6 +915,9 @@ export default function InsightsScreen() {
   const handleViewTypeSwitch = (type: 'expense' | 'income') => {
     setViewType(type);
     setActiveDonutIndex(-1);
+    if (type === 'expense') {
+      setActiveTab('spend');
+    }
   };
 
   const totalExpenseSpent = Object.values(expenseTotals).reduce(
@@ -771,6 +1178,111 @@ export default function InsightsScreen() {
       .sort((a, b) => b.pct - a.pct)[0] ?? null;
   }, [expenseTiles]);
 
+  // ── New derived values ──
+  const biggestExpense = useMemo(() => topTransactions[0] ?? null, [topTransactions]);
+
+  const avgDailySpend = useMemo(() => {
+    const vals = Object.values(dailySpend);
+    if (vals.length === 0) return 0;
+    return vals.reduce((s, v) => s + v, 0) / vals.length;
+  }, [dailySpend]);
+
+  const dailyBarsData = useMemo(() => {
+    const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => {
+      const day = i + 1;
+      const dateStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return { day, amount: dailySpend[dateStr] ?? 0 };
+    });
+  }, [dailySpend, selectedYear, selectedMonth]);
+
+  const maxDailyAmount = useMemo(
+    () => Math.max(...dailyBarsData.map((d) => d.amount), 1),
+    [dailyBarsData]
+  );
+
+  const peakDayData = useMemo(
+    () => dailyBarsData.reduce((best, d) => (d.amount > best.amount ? d : best), { day: 0, amount: 0 }),
+    [dailyBarsData]
+  );
+
+  const prevMonthTotal = useMemo(
+    () => Object.values(prevMonthExpenseTotals).reduce((s, v) => s + v, 0),
+    [prevMonthExpenseTotals]
+  );
+  const momDelta = totalExpenseSpent - prevMonthTotal;
+  const txDelta = totalTxCount - prevMonthTxCount;
+
+  // ── AI Insights ──
+  const generateInsights = useCallback(async () => {
+    if (aiInsightsLoading) return;
+    const monthKey = `${selectedYear}-${selectedMonth}`;
+    if (lastAiMonthRef.current === monthKey && aiInsights !== null) return;
+    try {
+      setAiInsightsLoading(true);
+      const categoryLines = expenseCategoryKeys
+        .filter((k) => expenseTotals[k] > 0)
+        .map(
+          (k) =>
+            `${expenseCategoryMeta[k]?.label ?? k}: ₱${expenseTotals[k].toLocaleString()} / ₱${expenseBudgets[k].toLocaleString()} budget`
+        )
+        .join('\n');
+      const topTxLines = topTransactions
+        .slice(0, 3)
+        .map(
+          (tx) =>
+            `- ${tx.display_name ?? tx.merchant_name ?? tx.category ?? 'Transaction'}: ₱${tx.amount.toLocaleString()} on ${tx.date.slice(0, 10)}`
+        )
+        .join('\n');
+      const prompt = `Month: ${MONTH_NAMES[selectedMonth]} ${selectedYear}
+Total spent: ₱${totalExpenseSpent.toLocaleString()}
+Total budget: ₱${totalBudget.toLocaleString()}
+Total income: ₱${totalIncome.toLocaleString()}
+Transaction count: ${totalTxCount}
+Avg daily spend: ₱${avgDailySpend.toFixed(0)}
+
+CATEGORY BREAKDOWN:
+${categoryLines}
+
+TOP EXPENSES:
+${topTxLines}
+
+Give exactly 3 concise, practical financial insights as a JSON array of strings.
+Each insight is 1-2 sentences. Do not use bullet prefixes inside the strings.
+Format strictly: ["insight 1", "insight 2", "insight 3"]`;
+      const results = await generateBulletInsights(prompt);
+      if (results.length > 0) {
+        setAiInsights(results);
+        lastAiMonthRef.current = monthKey;
+      }
+    } catch (_) {
+    } finally {
+      setAiInsightsLoading(false);
+    }
+  }, [
+    aiInsightsLoading,
+    aiInsights,
+    selectedYear,
+    selectedMonth,
+    expenseCategoryKeys,
+    expenseTotals,
+    expenseCategoryMeta,
+    expenseBudgets,
+    topTransactions,
+    totalExpenseSpent,
+    totalBudget,
+    totalIncome,
+    totalTxCount,
+    avgDailySpend,
+  ]);
+
+  useEffect(() => {
+    if (!loading && viewType === 'expense' && expenseCategoryKeys.length > 0) {
+      generateInsights();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, viewType, selectedYear, selectedMonth]);
+
   const monthLabel = `${MONTH_NAMES[selectedMonth]} ${selectedYear}`;
 
   const selectedExpenseBudget =
@@ -831,12 +1343,27 @@ export default function InsightsScreen() {
     ? 'Tap to get personalized savings tips from Fino.'
     : 'Ask Fino for custom insights and ways to improve your budget.';
 
+  const aiAlertText = mostOverBudgetTile
+    ? `${mostOverBudgetTile.title} is ${(mostOverBudgetTile.pct - 100).toFixed(0)}% over budget.`
+    : 'No categories are over budget this month.';
+  const aiAlertSubText = mostOverBudgetTile
+    ? `Consider reducing by ₱${Math.max(mostOverBudgetTile.amount - mostOverBudgetTile.budget, 0).toLocaleString()} next month.`
+    : 'Keep this pace and ask Fino for next-step savings ideas.';
+
   const renderExpenseTile = (catKey: string) => {
     const tile = expenseTiles.find((item) => item.key === catKey);
     if (!tile) return null;
     const wavePct = tile.isOver ? 100 : Math.max(10, Math.min(tile.pct, 100));
     const waveHeight = (122 * wavePct) / 100;
     const tileTextColor = tile.isOver ? colors.expenseRed : tile.color;
+    const progressPct = Math.min(tile.pct, 100);
+    const progressColor = tile.isOver ? colors.expenseRed : tile.color;
+    const pctDisplay = tile.isOver
+      ? `${tile.pct.toFixed(0)}% ⚠`
+      : `${tile.pct.toFixed(0)}%`;
+    const prevAmt = prevMonthExpenseTotals[tile.key] ?? 0;
+    const delta = tile.amount - prevAmt;
+    const deltaUp = delta >= 0;
 
     return (
       <TouchableOpacity
@@ -852,25 +1379,11 @@ export default function InsightsScreen() {
       >
         <View
           style={[
-            styles.catTile,
+            styles.catTileExpense,
             { backgroundColor: isDark ? colors.surfaceSubdued : tile.tileBg },
           ]}
         >
           <WaveFill pct={waveHeight / TILE_H} color={tile.color} />
-
-          <View
-            style={[
-              styles.catIconCircle,
-              { backgroundColor: withAlpha(tile.color, 0.16) },
-            ]}
-          >
-            <CategoryIcon
-              categoryKey={tile.iconKey}
-              color={tileTextColor}
-              size={15}
-              wrapperSize={22}
-            />
-          </View>
 
           <View style={styles.catBadgeWrap}>
             {tile.isOver ? (
@@ -889,14 +1402,71 @@ export default function InsightsScreen() {
                 </Text>
               </View>
             )}
+
+            {(prevAmt > 0 || tile.amount > 0) && (
+              <View
+                style={[
+                  styles.deltaBadge,
+                  {
+                    backgroundColor: deltaUp
+                      ? withAlpha(colors.expenseRed, 0.1)
+                      : withAlpha(colors.incomeGreen, 0.12),
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.deltaBadgeText,
+                    { color: deltaUp ? colors.expenseRed : colors.incomeGreen },
+                  ]}
+                >
+                  {deltaUp ? '+' : '-'}₱{Math.abs(delta).toLocaleString()}
+                </Text>
+              </View>
+            )}
           </View>
 
-          <Text style={[styles.catName, { color: tileTextColor }]} numberOfLines={1}>
+          <View
+            style={[
+              styles.catIconCircle,
+              { backgroundColor: withAlpha(tile.color, 0.16) },
+            ]}
+          >
+            <CategoryIcon
+              categoryKey={tile.iconKey}
+              color={tileTextColor}
+              size={15}
+              wrapperSize={22}
+            />
+          </View>
+
+          <Text
+            style={[styles.catExpenseName, { color: tileTextColor }]}
+            numberOfLines={1}
+          >
             {tile.title}
           </Text>
-          <Text style={[styles.catAmt, { color: tileTextColor }]}>
+          <Text style={[styles.catExpenseAmt, { color: tileTextColor }]}>
             ₱{tile.amount.toLocaleString()}
           </Text>
+
+          <View style={styles.catProgressTrack}>
+            <View
+              style={[
+                styles.catProgressFill,
+                { width: `${progressPct}%`, backgroundColor: progressColor },
+              ]}
+            />
+          </View>
+
+          <View style={styles.catProgressMetaRow}>
+            <Text style={[styles.catProgressPctLabel, { color: progressColor }]}>
+              {pctDisplay}
+            </Text>
+            <Text style={styles.catProgressBudgetLabel}>
+              of ₱{tile.budget.toLocaleString()}
+            </Text>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -994,6 +1564,24 @@ export default function InsightsScreen() {
           </View>
           <Skeleton width={168} height={11} style={{ marginTop: 12 }} />
         </View>
+        {/* Quick Stats skeletons */}
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} width="31%" height={72} borderRadius={16} />
+          ))}
+        </View>
+        {/* Chart skeletons */}
+        <Skeleton width="100%" height={120} borderRadius={20} style={{ marginBottom: 16 }} />
+        <Skeleton width="100%" height={96} borderRadius={20} style={{ marginBottom: 16 }} />
+        {/* Account Activity skeleton */}
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} width={138} height={120} borderRadius={20} />
+          ))}
+        </View>
+        {/* Top Transactions skeleton */}
+        <Skeleton width="100%" height={130} borderRadius={20} style={{ marginBottom: 16 }} />
+
         <Skeleton width={88} height={11} style={{ marginBottom: 12 }} />
         <View style={{ marginBottom: 16 }}>
           {Array.from({ length: 5 }).map((_, index) => (
@@ -1255,61 +1843,399 @@ export default function InsightsScreen() {
         </View>
       </LinearGradient>
 
-      <View style={styles.belowCard}>
-        <View style={styles.sectionHeaderRow}>
-          <View style={styles.sectionDot} />
-          <Text style={styles.sectionLabel}>
-            {viewType === 'expense' ? 'By Category' : 'Income Sources'}
-          </Text>
-        </View>
-
-        {viewType === 'expense' ? (
-          expenseTiles.length > 0 ? (
-            <View style={styles.catGrid}>
-              {expenseTiles.map((tile) => renderExpenseTile(tile.key))}
+      {viewType === 'expense' && (
+        <>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={styles.aiAlertStrip}
+            onPress={() => navigation.navigate('ChatScreen')}
+          >
+            <View style={styles.aiAlertIconWrap}>
+              <Ionicons name="sparkles" size={14} color={colors.white} />
             </View>
-          ) : (
-            <Text style={styles.emptyText}>No expense data for this period.</Text>
-          )
-        ) : incomeTiles.length > 0 ? (
-          <View style={styles.catGrid}>
-            {incomeTiles.map((tile) => renderIncomeTile(tile.key))}
+            <View style={styles.aiAlertBody}>
+              <Text style={styles.aiAlertTitle}>{aiAlertText}</Text>
+              <Text style={styles.aiAlertSub}>{aiAlertSubText}</Text>
+            </View>
+            <View style={styles.aiAlertCtaWrap}>
+              <Text style={styles.aiAlertCtaText}>Ask Fino</Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.tabBar}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[
+                styles.tabBtn,
+                activeTab === 'spend' && styles.tabBtnActive,
+              ]}
+              onPress={() => setActiveTab('spend')}
+            >
+              <Text
+                style={[
+                  styles.tabBtnText,
+                  activeTab === 'spend' && styles.tabBtnTextActive,
+                ]}
+              >
+                Spend
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[
+                styles.tabBtn,
+                activeTab === 'patterns' && styles.tabBtnActive,
+              ]}
+              onPress={() => setActiveTab('patterns')}
+            >
+              <Text
+                style={[
+                  styles.tabBtnText,
+                  activeTab === 'patterns' && styles.tabBtnTextActive,
+                ]}
+              >
+                Patterns
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[
+                styles.tabBtn,
+                activeTab === 'categories' && styles.tabBtnActive,
+              ]}
+              onPress={() => setActiveTab('categories')}
+            >
+              <Text
+                style={[
+                  styles.tabBtnText,
+                  activeTab === 'categories' && styles.tabBtnTextActive,
+                ]}
+              >
+                Categories
+              </Text>
+            </TouchableOpacity>
           </View>
-        ) : (
-          <Text style={styles.emptyText}>No income data for this period.</Text>
+        </>
+      )}
+
+      <View style={styles.belowCard}>
+        {viewType === 'expense' && activeTab === 'spend' && (
+          <View style={styles.tabPanel}>
+            <View style={styles.quickStatsRow}>
+              <View style={styles.quickStatsPill}>
+                <Text style={styles.quickStatsValue}>{totalTxCount}</Text>
+                <Text style={styles.quickStatsLabel}>Transactions</Text>
+              </View>
+              <View style={styles.quickStatsPill}>
+                <Text style={styles.quickStatsValue} numberOfLines={1}>
+                  {biggestExpense
+                    ? `₱${biggestExpense.amount.toLocaleString()}`
+                    : '—'}
+                </Text>
+                {biggestExpense && (
+                  <Text style={styles.quickStatsSub} numberOfLines={1}>
+                    {biggestExpense.display_name ??
+                      biggestExpense.merchant_name ??
+                      biggestExpense.category ??
+                      ''}
+                  </Text>
+                )}
+                <Text style={styles.quickStatsLabel}>Biggest Spend</Text>
+              </View>
+              <View style={styles.quickStatsPill}>
+                <Text style={styles.quickStatsValue}>
+                  ₱{avgDailySpend.toFixed(0)}
+                </Text>
+                <Text style={[styles.quickStatsSub, { color: colors.incomeGreen }]}>
+                  /day avg
+                </Text>
+                <Text style={styles.quickStatsLabel}>Daily Avg</Text>
+              </View>
+            </View>
+
+            {totalTxCount > 0 && (
+              <View style={styles.chartCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.sectionDot} />
+                  <Text style={styles.sectionLabel}>Daily Spend</Text>
+                  <Text style={styles.sectionMetaText}>{monthLabel}</Text>
+                </View>
+                <DailySpendChart
+                  data={dailyBarsData}
+                  maxAmount={maxDailyAmount}
+                  colors={colors}
+                />
+                {peakDayData.amount > 0 && (
+                  <View style={styles.peakNoteRow}>
+                    <View style={styles.peakNoteDot} />
+                    <Text style={styles.peakNote}>
+                      Peak spend: {MONTH_NAMES[selectedMonth].slice(0, 3)} {peakDayData.day} · ₱{peakDayData.amount.toLocaleString()}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {topTransactions.length > 0 && (
+              <View style={styles.topTxCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.sectionDot} />
+                  <Text style={styles.sectionLabel}>Top Expenses</Text>
+                  <Text style={styles.sectionMetaText}>This month</Text>
+                </View>
+                {topTransactions.slice(0, 3).map((tx, i) => {
+                  const catKey = normalizeCategoryKey(tx.category);
+                  const color =
+                    (CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other).barColor;
+                  const name =
+                    tx.display_name ??
+                    tx.merchant_name ??
+                    tx.category ??
+                    'Transaction';
+                  const dateStr = new Date(tx.date).toLocaleDateString('en-PH', {
+                    month: 'short',
+                    day: 'numeric',
+                  });
+                  return (
+                    <View
+                      key={i}
+                      style={[
+                        styles.topTxRow,
+                        i === Math.min(topTransactions.length, 3) - 1 && {
+                          borderBottomWidth: 0,
+                        },
+                      ]}
+                    >
+                      <View style={styles.topTxRank}>
+                        <Text style={styles.topTxRankText}>{i + 1}</Text>
+                      </View>
+                      <View style={styles.topTxInfo}>
+                        <Text style={styles.topTxName} numberOfLines={1}>
+                          {name}
+                        </Text>
+                        <View style={styles.topTxMetaRow}>
+                          <View style={[styles.topTxDot, { backgroundColor: color }]} />
+                          <Text style={styles.topTxDate}>
+                            {tx.category ?? 'Uncategorized'} · {dateStr}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.topTxAmt}>
+                        ₱{tx.amount.toLocaleString()}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {accounts.some(
+              (a) => accountActivity.expense[a.id] || accountActivity.income[a.id]
+            ) && (
+              <View style={styles.chartCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.sectionDot} />
+                  <Text style={styles.sectionLabel}>By Account</Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.acctScrollContent}
+                >
+                  {accounts
+                    .filter(
+                      (a) =>
+                        accountActivity.expense[a.id] ||
+                        accountActivity.income[a.id]
+                    )
+                    .map((account) => (
+                      <AccountActivityCard
+                        key={account.id}
+                        account={account}
+                        expense={accountActivity.expense[account.id] ?? 0}
+                        income={accountActivity.income[account.id] ?? 0}
+                        colors={colors}
+                        styles={styles}
+                      />
+                    ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
         )}
 
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={styles.insightWrap}
-          onPress={() => navigation.navigate('ChatScreen')}
-        >
-          <LinearGradient
-            colors={[colors.lavenderLight, colors.primaryLight]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.insightCard}
-          >
-            <View style={styles.insightAvatar}>
-              <Ionicons
-                name="sparkles"
-                size={18}
-                color={colors.lavenderDark}
-              />
+        {viewType === 'expense' && activeTab === 'patterns' && (
+          <View style={styles.tabPanel}>
+            <View style={styles.chartCard}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionDot} />
+                <Text style={styles.sectionLabel}>vs Last Month</Text>
+                <Text style={styles.sectionMetaText}>
+                  {MONTH_NAMES[(selectedMonth + 11) % 12].slice(0, 3)} → {MONTH_NAMES[selectedMonth].slice(0, 3)}
+                </Text>
+              </View>
+
+              <View style={styles.trendCompareRow}>
+                <View
+                  style={[
+                    styles.trendPill,
+                    momDelta >= 0 ? styles.trendPillUp : styles.trendPillDown,
+                  ]}
+                >
+                  <Text style={styles.trendLabel}>Total Spent</Text>
+                  <Text
+                    style={[
+                      styles.trendValue,
+                      { color: momDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
+                    ]}
+                  >
+                    ₱{totalExpenseSpent.toLocaleString()}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.trendDelta,
+                      { color: momDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
+                    ]}
+                  >
+                    {momDelta >= 0 ? '↑' : '↓'} ₱{Math.abs(momDelta).toLocaleString()} {momDelta >= 0 ? 'more' : 'less'}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.trendPill,
+                    txDelta >= 0 ? styles.trendPillUp : styles.trendPillDown,
+                  ]}
+                >
+                  <Text style={styles.trendLabel}>Transactions</Text>
+                  <Text
+                    style={[
+                      styles.trendValue,
+                      { color: txDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
+                    ]}
+                  >
+                    {totalTxCount}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.trendDelta,
+                      { color: txDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
+                    ]}
+                  >
+                    {txDelta >= 0 ? '↑' : '↓'} {Math.abs(txDelta)} {txDelta >= 0 ? 'more' : 'fewer'}
+                  </Text>
+                </View>
+              </View>
             </View>
-            <View style={styles.insightBody}>
-              <Text style={styles.insightLabel}>Fino Intelligence</Text>
-              <Text style={styles.insightHeadline}>{insightHeadline}</Text>
-              <Text style={styles.insightSub}>{insightSub}</Text>
+
+            {totalTxCount > 0 && (
+              <View style={styles.chartCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.sectionDot} />
+                  <Text style={styles.sectionLabel}>By Day of Week</Text>
+                  <Text style={styles.sectionMetaText}>Avg spend</Text>
+                </View>
+                <DowPatternChart dowAvg={dowAvgSpend} colors={colors} />
+                {(() => {
+                  const peakDow = dowAvgSpend.indexOf(Math.max(...dowAvgSpend));
+                  const labels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                  return dowAvgSpend[peakDow] > 0 ? (
+                    <Text style={styles.chartSubNote}>
+                      {labels[peakDow]} is your highest-spend day
+                    </Text>
+                  ) : null;
+                })()}
+              </View>
+            )}
+
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={styles.aiFullCard}
+              onPress={() => navigation.navigate('ChatScreen')}
+            >
+              <View style={styles.aiFullHeader}>
+                <View style={styles.aiFullAvatar}>
+                  <Ionicons name="sparkles" size={16} color={colors.white} />
+                </View>
+                <View style={styles.aiFullHeaderBody}>
+                  <Text style={styles.aiFullTitle}>Fino Intelligence</Text>
+                  <Text style={styles.aiFullSubtitle}>Insights for {monthLabel}</Text>
+                </View>
+              </View>
+
+              {aiInsightsLoading ? (
+                <>
+                  <Skeleton width="94%" height={12} style={{ marginBottom: 10 }} />
+                  <Skeleton width="90%" height={12} style={{ marginBottom: 10 }} />
+                  <Skeleton width="88%" height={12} style={{ marginBottom: 10 }} />
+                </>
+              ) : (
+                <>
+                  {(aiInsights?.slice(0, 3) ?? [insightHeadline, insightSub]).map(
+                    (insight, i) => (
+                      <View key={i} style={styles.aiFullBulletRow}>
+                        <View style={styles.aiFullBulletIcon}>
+                          <Ionicons
+                            name={
+                              i === 0
+                                ? 'bag-handle-outline'
+                                : i === 1
+                                  ? 'calendar-outline'
+                                  : 'card-outline'
+                            }
+                            size={12}
+                            color={colors.lavenderDark}
+                          />
+                        </View>
+                        <Text style={styles.aiFullBulletText}>{insight}</Text>
+                      </View>
+                    )
+                  )}
+                </>
+              )}
+
+              <View style={styles.aiFullCtaRow}>
+                <Text style={styles.aiFullCtaText}>Chat with Fino →</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {viewType === 'expense' && activeTab === 'categories' && (
+          <View style={styles.tabPanel}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionDot} />
+              <Text style={styles.sectionLabel}>By Category</Text>
             </View>
-            <Ionicons
-              name="chevron-forward"
-              size={18}
-              color={colors.textSecondary}
-              style={styles.insightArrow}
-            />
-          </LinearGradient>
-        </TouchableOpacity>
+
+            {expenseTiles.length > 0 ? (
+              <View style={styles.catGrid}>
+                {expenseTiles.map((tile) => renderExpenseTile(tile.key))}
+              </View>
+            ) : (
+              <Text style={styles.emptyText}>No expense data for this period.</Text>
+            )}
+          </View>
+        )}
+
+        {viewType === 'income' && (
+          <View style={styles.tabPanel}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionDot} />
+              <Text style={styles.sectionLabel}>Income Sources</Text>
+            </View>
+
+            {incomeTiles.length > 0 ? (
+              <View style={styles.catGrid}>
+                {incomeTiles.map((tile) => renderIncomeTile(tile.key))}
+              </View>
+            ) : (
+              <Text style={styles.emptyText}>No income data for this period.</Text>
+            )}
+          </View>
+        )}
       </View>
 
       <MonthPickerModal
@@ -1603,8 +2529,96 @@ const createStyles = (colors: any, isDark: boolean) =>
       backgroundColor: colors.whiteTransparent15,
       marginVertical: 10,
     },
+    aiAlertStrip: {
+      marginTop: -10,
+      marginBottom: 12,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: withAlpha(colors.lavender, 0.35),
+      backgroundColor: isDark
+        ? withAlpha(colors.lavenderDark, 0.2)
+        : colors.lavenderLight,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    aiAlertIconWrap: {
+      width: 30,
+      height: 30,
+      borderRadius: 9,
+      backgroundColor: colors.lavenderDark,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    aiAlertBody: {
+      flex: 1,
+    },
+    aiAlertTitle: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 11,
+      color: colors.lavenderDark,
+      marginBottom: 2,
+    },
+    aiAlertSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11,
+      color: colors.textPrimary,
+      lineHeight: 15,
+    },
+    aiAlertCtaWrap: {
+      borderRadius: 8,
+      backgroundColor: withAlpha(colors.lavenderDark, isDark ? 0.35 : 0.12),
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      flexShrink: 0,
+    },
+    aiAlertCtaText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.lavenderDark,
+      letterSpacing: 0.2,
+    },
+    tabBar: {
+      flexDirection: 'row',
+      borderRadius: 14,
+      padding: 3,
+      backgroundColor: isDark
+        ? colors.blackTransparent15
+        : 'rgba(30,30,46,0.06)',
+      marginBottom: 12,
+    },
+    tabBtn: {
+      flex: 1,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 4,
+    },
+    tabBtnActive: {
+      backgroundColor: isDark ? withAlpha(colors.white, 0.08) : colors.white,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: isDark ? 0 : 0.08,
+      shadowRadius: 3,
+      elevation: isDark ? 0 : 1,
+    },
+    tabBtnText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    tabBtnTextActive: {
+      color: colors.textPrimary,
+    },
     belowCard: {
       marginTop: 6,
+    },
+    tabPanel: {
+      paddingTop: 2,
     },
     sectionHeaderRow: {
       flexDirection: 'row',
@@ -1625,6 +2639,12 @@ const createStyles = (colors: any, isDark: boolean) =>
       textTransform: 'uppercase',
       letterSpacing: 0.8,
     },
+    sectionMetaText: {
+      marginLeft: 'auto',
+      fontFamily: 'Inter_500Medium',
+      fontSize: 11,
+      color: colors.textSecondary,
+    },
     catGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -1642,6 +2662,60 @@ const createStyles = (colors: any, isDark: boolean) =>
       justifyContent: 'flex-end',
       overflow: 'hidden',
       position: 'relative',
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+    },
+    catTileExpense: {
+      borderRadius: 24,
+      height: 122,
+      paddingHorizontal: 14,
+      paddingTop: 50,
+      paddingBottom: 10,
+      overflow: 'hidden',
+      position: 'relative',
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+    },
+    catTileFlat: {
+      borderRadius: 20,
+      minHeight: 152,
+      padding: 14,
+      overflow: 'hidden',
+      position: 'relative',
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+      backgroundColor: colors.white,
+    },
+    catBottomAccent: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: 3,
+    },
+    catIconRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    catIconCircleInline: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    catDeltaBadge: {
+      borderRadius: 6,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      alignSelf: 'flex-start',
+    },
+    catDeltaBadgeText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      letterSpacing: -0.2,
     },
     catIconCircle: {
       position: 'absolute',
@@ -1657,6 +2731,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       position: 'absolute',
       top: 10,
       right: 10,
+      alignItems: 'flex-end',
     },
     catPctPill: {
       borderRadius: 6,
@@ -1682,14 +2757,52 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     catName: {
       fontFamily: 'Inter_700Bold',
-      fontSize: 12,
-      zIndex: 2,
+      fontSize: 13,
+      color: colors.textPrimary,
+      marginBottom: 2,
     },
     catAmt: {
       fontFamily: 'DMMono_500Medium',
+      fontSize: 14,
+      marginBottom: 10,
+    },
+    catExpenseName: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
+      color: colors.textPrimary,
+      marginBottom: 1,
+    },
+    catExpenseAmt: {
+      fontFamily: 'DMMono_500Medium',
       fontSize: 11,
-      marginTop: 2,
-      zIndex: 2,
+      marginBottom: 4,
+    },
+    catProgressTrack: {
+      height: 4,
+      borderRadius: 999,
+      backgroundColor: isDark
+        ? withAlpha(colors.white, 0.12)
+        : withAlpha(colors.textPrimary, 0.08),
+      overflow: 'hidden',
+    },
+    catProgressFill: {
+      height: '100%',
+      borderRadius: 999,
+    },
+    catProgressMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 3,
+    },
+    catProgressPctLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+    },
+    catProgressBudgetLabel: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 9,
+      color: colors.textSecondary,
     },
     emptyText: {
       fontFamily: 'Inter_400Regular',
@@ -1750,6 +2863,359 @@ const createStyles = (colors: any, isDark: boolean) =>
     insightArrow: {
       marginTop: 12,
       alignSelf: 'center',
+    },
+    insightBulletRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      marginBottom: 7,
+      gap: 7,
+    },
+    insightBulletDot: {
+      width: 5,
+      height: 5,
+      borderRadius: 2.5,
+      backgroundColor: colors.lavenderDark,
+      marginTop: 5,
+      flexShrink: 0,
+    },
+    insightBulletText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textPrimary,
+      lineHeight: 18,
+      flex: 1,
+    },
+
+    // ── Quick Stats Row ──
+    quickStatsRow: {
+      flexDirection: 'row',
+      gap: 10,
+      marginBottom: 16,
+    },
+    quickStatsPill: {
+      flex: 1,
+      backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+      paddingVertical: 12,
+      paddingHorizontal: 8,
+      alignItems: 'center',
+    },
+    quickStatsValue: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 18,
+      color: colors.textPrimary,
+      letterSpacing: -0.3,
+    },
+    quickStatsSub: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: colors.expenseRed,
+      marginTop: 1,
+    },
+    quickStatsLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+      color: colors.textSecondary,
+      marginTop: 4,
+      textAlign: 'center',
+    },
+
+    // ── Chart Card ──
+    chartCard: {
+      backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+      padding: 16,
+      marginBottom: 16,
+    },
+    peakNote: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: '#C06420',
+    },
+    peakNoteRow: {
+      marginTop: 10,
+      borderRadius: 10,
+      backgroundColor: withAlpha(PEAK_AMBER, 0.1),
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+    },
+    peakNoteDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor: PEAK_AMBER,
+      flexShrink: 0,
+    },
+    chartSubNote: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11,
+      color: colors.textSecondary,
+      marginTop: 8,
+    },
+    trendCompareRow: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 2,
+    },
+    trendPill: {
+      flex: 1,
+      borderRadius: 16,
+      borderWidth: 1,
+      paddingVertical: 11,
+      paddingHorizontal: 12,
+    },
+    trendPillUp: {
+      backgroundColor: withAlpha(colors.expenseRed, 0.06),
+      borderColor: withAlpha(colors.expenseRed, 0.16),
+    },
+    trendPillDown: {
+      backgroundColor: withAlpha(colors.incomeGreen, 0.06),
+      borderColor: withAlpha(colors.incomeGreen, 0.16),
+    },
+    trendLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.55,
+      marginBottom: 6,
+    },
+    trendValue: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 16,
+      letterSpacing: -0.3,
+    },
+    trendDelta: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      marginTop: 3,
+    },
+
+    aiFullCard: {
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: withAlpha(colors.lavender, 0.38),
+      backgroundColor: isDark
+        ? withAlpha(colors.lavenderDark, 0.18)
+        : colors.lavenderLight,
+      padding: 16,
+      marginBottom: 16,
+    },
+    aiFullHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 12,
+      gap: 10,
+    },
+    aiFullAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 11,
+      backgroundColor: colors.lavenderDark,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    aiFullHeaderBody: {
+      flex: 1,
+    },
+    aiFullTitle: {
+      fontFamily: 'Inter_800ExtraBold',
+      fontSize: 13,
+      color: colors.lavenderDark,
+    },
+    aiFullSubtitle: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 10,
+      color: colors.textSecondary,
+      marginTop: 1,
+    },
+    aiFullBulletRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 9,
+      marginBottom: 10,
+    },
+    aiFullBulletIcon: {
+      width: 22,
+      height: 22,
+      borderRadius: 7,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: withAlpha(colors.lavender, 0.26),
+      flexShrink: 0,
+      marginTop: 1,
+    },
+    aiFullBulletText: {
+      flex: 1,
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      lineHeight: 17,
+      color: colors.textPrimary,
+    },
+    aiFullCtaRow: {
+      marginTop: 2,
+      alignItems: 'flex-end',
+    },
+    aiFullCtaText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
+      color: colors.lavenderDark,
+      backgroundColor: withAlpha(colors.lavenderDark, isDark ? 0.34 : 0.1),
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      overflow: 'hidden',
+    },
+
+    // ── Account Activity ──
+    acctScrollContent: {
+      gap: 10,
+      paddingRight: 4,
+    },
+    acctCardWrap: {
+      width: 138,
+      backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+      padding: 14,
+    },
+    acctLogo: {
+      width: 32,
+      height: 32,
+      borderRadius: 8,
+      marginBottom: 8,
+    },
+    acctAvatar: {
+      width: 32,
+      height: 32,
+      borderRadius: 8,
+      marginBottom: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    acctAvatarText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 14,
+      color: colors.white,
+    },
+    acctName: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.textPrimary,
+      marginBottom: 4,
+    },
+    acctExpAmt: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 11,
+      color: colors.expenseRed,
+    },
+    acctIncAmt: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 11,
+      color: colors.incomeGreen,
+    },
+    acctNetPill: {
+      borderRadius: 6,
+      paddingHorizontal: 6,
+      paddingVertical: 3,
+      marginTop: 6,
+      alignSelf: 'flex-start',
+    },
+    acctNetText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+    },
+
+    // ── Top Transactions ──
+    topTxCard: {
+      backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+      paddingHorizontal: 16,
+      paddingTop: 14,
+      paddingBottom: 4,
+      marginBottom: 16,
+    },
+    topTxRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.cardBorderTransparent,
+    },
+    topTxDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      flexShrink: 0,
+    },
+    topTxRank: {
+      width: 22,
+      height: 22,
+      borderRadius: 7,
+      backgroundColor: isDark
+        ? withAlpha(colors.white, 0.08)
+        : 'rgba(30,30,46,0.06)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    topTxRankText: {
+      fontFamily: 'Inter_800ExtraBold',
+      fontSize: 10,
+      color: colors.textSecondary,
+    },
+    topTxInfo: {
+      flex: 1,
+      minWidth: 0,
+    },
+    topTxMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      marginTop: 2,
+    },
+    topTxName: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
+    topTxDate: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11,
+      color: colors.textSecondary,
+    },
+    topTxAmt: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 15,
+      color: colors.expenseRed,
+    },
+
+    // ── Delta badge on category tiles ──
+    deltaBadge: {
+      borderRadius: 5,
+      paddingHorizontal: 5,
+      paddingVertical: 2,
+      marginTop: 3,
+      alignSelf: 'flex-end',
+    },
+    deltaBadgeText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 9,
+      letterSpacing: -0.2,
     },
 
     // Loading styles kept for skeleton state
