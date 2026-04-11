@@ -1,4 +1,10 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import {
   View,
   Text,
@@ -13,10 +19,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSync } from '@/contexts/SyncContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import Toast from '../components/Toast';
 import WalletCard, { CARD_WIDTH, CARD_HEIGHT } from '../components/WalletCard';
-import { colors } from '../constants/theme';
 import { BALANCE_ANIMATE_MS } from '../services/balanceCalc';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
@@ -163,6 +169,9 @@ export default function HomeScreen() {
   const { profile } = useAuth();
   const userName = profile?.name || 'User';
 
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
+
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
 
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
@@ -184,13 +193,13 @@ export default function HomeScreen() {
   const getSyncColor = () => {
     switch (syncStatus) {
       case 'synced':
-        return '#10B981';
+        return colors.syncSynced;
       case 'syncing':
-        return '#F59E0B';
+        return colors.syncSyncing;
       case 'offline':
-        return '#EF4444';
+        return colors.syncOffline;
       default:
-        return '#10B981';
+        return colors.syncSynced;
     }
   };
 
@@ -340,7 +349,7 @@ export default function HomeScreen() {
               </Text>
             </View>
             <LinearGradient
-              colors={['#5B8C6E', '#3f6b52']}
+              colors={[colors.primary, colors.primaryDark]}
               style={styles.avatar}
             >
               <Text style={styles.avatarLetter}>
@@ -363,7 +372,7 @@ export default function HomeScreen() {
                       backgroundColor:
                         i === SPARKLINE.length - 1
                           ? colors.primary
-                          : 'rgba(91,140,110,0.3)',
+                          : colors.primaryTransparent30,
                     },
                   ]}
                 />
@@ -384,14 +393,14 @@ export default function HomeScreen() {
         <View style={styles.unifiedCard}>
           {/* Ambient blobs */}
           <LinearGradient
-            colors={['rgba(168,213,181,0.45)', 'transparent']}
+            colors={[colors.primaryLight60, 'transparent']}
             style={[
               styles.blob,
               { top: -30, right: -20, width: 160, height: 160 },
             ]}
           />
           <LinearGradient
-            colors={['rgba(91,140,110,0.4)', 'transparent']}
+            colors={[colors.primaryTransparent50, 'transparent']}
             style={[
               styles.blob,
               { bottom: 80, left: -20, width: 110, height: 110 },
@@ -423,7 +432,7 @@ export default function HomeScreen() {
                 <Ionicons
                   name={isPrivacyMode ? 'eye-off' : 'eye'}
                   size={22}
-                  color="rgba(255,255,255,0.65)"
+                  color={colors.whiteTransparent65}
                 />
               </TouchableOpacity>
             </View>
@@ -534,7 +543,7 @@ export default function HomeScreen() {
 
           <View style={styles.catGrid}>
             {categories.map((cat) => {
-              const bgColor = cat.tile_bg_colour ?? '#F5F5F5';
+              const bgColor = cat.tile_bg_colour ?? colors.catTileEmptyBg;
               const solidColor = cat.text_colour ?? colors.primary;
               const isOver = cat.state === 'over';
               return (
@@ -544,7 +553,16 @@ export default function HomeScreen() {
                   style={styles.catTileWrap}
                   onPress={() => navigation.navigate('stats')}
                 >
-                  <View style={[styles.catTile, { backgroundColor: bgColor }]}>
+                  <View
+                    style={[
+                      styles.catTile,
+                      {
+                        backgroundColor: isDark
+                          ? colors.surfaceSubdued
+                          : bgColor,
+                      },
+                    ]}
+                  >
                     {/* Animated wave liquid fill in solid brand color */}
                     <WaveFill pct={cat.pct} color={solidColor} />
 
@@ -642,347 +660,352 @@ export default function HomeScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 100 },
-  greeting: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
-  greetingTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  greetingLeft: { flex: 1 },
-  greetingPill: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 6,
-  },
-  greetingName: {
-    fontFamily: 'Nunito_400Regular',
-    fontSize: 26,
-    lineHeight: 32,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  avatarLetter: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 15,
-    color: colors.white,
-  },
-  onTrackWrap: { paddingHorizontal: 20, marginBottom: 14 },
-  onTrackPill: {
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(91,140,110,0.2)',
-    backgroundColor: 'rgba(235,242,238,0.7)',
-  },
-  sparkline: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 3,
-    height: 20,
-  },
-  sparkBar: { width: 4, borderRadius: 2 },
-  onTrackText: { flex: 1 },
-  onTrackTitle: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 13,
-    color: colors.onTrackTitle,
-  },
-  onTrackSub: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    color: colors.onTrackSub,
-    marginTop: 1,
-  },
-  // ── Unified dark card ──────────────────────────────────────────────────────
-  unifiedCard: {
-    marginHorizontal: 20,
-    marginBottom: 0,
-    backgroundColor: '#1e3d2f',
-    borderRadius: 28,
-    overflow: 'hidden',
-    paddingTop: 20,
-    paddingBottom: 16,
-    shadowColor: '#0f2419',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.45,
-    shadowRadius: 32,
-    elevation: 12,
-  },
-  blob: {
-    position: 'absolute',
-    borderRadius: 999,
-  },
-  balanceSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 4,
-  },
-  heroHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  unifiedDividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    gap: 8,
-  },
-  unifiedHairline: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-  },
-  unifiedDividerLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.45)',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-  },
-  unifiedSeeAll: {
-    marginLeft: 4,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 20,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  frostScroll: {
-    paddingHorizontal: 20,
-    gap: 10,
-    paddingBottom: 4,
-  },
-  heroChip: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 20,
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-  },
-  heroChipText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  heroLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.65)',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 4,
-  },
-  heroAmountRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-  },
-  heroCurr: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 17,
-    color: 'rgba(255,255,255,0.65)',
-    marginTop: 6,
-    marginRight: 2,
-  },
-  heroAmount: {
-    fontFamily: 'DMMono_500Medium',
-    fontSize: 42,
-    color: colors.white,
-    letterSpacing: -2,
-    lineHeight: 48,
-  },
-  trendBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(168,213,181,0.25)',
-    borderRadius: 8,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    marginBottom: 12,
-  },
-  trendText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
-    color: colors.mint,
-  },
-  heroRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(0,0,0,0.15)',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  heroCol: { flex: 1, paddingVertical: 10, paddingHorizontal: 12 },
-  heroColBorder: {
-    borderRightWidth: 1,
-    borderRightColor: 'rgba(255,255,255,0.12)',
-  },
-  heroColLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.55)',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  heroColVal: {
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 17,
-    color: colors.white,
-  },
-  // ── Accounts section ────────────────────────────────────────────────────────
-  acctHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
-  acctHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sectionDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.primary,
-  },
-  sectionLabel: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  seeAll: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    color: colors.primary,
-  },
-  catGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 20,
-    gap: 10,
-    marginBottom: 16,
-  },
-  catTileWrap: { width: '47.5%' },
-  catTile: {
-    borderRadius: 24,
-    height: 120,
-    padding: 14,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  catBadgeWrap: { position: 'absolute', top: 10, right: 10 },
-  catPctPill: {
-    borderRadius: 6,
-    paddingVertical: 2,
-    paddingHorizontal: 5,
-  },
-  catPctBadge: { fontFamily: 'Inter_700Bold', fontSize: 11 },
-  catOverBadge: {
-    backgroundColor: colors.coralLight,
-    borderRadius: 6,
-    paddingVertical: 2,
-    paddingHorizontal: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(200,80,58,0.3)',
-  },
-  catOverBadgeText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    color: colors.coralDark,
-  },
-  catIconCircle: {
-    position: 'absolute',
-    top: 14,
-    left: 14,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  catName: { fontFamily: 'Nunito_800ExtraBold', fontSize: 12, marginBottom: 1 },
-  catAmt: { fontFamily: 'DMMono_500Medium', fontSize: 11 },
-  belowCard: {
-    marginTop: 32,
-  },
-  insightWrap: { paddingHorizontal: 20, marginTop: 8, marginBottom: 16 },
-  insightCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.insightCardBorder,
-    padding: 16,
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-start',
-  },
-  insightAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.lavenderLight,
-    borderWidth: 1,
-    borderColor: colors.lavender,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  insightBody: { flex: 1 },
-  insightLabel: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    color: colors.lavenderDark,
-    textTransform: 'uppercase',
-    letterSpacing: 0.7,
-    marginBottom: 4,
-  },
-  insightHeadline: {
-    fontFamily: 'Nunito_800ExtraBold',
-    fontSize: 14,
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  insightSub: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 18,
-    marginBottom: 10,
-  },
-  insightChip: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.lavenderLight,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.lavender,
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-  },
-  insightChipText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
-    color: colors.lavenderDark,
-    textTransform: 'uppercase',
-  },
-});
+const createStyles = (colors: any, isDark: boolean) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    scroll: { flex: 1 },
+    scrollContent: { paddingBottom: 100 },
+    greeting: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+    greetingTop: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+    },
+    greetingLeft: { flex: 1 },
+    greetingPill: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 13,
+      color: colors.textSecondary,
+      marginBottom: 6,
+    },
+    greetingName: {
+      fontFamily: 'Nunito_400Regular',
+      fontSize: 26,
+      lineHeight: 32,
+    },
+    avatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 4,
+    },
+    avatarLetter: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 15,
+      color: '#FFFFFF', // Keep hardcoded white since it sits on a primary gradient background
+    },
+    onTrackWrap: { paddingHorizontal: 20, marginBottom: 14 },
+    onTrackPill: {
+      borderRadius: 14,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      borderWidth: 1,
+      borderColor: colors.onTrackBorder,
+      backgroundColor: colors.onTrackBg1,
+    },
+    sparkline: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 3,
+      height: 20,
+    },
+    sparkBar: { width: 4, borderRadius: 2 },
+    onTrackText: { flex: 1 },
+    onTrackTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 13,
+      color: colors.onTrackTitle,
+    },
+    onTrackSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11,
+      color: colors.onTrackSub,
+      marginTop: 1,
+    },
+    // ── Unified dark card ──────────────────────────────────────────────────────
+    unifiedCard: {
+      marginHorizontal: 20,
+      marginBottom: 0,
+      backgroundColor: colors.heroCardBg,
+      borderRadius: 28,
+      overflow: 'hidden',
+      paddingTop: 20,
+      paddingBottom: 16,
+      shadowColor: colors.heroCardShadow,
+      shadowOffset: { width: 0, height: 14 },
+      shadowOpacity: 0.45,
+      shadowRadius: 32,
+      elevation: 12,
+    },
+    blob: {
+      position: 'absolute',
+      borderRadius: 999,
+    },
+    balanceSection: {
+      paddingHorizontal: 20,
+      paddingBottom: 4,
+    },
+    heroHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    unifiedDividerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      paddingVertical: 14,
+      gap: 8,
+    },
+    unifiedHairline: {
+      flex: 1,
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.whiteTransparent18,
+    },
+    unifiedDividerLabel: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 10,
+      color: colors.whiteTransparent55,
+      textTransform: 'uppercase',
+      letterSpacing: 1.2,
+    },
+    unifiedSeeAll: {
+      marginLeft: 4,
+      backgroundColor: colors.whiteTransparent12,
+      borderRadius: 20,
+      paddingVertical: 4,
+      paddingHorizontal: 10,
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+    },
+    frostScroll: {
+      paddingHorizontal: 20,
+      gap: 10,
+      paddingBottom: 4,
+    },
+    heroChip: {
+      alignSelf: 'flex-start',
+      backgroundColor: colors.whiteTransparent15,
+      borderRadius: 20,
+      paddingVertical: 3,
+      paddingHorizontal: 10,
+    },
+    heroChipText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: colors.whiteTransparent80,
+    },
+    heroLabel: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: colors.whiteTransparent65,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+      marginBottom: 4,
+    },
+    heroAmountRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      marginBottom: 10,
+    },
+    heroCurr: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 17,
+      color: colors.whiteTransparent65,
+      marginTop: 6,
+      marginRight: 2,
+    },
+    heroAmount: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 42,
+      color: '#FFFFFF', // Ensures it stays bright white on the dark hero background
+      letterSpacing: -2,
+      lineHeight: 48,
+    },
+    trendBadge: {
+      alignSelf: 'flex-start',
+      backgroundColor: colors.primaryLight25,
+      borderRadius: 8,
+      paddingVertical: 3,
+      paddingHorizontal: 8,
+      marginBottom: 12,
+    },
+    trendText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: colors.mint,
+    },
+    heroRow: {
+      flexDirection: 'row',
+      backgroundColor: colors.blackTransparent15,
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
+    heroCol: { flex: 1, paddingVertical: 10, paddingHorizontal: 12 },
+    heroColBorder: {
+      borderRightWidth: 1,
+      borderRightColor: colors.whiteTransparent12,
+    },
+    heroColLabel: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 10,
+      color: colors.whiteTransparent55,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      marginBottom: 2,
+    },
+    heroColVal: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 17,
+      color: '#FFFFFF',
+    },
+    // ── Accounts section ────────────────────────────────────────────────────────
+    acctHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      marginBottom: 12,
+    },
+    acctHeaderLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    sectionDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: colors.primary,
+    },
+    sectionLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    seeAll: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.primary,
+    },
+    catGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      paddingHorizontal: 20,
+      gap: 10,
+      marginBottom: 16,
+    },
+    catTileWrap: { width: '47.5%' },
+    catTile: {
+      borderRadius: 24,
+      height: 120,
+      padding: 14,
+      justifyContent: 'flex-end',
+      overflow: 'hidden',
+    },
+    catBadgeWrap: { position: 'absolute', top: 10, right: 10 },
+    catPctPill: {
+      borderRadius: 6,
+      paddingVertical: 2,
+      paddingHorizontal: 5,
+    },
+    catPctBadge: { fontFamily: 'Inter_700Bold', fontSize: 11 },
+    catOverBadge: {
+      backgroundColor: colors.coralLight,
+      borderRadius: 6,
+      paddingVertical: 2,
+      paddingHorizontal: 5,
+      borderWidth: 1,
+      borderColor: colors.catOverBadgeBg,
+    },
+    catOverBadgeText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.coralDark,
+    },
+    catIconCircle: {
+      position: 'absolute',
+      top: 14,
+      left: 14,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    catName: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 12,
+      marginBottom: 1,
+    },
+    catAmt: { fontFamily: 'DMMono_500Medium', fontSize: 11 },
+    belowCard: {
+      marginTop: 32,
+    },
+    insightWrap: { paddingHorizontal: 20, marginTop: 8, marginBottom: 16 },
+    insightCard: {
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.insightCardBorder,
+      padding: 16,
+      flexDirection: 'row',
+      gap: 12,
+      alignItems: 'flex-start',
+    },
+    insightAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.lavenderLight,
+      borderWidth: 1,
+      borderColor: colors.lavender,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    insightBody: { flex: 1 },
+    insightLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.lavenderDark,
+      textTransform: 'uppercase',
+      letterSpacing: 0.7,
+      marginBottom: 4,
+    },
+    insightHeadline: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 14,
+      color: colors.textPrimary,
+      marginBottom: 4,
+    },
+    insightSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+      lineHeight: 18,
+      marginBottom: 10,
+    },
+    insightChip: {
+      alignSelf: 'flex-start',
+      backgroundColor: colors.lavenderLight,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.lavender,
+      paddingVertical: 5,
+      paddingHorizontal: 12,
+    },
+    insightChipText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
+      color: colors.lavenderDark,
+      textTransform: 'uppercase',
+    },
+  });
