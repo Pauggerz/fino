@@ -110,9 +110,16 @@ export default function AddTransactionSheet({ route }: Props) {
     };
   }, [analyzer]);
 
-  // Defaults
+  // Defaults — respect prefill account if provided
   useEffect(() => {
-    if (accounts.length > 0 && !accountId) setAccountId(accounts[0].id);
+    if (accounts.length > 0 && !accountId) {
+      const prefillId = route.params?.prefill?.account;
+      const initial =
+        prefillId && accounts.some((a) => a.id === prefillId)
+          ? prefillId
+          : accounts[0].id;
+      setAccountId(initial);
+    }
   }, [accounts, accountId]);
 
   useEffect(() => {

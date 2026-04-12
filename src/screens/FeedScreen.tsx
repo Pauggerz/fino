@@ -330,7 +330,9 @@ export default function FeedScreen() {
   // ── Search & Advanced Filters ──
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPanelVisible, setFilterPanelVisible] = useState(false);
-  const [filterAccountId, setFilterAccountId] = useState<string | undefined>(undefined);
+  const [filterAccountId, setFilterAccountId] = useState<string | undefined>(
+    route.params?.filterAccount ?? undefined
+  );
   const [filterSortOrder, setFilterSortOrder] = useState<SortOrder>('date_desc');
   // draft state while panel is open
   const [draftAccountId, setDraftAccountId] = useState<string | undefined>(undefined);
@@ -388,6 +390,12 @@ export default function FeedScreen() {
   React.useEffect(() => {
     setActiveCategory(route.params?.filterCategory ?? 'All');
   }, [route.params?.filterCategory]);
+
+  React.useEffect(() => {
+    if (route.params?.filterAccount !== undefined) {
+      setFilterAccountId(route.params.filterAccount);
+    }
+  }, [route.params?.filterAccount]);
 
   // Reset category filter when switching tabs
   const handleViewTypeSwitch = (type: 'expense' | 'income') => {
