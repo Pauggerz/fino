@@ -13,6 +13,14 @@ import {
   TouchableOpacity,
   Animated,
 } from 'react-native';
+import RAnim, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  withSpring,
+} from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import Svg, { Path as SvgPath } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,11 +29,12 @@ import { useSync } from '@/contexts/SyncContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
+import { Skeleton } from '@/components/Skeleton';
 import Toast from '../components/Toast';
 import WalletCard, { CARD_WIDTH, CARD_HEIGHT } from '../components/WalletCard';
 import { BALANCE_ANIMATE_MS } from '../services/balanceCalc';
 import { useAccounts } from '@/hooks/useAccounts';
-import { useCategories } from '@/hooks/useCategories';
+import { useCategories, CategoryWithSpend } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
@@ -36,14 +45,15 @@ const CARD_SCALE = 0.78;
 const SCALED_CARD_W = Math.round(CARD_WIDTH * CARD_SCALE);
 const SCALED_CARD_H = Math.round(CARD_HEIGHT * CARD_SCALE);
 
-const SPARKLINE = [
+const SPARKLINE_BASE = [
   { id: 'day0', val: 0.38 },
   { id: 'day1', val: 0.6 },
   { id: 'day2', val: 0.27 },
   { id: 'day3', val: 0.74 },
   { id: 'day4', val: 0.45 },
   { id: 'day5', val: 0.88 },
-  { id: 'day6', val: 0.52 },
+  // day6 val is overridden at render time with real pctSpent
+  { id: 'day6', val: 0 },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -59,6 +69,12 @@ function getDaysLeftInMonth(): number {
   const now = new Date();
   const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   return last - now.getDate();
+}
+
+function getMonthPace(): number {
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  return now.getDate() / daysInMonth;
 }
 
 function fmtPeso(n: number, isPrivacyMode: boolean = false): string {
@@ -161,6 +177,75 @@ function WaveFill({ pct, color }: { pct: number; color: string }) {
   );
 }
 
+// ─── BudgetTile ───────────────────────────────────────────────────────────────
+
+type BudgetTileProps = {
+  cat: CategoryWithSpend;
+  index: number;
+  isPrivacyMode: boolean;
+  isDark: boolean;
+  colors: any;
+  styles: any;
+  onPress: () => void;
+};
+
+function BudgetTile({ cat, index, isPrivacyMode, isDark, colors, styles, onPress }: BudgetTileProps) {
+  const opacity = useSharedValue(0);
+  const transY = useSharedValue(16);
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: transY.value }],
+  }));
+
+  useEffect(() => {
+    opacity.value = withDelay(index * 60, withTiming(1, { duration: 280 }));
+    transY.value  = withDelay(index * 60, withSpring(0, { damping: 18, stiffness: 200 }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const bgColor = cat.tile_bg_colour ?? colors.catTileEmptyBg;
+  const solidColor = cat.text_colour ?? colors.primary;
+  const isOver = cat.state === 'over';
+
+  return (
+    <RAnim.View style={[styles.catTileWrap, animStyle]}>
+      <TouchableOpacity activeOpacity={0.8} onPress={onPress}>
+        <View
+          style={[
+            styles.catTile,
+            { backgroundColor: isDark ? colors.surfaceSubdued : bgColor },
+          ]}
+        >
+          <WaveFill pct={cat.pct} color={solidColor} />
+
+          <View style={styles.catBadgeWrap}>
+            {isOver ? (
+              <View style={styles.catOverBadge}>
+                <Text style={styles.catOverBadgeText}>Over!</Text>
+              </View>
+            ) : (
+              <View style={[styles.catPctPill, { backgroundColor: `${solidColor}18` }]}>
+                <Text style={[styles.catPctBadge, { color: solidColor }]}>
+                  {Math.round(cat.pct * 100)}%
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={[styles.catIconCircle, { backgroundColor: `${solidColor}22` }]}>
+            <CategoryIcon categoryKey={cat.name.toLowerCase()} color={solidColor} />
+          </View>
+
+          <Text style={[styles.catName, { color: solidColor }]}>{cat.name}</Text>
+          <Text style={[styles.catAmt, { color: solidColor }]}>
+            {fmtPeso(cat.spent, isPrivacyMode)}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    </RAnim.View>
+  );
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -174,13 +259,45 @@ export default function HomeScreen() {
 
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
 
-  const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
-  const { categories, refetch: refetchCategories } = useCategories();
+  const { accounts, totalBalance, loading: accountsLoading, refetch: refetchAccounts } = useAccounts();
+  const { categories, loading: categoriesLoading, refetch: refetchCategories } = useCategories();
   const {
     totalIncome,
     totalExpense: monthlyExpense,
+    loading: totalsLoading,
     refetch: refetchTotals,
   } = useMonthlyTotals();
+
+  // True only on cold first load (no cached data yet) — avoids skeleton flash on background refetches
+  const isFirstLoad = accountsLoading && accounts.length === 0;
+  const isTotalsLoading = totalsLoading && totalIncome === 0 && monthlyExpense === 0;
+
+  // ── Entrance animation shared values ────────────────────────────────────────
+  const greetingOpacity = useSharedValue(0);
+  const greetingTransY = useSharedValue(12);
+  const cardOpacity = useSharedValue(0);
+  const cardTransY = useSharedValue(16);
+  const belowOpacity = useSharedValue(0);
+  const belowTransY = useSharedValue(20);
+
+  const greetingAnim = useAnimatedStyle(() => ({
+    opacity: greetingOpacity.value,
+    transform: [{ translateY: greetingTransY.value }],
+  }));
+  const cardAnim = useAnimatedStyle(() => ({
+    opacity: cardOpacity.value,
+    transform: [{ translateY: cardTransY.value }],
+  }));
+  const belowAnim = useAnimatedStyle(() => ({
+    opacity: belowOpacity.value,
+    transform: [{ translateY: belowTransY.value }],
+  }));
+
+  // ── Eye toggle animation ─────────────────────────────────────────────────────
+  const eyeScale = useSharedValue(1);
+  const eyeAnim = useAnimatedStyle(() => ({
+    transform: [{ scale: eyeScale.value }],
+  }));
 
   useEffect(() => {
     if (syncVersion > 0) {
@@ -239,6 +356,17 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // Reset + trigger staggered entrance animation on every screen focus
+      greetingOpacity.value = 0; greetingTransY.value = 12;
+      cardOpacity.value = 0;    cardTransY.value = 16;
+      belowOpacity.value = 0;   belowTransY.value = 20;
+      greetingOpacity.value = withTiming(1, { duration: 280 });
+      greetingTransY.value  = withTiming(0, { duration: 280 });
+      cardOpacity.value     = withDelay(80,  withTiming(1, { duration: 320 }));
+      cardTransY.value      = withDelay(80,  withSpring(0, { damping: 18, stiffness: 180 }));
+      belowOpacity.value    = withDelay(180, withTiming(1, { duration: 360 }));
+      belowTransY.value     = withDelay(180, withSpring(0, { damping: 16, stiffness: 160 }));
+
       refetchAccounts();
       refetchCategories();
       refetchTotals();
@@ -255,7 +383,8 @@ export default function HomeScreen() {
       setUndoAccountId(last.accountId);
       setUndoPreviousBalance(last.previousBalance);
       setToastVisible(true);
-    }, [refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode])
+    }, [refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode,
+        greetingOpacity, greetingTransY, cardOpacity, cardTransY, belowOpacity, belowTransY])
   );
 
   const handleUndo = useCallback(async () => {
@@ -292,11 +421,17 @@ export default function HomeScreen() {
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
 
+  const lastBarVal = Math.min(pctSpent > 0 ? pctSpent : getMonthPace(), 1);
+  const SPARKLINE = SPARKLINE_BASE.map((bar, i) =>
+    i === SPARKLINE_BASE.length - 1 ? { ...bar, val: lastBarVal } : bar
+  );
+
   const delta = totalIncome - monthlyExpense;
   const deltaLabel = isPrivacyMode
-    ? `*** vs last month`
-    : `${delta >= 0 ? '↑' : '↓'} ${delta >= 0 ? '+' : ''}${fmtPeso(delta)} vs last month`;
+    ? `₱*** net this month`
+    : `${delta >= 0 ? '↑' : '↓'} ${delta >= 0 ? '+' : ''}${fmtPeso(delta)} net this month`;
 
+  // TODO: Replace with real AI-generated insight from backend once Fino Intelligence API is ready.
   const insight = {
     headline: 'You spend most on Tuesdays 📊',
     body: 'Food is 42% of weekly spend. Want to set a lower limit?',
@@ -309,7 +444,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        <View style={styles.greeting}>
+        <RAnim.View style={[styles.greeting, greetingAnim]}>
           <View style={styles.greetingTop}>
             <View style={styles.greetingLeft}>
               <View
@@ -357,9 +492,9 @@ export default function HomeScreen() {
               </Text>
             </LinearGradient>
           </View>
-        </View>
+        </RAnim.View>
 
-        <View style={styles.onTrackWrap}>
+        <RAnim.View style={[styles.onTrackWrap, greetingAnim]}>
           <View style={styles.onTrackPill}>
             <View style={styles.sparkline}>
               {SPARKLINE.map((bar, i) => (
@@ -387,10 +522,10 @@ export default function HomeScreen() {
               </Text>
             </View>
           </View>
-        </View>
+        </RAnim.View>
 
         {/* ── Unified dark card: balance + accounts ── */}
-        <View style={styles.unifiedCard}>
+        <RAnim.View style={[styles.unifiedCard, cardAnim]}>
           {/* Ambient blobs */}
           <LinearGradient
             colors={[colors.primaryLight60, 'transparent']}
@@ -426,29 +561,48 @@ export default function HomeScreen() {
               {/* EYE ICON TOGGLE */}
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => setIsPrivacyMode(!isPrivacyMode)}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  eyeScale.value = withSpring(0.82, { damping: 6, stiffness: 300 }, () => {
+                    eyeScale.value = withSpring(1, { damping: 10, stiffness: 260 });
+                  });
+                  setIsPrivacyMode(!isPrivacyMode);
+                }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons
-                  name={isPrivacyMode ? 'eye-off' : 'eye'}
-                  size={22}
-                  color={colors.whiteTransparent65}
-                />
+                <RAnim.View style={eyeAnim}>
+                  <Ionicons
+                    name={isPrivacyMode ? 'eye-off' : 'eye'}
+                    size={22}
+                    color={colors.whiteTransparent65}
+                  />
+                </RAnim.View>
               </TouchableOpacity>
             </View>
 
             <Text style={styles.heroLabel}>Total balance</Text>
 
             <View style={styles.heroAmountRow}>
-              <Text style={styles.heroCurr}>₱</Text>
-              <Text style={styles.heroAmount}>
-                {isPrivacyMode
-                  ? '***'
-                  : displayBalance.toLocaleString('en-PH', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-              </Text>
+              {isTotalsLoading && !isPrivacyMode ? (
+                <Skeleton
+                  width={180}
+                  height={44}
+                  borderRadius={8}
+                  style={{ backgroundColor: 'rgba(255,255,255,0.15)', marginTop: 4 }}
+                />
+              ) : (
+                <>
+                  <Text style={styles.heroCurr}>₱</Text>
+                  <Text style={styles.heroAmount}>
+                    {isPrivacyMode
+                      ? '***'
+                      : displayBalance.toLocaleString('en-PH', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                  </Text>
+                </>
+              )}
             </View>
 
             <View style={styles.trendBadge}>
@@ -494,121 +648,109 @@ export default function HomeScreen() {
             snapToInterval={SCALED_CARD_W + 14}
             decelerationRate="fast"
           >
-            {accounts.map((acc) => (
-              <TouchableOpacity
-                key={acc.id}
-                activeOpacity={0.88}
-                onPress={() =>
-                  navigation.navigate('more', {
-                    screen: 'AccountDetail',
-                    params: { id: acc.id },
-                  })
-                }
-              >
-                <View
-                  style={{
-                    width: SCALED_CARD_W,
-                    height: SCALED_CARD_H,
-                    overflow: 'hidden',
-                    borderRadius: Math.round(22 * CARD_SCALE),
-                  }}
+            {isFirstLoad ? (
+              <>
+                <Skeleton
+                  width={SCALED_CARD_W}
+                  height={SCALED_CARD_H}
+                  borderRadius={Math.round(22 * CARD_SCALE)}
+                  style={{ backgroundColor: 'rgba(255,255,255,0.10)' }}
+                />
+                <Skeleton
+                  width={SCALED_CARD_W}
+                  height={SCALED_CARD_H}
+                  borderRadius={Math.round(22 * CARD_SCALE)}
+                  style={{ backgroundColor: 'rgba(255,255,255,0.10)' }}
+                />
+              </>
+            ) : accounts.length === 0 ? (
+              <View style={styles.emptyCarousel}>
+                <Ionicons name="wallet-outline" size={28} color={colors.whiteTransparent55} />
+                <Text style={styles.emptyCarouselText}>No accounts yet</Text>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('more')}
+                  style={styles.emptyCarouselCta}
+                >
+                  <Text style={styles.emptyCarouselCtaText}>Add account →</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              accounts.map((acc) => (
+                <TouchableOpacity
+                  key={acc.id}
+                  activeOpacity={0.88}
+                  onPress={() =>
+                    navigation.navigate('more', {
+                      screen: 'AccountDetail',
+                      params: { id: acc.id },
+                    })
+                  }
                 >
                   <View
                     style={{
-                      width: CARD_WIDTH,
-                      height: CARD_HEIGHT,
-                      transform: [{ scale: CARD_SCALE }],
-                      left: -Math.round((CARD_WIDTH * (1 - CARD_SCALE)) / 2),
-                      top: -Math.round((CARD_HEIGHT * (1 - CARD_SCALE)) / 2),
+                      width: SCALED_CARD_W,
+                      height: SCALED_CARD_H,
+                      overflow: 'hidden',
+                      borderRadius: Math.round(22 * CARD_SCALE),
                     }}
                   >
-                    {/* Passed isPrivacyMode to WalletCard */}
-                    <WalletCard account={acc} isPrivacyMode={isPrivacyMode} />
+                    <View
+                      style={{
+                        width: CARD_WIDTH,
+                        height: CARD_HEIGHT,
+                        transform: [{ scale: CARD_SCALE }],
+                        left: -Math.round((CARD_WIDTH * (1 - CARD_SCALE)) / 2),
+                        top: -Math.round((CARD_HEIGHT * (1 - CARD_SCALE)) / 2),
+                      }}
+                    >
+                      <WalletCard account={acc} isPrivacyMode={isPrivacyMode} />
+                    </View>
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              ))
+            )}
           </ScrollView>
-        </View>
+        </RAnim.View>
 
         {/* ── Budgets + insight, directly on background ── */}
-        <View style={styles.belowCard}>
+        <RAnim.View style={[styles.belowCard, belowAnim]}>
           {/* Monthly budgets */}
           <View style={styles.acctHeader}>
             <View style={styles.acctHeaderLeft}>
               <View style={styles.sectionDot} />
-              <Text style={styles.sectionLabel}>Monthly budgets</Text>
+              <Text style={styles.sectionLabel}>Monthly Budgets</Text>
             </View>
           </View>
 
           <View style={styles.catGrid}>
-            {categories.map((cat) => {
-              const bgColor = cat.tile_bg_colour ?? colors.catTileEmptyBg;
-              const solidColor = cat.text_colour ?? colors.primary;
-              const isOver = cat.state === 'over';
-              return (
+            {categoriesLoading && categories.length === 0 ? (
+              <>
+                <Skeleton width="47.5%" height={120} borderRadius={24} />
+                <Skeleton width="47.5%" height={120} borderRadius={24} />
+              </>
+            ) : categories.length === 0 ? (
+              <View style={styles.emptyBudget}>
+                <Ionicons name="pie-chart-outline" size={28} color={colors.textSecondary} />
+                <Text style={styles.emptyBudgetText}>No budgets set up yet</Text>
                 <TouchableOpacity
-                  key={cat.id}
-                  activeOpacity={0.8}
-                  style={styles.catTileWrap}
-                  onPress={() => navigation.navigate('stats')}
+                  onPress={() => navigation.navigate('more')}
+                  style={styles.emptyBudgetCta}
                 >
-                  <View
-                    style={[
-                      styles.catTile,
-                      {
-                        backgroundColor: isDark
-                          ? colors.surfaceSubdued
-                          : bgColor,
-                      },
-                    ]}
-                  >
-                    {/* Animated wave liquid fill in solid brand color */}
-                    <WaveFill pct={cat.pct} color={solidColor} />
-
-                    <View style={styles.catBadgeWrap}>
-                      {isOver ? (
-                        <View style={styles.catOverBadge}>
-                          <Text style={styles.catOverBadgeText}>Over!</Text>
-                        </View>
-                      ) : (
-                        <View
-                          style={[
-                            styles.catPctPill,
-                            { backgroundColor: `${solidColor}18` },
-                          ]}
-                        >
-                          <Text
-                            style={[styles.catPctBadge, { color: solidColor }]}
-                          >
-                            {Math.round(cat.pct * 100)}%
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-
-                    <View
-                      style={[
-                        styles.catIconCircle,
-                        { backgroundColor: `${solidColor}22` },
-                      ]}
-                    >
-                      <CategoryIcon
-                        categoryKey={cat.name.toLowerCase()}
-                        color={solidColor}
-                      />
-                    </View>
-
-                    <Text style={[styles.catName, { color: solidColor }]}>
-                      {cat.name}
-                    </Text>
-                    <Text style={[styles.catAmt, { color: solidColor }]}>
-                      {fmtPeso(cat.spent, isPrivacyMode)}
-                    </Text>
-                  </View>
+                  <Text style={styles.emptyBudgetCtaText}>Set up budgets →</Text>
                 </TouchableOpacity>
-              );
-            })}
+              </View>
+            ) : categories.map((cat, index) => (
+              <BudgetTile
+                key={cat.id}
+                cat={cat}
+                index={index}
+                isPrivacyMode={isPrivacyMode}
+                isDark={isDark}
+                colors={colors}
+                styles={styles}
+                onPress={() => navigation.navigate('stats')}
+              />
+            ))}
           </View>
 
           {insight && (
@@ -643,7 +785,7 @@ export default function HomeScreen() {
               </LinearGradient>
             </TouchableOpacity>
           )}
-        </View>
+        </RAnim.View>
       </ScrollView>
 
       <Toast
@@ -664,8 +806,8 @@ const createStyles = (colors: any, isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     scroll: { flex: 1 },
-    scrollContent: { paddingBottom: 100 },
-    greeting: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+    scrollContent: { paddingBottom: 98 }, // tabBarHeight (82) + 16 breathing room
+    greeting: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8 },
     greetingTop: {
       flexDirection: 'row',
       alignItems: 'flex-start',
@@ -787,7 +929,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     frostScroll: {
       paddingHorizontal: 20,
       gap: 10,
-      paddingBottom: 4,
+      paddingBottom: 12,
     },
     heroChip: {
       alignSelf: 'flex-start',
@@ -879,17 +1021,16 @@ const createStyles = (colors: any, isDark: boolean) =>
       gap: 6,
     },
     sectionDot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
+      width: 7,
+      height: 7,
+      borderRadius: 3.5,
       backgroundColor: colors.primary,
     },
     sectionLabel: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 12,
-      color: colors.textSecondary,
-      textTransform: 'uppercase',
-      letterSpacing: 0.8,
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 13,
+      color: colors.textPrimary,
+      letterSpacing: 0.3,
     },
     seeAll: {
       fontFamily: 'Inter_600SemiBold',
@@ -948,7 +1089,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     catAmt: { fontFamily: 'DMMono_500Medium', fontSize: 11 },
     belowCard: {
-      marginTop: 32,
+      marginTop: 20,
     },
     insightWrap: { paddingHorizontal: 20, marginTop: 8, marginBottom: 16 },
     insightCard: {
@@ -1007,5 +1148,56 @@ const createStyles = (colors: any, isDark: boolean) =>
       fontSize: 12,
       color: colors.lavenderDark,
       textTransform: 'uppercase',
+    },
+    // ── Empty states ─────────────────────────────────────────────────────────────
+    emptyCarousel: {
+      flex: 1,
+      minHeight: SCALED_CARD_H,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      gap: 8,
+      paddingHorizontal: 20,
+    },
+    emptyCarouselText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.whiteTransparent55,
+    },
+    emptyCarouselCta: {
+      backgroundColor: colors.whiteTransparent12,
+      borderRadius: 20,
+      paddingVertical: 6,
+      paddingHorizontal: 14,
+      borderWidth: 1,
+      borderColor: colors.cardBorderTransparent,
+      marginTop: 4,
+    },
+    emptyCarouselCtaText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.whiteTransparent80,
+    },
+    emptyBudget: {
+      width: '100%' as const,
+      paddingVertical: 32,
+      alignItems: 'center' as const,
+      gap: 10,
+    },
+    emptyBudgetText: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    emptyBudgetCta: {
+      backgroundColor: colors.primaryLight,
+      borderRadius: 20,
+      paddingVertical: 7,
+      paddingHorizontal: 16,
+      marginTop: 2,
+    },
+    emptyBudgetCtaText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
+      color: colors.primary,
     },
   });
