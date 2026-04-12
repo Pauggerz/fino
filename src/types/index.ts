@@ -20,6 +20,7 @@ export interface Account {
   is_deletable: boolean;
   sort_order: number;
   created_at: string;
+  last_reconciled_at?: string | null;
 }
 
 export interface Transaction {
