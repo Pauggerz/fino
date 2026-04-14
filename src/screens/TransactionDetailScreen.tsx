@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import RAnim, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+} from 'react-native-reanimated';
 import {
   View,
   Text,
@@ -89,9 +95,7 @@ function Stepper({
         onPress={onIncrement}
         style={{ paddingVertical: 6, paddingHorizontal: 12 }}
       >
-        <Text style={{ fontSize: 16, color: accentColor, lineHeight: 18 }}>
-          ▲
-        </Text>
+        <Ionicons name="chevron-up" size={16} color={accentColor} />
       </TouchableOpacity>
       <Text
         style={{
@@ -109,9 +113,7 @@ function Stepper({
         onPress={onDecrement}
         style={{ paddingVertical: 6, paddingHorizontal: 12 }}
       >
-        <Text style={{ fontSize: 16, color: accentColor, lineHeight: 18 }}>
-          ▼
-        </Text>
+        <Ionicons name="chevron-down" size={16} color={accentColor} />
       </TouchableOpacity>
     </View>
   );
@@ -130,6 +132,14 @@ export default function TransactionDetailScreen() {
 
   const [tx, setTx] = useState<TransactionWithAccount | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Entrance animation
+  const heroOpacity = useSharedValue(0);
+  const heroScale = useSharedValue(0.95);
+  const heroAnim = useAnimatedStyle(() => ({
+    opacity: heroOpacity.value,
+    transform: [{ scale: heroScale.value }],
+  }));
 
   // UI state
   const [isReceiptVisible, setIsReceiptVisible] = useState(false);
@@ -225,6 +235,13 @@ export default function TransactionDetailScreen() {
   useEffect(() => {
     fetchTx();
   }, [fetchTx]);
+
+  useEffect(() => {
+    if (!loading && tx) {
+      heroOpacity.value = withTiming(1, { duration: 300 });
+      heroScale.value = withSpring(1, { damping: 16, stiffness: 200 });
+    }
+  }, [loading, tx, heroOpacity, heroScale]);
 
   const buildDateFromDraft = (): Date => {
     let h24 = draftHour;
@@ -487,7 +504,7 @@ export default function TransactionDetailScreen() {
                 },
               ]}
             >
-              <Text style={[styles.backBtnIcon, { color: heroColor }]}>←</Text>
+              <Ionicons name="arrow-back" size={20} color={heroColor} />
             </TouchableOpacity>
           )}
 
@@ -516,7 +533,7 @@ export default function TransactionDetailScreen() {
         </View>
 
         {/* ─── HERO SECTION ─── */}
-        <View style={styles.heroSection}>
+        <RAnim.View style={[styles.heroSection, heroAnim]}>
           <View style={[styles.heroIconBox, { backgroundColor: colors.white }]}>
             <CategoryIcon
               categoryKey={displayCategoryKey}
@@ -553,7 +570,7 @@ export default function TransactionDetailScreen() {
           )}
 
           <Text style={styles.heroDate}>{formattedDate}</Text>
-        </View>
+        </RAnim.View>
 
         {/* ─── DETAILS CARD ─── */}
         <View style={styles.detailsCard}>
@@ -568,7 +585,7 @@ export default function TransactionDetailScreen() {
                 {displayAccountName || 'None'}
               </Text>
               {isEditing && (
-                <Text style={[styles.editIcon, { color: heroColor }]}>✎</Text>
+                <Ionicons name="pencil-outline" size={16} color={heroColor} style={{ opacity: 0.7 }} />
               )}
             </View>
           </TouchableOpacity>
@@ -582,7 +599,7 @@ export default function TransactionDetailScreen() {
             <View style={styles.detailValueWrap}>
               <Text style={styles.detailValue}>{formattedDate}</Text>
               {isEditing && (
-                <Text style={[styles.editIcon, { color: heroColor }]}>✎</Text>
+                <Ionicons name="pencil-outline" size={16} color={heroColor} style={{ opacity: 0.7 }} />
               )}
             </View>
           </TouchableOpacity>
@@ -614,7 +631,7 @@ export default function TransactionDetailScreen() {
                 </Text>
               </View>
               {isEditing && (
-                <Text style={[styles.editIcon, { color: heroColor }]}>✎</Text>
+                <Ionicons name="pencil-outline" size={16} color={heroColor} style={{ opacity: 0.7 }} />
               )}
             </View>
           </TouchableOpacity>
@@ -670,6 +687,15 @@ export default function TransactionDetailScreen() {
             >
               <Text style={styles.deleteBtnText}>Delete transaction</Text>
             </TouchableOpacity>
+            {tx.receipt_url && (
+              <TouchableOpacity
+                onPress={() => setIsReceiptVisible(true)}
+                style={styles.receiptBtn}
+              >
+                <Ionicons name="image-outline" size={16} color={colors.textSecondary} />
+                <Text style={styles.receiptBtnText}>View Receipt</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </ScrollView>
@@ -1344,4 +1370,16 @@ const createStyles = (colors: any, isDark: boolean) =>
       padding: 8,
     },
     receiptImg: { width: '100%', height: '80%' },
+    receiptBtn: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      gap: 6,
+      paddingVertical: 12,
+    },
+    receiptBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
   });

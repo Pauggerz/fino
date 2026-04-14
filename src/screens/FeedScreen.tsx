@@ -42,6 +42,14 @@ import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
 import { Skeleton } from '@/components/Skeleton';
+import RAnim, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  withSpring,
+} from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -113,6 +121,10 @@ function SwipeableRow({
         const shouldOpen = isOpen.current
           ? !(dx > SWIPE_DELETE_WIDTH / 2 || vx > 0.5)
           : dx < -SWIPE_DELETE_WIDTH / 2 || vx < -0.5;
+
+        if (shouldOpen && !isOpen.current) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+        }
 
         isOpen.current = shouldOpen;
         Animated.spring(translateX, {
@@ -333,7 +345,9 @@ export default function FeedScreen() {
   const [filterAccountId, setFilterAccountId] = useState<string | undefined>(
     route.params?.filterAccount ?? undefined
   );
-  const [filterSortOrder, setFilterSortOrder] = useState<SortOrder>('date_desc');
+  const [filterSortOrder, setFilterSortOrder] = useState<SortOrder>(
+    (route.params?.filterSortOrder as SortOrder | undefined) ?? 'date_desc'
+  );
   // draft state while panel is open
   const [draftAccountId, setDraftAccountId] = useState<string | undefined>(undefined);
   const [draftSortOrder, setDraftSortOrder] = useState<SortOrder>('date_desc');
@@ -343,6 +357,21 @@ export default function FeedScreen() {
   // ── Swipe hint ──
   const [swipeHintVisible, setSwipeHintVisible] = useState(true);
   const searchInputRef = useRef<TextInput>(null);
+
+  // ── Entrance animation ────────────────────────────────────────────────────
+  const headerOpacity = useSharedValue(0);
+  const headerTransY = useSharedValue(-8);
+  const listOpacity = useSharedValue(0);
+  const listTransY = useSharedValue(16);
+
+  const headerAnim = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTransY.value }],
+  }));
+  const listAnim = useAnimatedStyle(() => ({
+    opacity: listOpacity.value,
+    transform: [{ translateY: listTransY.value }],
+  }));
 
   const monthDateRange = useMemo(
     () => getMonthRange(selectedYear, selectedMonth),
@@ -383,8 +412,15 @@ export default function FeedScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // Reset + stagger entrance animation on every screen focus
+      headerOpacity.value = 0; headerTransY.value = -8;
+      listOpacity.value = 0;   listTransY.value = 16;
+      headerOpacity.value = withTiming(1, { duration: 260 });
+      headerTransY.value  = withTiming(0, { duration: 260 });
+      listOpacity.value   = withDelay(60, withTiming(1, { duration: 320 }));
+      listTransY.value    = withDelay(60, withSpring(0, { damping: 18, stiffness: 180 }));
       refetch();
-    }, [refetch])
+    }, [refetch, headerOpacity, headerTransY, listOpacity, listTransY])
   );
 
   React.useEffect(() => {
@@ -396,6 +432,12 @@ export default function FeedScreen() {
       setFilterAccountId(route.params.filterAccount);
     }
   }, [route.params?.filterAccount]);
+
+  React.useEffect(() => {
+    if (route.params?.filterSortOrder !== undefined) {
+      setFilterSortOrder(route.params.filterSortOrder as SortOrder);
+    }
+  }, [route.params?.filterSortOrder]);
 
   // Reset category filter when switching tabs
   const handleViewTypeSwitch = (type: 'expense' | 'income') => {
@@ -562,8 +604,14 @@ export default function FeedScreen() {
           colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
           style={styles.heroCard}
         >
-          <View style={styles.heroBlobOne} />
-          <View style={styles.heroBlobTwo} />
+          <LinearGradient
+            colors={[colors.primaryLight60, 'transparent']}
+            style={[styles.heroBlob, { top: -30, right: -20, width: 160, height: 160 }]}
+          />
+          <LinearGradient
+            colors={[colors.primaryTransparent50, 'transparent']}
+            style={[styles.heroBlob, { bottom: 44, left: -20, width: 110, height: 110, opacity: 0.6 }]}
+          />
 
           <View style={styles.heroTopRow}>
             <View style={styles.monthNavPill}>
@@ -812,26 +860,14 @@ export default function FeedScreen() {
                   const expCat = categories.find((c) => c.name === chip);
                   if (expCat?.text_colour) activeBg = expCat.text_colour;
                 }
-                const catData = viewType === 'expense' && chip !== 'All'
-                  ? categories.find((c) => c.name === chip) : null;
-                const pct = catData && catData.budget_limit
-                  ? Math.min((catData as any).spent / catData.budget_limit, 1) : 0;
-                const ringColor = pct > 0.9 ? '#C0503A' : pct > 0.7 ? '#C97A20' : colors.primary;
                 return (
-                  <View style={{ position: 'relative', marginRight: 8 }}>
-                    <TouchableOpacity
-                      style={[isActive ? styles.chipActive : styles.chipInactive, isActive && { backgroundColor: activeBg }]}
-                      onPress={() => setActiveCategory(chip)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={isActive ? styles.chipTextActive : styles.chipTextInactive}>{chip}</Text>
-                      {!isActive && pct > 0 && (
-                        <View style={styles.chipProgressTrack}>
-                          <View style={[styles.chipProgressFill, { width: `${Math.round(pct * 100)}%` as any, backgroundColor: ringColor }]} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity
+                    style={[isActive ? styles.chipActive : styles.chipInactive, isActive && { backgroundColor: activeBg }]}
+                    onPress={() => setActiveCategory(chip)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={isActive ? styles.chipTextActive : styles.chipTextInactive}>{chip}</Text>
+                  </TouchableOpacity>
                 );
               }}
             />
@@ -843,6 +879,18 @@ export default function FeedScreen() {
               <Text style={styles.swipeHintText}>Swipe left on a transaction to delete</Text>
             </View>
           )}
+
+          {!loading && sections.length === 0 && (
+            <View style={styles.emptyState}>
+              <Ionicons name="receipt-outline" size={44} color={colors.textSecondary} style={{ opacity: 0.4 }} />
+              <Text style={styles.emptyStateTitle}>No transactions</Text>
+              <Text style={styles.emptyStateText}>
+                {searchQuery.length > 0
+                  ? 'No results for your search.'
+                  : 'No transactions recorded for this period.'}
+              </Text>
+            </View>
+          )}
         </View>
       );
     }
@@ -850,7 +898,7 @@ export default function FeedScreen() {
     if (item.type === 'header') {
       return (
         <View style={styles.dateHeaderContainer}>
-          <Text style={styles.dateHeader}>{item.title.toUpperCase()}</Text>
+          <Text style={styles.dateHeader}>{item.title}</Text>
         </View>
       );
     }
@@ -945,7 +993,7 @@ export default function FeedScreen() {
   return (
     <View style={styles.container}>
       {/* ─── SCREEN TITLE ROW — pinned ─── */}
-      <View style={styles.screenTitleRow}>
+      <RAnim.View style={[styles.screenTitleRow, headerAnim]}>
         <Text style={styles.headerTitle}>Transactions</Text>
         <TouchableOpacity
           style={styles.notifBtn}
@@ -954,9 +1002,10 @@ export default function FeedScreen() {
         >
           <Ionicons name="search-outline" size={18} color={colors.textPrimary} />
         </TouchableOpacity>
-      </View>
+      </RAnim.View>
 
       {/* ─── SINGLE FLATLIST — hero scrolls away, search bar sticks ─── */}
+      <RAnim.View style={[{ flex: 1 }, listAnim]}>
       <FlatList
         data={listData}
         renderItem={renderItem}
@@ -986,6 +1035,7 @@ export default function FeedScreen() {
           ) : null
         }
       />
+      </RAnim.View>
 
       {/* ─── MONTH PICKER MODAL ─── */}
       <MonthPickerModal
@@ -1160,20 +1210,9 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       shadowRadius: 28,
       elevation: 8,
     },
-    heroBlobOne: {
+    heroBlob: {
       position: 'absolute',
-      width: 160, height: 160,
-      borderRadius: 80,
-      top: -30, right: -20,
-      backgroundColor: colors.primaryTransparent30,
-    },
-    heroBlobTwo: {
-      position: 'absolute',
-      width: 110, height: 110,
-      borderRadius: 55,
-      left: -20, bottom: 44,
-      backgroundColor: colors.primaryTransparent30,
-      opacity: 0.6,
+      borderRadius: 999,
     },
     heroTopRow: {
       flexDirection: 'row',
@@ -1516,6 +1555,7 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       justifyContent: 'center',
       alignItems: 'center',
       backgroundColor: colors.primary,
+      marginRight: 8,
     },
     chipInactive: {
       paddingHorizontal: 16,
@@ -1526,7 +1566,7 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       backgroundColor: colors.white,
       borderWidth: 1,
       borderColor: isDark ? '#333333' : '#e0dfd7',
-      overflow: 'hidden',
+      marginRight: 8,
     },
     chipTextActive: {
       fontFamily: 'Inter_600SemiBold',
@@ -1538,21 +1578,6 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       fontSize: 13,
       color: colors.textSecondary,
     },
-    chipProgressTrack: {
-      position: 'absolute',
-      left: 7,
-      right: 7,
-      bottom: 4,
-      height: 2,
-      borderRadius: 1,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)',
-      overflow: 'hidden',
-    },
-    chipProgressFill: {
-      height: '100%',
-      borderRadius: 1,
-    },
-
     // ── Swipe hint ──
     swipeHint: {
       flexDirection: 'row',
@@ -1575,10 +1600,10 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       paddingBottom: 8,
     },
     dateHeader: {
-      fontFamily: 'Inter_600SemiBold',
-      fontSize: 11,
-      color: colors.textSecondary,
-      letterSpacing: 0.44,
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 13,
+      color: colors.textPrimary,
+      letterSpacing: 0.3,
     },
     transactionItem: {
       flexDirection: 'row',
@@ -1635,5 +1660,25 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       fontFamily: 'Inter_600SemiBold',
       fontSize: 14,
       color: colors.primary,
+    },
+    // ── Empty state ───────────────────────────────────────────────────────────
+    emptyState: {
+      alignItems: 'center' as const,
+      paddingTop: 48,
+      paddingBottom: 32,
+      gap: 8,
+    },
+    emptyStateTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 16,
+      color: colors.textPrimary,
+      marginTop: 8,
+    },
+    emptyStateText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      color: colors.textSecondary,
+      textAlign: 'center' as const,
+      paddingHorizontal: 32,
     },
   });

@@ -19,8 +19,17 @@ import {
   Modal,
   Image,
   Dimensions,
+  TouchableWithoutFeedback,
 } from 'react-native';
+import RAnim, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  withSpring,
+} from 'react-native-reanimated';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, G, Path as SvgPath, Rect, Line, Text as SvgText } from 'react-native-svg';
@@ -185,8 +194,75 @@ const MONTH_NAMES = [
   'December',
 ];
 
+const MONTHS_SHORT = MONTH_NAMES.map((month) => month.slice(0, 3));
+
 const normalizeCategoryKey = (value: string | null): string =>
   (value ?? '').trim().toLowerCase();
+
+const fmt = (value: number): string =>
+  Math.max(Math.round(value), 0).toLocaleString('en-PH');
+
+const fmtUiNumber = (value: number): string => {
+  const rounded = Math.round(value);
+  const abs = Math.abs(rounded);
+  if (abs >= 1_000_000) {
+    const m = rounded / 1_000_000;
+    return `${parseFloat(m.toFixed(1))}M`;
+  }
+  if (abs >= 100_000) {
+    const k = rounded / 1_000;
+    return `${parseFloat(k.toFixed(1))}k`;
+  }
+  return rounded.toLocaleString('en-PH');
+};
+
+const fmtUiPeso = (value: number): string => `₱${fmtUiNumber(value)}`;
+
+function buildSpendInsight(totalSpent: number, totalBudget: number, monthLabel: string): string {
+  if (!totalBudget) return 'Set category budgets to track spending against limits.';
+  const pct = Math.round((totalSpent / totalBudget) * 100);
+  if (pct >= 100) {
+    return `You've used 100% of your budget ${monthLabel.toLowerCase()}. Consider reviewing your spending.`;
+  }
+  if (pct >= 80) {
+    return `You're at ${pct}% of your budget. ₱${fmt(totalBudget - totalSpent)} remaining.`;
+  }
+  return `You've used ${pct}% of your ${monthLabel.toLowerCase()} budget - on track!`;
+}
+
+function buildDailyInsight(dailySpend: Record<string, number>, monthLabel: string): string {
+  const vals = Object.values(dailySpend);
+  if (!vals.length) return 'No spending data yet for this period.';
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const peak = Math.max(...vals);
+  return `Your average daily spend is ₱${fmt(avg)}. Peak day was ₱${fmt(peak)} ${monthLabel.toLowerCase()}.`;
+}
+
+function buildPatternsInsight(dowAvgSpend: number[]): string {
+  if (!dowAvgSpend.length) return 'Not enough data to show weekly patterns.';
+  const peakValue = Math.max(...dowAvgSpend);
+  if (peakValue <= 0) return 'Not enough data to show weekly patterns.';
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const peak = dowAvgSpend.indexOf(peakValue);
+  return `You tend to spend most on ${days[peak]}s. Consider planning ahead for that day.`;
+}
+
+function buildTopExpenseInsight(topTransactions: TopTx[], monthLabel: string): string {
+  const top = topTransactions[0];
+  if (!top) return 'No top expense yet for this period.';
+  const name = top.display_name ?? top.merchant_name ?? top.category ?? 'This transaction';
+  return `${name} is your largest expense at ₱${fmt(top.amount)} ${monthLabel.toLowerCase()}.`;
+}
+
+function buildMomInsight(momDelta: number, txDelta: number): string {
+  if (momDelta > 0) {
+    return `You spent ₱${fmt(Math.abs(momDelta))} more than last month with ${Math.abs(txDelta)} ${txDelta === 1 ? 'extra transaction' : 'extra transactions'}.`;
+  }
+  if (momDelta < 0) {
+    return `You spent ₱${fmt(Math.abs(momDelta))} less than last month. Nice control on this trend.`;
+  }
+  return 'Your total spending is flat vs last month. Keep tracking for a stable trend.';
+}
 
 const withAlpha = (hex: string, alpha: number): string => {
   if (!hex.startsWith('#')) return hex;
@@ -393,6 +469,7 @@ function MonthPickerModal({
 // ─── DailySpendChart ─────────────────────────────────────────────────────────
 
 const PEAK_AMBER = '#E07B2E';
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
 function DailySpendChart({
   data,
@@ -410,6 +487,17 @@ function DailySpendChart({
   const BAR_GAP = 2;
   const barCount = data.length;
   const BAR_W = Math.max(2, (CHART_W - BAR_GAP * (barCount - 1)) / barCount);
+  const chartProgress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    chartProgress.setValue(0);
+    Animated.timing(chartProgress, {
+      toValue: 1,
+      duration: 560,
+      useNativeDriver: false,
+    }).start();
+  }, [chartProgress, data, maxAmount]);
+
   const peakIndex = data.reduce(
     (best, d, i) => (d.amount > data[best].amount ? i : best),
     0
@@ -461,21 +549,37 @@ function DailySpendChart({
       {/* Bars */}
       {data.map((d, i) => {
         const barH = maxAmount > 0 ? (d.amount / maxAmount) * CHART_H : 0;
+        const minBarHeight = d.amount > 0 ? 2 : 1;
+        const targetBarHeight = Math.max(barH, minBarHeight);
         const x = Y_LABEL_W + i * (BAR_W + BAR_GAP);
-        const y = CHART_H - Math.max(barH, d.amount > 0 ? 2 : 0);
+        const y = CHART_H - targetBarHeight;
         const isPeak = i === peakIndex && d.amount > 0;
         const barColor = isPeak ? PEAK_AMBER : colors.primary;
         const opacity = d.amount === 0 ? 0.15 : isPeak ? 1 : 0.6;
-        const showLabel = d.day % 10 === 1 || isPeak;
+        const showLabel = d.day % 2 === 1 || isPeak;
+
+        const animatedHeight = chartProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [minBarHeight, targetBarHeight],
+        });
+        const animatedY = chartProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [CHART_H - minBarHeight, y],
+        });
+        const animatedOpacity = chartProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.16, opacity],
+        });
+
         return (
           <React.Fragment key={d.day}>
-            <Rect
+            <AnimatedRect
               x={x}
-              y={y}
+              y={animatedY}
               width={BAR_W}
-              height={Math.max(barH, d.amount > 0 ? 2 : 1)}
+              height={animatedHeight}
               fill={barColor}
-              opacity={opacity}
+              opacity={animatedOpacity}
               rx={1.5}
             />
             {showLabel && (
@@ -509,6 +613,21 @@ function DowPatternChart({
   const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const maxDow = Math.max(...dowAvg, 1);
   const BAR_H_MAX = 48;
+  const dowProgress = useRef(new Animated.Value(0)).current;
+  const dowAnimKey = useMemo(
+    () => dowAvg.map((value) => Math.round(value)).join('|'),
+    [dowAvg]
+  );
+
+  useEffect(() => {
+    dowProgress.setValue(0);
+    Animated.timing(dowProgress, {
+      toValue: 1,
+      duration: 520,
+      useNativeDriver: false,
+    }).start();
+  }, [dowProgress, dowAnimKey]);
+
   const peakDow = dowAvg.indexOf(Math.max(...dowAvg));
 
   const formatAvg = (v: number): string => {
@@ -537,27 +656,39 @@ function DowPatternChart({
             : isWeekend
               ? colors.lavender
               : colors.primary;
+
+          const minBarHeight = dowAvg[i] > 0 ? 3 : 2;
+          const animatedBarHeight = dowProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [minBarHeight, barH],
+          });
+          const animatedBarOpacity = dowProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.15, dowAvg[i] === 0 ? 0.2 : 0.82],
+          });
+
           return (
             <View key={i} style={{ alignItems: 'center', flex: 1 }}>
               {isPeak && dowAvg[i] > 0 && (
-                <Text
+                <Animated.Text
                   style={{
-                    fontFamily: 'Inter_700Bold',
+                    fontFamily: 'DMMono_500Medium',
                     fontSize: 8,
                     color: PEAK_AMBER,
                     marginBottom: 3,
+                    opacity: dowProgress,
                   }}
                 >
                   {formatAvg(dowAvg[i])}
-                </Text>
+                </Animated.Text>
               )}
-              <View
+              <Animated.View
                 style={{
                   width: 22,
-                  height: barH,
+                  height: animatedBarHeight,
                   backgroundColor: barColor,
                   borderRadius: 5,
-                  opacity: dowAvg[i] === 0 ? 0.2 : 0.82,
+                  opacity: animatedBarOpacity,
                 }}
               />
               <Text
@@ -575,22 +706,22 @@ function DowPatternChart({
         })}
       </View>
       {/* Legend */}
-      <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <View style={{ flexDirection: 'row', gap: 14, marginTop: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: colors.primary }} />
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary }}>
+          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: colors.textSecondary }}>
             Weekday
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: colors.lavender }} />
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary }}>
+          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: colors.textSecondary }}>
             Weekend
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: PEAK_AMBER }} />
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary }}>
+          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: colors.textSecondary }}>
             Peak day
           </Text>
         </View>
@@ -636,8 +767,14 @@ function AccountActivityCard({
       <Text style={styles.acctName} numberOfLines={1}>
         {account.name}
       </Text>
-      <Text style={styles.acctExpAmt}>-₱{expense.toLocaleString()}</Text>
-      <Text style={styles.acctIncAmt}>+₱{income.toLocaleString()}</Text>
+      <View style={styles.acctAmtRow}>
+        <Text style={styles.acctAmtLabel}>EXP</Text>
+        <Text style={styles.acctExpAmt} numberOfLines={1}>-₱{expense.toLocaleString()}</Text>
+      </View>
+      <View style={styles.acctAmtRow}>
+        <Text style={styles.acctAmtLabel}>INC</Text>
+        <Text style={styles.acctIncAmt} numberOfLines={1}>+₱{income.toLocaleString()}</Text>
+      </View>
       <View
         style={[
           styles.acctNetPill,
@@ -667,7 +804,8 @@ function AccountActivityCard({
 export default function InsightsScreen() {
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => createStyles(colors, isDark, insets.top), [colors, isDark, insets.top]);
 
   // ── Date state ──
   const now = new Date();
@@ -685,6 +823,34 @@ export default function InsightsScreen() {
   const [activeDonutIndex, setActiveDonutIndex] = useState<number>(-1);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [insightTarget, setInsightTarget] = useState<{ title: string; message: string } | null>(null);
+
+  const isCurrentMonth =
+    selectedMonth === now.getMonth() && selectedYear === now.getFullYear();
+  const monthLabel = isCurrentMonth
+    ? 'This month'
+    : `${MONTHS_SHORT[selectedMonth]} ${selectedYear}`;
+  const monthNavLabel = `${MONTHS_SHORT[selectedMonth]} ${selectedYear}`;
+
+  const headerOpacity = useSharedValue(0);
+  const headerTransY = useSharedValue(-8);
+  const heroOpacity = useSharedValue(0);
+  const heroScale = useSharedValue(0.97);
+  const contentOpacity = useSharedValue(0);
+  const contentTransY = useSharedValue(16);
+
+  const headerAnim = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTransY.value }],
+  }));
+  const heroAnim = useAnimatedStyle(() => ({
+    opacity: heroOpacity.value,
+    transform: [{ scale: heroScale.value }],
+  }));
+  const contentAnim = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentTransY.value }],
+  }));
 
   // ── Expense data ──
   const [expenseCategoryKeys, setExpenseCategoryKeys] = useState<string[]>([]);
@@ -908,8 +1074,36 @@ export default function InsightsScreen() {
   }, [fetchStats]);
   useFocusEffect(
     useCallback(() => {
+      headerOpacity.value = 0;
+      headerTransY.value = -8;
+      heroOpacity.value = 0;
+      heroScale.value = 0.97;
+      contentOpacity.value = 0;
+      contentTransY.value = 16;
+
+      headerOpacity.value = withTiming(1, { duration: 260 });
+      headerTransY.value = withTiming(0, { duration: 260 });
+      heroOpacity.value = withDelay(60, withTiming(1, { duration: 320 }));
+      heroScale.value = withDelay(
+        60,
+        withSpring(1, { damping: 18, stiffness: 160 })
+      );
+      contentOpacity.value = withDelay(140, withTiming(1, { duration: 320 }));
+      contentTransY.value = withDelay(
+        140,
+        withSpring(0, { damping: 18, stiffness: 180 })
+      );
+
       fetchStats();
-    }, [fetchStats])
+    }, [
+      fetchStats,
+      headerOpacity,
+      headerTransY,
+      heroOpacity,
+      heroScale,
+      contentOpacity,
+      contentTransY,
+    ])
   );
 
   const handleViewTypeSwitch = (type: 'expense' | 'income') => {
@@ -936,8 +1130,9 @@ export default function InsightsScreen() {
   );
 
   // ─── SVG Donut segments ───────────────────────────────────────────────────
-  const donutRadius = 60;
-  const donutStrokeWidth = 14;
+  const donutRadius = 62;
+  const donutStrokeWidth = 20;
+  const donutGap = 5; // SVG units of spacing between each segment
   const donutCircumference = 2 * Math.PI * donutRadius;
 
   const donutSegments = useMemo(() => {
@@ -948,7 +1143,7 @@ export default function InsightsScreen() {
         .map((cat, index) => {
           const maxBudget = totalBudget > 0 ? totalBudget : 1;
           const catSpent = Math.min(expenseTotals[cat], maxBudget);
-          const strokeLength = (catSpent / maxBudget) * donutCircumference;
+          const strokeLength = Math.max(0, (catSpent / maxBudget) * donutCircumference - donutGap);
           const gapLength = donutCircumference - strokeLength;
           const meta = expenseCategoryMeta[cat];
           const fallbackColor =
@@ -970,7 +1165,7 @@ export default function InsightsScreen() {
     const denom = totalIncome > 0 ? totalIncome : 1;
     return incomeActiveKeys.map((incCat) => {
       const amount = incomeTotals[incCat.key] ?? 0;
-      const strokeLength = (amount / denom) * donutCircumference;
+      const strokeLength = Math.max(0, (amount / denom) * donutCircumference - donutGap);
       const gapLength = donutCircumference - strokeLength;
       const color = CATEGORY_COLOR[incCat.key] ?? colors.textSecondary;
       const segment = {
@@ -1283,8 +1478,6 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, viewType, selectedYear, selectedMonth]);
 
-  const monthLabel = `${MONTH_NAMES[selectedMonth]} ${selectedYear}`;
-
   const selectedExpenseBudget =
     selectedCategory && viewType === 'expense'
       ? (expenseBudgets[selectedCategory] ?? 0)
@@ -1336,6 +1529,15 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
 
   const showBudgetMetric = viewType === 'expense';
 
+  const heroMetricOneDisplay = fmtUiPeso(heroMetricOneValue);
+  const heroMetricTwoDisplay =
+    viewType === 'expense'
+      ? fmtUiPeso(heroMetricTwoValue)
+      : selectedIncomeDef
+        ? `${heroMetricTwoValue.toFixed(0)}%`
+        : `${heroMetricTwoValue} active`;
+  const budgetMetricDisplay = fmtUiPeso(selectedExpenseBudget ?? totalBudget);
+
   const insightHeadline = mostOverBudgetTile
     ? `${mostOverBudgetTile.title} is ${(mostOverBudgetTile.pct - 100).toFixed(0)}% over budget this month`
     : 'Your spending trend looks stable this month';
@@ -1343,12 +1545,46 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
     ? 'Tap to get personalized savings tips from Fino.'
     : 'Ask Fino for custom insights and ways to improve your budget.';
 
-  const aiAlertText = mostOverBudgetTile
-    ? `${mostOverBudgetTile.title} is ${(mostOverBudgetTile.pct - 100).toFixed(0)}% over budget.`
-    : 'No categories are over budget this month.';
-  const aiAlertSubText = mostOverBudgetTile
-    ? `Consider reducing by ₱${Math.max(mostOverBudgetTile.amount - mostOverBudgetTile.budget, 0).toLocaleString()} next month.`
-    : 'Keep this pace and ask Fino for next-step savings ideas.';
+  const overBudgetCats = expenseCategoryKeys.filter(
+    (k) => expenseTotals[k] > (expenseBudgets[k] ?? Number.POSITIVE_INFINITY)
+  );
+  const nearingCats = expenseCategoryKeys.filter(
+    (k) =>
+      !overBudgetCats.includes(k) &&
+      (expenseBudgets[k] ?? 0) > 0 &&
+      expenseTotals[k] / (expenseBudgets[k] ?? 1) >= 0.8
+  );
+
+  let aiAlertText: string;
+  let aiAlertSubText: string;
+  let aiAlertColor: string;
+  let aiAlertIcon: React.ComponentProps<typeof Ionicons>['name'];
+
+  if (overBudgetCats.length > 0) {
+    aiAlertText = `${overBudgetCats.length} categor${overBudgetCats.length > 1 ? 'ies are' : 'y is'} over budget`;
+    aiAlertSubText = `${monthLabel}: Tap to review and adjust your spending.`;
+    aiAlertColor = colors.expenseRed;
+    aiAlertIcon = 'warning';
+  } else if (nearingCats.length > 0) {
+    aiAlertText = `${nearingCats.length} categor${nearingCats.length > 1 ? 'ies are' : 'y is'} nearing the limit`;
+    aiAlertSubText = `${monthLabel}: Keep an eye on these to stay on track.`;
+    aiAlertColor = colors.statWarnBar ?? '#BA7517';
+    aiAlertIcon = 'checkmark-circle';
+  } else {
+    aiAlertText = "You're on budget this month";
+    aiAlertSubText = `${monthLabel}: Great job! Keep up the good work.`;
+    aiAlertColor = colors.primary;
+    aiAlertIcon = 'trophy';
+  }
+
+  const topExpenseInsight = buildTopExpenseInsight(topTransactions, monthLabel);
+  const momInsight = buildMomInsight(momDelta, txDelta);
+  const biggestExpenseDisplay = biggestExpense
+    ? fmtUiPeso(biggestExpense.amount)
+    : '—';
+  const avgDailySpendDisplay = fmtUiPeso(avgDailySpend);
+  const trendTotalSpentDisplay = fmtUiPeso(totalExpenseSpent);
+  const trendDeltaAmountDisplay = fmtUiPeso(Math.abs(momDelta));
 
   const renderExpenseTile = (catKey: string) => {
     const tile = expenseTiles.find((item) => item.key === catKey);
@@ -1533,101 +1769,68 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
         contentContainerStyle={styles.content}
         scrollEnabled={false}
       >
+        {/* Header */}
         <View style={styles.loadingHeader}>
-          <View>
-            <Skeleton width={92} height={24} style={{ marginBottom: 8 }} />
-            <Skeleton width={152} height={13} />
-          </View>
-          <Skeleton width={92} height={32} borderRadius={999} />
+          <Skeleton width={120} height={28} borderRadius={8} />
+          <Skeleton width={36} height={36} borderRadius={12} />
         </View>
-        <View style={styles.toggleRow}>
-          <Skeleton width="100%" height={28} borderRadius={10} />
-        </View>
-        <View style={styles.loadingOverallCard}>
-          <View style={styles.loadingDonutRow}>
-            <Skeleton width={132} height={132} borderRadius={66} />
-            <View style={styles.loadingDonutText}>
-              <Skeleton width={72} height={28} style={{ marginBottom: 8 }} />
-              <Skeleton width={88} height={12} />
-            </View>
+
+        {/* Hero card skeleton */}
+        <View style={styles.loadingHeroCard}>
+          <View style={styles.loadingHeroTopRow}>
+            <Skeleton width={120} height={28} borderRadius={999} style={{ opacity: 0.35 }} />
+            <Skeleton width={100} height={28} borderRadius={999} style={{ opacity: 0.35 }} />
           </View>
-          <View style={styles.loadingMetricRow}>
-            <View style={styles.loadingMetricCol}>
-              <Skeleton width={84} height={11} style={{ marginBottom: 8 }} />
-              <Skeleton width={96} height={18} />
+          <View style={{ alignItems: 'center', marginVertical: 16 }}>
+            <Skeleton width={160} height={160} borderRadius={80} style={{ opacity: 0.3 }} />
+          </View>
+          <View style={styles.loadingHeroMetrics}>
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Skeleton width={52} height={10} borderRadius={4} style={{ opacity: 0.3, marginBottom: 8 }} />
+              <Skeleton width={72} height={18} borderRadius={4} style={{ opacity: 0.35 }} />
             </View>
             <View style={styles.metricDivider} />
-            <View style={styles.loadingMetricCol}>
-              <Skeleton width={96} height={11} style={{ marginBottom: 8 }} />
-              <Skeleton width={96} height={18} />
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Skeleton width={64} height={10} borderRadius={4} style={{ opacity: 0.3, marginBottom: 8 }} />
+              <Skeleton width={72} height={18} borderRadius={4} style={{ opacity: 0.35 }} />
+            </View>
+            <View style={styles.metricDivider} />
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Skeleton width={48} height={10} borderRadius={4} style={{ opacity: 0.3, marginBottom: 8 }} />
+              <Skeleton width={72} height={18} borderRadius={4} style={{ opacity: 0.35 }} />
             </View>
           </View>
-          <Skeleton width={168} height={11} style={{ marginTop: 12 }} />
         </View>
-        {/* Quick Stats skeletons */}
-        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} width="31%" height={72} borderRadius={16} />
-          ))}
-        </View>
-        {/* Chart skeletons */}
-        <Skeleton width="100%" height={120} borderRadius={20} style={{ marginBottom: 16 }} />
-        <Skeleton width="100%" height={96} borderRadius={20} style={{ marginBottom: 16 }} />
-        {/* Account Activity skeleton */}
-        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} width={138} height={120} borderRadius={20} />
-          ))}
-        </View>
-        {/* Top Transactions skeleton */}
-        <Skeleton width="100%" height={130} borderRadius={20} style={{ marginBottom: 16 }} />
 
-        <Skeleton width={88} height={11} style={{ marginBottom: 12 }} />
-        <View style={{ marginBottom: 16 }}>
-          {Array.from({ length: 5 }).map((_, index) => (
-            <View key={`stats-skel-${index}`} style={styles.loadingProgRow}>
-              <Skeleton
-                width={44}
-                height={44}
-                borderRadius={14}
-                style={{ marginRight: 12 }}
-              />
-              <View style={styles.loadingProgContent}>
-                <View style={styles.loadingProgHeaderRow}>
-                  <Skeleton width={120} height={15} />
-                  <Skeleton width={46} height={18} borderRadius={20} />
-                </View>
-                <Skeleton width="100%" height={6} borderRadius={4} />
-              </View>
-            </View>
+        {/* Tab bar skeleton */}
+        <Skeleton width="100%" height={40} borderRadius={14} style={{ marginBottom: 16 }} />
+
+        {/* Quick Stats skeletons */}
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} width="31%" height={80} borderRadius={16} />
           ))}
         </View>
-        <View style={styles.loadingInsightCard}>
-          <Skeleton
-            width={36}
-            height={36}
-            borderRadius={18}
-            style={{ marginRight: 12 }}
-          />
-          <View style={{ flex: 1 }}>
-            <Skeleton width={124} height={13} style={{ marginBottom: 10 }} />
-            <Skeleton width="88%" height={18} style={{ marginBottom: 8 }} />
-            <Skeleton width="96%" height={14} style={{ marginBottom: 14 }} />
-            <Skeleton width={88} height={24} borderRadius={12} />
-          </View>
+
+        {/* Daily Spend chart skeleton */}
+        <Skeleton width="100%" height={128} borderRadius={20} style={{ marginBottom: 20 }} />
+
+        {/* Top Expenses skeleton */}
+        <Skeleton width="100%" height={136} borderRadius={20} style={{ marginBottom: 20 }} />
+
+        {/* Account Activity skeleton */}
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} width={138} height={128} borderRadius={20} />
+          ))}
         </View>
       </ScrollView>
     );
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      scrollEnabled={scrollEnabled}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.screenTitleRow}>
+    <View style={styles.container}>
+      <RAnim.View style={[styles.screenTitleRow, headerAnim]}>
         <Text style={styles.headerTitle}>Insights</Text>
         <TouchableOpacity
           activeOpacity={0.75}
@@ -1640,14 +1843,31 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
             color={colors.textPrimary}
           />
         </TouchableOpacity>
-      </View>
-
-      <LinearGradient
-        colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
-        style={styles.heroCard}
+      </RAnim.View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        scrollEnabled={scrollEnabled}
+        showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={viewType === 'expense' ? [2] : []}
       >
-        <View style={styles.heroBlobOne} />
-        <View style={styles.heroBlobTwo} />
+
+        <RAnim.View style={heroAnim}>
+          <LinearGradient
+            colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
+            style={styles.heroCard}
+          >
+        <LinearGradient
+          colors={[colors.primaryLight60 ?? 'rgba(91,140,110,0.35)', 'transparent']}
+          style={[styles.heroBlob, { top: -30, right: -20, width: 160, height: 160 }]}
+        />
+        <LinearGradient
+          colors={[colors.primaryTransparent50 ?? 'rgba(91,140,110,0.2)', 'transparent']}
+          style={[
+            styles.heroBlob,
+            { bottom: 44, left: -20, width: 110, height: 110, opacity: 0.6 },
+          ]}
+        />
 
         <View style={styles.heroTopRow}>
           <View style={styles.monthNavPill}>
@@ -1664,10 +1884,20 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={styles.monthNavTextBtn}
               activeOpacity={0.75}
               onPress={() => setMonthPickerVisible(true)}
             >
-              <Text style={styles.monthNavLabel}>{monthLabel}</Text>
+              <View style={styles.monthNavTextWrap}>
+                <Text
+                  style={styles.monthNavLabel}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  allowFontScaling={false}
+                >
+                  {monthNavLabel}
+                </Text>
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1733,14 +1963,14 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
           }}
         >
           <View {...panResponder.panHandlers} style={styles.donutContainer}>
-            <Svg width={160} height={160} viewBox="0 0 160 160">
+            <Svg width={168} height={168} viewBox="0 0 160 160">
               <G transform="rotate(-90, 80, 80)">
                 <Circle
                   cx="80"
                   cy="80"
                   r={donutRadius}
                   stroke={colors.whiteTransparent15}
-                  strokeWidth={18}
+                  strokeWidth={donutStrokeWidth}
                   fill="transparent"
                 />
                 {donutSegments.map((segment, index) => {
@@ -1753,12 +1983,12 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                       cy="80"
                       r={donutRadius}
                       stroke={segment.color}
-                      strokeWidth={isFocused ? 22 : 18}
-                      opacity={isDimmed ? 0.2 : 1}
+                      strokeWidth={isFocused ? donutStrokeWidth + 4 : donutStrokeWidth}
+                      opacity={isDimmed ? 0.18 : 1}
                       fill="transparent"
                       strokeDasharray={segment.strokeDasharray}
                       strokeDashoffset={segment.strokeDashoffset}
-                      strokeLinecap="butt"
+                      strokeLinecap="round"
                     />
                   );
                 })}
@@ -1785,12 +2015,6 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
           </View>
         </Pressable>
 
-        <Text style={styles.tapHint} pointerEvents="none">
-          {donutSegments.length > 0
-            ? 'Tap or drag chart to explore'
-            : 'No data for this period'}
-        </Text>
-
         <View style={styles.heroMetricsBar} pointerEvents="none">
           <View style={styles.budgetMetricsRow}>
             <View style={styles.metricCol}>
@@ -1804,7 +2028,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                   selectedThemeColor && { color: selectedThemeColor },
                 ]}
               >
-                ₱{heroMetricOneValue.toLocaleString()}
+                {heroMetricOneDisplay}
               </Text>
             </View>
 
@@ -1820,11 +2044,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                     : undefined,
                 ]}
               >
-                {viewType === 'expense'
-                  ? `₱${heroMetricTwoValue.toLocaleString()}`
-                  : selectedIncomeDef
-                    ? `${heroMetricTwoValue.toFixed(0)}%`
-                    : `${heroMetricTwoValue} active`}
+                {heroMetricTwoDisplay}
               </Text>
             </View>
 
@@ -1833,125 +2053,132 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                 <View style={styles.metricDivider} />
                 <View style={styles.metricCol}>
                   <Text style={styles.metricLabel}>Budget</Text>
-                  <Text style={styles.metricVal}>
-                    ₱{(selectedExpenseBudget ?? totalBudget).toLocaleString()}
-                  </Text>
+                  <Text style={styles.metricVal}>{budgetMetricDisplay}</Text>
                 </View>
               </>
             )}
           </View>
         </View>
-      </LinearGradient>
+          </LinearGradient>
+        </RAnim.View>
 
       {viewType === 'expense' && (
-        <>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={styles.aiAlertStrip}
-            onPress={() => navigation.navigate('ChatScreen')}
-          >
-            <View style={styles.aiAlertIconWrap}>
-              <Ionicons name="sparkles" size={14} color={colors.white} />
-            </View>
-            <View style={styles.aiAlertBody}>
-              <Text style={styles.aiAlertTitle}>{aiAlertText}</Text>
-              <Text style={styles.aiAlertSub}>{aiAlertSubText}</Text>
-            </View>
-            <View style={styles.aiAlertCtaWrap}>
-              <Text style={styles.aiAlertCtaText}>Ask Fino</Text>
-            </View>
-          </TouchableOpacity>
-
-          <View style={styles.tabBar}>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={[
-                styles.tabBtn,
-                activeTab === 'spend' && styles.tabBtnActive,
-              ]}
-              onPress={() => setActiveTab('spend')}
-            >
-              <Text
-                style={[
-                  styles.tabBtnText,
-                  activeTab === 'spend' && styles.tabBtnTextActive,
-                ]}
-              >
-                Spend
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={[
-                styles.tabBtn,
-                activeTab === 'patterns' && styles.tabBtnActive,
-              ]}
-              onPress={() => setActiveTab('patterns')}
-            >
-              <Text
-                style={[
-                  styles.tabBtnText,
-                  activeTab === 'patterns' && styles.tabBtnTextActive,
-                ]}
-              >
-                Patterns
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={[
-                styles.tabBtn,
-                activeTab === 'categories' && styles.tabBtnActive,
-              ]}
-              onPress={() => setActiveTab('categories')}
-            >
-              <Text
-                style={[
-                  styles.tabBtnText,
-                  activeTab === 'categories' && styles.tabBtnTextActive,
-                ]}
-              >
-                Categories
-              </Text>
-            </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={[
+            styles.aiAlertStrip,
+            {
+              borderColor: withAlpha(aiAlertColor, 0.35),
+              backgroundColor: withAlpha(aiAlertColor, isDark ? 0.2 : 0.12),
+            },
+          ]}
+          onPress={() => navigation.navigate('ChatScreen')}
+        >
+          <View style={[styles.aiAlertIconWrap, { backgroundColor: aiAlertColor }]}>
+            <Ionicons name={aiAlertIcon} size={14} color={colors.white} />
           </View>
-        </>
+          <View style={styles.aiAlertBody}>
+            <Text
+              style={[styles.aiAlertTitle, { color: aiAlertColor }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {aiAlertText}
+            </Text>
+            <Text style={styles.aiAlertSub} numberOfLines={1} ellipsizeMode="tail">
+              {aiAlertSubText}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.aiAlertCtaWrap,
+              { backgroundColor: withAlpha(aiAlertColor, isDark ? 0.35 : 0.12) },
+            ]}
+          >
+            <Text style={[styles.aiAlertCtaText, { color: aiAlertColor }]}>Ask Fino</Text>
+          </View>
+        </TouchableOpacity>
       )}
+
+        {viewType === 'expense' && (
+          <View style={styles.stickyTabShell}>
+            <View style={styles.tabChipRow}>
+              {(['spend', 'patterns', 'categories'] as const).map((tab) => {
+                const isActive = activeTab === tab;
+                const label = tab === 'spend' ? 'Spend' : tab === 'patterns' ? 'Patterns' : 'Categories';
+                return (
+                  <TouchableOpacity
+                    key={tab}
+                    activeOpacity={0.8}
+                    style={[styles.tabChip, isActive && styles.tabChipActive]}
+                    onPress={() => setActiveTab(tab)}
+                  >
+                    <Text numberOfLines={1} style={[styles.tabChipText, isActive && styles.tabChipTextActive]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        <RAnim.View style={contentAnim}>
 
       <View style={styles.belowCard}>
         {viewType === 'expense' && activeTab === 'spend' && (
           <View style={styles.tabPanel}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionDot} />
+              <Text style={styles.sectionLabel}>Spend Overview</Text>
+              <TouchableOpacity
+                style={styles.sectionInsightBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={() =>
+                  setInsightTarget({
+                    title: 'Spend Overview',
+                    message: buildSpendInsight(totalExpenseSpent, totalBudget, monthLabel),
+                  })
+                }
+              >
+                <Ionicons
+                  name="bulb-outline"
+                  size={15}
+                  color={colors.textSecondary}
+                  style={{ opacity: 0.7 }}
+                />
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.quickStatsRow}>
               <View style={styles.quickStatsPill}>
-                <Text style={styles.quickStatsValue}>{totalTxCount}</Text>
-                <Text style={styles.quickStatsLabel}>Transactions</Text>
+                <Text style={styles.quickStatsTitle}>Transactions</Text>
+                <Text style={styles.quickStatsValue} numberOfLines={1}>
+                  {fmtUiNumber(totalTxCount)}
+                </Text>
               </View>
               <View style={styles.quickStatsPill}>
+                <Text style={styles.quickStatsTitle}>Largest expense</Text>
                 <Text style={styles.quickStatsValue} numberOfLines={1}>
-                  {biggestExpense
-                    ? `₱${biggestExpense.amount.toLocaleString()}`
-                    : '—'}
+                  {biggestExpenseDisplay}
                 </Text>
-                {biggestExpense && (
-                  <Text style={styles.quickStatsSub} numberOfLines={1}>
-                    {biggestExpense.display_name ??
+                <Text
+                  style={[styles.quickStatsSub, !biggestExpense && styles.quickStatsSubMuted]}
+                  numberOfLines={1}
+                >
+                  {biggestExpense
+                    ? biggestExpense.display_name ??
                       biggestExpense.merchant_name ??
                       biggestExpense.category ??
-                      ''}
-                  </Text>
-                )}
-                <Text style={styles.quickStatsLabel}>Biggest Spend</Text>
+                      ''
+                    : 'No expense yet'}
+                </Text>
               </View>
               <View style={styles.quickStatsPill}>
-                <Text style={styles.quickStatsValue}>
-                  ₱{avgDailySpend.toFixed(0)}
+                <Text style={styles.quickStatsTitle}>Daily average</Text>
+                <Text style={styles.quickStatsValue} numberOfLines={1}>
+                  {avgDailySpendDisplay}
                 </Text>
-                <Text style={[styles.quickStatsSub, { color: colors.incomeGreen }]}>
-                  /day avg
-                </Text>
-                <Text style={styles.quickStatsLabel}>Daily Avg</Text>
               </View>
             </View>
 
@@ -1960,7 +2187,26 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                 <View style={styles.sectionHeaderRow}>
                   <View style={styles.sectionDot} />
                   <Text style={styles.sectionLabel}>Daily Spend</Text>
-                  <Text style={styles.sectionMetaText}>{monthLabel}</Text>
+                  <Text style={styles.sectionMetaText} numberOfLines={1}>
+                    {monthLabel}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.sectionInsightBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() =>
+                      setInsightTarget({
+                        title: 'Daily Spend',
+                        message: buildDailyInsight(dailySpend, monthLabel),
+                      })
+                    }
+                  >
+                    <Ionicons
+                      name="bulb-outline"
+                      size={15}
+                      color={colors.textSecondary}
+                      style={{ opacity: 0.7 }}
+                    />
+                  </TouchableOpacity>
                 </View>
                 <DailySpendChart
                   data={dailyBarsData}
@@ -1983,7 +2229,26 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                 <View style={styles.sectionHeaderRow}>
                   <View style={styles.sectionDot} />
                   <Text style={styles.sectionLabel}>Top Expenses</Text>
-                  <Text style={styles.sectionMetaText}>This month</Text>
+                  <Text style={styles.sectionMetaText} numberOfLines={1}>
+                    {monthLabel}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.sectionInsightBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() =>
+                      setInsightTarget({
+                        title: 'Top Expenses',
+                        message: topExpenseInsight,
+                      })
+                    }
+                  >
+                    <Ionicons
+                      name="bulb-outline"
+                      size={15}
+                      color={colors.textSecondary}
+                      style={{ opacity: 0.7 }}
+                    />
+                  </TouchableOpacity>
                 </View>
                 {topTransactions.slice(0, 3).map((tx, i) => {
                   const catKey = normalizeCategoryKey(tx.category);
@@ -1999,17 +2264,34 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                     day: 'numeric',
                   });
                   return (
-                    <View
+                    <TouchableOpacity
                       key={i}
+                      activeOpacity={0.75}
                       style={[
                         styles.topTxRow,
                         i === Math.min(topTransactions.length, 3) - 1 && {
                           borderBottomWidth: 0,
                         },
                       ]}
+                      onPress={() =>
+                        navigation.navigate('feed', {
+                          screen: 'FeedMain',
+                          params: { filterSortOrder: 'amount_desc' },
+                        })
+                      }
                     >
-                      <View style={styles.topTxRank}>
-                        <Text style={styles.topTxRankText}>{i + 1}</Text>
+                      <View style={[
+                        styles.topTxRank,
+                        i === 0 && styles.topTxRankGold,
+                        i === 1 && styles.topTxRankSilver,
+                        i === 2 && styles.topTxRankBronze,
+                      ]}>
+                        <Text style={[
+                          styles.topTxRankText,
+                          i === 0 && styles.topTxRankTextGold,
+                          i === 1 && styles.topTxRankTextSilver,
+                          i === 2 && styles.topTxRankTextBronze,
+                        ]}>{i + 1}</Text>
                       </View>
                       <View style={styles.topTxInfo}>
                         <Text style={styles.topTxName} numberOfLines={1}>
@@ -2022,10 +2304,10 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                           </Text>
                         </View>
                       </View>
-                      <Text style={styles.topTxAmt}>
+                      <Text style={styles.topTxAmt} numberOfLines={1}>
                         ₱{tx.amount.toLocaleString()}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
@@ -2034,7 +2316,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
             {accounts.some(
               (a) => accountActivity.expense[a.id] || accountActivity.income[a.id]
             ) && (
-              <View style={styles.chartCard}>
+              <View style={[styles.chartCard, { paddingBottom: 20 }]}>
                 <View style={styles.sectionHeaderRow}>
                   <View style={styles.sectionDot} />
                   <Text style={styles.sectionLabel}>By Account</Text>
@@ -2042,7 +2324,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.acctScrollContent}
+                  contentContainerStyle={[styles.acctScrollContent, { paddingVertical: 4 }]}
                 >
                   {accounts
                     .filter(
@@ -2072,9 +2354,26 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
               <View style={styles.sectionHeaderRow}>
                 <View style={styles.sectionDot} />
                 <Text style={styles.sectionLabel}>vs Last Month</Text>
-                <Text style={styles.sectionMetaText}>
+                <Text style={styles.sectionMetaText} numberOfLines={1}>
                   {MONTH_NAMES[(selectedMonth + 11) % 12].slice(0, 3)} → {MONTH_NAMES[selectedMonth].slice(0, 3)}
                 </Text>
+                <TouchableOpacity
+                  style={styles.sectionInsightBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={() =>
+                    setInsightTarget({
+                      title: 'Monthly Trend',
+                      message: momInsight,
+                    })
+                  }
+                >
+                  <Ionicons
+                    name="bulb-outline"
+                    size={15}
+                    color={colors.textSecondary}
+                    style={{ opacity: 0.7 }}
+                  />
+                </TouchableOpacity>
               </View>
 
               <View style={styles.trendCompareRow}>
@@ -2091,15 +2390,17 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                       { color: momDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
                     ]}
                   >
-                    ₱{totalExpenseSpent.toLocaleString()}
+                    {trendTotalSpentDisplay}
                   </Text>
                   <Text
                     style={[
                       styles.trendDelta,
                       { color: momDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
                     ]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
                   >
-                    {momDelta >= 0 ? '↑' : '↓'} ₱{Math.abs(momDelta).toLocaleString()} {momDelta >= 0 ? 'more' : 'less'}
+                    {momDelta >= 0 ? '↑' : '↓'} {trendDeltaAmountDisplay} {momDelta >= 0 ? 'more' : 'less'}
                   </Text>
                 </View>
 
@@ -2123,6 +2424,8 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                       styles.trendDelta,
                       { color: txDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
                     ]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
                   >
                     {txDelta >= 0 ? '↑' : '↓'} {Math.abs(txDelta)} {txDelta >= 0 ? 'more' : 'fewer'}
                   </Text>
@@ -2135,7 +2438,26 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                 <View style={styles.sectionHeaderRow}>
                   <View style={styles.sectionDot} />
                   <Text style={styles.sectionLabel}>By Day of Week</Text>
-                  <Text style={styles.sectionMetaText}>Avg spend</Text>
+                  <Text style={styles.sectionMetaText} numberOfLines={1}>
+                    {monthLabel}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.sectionInsightBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() =>
+                      setInsightTarget({
+                        title: 'Weekly Pattern',
+                        message: buildPatternsInsight(dowAvgSpend),
+                      })
+                    }
+                  >
+                    <Ionicons
+                      name="bulb-outline"
+                      size={15}
+                      color={colors.textSecondary}
+                      style={{ opacity: 0.7 }}
+                    />
+                  </TouchableOpacity>
                 </View>
                 <DowPatternChart dowAvg={dowAvgSpend} colors={colors} />
                 {(() => {
@@ -2237,6 +2559,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
           </View>
         )}
       </View>
+      </RAnim.View>
 
       <MonthPickerModal
         visible={monthPickerVisible}
@@ -2250,7 +2573,39 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
         }}
         onClose={() => setMonthPickerVisible(false)}
       />
-    </ScrollView>
+      </ScrollView>
+
+      <Modal
+        visible={!!insightTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInsightTarget(null)}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <TouchableWithoutFeedback onPress={() => setInsightTarget(null)}>
+            <View style={styles.insightBackdrop} />
+          </TouchableWithoutFeedback>
+          <View style={styles.insightSheet}>
+            <View style={styles.insightDragHandle} />
+            <Ionicons
+              name="bulb"
+              size={22}
+              color={colors.primary}
+              style={{ marginBottom: 4 }}
+            />
+            <Text style={styles.insightTitle}>{insightTarget?.title}</Text>
+            <Text style={styles.insightMessage}>{insightTarget?.message}</Text>
+            <TouchableOpacity
+              onPress={() => setInsightTarget(null)}
+              style={styles.insightDismiss}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.insightDismissText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
@@ -2329,11 +2684,12 @@ const createPickerStyles = (colors: any, isDark: boolean) =>
     },
   });
 
-const createStyles = (colors: any, isDark: boolean) =>
+const createStyles = (colors: any, isDark: boolean, topInset: number) =>
   StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: colors.background,
+      paddingTop: Math.max(topInset + 8, 20),
     },
     content: {
       paddingHorizontal: spacing.screenPadding,
@@ -2343,6 +2699,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     screenTitleRow: {
       paddingTop: 8,
       paddingBottom: 12,
+      paddingHorizontal: spacing.screenPadding,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -2374,24 +2731,9 @@ const createStyles = (colors: any, isDark: boolean) =>
       elevation: 8,
       marginBottom: 22,
     },
-    heroBlobOne: {
+    heroBlob: {
       position: 'absolute',
-      width: 160,
-      height: 160,
-      borderRadius: 80,
-      top: -30,
-      right: -20,
-      backgroundColor: colors.primaryTransparent30,
-    },
-    heroBlobTwo: {
-      position: 'absolute',
-      width: 110,
-      height: 110,
-      borderRadius: 55,
-      left: -20,
-      bottom: 44,
-      backgroundColor: colors.primaryTransparent30,
-      opacity: 0.6,
+      borderRadius: 999,
     },
     heroTopRow: {
       flexDirection: 'row',
@@ -2399,10 +2741,12 @@ const createStyles = (colors: any, isDark: boolean) =>
       justifyContent: 'space-between',
       marginBottom: 18,
       zIndex: 2,
+      gap: 8,
     },
     monthNavPill: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       borderRadius: 999,
       paddingVertical: 4,
       paddingHorizontal: 4,
@@ -2410,19 +2754,45 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderWidth: 1,
       borderColor: colors.whiteTransparent18,
       gap: 2,
+      flex: 1,
+      flexShrink: 1,
+      maxWidth: '64%',
+      minWidth: 132,
+      height: 34,
+    },
+    monthNavTextBtn: {
+      flex: 1,
+      minWidth: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 6,
+    },
+    monthNavTextWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: 0,
+      maxWidth: '100%',
+    },
+    monthNavCaret: {
+      marginLeft: 2,
+      marginTop: 1,
     },
     monthArrow: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
       alignItems: 'center',
       justifyContent: 'center',
     },
     monthNavLabel: {
       fontFamily: 'Inter_600SemiBold',
-      fontSize: 13,
+      fontSize: 11,
       color: colors.whiteTransparent80,
-      paddingHorizontal: 6,
+      flexShrink: 1,
+      textAlign: 'center',
+      minWidth: 0,
+      letterSpacing: 0.15,
     },
     heroToggleWrap: {
       flexDirection: 'row',
@@ -2430,18 +2800,20 @@ const createStyles = (colors: any, isDark: boolean) =>
       padding: 3,
       gap: 2,
       backgroundColor: colors.blackTransparent15,
+      flexShrink: 0,
+      height: 34,
     },
     heroToggleBtn: {
       borderRadius: 999,
-      paddingVertical: 6,
-      paddingHorizontal: 12,
+      paddingVertical: 5,
+      paddingHorizontal: 10,
     },
     heroToggleBtnActive: {
       backgroundColor: colors.whiteTransparent18,
     },
     heroToggleText: {
       fontFamily: 'Inter_600SemiBold',
-      fontSize: 12,
+      fontSize: 11,
       color: colors.whiteTransparent55,
     },
     heroToggleTextActive: {
@@ -2451,7 +2823,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 2,
-      marginBottom: 6,
+      marginBottom: 10,
     },
     donutContainer: {
       alignItems: 'center',
@@ -2464,25 +2836,16 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     donutCenterPct: {
       fontFamily: 'DMMono_500Medium',
-      fontSize: 27,
-      letterSpacing: -0.4,
+      fontSize: 30,
+      letterSpacing: -0.6,
       color: colors.white,
     },
     donutCenterSub: {
-      marginTop: 3,
+      marginTop: 4,
       fontFamily: 'Inter_700Bold',
       fontSize: 10,
       textTransform: 'uppercase',
-      letterSpacing: 0.6,
-    },
-    tapHint: {
-      textAlign: 'center',
-      fontFamily: 'Inter_400Regular',
-      fontSize: 11,
-      color: colors.whiteTransparent55,
-      marginTop: 4,
-      marginBottom: 10,
-      zIndex: 2,
+      letterSpacing: 0.8,
     },
     heroMetricsBar: {
       borderRadius: 14,
@@ -2513,9 +2876,9 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     metricVal: {
       fontFamily: 'DMMono_500Medium',
-      fontSize: 15,
+      fontSize: 16,
       color: colors.white,
-      letterSpacing: -0.3,
+      letterSpacing: -0.5,
       textAlign: 'center',
     },
     metricValAccent: {
@@ -2530,8 +2893,8 @@ const createStyles = (colors: any, isDark: boolean) =>
       marginVertical: 10,
     },
     aiAlertStrip: {
-      marginTop: -10,
-      marginBottom: 12,
+      marginTop: -6,
+      marginBottom: 14,
       borderRadius: 16,
       borderWidth: 1,
       borderColor: withAlpha(colors.lavender, 0.35),
@@ -2555,6 +2918,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     aiAlertBody: {
       flex: 1,
+      minWidth: 0,
     },
     aiAlertTitle: {
       fontFamily: 'Inter_700Bold',
@@ -2581,82 +2945,94 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.lavenderDark,
       letterSpacing: 0.2,
     },
-    tabBar: {
+    stickyTabShell: {
+      backgroundColor: colors.background,
+      paddingHorizontal: spacing.screenPadding,
+      paddingBottom: 10,
+      paddingTop: 4,
+      zIndex: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(30,30,46,0.07)',
+    },
+    tabChipRow: {
       flexDirection: 'row',
-      borderRadius: 14,
-      padding: 3,
-      backgroundColor: isDark
-        ? colors.blackTransparent15
-        : 'rgba(30,30,46,0.06)',
-      marginBottom: 12,
+      gap: 8,
     },
-    tabBtn: {
+    tabChip: {
       flex: 1,
-      borderRadius: 11,
-      alignItems: 'center',
+      paddingHorizontal: 8,
+      height: 34,
+      borderRadius: 12,
       justifyContent: 'center',
-      paddingVertical: 8,
-      paddingHorizontal: 4,
+      alignItems: 'center',
+      backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : '#e0dfd7',
     },
-    tabBtnActive: {
-      backgroundColor: isDark ? withAlpha(colors.white, 0.08) : colors.white,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: isDark ? 0 : 0.08,
-      shadowRadius: 3,
-      elevation: isDark ? 0 : 1,
+    tabChipActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
     },
-    tabBtnText: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 12,
+    tabChipText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
       color: colors.textSecondary,
     },
-    tabBtnTextActive: {
-      color: colors.textPrimary,
+    tabChipTextActive: {
+      color: '#FFFFFF',
     },
     belowCard: {
-      marginTop: 6,
+      marginTop: 10,
     },
     tabPanel: {
-      paddingTop: 2,
+      paddingTop: 4,
     },
     sectionHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
       marginBottom: 12,
+      minWidth: 0,
     },
     sectionDot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
+      width: 7,
+      height: 7,
+      borderRadius: 3.5,
       backgroundColor: colors.primary,
     },
     sectionLabel: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 12,
-      color: colors.textSecondary,
-      textTransform: 'uppercase',
-      letterSpacing: 0.8,
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 13,
+      color: colors.textPrimary,
+      letterSpacing: 0.3,
+      flexShrink: 1,
+      minWidth: 0,
     },
     sectionMetaText: {
       marginLeft: 'auto',
       fontFamily: 'Inter_500Medium',
       fontSize: 11,
       color: colors.textSecondary,
+      flexShrink: 1,
+      textAlign: 'right',
+      maxWidth: '46%',
+    },
+    sectionInsightBtn: {
+      marginLeft: 6,
+      opacity: 0.85,
     },
     catGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       justifyContent: 'space-between',
       marginBottom: 20,
-      rowGap: 10,
+      rowGap: 12,
     },
     catTileWrap: {
       width: '48.7%',
     },
     catTile: {
-      borderRadius: 24,
+      borderRadius: 28,
       height: 122,
       padding: 14,
       justifyContent: 'flex-end',
@@ -2664,9 +3040,14 @@ const createStyles = (colors: any, isDark: boolean) =>
       position: 'relative',
       borderWidth: 1,
       borderColor: colors.cardBorderTransparent,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0 : 0.06,
+      shadowRadius: 6,
+      elevation: isDark ? 0 : 2,
     },
     catTileExpense: {
-      borderRadius: 24,
+      borderRadius: 28,
       height: 122,
       paddingHorizontal: 14,
       paddingTop: 50,
@@ -2675,6 +3056,11 @@ const createStyles = (colors: any, isDark: boolean) =>
       position: 'relative',
       borderWidth: 1,
       borderColor: colors.cardBorderTransparent,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0 : 0.06,
+      shadowRadius: 6,
+      elevation: isDark ? 0 : 2,
     },
     catTileFlat: {
       borderRadius: 20,
@@ -2768,13 +3154,13 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     catExpenseName: {
       fontFamily: 'Inter_700Bold',
-      fontSize: 12,
+      fontSize: 13,
       color: colors.textPrimary,
       marginBottom: 1,
     },
     catExpenseAmt: {
       fontFamily: 'DMMono_500Medium',
-      fontSize: 11,
+      fontSize: 12,
       marginBottom: 4,
     },
     catProgressTrack: {
@@ -2801,15 +3187,16 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     catProgressBudgetLabel: {
       fontFamily: 'Inter_500Medium',
-      fontSize: 9,
+      fontSize: 10,
       color: colors.textSecondary,
     },
     emptyText: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 14,
+      fontFamily: 'Inter_500Medium',
+      fontSize: 13,
       color: colors.textSecondary,
       textAlign: 'center',
-      paddingVertical: 20,
+      paddingVertical: 32,
+      opacity: 0.7,
     },
     insightWrap: {
       marginTop: 8,
@@ -2885,12 +3272,60 @@ const createStyles = (colors: any, isDark: boolean) =>
       lineHeight: 18,
       flex: 1,
     },
+    insightBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0,0,0,0.4)',
+    },
+    insightSheet: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: colors.white,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 24,
+      paddingBottom: 40,
+      gap: 6,
+    },
+    insightDragHandle: {
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(30,30,46,0.12)',
+      alignSelf: 'center',
+      marginBottom: 12,
+    },
+    insightTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 16,
+      color: colors.textPrimary,
+    },
+    insightMessage: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.textSecondary,
+      lineHeight: 21,
+    },
+    insightDismiss: {
+      alignSelf: 'flex-end',
+      marginTop: 10,
+      paddingVertical: 9,
+      paddingHorizontal: 18,
+      borderRadius: 10,
+      backgroundColor: colors.primary,
+    },
+    insightDismissText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: '#FFFFFF',
+    },
 
     // ── Quick Stats Row ──
     quickStatsRow: {
       flexDirection: 'row',
       gap: 10,
-      marginBottom: 16,
+      marginBottom: 20,
     },
     quickStatsPill: {
       flex: 1,
@@ -2898,30 +3333,46 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.cardBorderTransparent,
-      paddingVertical: 12,
-      paddingHorizontal: 8,
-      alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 10,
+      alignItems: 'flex-start',
+      minWidth: 0,
+      justifyContent: 'space-between',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0 : 0.07,
+      shadowRadius: 8,
+      elevation: isDark ? 0 : 2,
+    },
+    quickStatsTitle: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      letterSpacing: 0,
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+      width: '100%',
+      lineHeight: 13,
     },
     quickStatsValue: {
       fontFamily: 'DMMono_500Medium',
-      fontSize: 18,
+      fontSize: 17,
       color: colors.textPrimary,
       letterSpacing: -0.3,
+      width: '100%',
+      textAlign: 'left',
+      marginTop: 4,
     },
     quickStatsSub: {
       fontFamily: 'Inter_600SemiBold',
       fontSize: 11,
-      color: colors.expenseRed,
-      marginTop: 1,
-    },
-    quickStatsLabel: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 10,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
       color: colors.textSecondary,
-      marginTop: 4,
-      textAlign: 'center',
+      marginTop: 3,
+      width: '100%',
+      textAlign: 'left',
+      minHeight: 14,
+    },
+    quickStatsSubMuted: {
+      opacity: 0.78,
     },
 
     // ── Chart Card ──
@@ -2931,12 +3382,17 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderWidth: 1,
       borderColor: colors.cardBorderTransparent,
       padding: 16,
-      marginBottom: 16,
+      marginBottom: 20,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0 : 0.07,
+      shadowRadius: 10,
+      elevation: isDark ? 0 : 2,
     },
     peakNote: {
       fontFamily: 'Inter_600SemiBold',
       fontSize: 12,
-      color: '#C06420',
+      color: PEAK_AMBER,
     },
     peakNoteRow: {
       marginTop: 10,
@@ -2956,15 +3412,17 @@ const createStyles = (colors: any, isDark: boolean) =>
       flexShrink: 0,
     },
     chartSubNote: {
-      fontFamily: 'Inter_400Regular',
+      fontFamily: 'Inter_600SemiBold',
       fontSize: 11,
       color: colors.textSecondary,
       marginTop: 8,
+      opacity: 0.8,
     },
     trendCompareRow: {
       flexDirection: 'row',
       gap: 10,
       marginTop: 2,
+      marginBottom: 20,
     },
     trendPill: {
       flex: 1,
@@ -3001,14 +3459,14 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
 
     aiFullCard: {
-      borderRadius: 22,
+      borderRadius: 20,
       borderWidth: 1,
       borderColor: withAlpha(colors.lavender, 0.38),
       backgroundColor: isDark
         ? withAlpha(colors.lavenderDark, 0.18)
         : colors.lavenderLight,
       padding: 16,
-      marginBottom: 16,
+      marginBottom: 20,
     },
     aiFullHeader: {
       flexDirection: 'row',
@@ -3046,9 +3504,9 @@ const createStyles = (colors: any, isDark: boolean) =>
       marginBottom: 10,
     },
     aiFullBulletIcon: {
-      width: 22,
-      height: 22,
-      borderRadius: 7,
+      width: 24,
+      height: 24,
+      borderRadius: 8,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: withAlpha(colors.lavender, 0.26),
@@ -3063,7 +3521,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.textPrimary,
     },
     aiFullCtaRow: {
-      marginTop: 2,
+      marginTop: 8,
       alignItems: 'flex-end',
     },
     aiFullCtaText: {
@@ -3089,6 +3547,11 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderWidth: 1,
       borderColor: colors.cardBorderTransparent,
       padding: 14,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0 : 0.06,
+      shadowRadius: 8,
+      elevation: isDark ? 0 : 2,
     },
     acctLogo: {
       width: 32,
@@ -3115,15 +3578,31 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.textPrimary,
       marginBottom: 4,
     },
+    acctAmtRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      marginTop: 2,
+    },
+    acctAmtLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 8,
+      color: colors.textSecondary,
+      letterSpacing: 0.5,
+      opacity: 0.6,
+      width: 22,
+    },
     acctExpAmt: {
       fontFamily: 'DMMono_500Medium',
       fontSize: 11,
       color: colors.expenseRed,
+      flexShrink: 1,
     },
     acctIncAmt: {
       fontFamily: 'DMMono_500Medium',
       fontSize: 11,
       color: colors.incomeGreen,
+      flexShrink: 1,
     },
     acctNetPill: {
       borderRadius: 6,
@@ -3146,7 +3625,12 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingHorizontal: 16,
       paddingTop: 14,
       paddingBottom: 4,
-      marginBottom: 16,
+      marginBottom: 20,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0 : 0.07,
+      shadowRadius: 10,
+      elevation: isDark ? 0 : 2,
     },
     topTxRow: {
       flexDirection: 'row',
@@ -3157,15 +3641,15 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderBottomColor: colors.cardBorderTransparent,
     },
     topTxDot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
+      width: 5,
+      height: 5,
+      borderRadius: 2.5,
       flexShrink: 0,
     },
     topTxRank: {
-      width: 22,
-      height: 22,
-      borderRadius: 7,
+      width: 26,
+      height: 26,
+      borderRadius: 8,
       backgroundColor: isDark
         ? withAlpha(colors.white, 0.08)
         : 'rgba(30,30,46,0.06)',
@@ -3177,6 +3661,30 @@ const createStyles = (colors: any, isDark: boolean) =>
       fontFamily: 'Inter_800ExtraBold',
       fontSize: 10,
       color: colors.textSecondary,
+    },
+    topTxRankGold: {
+      backgroundColor: isDark ? 'rgba(255,196,0,0.18)' : 'rgba(255,196,0,0.15)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,196,0,0.35)' : 'rgba(255,196,0,0.4)',
+    },
+    topTxRankSilver: {
+      backgroundColor: isDark ? 'rgba(180,180,195,0.18)' : 'rgba(160,160,175,0.13)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(180,180,195,0.35)' : 'rgba(150,150,170,0.35)',
+    },
+    topTxRankBronze: {
+      backgroundColor: isDark ? 'rgba(205,127,50,0.18)' : 'rgba(205,127,50,0.13)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(205,127,50,0.35)' : 'rgba(205,127,50,0.4)',
+    },
+    topTxRankTextGold: {
+      color: isDark ? '#FFD700' : '#B8860B',
+    },
+    topTxRankTextSilver: {
+      color: isDark ? '#C0C0C8' : '#7A7A8C',
+    },
+    topTxRankTextBronze: {
+      color: isDark ? '#CD7F32' : '#A0522D',
     },
     topTxInfo: {
       flex: 1,
@@ -3280,5 +3788,25 @@ const createStyles = (colors: any, isDark: boolean) =>
       gap: 12,
       alignItems: 'flex-start',
       backgroundColor: colors.lavenderLight,
+    },
+    loadingHeroCard: {
+      borderRadius: 28,
+      padding: 20,
+      marginBottom: 16,
+      backgroundColor: isDark ? colors.statsHeroBg1 : '#2a4f3a',
+      overflow: 'hidden',
+    },
+    loadingHeroTopRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 4,
+    },
+    loadingHeroMetrics: {
+      flexDirection: 'row',
+      alignItems: 'stretch',
+      borderRadius: 14,
+      backgroundColor: 'rgba(0,0,0,0.18)',
+      paddingVertical: 12,
     },
   });

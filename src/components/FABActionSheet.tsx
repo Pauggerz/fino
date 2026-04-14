@@ -62,40 +62,21 @@ export default function FABActionSheet() {
   const handleSheetChanges = useCallback(
     (index: number) => {
       if (index === -1) {
-        const action = nextActionRef.current;
-        nextActionRef.current = null;
-
-        if (action) {
-          InteractionManager.runAfterInteractions(() => {
-            requestAnimationFrame(action);
-          });
-        } else {
-          navigation.goBack();
-        }
+        navigation.goBack();
       }
     },
     [navigation]
   );
 
-  const dismiss = useCallback((action?: () => void) => {
-    Keyboard.dismiss();
-    nextActionRef.current = action ?? null;
-    bottomSheetRef.current?.close();
-  }, []);
-
   const handleAction = useCallback(
     (key: (typeof ACTIONS)[number]['key']) => {
       if (key === 'expense' || key === 'income') {
-        dismiss(() => {
-          navigation.replace('AddTransaction', { mode: key });
-        });
+        navigation.replace('AddTransaction', { mode: key });
       } else if (key === 'scan') {
-        dismiss(() => {
-          navigation.replace('ScreenshotScreen');
-        });
+        navigation.replace('ScreenshotScreen');
       }
     },
-    [dismiss, navigation]
+    [navigation]
   );
 
   const renderBackdrop = useCallback(

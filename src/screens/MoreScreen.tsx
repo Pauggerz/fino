@@ -171,6 +171,7 @@ function AddAccountModal({
                 onClose();
               }}
               activeOpacity={0.7}
+              style={{ padding: 11 }}
             >
               <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -259,7 +260,7 @@ function AddAccountModal({
             </View>
 
             <TouchableOpacity
-              style={[modalStyles.primaryBtn, saving && { opacity: 0.6 }]}
+              style={[modalStyles.primaryBtn, { marginTop: 24 }, saving && { opacity: 0.6 }]}
               onPress={handleSave}
               disabled={saving}
               activeOpacity={0.8}
@@ -342,7 +343,10 @@ function BillQuickViewModal({
               color={colors.statWarnBar}
             />
           </View>
-          <Text style={quickStyles.tagText}>⏰ BILL REMINDER</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="time-outline" size={11} color={colors.statWarnBar} />
+            <Text style={quickStyles.tagText}>BILL REMINDER</Text>
+          </View>
           <Text style={quickStyles.title}>{bill.title}</Text>
           {bill.amount != null && (
             <Text style={quickStyles.amount}>
@@ -368,7 +372,10 @@ function BillQuickViewModal({
             </Text>
           </View>
           {bill.is_recurring && (
-            <Text style={quickStyles.recurringNote}>↻ Recurring monthly</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons name="repeat" size={12} color={colors.textSecondary} />
+              <Text style={quickStyles.recurringNote}>Recurring monthly</Text>
+            </View>
           )}
 
           <View style={quickStyles.actions}>
@@ -467,7 +474,7 @@ function BudgetSettingsModal({
         <View style={modalStyles.handle} />
         <View style={modalStyles.sheetHeader}>
           <Text style={modalStyles.sheetTitle}>Budget Settings</Text>
-          <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+          <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={{ padding: 11 }}>
             <Ionicons name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
@@ -479,10 +486,12 @@ function BudgetSettingsModal({
             contentContainerStyle={{ paddingBottom: 40 }}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={budgetStyles.hint}>
-              Set monthly spending limits for each category. Leave blank for no
-              limit.
-            </Text>
+            <View style={{ backgroundColor: colors.catTileEmptyBg, borderRadius: 12, padding: 12, marginBottom: 20 }}>
+              <Text style={budgetStyles.hint}>
+                Set monthly spending limits for each category. Leave blank for no
+                limit.
+              </Text>
+            </View>
             {categories.map((cat) => {
               const color = cat.text_colour ?? colors.textSecondary;
               const bg = cat.tile_bg_colour ?? colors.catTileEmptyBg;
@@ -524,7 +533,7 @@ function BudgetSettingsModal({
               );
             })}
             <TouchableOpacity
-              style={[modalStyles.primaryBtn, saving && { opacity: 0.6 }]}
+              style={[modalStyles.primaryBtn, { marginTop: 24 }, saving && { opacity: 0.6 }]}
               onPress={handleSave}
               disabled={saving}
               activeOpacity={0.8}
@@ -572,11 +581,10 @@ function Stepper({
       </Text>
       <TouchableOpacity
         onPress={onIncrement}
-        style={{ paddingVertical: 6, paddingHorizontal: 12 }}
+        style={{ paddingVertical: 10, paddingHorizontal: 12 }}
+        accessibilityLabel={`Increase ${label}`}
       >
-        <Text style={{ fontSize: 16, color: colors.primary, lineHeight: 18 }}>
-          ▲
-        </Text>
+        <Ionicons name="chevron-up" size={18} color={colors.primary} />
       </TouchableOpacity>
       <Text
         style={{
@@ -592,11 +600,10 @@ function Stepper({
       </Text>
       <TouchableOpacity
         onPress={onDecrement}
-        style={{ paddingVertical: 6, paddingHorizontal: 12 }}
+        style={{ paddingVertical: 10, paddingHorizontal: 12 }}
+        accessibilityLabel={`Decrease ${label}`}
       >
-        <Text style={{ fontSize: 16, color: colors.primary, lineHeight: 18 }}>
-          ▼
-        </Text>
+        <Ionicons name="chevron-down" size={18} color={colors.primary} />
       </TouchableOpacity>
     </View>
   );
@@ -724,7 +731,7 @@ function BillRemindersModal({
         <View style={modalStyles.handle} />
         <View style={modalStyles.sheetHeader}>
           <Text style={modalStyles.sheetTitle}>Bill Reminders</Text>
-          <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+          <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={{ padding: 11 }}>
             <Ionicons name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
@@ -850,7 +857,9 @@ function BillRemindersModal({
           )}
           {!loading && bills.length === 0 && !showAdd && (
             <View style={billStyles.emptyState}>
-              <Text style={billStyles.emptyIcon}>🔔</Text>
+              <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.catTileEmptyBg, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="notifications-outline" size={30} color={colors.textSecondary} />
+              </View>
               <Text style={billStyles.emptyTitle}>No upcoming bills</Text>
               <Text style={billStyles.emptySubtitle}>
                 Add a reminder so you never miss a payment.
@@ -921,6 +930,7 @@ function BillRemindersModal({
                     <TouchableOpacity
                       onPress={() => handleDelete(bill.id)}
                       activeOpacity={0.7}
+                      style={{ padding: 8 }}
                     >
                       <Ionicons
                         name="trash-outline"
@@ -1026,27 +1036,31 @@ export default function MoreScreen() {
     {
       id: 'fino',
       label: 'Ask Fino',
+      desc: 'Chat with your AI money coach',
       icon: 'sparkles',
       color: colors.insightPurple,
       bg: colors.lavenderLight,
     },
     {
       id: 'budget',
-      label: 'Budget settings',
+      label: 'Budget',
+      desc: 'Set monthly spending limits',
       icon: 'pie-chart',
       color: colors.primary,
       bg: colors.primaryLight,
     },
     {
       id: 'bills',
-      label: 'Bill reminders',
+      label: 'Bills',
+      desc: 'Manage upcoming reminders',
       icon: 'receipt',
       color: colors.statWarnBar,
       bg: isDark ? '#3A2E1D' : '#FFF8F0',
     },
     {
       id: 'settings',
-      label: 'App settings',
+      label: 'Settings',
+      desc: 'Theme and app preferences',
       icon: 'settings-sharp',
       color: colors.textSecondary,
       bg: colors.catTileEmptyBg,
@@ -1054,27 +1068,24 @@ export default function MoreScreen() {
   ];
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 16) }]}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top + 8, 20) }]}>
       <View style={styles.header}>
-        <View style={styles.headerTopRow}>
-          <Text style={styles.headerTitle}>More</Text>
-          {authEmail ? (
-            <View style={styles.loggedInPill}>
-              <Text style={styles.loggedInPillText}>Logged in</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.loginBtn}
-              activeOpacity={0.8}
-              onPress={() => setShowLoginModal(true)}
-            >
-              <Text style={styles.loginBtnText}>Log in</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        <Text style={styles.headerSubtitle}>
-          {authEmail ?? 'Manage your money'}
-        </Text>
+        <Text style={styles.headerTitle}>More</Text>
+        {authEmail ? (
+          <View style={styles.loggedInPill}>
+            <Text style={styles.loggedInPillText} numberOfLines={1} ellipsizeMode="tail">
+              {authEmail}
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.loginBtn}
+            activeOpacity={0.8}
+            onPress={() => setShowLoginModal(true)}
+          >
+            <Text style={styles.loginBtnText}>Log in</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView
@@ -1171,18 +1182,24 @@ export default function MoreScreen() {
                     <Text style={styles.acctName}>{acct.name}</Text>
                   </View>
                   <View style={styles.acctRowRight}>
-                    <Text style={styles.acctBalance}>
-                      ₱
-                      {acct.balance.toLocaleString('en-PH', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
+                    <View style={[
+                      styles.balanceDot,
+                      { backgroundColor: acct.balance >= 0 ? colors.primary : colors.expenseRed },
+                    ]} />
+                    <Text style={[
+                      styles.acctBalance,
+                      acct.balance < 0 && { color: colors.expenseRed },
+                    ]}>
+                      {acct.balance < 0 ? '-' : ''}₱{Math.abs(acct.balance).toLocaleString('en-PH', {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
                       })}
                     </Text>
                     <Ionicons
                       name="chevron-forward"
                       size={16}
                       color={colors.textSecondary}
-                      style={{ marginLeft: 8 }}
+                      style={{ marginLeft: 6 }}
                     />
                   </View>
                 </TouchableOpacity>
@@ -1215,7 +1232,10 @@ export default function MoreScreen() {
               />
             </View>
             <View style={styles.billContent}>
-              <Text style={styles.billTag}>⏰ BILL REMINDER</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                <Ionicons name="time-outline" size={11} color={colors.statWarnBar} />
+                <Text style={[styles.billTag, { marginBottom: 0 }]}>BILL REMINDER</Text>
+              </View>
               <Text style={styles.billTitle}>{nextBill.title}</Text>
               <Text style={styles.billMeta}>
                 {(() => {
@@ -1240,34 +1260,21 @@ export default function MoreScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>TOOLS</Text>
-          <View style={styles.toolsCard}>
-            {TOOLS.map((tool, index) => (
+          <View style={styles.toolsGrid}>
+            {TOOLS.map((tool) => (
               <TouchableOpacity
                 key={tool.id}
-                style={[
-                  styles.toolRow,
-                  index === TOOLS.length - 1 && { borderBottomWidth: 0 },
-                ]}
+                style={styles.toolTile}
                 onPress={() => handleToolPress(tool.id)}
-                activeOpacity={0.7}
+                activeOpacity={0.75}
               >
-                <View style={styles.toolRowLeft}>
-                  <View
-                    style={[styles.toolIconBox, { backgroundColor: tool.bg }]}
-                  >
-                    <Ionicons
-                      name={tool.icon as any}
-                      size={18}
-                      color={tool.color}
-                    />
-                  </View>
-                  <Text style={styles.toolName}>{tool.label}</Text>
+                <View style={[styles.toolIconBox, { backgroundColor: tool.bg }]}>
+                  <Ionicons name={tool.icon as any} size={20} color={tool.color} />
                 </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={16}
-                  color={colors.textSecondary}
-                />
+                <View>
+                  <Text style={styles.toolName}>{tool.label}</Text>
+                  <Text style={styles.toolDesc}>{tool.desc}</Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -1285,7 +1292,7 @@ export default function MoreScreen() {
           <View style={modalStyles.handle} />
           <View style={modalStyles.sheetHeader}>
             <Text style={modalStyles.sheetTitle}>App Settings</Text>
-            <TouchableOpacity onPress={() => setShowAppSettings(false)}>
+            <TouchableOpacity onPress={() => setShowAppSettings(false)} style={{ padding: 11 }}>
               <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -1332,6 +1339,7 @@ export default function MoreScreen() {
               <TouchableOpacity
                 onPress={() => setShowLoginModal(false)}
                 activeOpacity={0.7}
+                style={{ padding: 11 }}
               >
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -1360,7 +1368,7 @@ export default function MoreScreen() {
               />
             </View>
             <TouchableOpacity
-              style={[modalStyles.primaryBtn, isLoggingIn && { opacity: 0.6 }]}
+              style={[modalStyles.primaryBtn, { marginTop: 24 }, isLoggingIn && { opacity: 0.6 }]}
               onPress={handleLogin}
               activeOpacity={0.8}
               disabled={isLoggingIn}
@@ -1411,24 +1419,17 @@ const createMainStyles = (colors: any, isDark: boolean) =>
     container: { flex: 1, backgroundColor: colors.background },
     header: {
       paddingHorizontal: spacing.screenPadding,
-      marginBottom: 24,
-      paddingTop: 12,
-    },
-    headerTopRow: {
+      paddingTop: 8,
+      paddingBottom: 12,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
     },
     headerTitle: {
-      fontFamily: 'Nunito_700Bold',
-      fontSize: 22,
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 27,
       color: colors.textPrimary,
-    },
-    headerSubtitle: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 12,
-      color: colors.textSecondary,
-      marginTop: 4,
+      letterSpacing: -0.4,
     },
     loginBtn: {
       paddingHorizontal: 12,
@@ -1442,16 +1443,17 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       color: '#FFFFFF',
     },
     loggedInPill: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
       borderRadius: 999,
       backgroundColor: colors.primaryLight,
       borderWidth: 1,
       borderColor: colors.primaryTransparent30,
+      maxWidth: 160,
     },
     loggedInPillText: {
       fontFamily: 'Inter_700Bold',
-      fontSize: 11,
+      fontSize: 12,
       color: colors.primary,
     },
     scrollContent: {
@@ -1461,11 +1463,11 @@ const createMainStyles = (colors: any, isDark: boolean) =>
     section: { marginBottom: 28 },
     sectionLabel: {
       fontFamily: 'Inter_700Bold',
-      fontSize: 12,
+      fontSize: 11,
       color: colors.textSecondary,
-      letterSpacing: 0.5,
+      letterSpacing: 0.8,
       marginBottom: 12,
-      marginLeft: 4,
+      marginLeft: 2,
     },
     acctCard: {
       backgroundColor: colors.white,
@@ -1486,7 +1488,7 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       paddingVertical: 13,
       paddingHorizontal: 14,
       borderBottomWidth: 1,
-      borderBottomColor: isDark ? '#333333' : '#e0dfd7',
+      borderBottomColor: colors.border,
     },
     acctRowLeft: { flexDirection: 'row', alignItems: 'center' },
     avatar: {
@@ -1504,7 +1506,13 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       fontSize: 15,
       color: colors.textPrimary,
     },
-    acctRowRight: { flexDirection: 'row', alignItems: 'center' },
+    acctRowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    balanceDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      flexShrink: 0,
+    },
     acctBalance: {
       fontFamily: 'DMMono_500Medium',
       fontSize: 14,
@@ -1542,18 +1550,18 @@ const createMainStyles = (colors: any, isDark: boolean) =>
     billCard: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: colors.white,
+      backgroundColor: colors.billCardBg,
       borderRadius: 16,
       padding: 16,
       borderWidth: 1,
-      borderColor: colors.statWarnBar,
+      borderColor: colors.billCardBorder,
       marginBottom: 32,
     },
     billIconBox: {
       width: 44,
       height: 44,
       borderRadius: 22,
-      backgroundColor: colors.catTileEmptyBg,
+      backgroundColor: isDark ? '#3A2E1D' : '#FAEEDA',
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 14,
@@ -1577,35 +1585,44 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       fontSize: 13,
       color: colors.textSecondary,
     },
-    toolsCard: {
+    toolsGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+    },
+    toolTile: {
+      flex: 1,
+      flexBasis: '47%',
       backgroundColor: colors.white,
       borderRadius: 16,
-      overflow: 'hidden',
       borderWidth: 1,
       borderColor: colors.cardBorderTransparent,
+      padding: 16,
+      gap: 10,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0 : 0.05,
+      shadowRadius: 8,
+      elevation: isDark ? 0 : 1,
     },
-    toolRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: 14,
-      paddingHorizontal: 14,
-      borderBottomWidth: 1,
-      borderBottomColor: isDark ? '#333333' : '#e0dfd7',
-    },
-    toolRowLeft: { flexDirection: 'row', alignItems: 'center' },
     toolIconBox: {
-      width: 36,
-      height: 36,
-      borderRadius: 10,
+      width: 40,
+      height: 40,
+      borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: 14,
     },
     toolName: {
       fontFamily: 'Inter_600SemiBold',
-      fontSize: 15,
+      fontSize: 14,
       color: colors.textPrimary,
+    },
+    toolDesc: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11,
+      color: colors.textSecondary,
+      lineHeight: 15,
+      marginTop: 1,
     },
 
     // App Settings Segments
@@ -1654,11 +1671,12 @@ const createModalStyles = (colors: any, isDark: boolean) =>
       paddingTop: 12,
     },
     handle: {
-      width: 40,
+      width: 36,
       height: 4,
-      backgroundColor: isDark ? '#333333' : '#e0dfd7',
+      backgroundColor: colors.border,
       borderRadius: 2,
       alignSelf: 'center',
+      marginTop: 8,
       marginBottom: 16,
     },
     sheetHeader: {
@@ -1682,7 +1700,7 @@ const createModalStyles = (colors: any, isDark: boolean) =>
     },
     input: {
       borderWidth: 1,
-      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderColor: colors.border,
       borderRadius: 12,
       paddingHorizontal: 14,
       paddingVertical: 12,
@@ -1695,7 +1713,7 @@ const createModalStyles = (colors: any, isDark: boolean) =>
       flexDirection: 'row',
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderColor: colors.border,
       borderRadius: 12,
       overflow: 'hidden',
     },
@@ -1712,7 +1730,6 @@ const createModalStyles = (colors: any, isDark: boolean) =>
       borderRadius: 14,
       paddingVertical: 15,
       alignItems: 'center',
-      marginTop: 24,
     },
     primaryBtnText: {
       fontFamily: 'Inter_700Bold',
@@ -1770,7 +1787,8 @@ const createQuickStyles = (colors: any, isDark: boolean) =>
       backgroundColor: colors.white,
       borderRadius: 24,
       padding: 24,
-      width: 320,
+      width: '88%',
+      maxWidth: 360,
       alignItems: 'center',
       gap: 8,
     },
@@ -1846,7 +1864,6 @@ const createBudgetStyles = (colors: any, isDark: boolean) =>
       fontFamily: 'Inter_400Regular',
       fontSize: 13,
       color: colors.textSecondary,
-      marginBottom: 20,
       lineHeight: 19,
     },
     catRow: {
@@ -1867,7 +1884,7 @@ const createBudgetStyles = (colors: any, isDark: boolean) =>
       flexDirection: 'row',
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderColor: colors.border,
       borderRadius: 10,
       overflow: 'hidden',
       minWidth: 110,
@@ -1876,9 +1893,9 @@ const createBudgetStyles = (colors: any, isDark: boolean) =>
       fontFamily: 'DMMono_500Medium',
       fontSize: 14,
       color: colors.textSecondary,
-      paddingHorizontal: 8,
+      paddingHorizontal: 12,
       backgroundColor: colors.background,
-      paddingVertical: 10,
+      paddingVertical: 12,
     },
     budgetInput: {
       fontFamily: 'DMMono_500Medium',
@@ -1899,7 +1916,7 @@ const createStepperStyles = (colors: any, isDark: boolean) =>
       paddingVertical: 8,
       paddingHorizontal: 4,
       borderWidth: 1,
-      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderColor: colors.border,
     },
   });
 
@@ -1951,7 +1968,7 @@ const createBillStyles = (colors: any, isDark: boolean) =>
       paddingHorizontal: 20,
       borderRadius: 12,
       borderWidth: 1,
-      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderColor: colors.border,
     },
     cancelText: {
       fontFamily: 'Inter_600SemiBold',
@@ -1959,7 +1976,6 @@ const createBillStyles = (colors: any, isDark: boolean) =>
       color: colors.textSecondary,
     },
     emptyState: { alignItems: 'center', paddingVertical: 40, gap: 8 },
-    emptyIcon: { fontSize: 40 },
     emptyTitle: {
       fontFamily: 'Nunito_700Bold',
       fontSize: 17,
@@ -1980,7 +1996,7 @@ const createBillStyles = (colors: any, isDark: boolean) =>
       marginBottom: 10,
       gap: 12,
       borderWidth: 1,
-      borderColor: isDark ? '#333333' : '#e0dfd7',
+      borderColor: colors.border,
     },
     billRowOverdue: { borderColor: colors.expenseRed },
     billIconBox: {
@@ -2017,7 +2033,7 @@ const createBillStyles = (colors: any, isDark: boolean) =>
       backgroundColor: colors.primaryLight,
       borderRadius: 20,
       paddingHorizontal: 8,
-      paddingVertical: 4,
+      paddingVertical: 7,
     },
     paidPillText: {
       fontFamily: 'Inter_700Bold',

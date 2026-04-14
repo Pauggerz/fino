@@ -16,12 +16,12 @@ import {
   Keyboard,
   Vibration,
   useWindowDimensions,
-  Platform,
 } from 'react-native';
-import { TouchableOpacity, ScrollView } from 'react-native-gesture-handler';
+import { TouchableOpacity, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { Calendar } from 'react-native-calendars'; // Fixed missing import
+import { Ionicons } from '@expo/vector-icons';
+import { Calendar } from 'react-native-calendars';
 import { useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -34,10 +34,7 @@ import BottomSheet, {
 import { useTheme } from '../contexts/ThemeContext';
 import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
-import {
-  ACCOUNT_LOGOS,
-  ACCOUNT_AVATAR_OVERRIDE,
-} from '@/constants/accountLogos';
+import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
 import {
   createDebouncedAnalyzer,
   type AIAnalysisResult,
@@ -48,48 +45,84 @@ import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { setLastSaved } from '@/services/lastSavedStore';
 import { useSync } from '@/contexts/SyncContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type TxType = 'exp' | 'inc';
 type Props = { route: RouteProp<RootStackParamList, 'AddTransaction'> };
 
+// ─── Calculator helper ──────────────────────────────────────────────────────
+function evaluateExpr(a: string, op: string, b: string): string {
+  const A = parseFloat(a) || 0;
+  const B = parseFloat(b) || 0;
+  let result: number;
+  switch (op) {
+    case '+': result = A + B; break;
+    case '-': result = A - B; break;
+    case '×': result = A * B; break;
+    case '÷': result = B !== 0 ? A / B : A; break;
+    default: result = A;
+  }
+  const rounded = Math.round(result * 100) / 100;
+  return String(rounded);
+}
+
 export default function AddTransactionSheet({ route }: Props) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { colors, isDark } = useTheme();
 
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
-  const numpadKeyWidth = Math.floor((windowWidth - 56) / 3);
-  const typeToggleBtnWidth = Math.floor((windowWidth - 48) / 2);
+
+  // Numpad key width calculation
+  // paddingHorizontal:20 × 2 = 40, opCol=54, gap=8, inner numGrid gaps=7×2=14
+  // paddingHorizontal:20×2=40, opCol=54, gap=8, numGrid inner gaps=7×2=14
+  const numGridWidth = windowWidth - 40 - 54 - 8;
+  const numKeyWidth = Math.floor((numGridWidth - 14) / 3) - 1; // -1 safety margin
 
   // Refs
   const bottomSheetRef = useRef<BottomSheet>(null);
   const allowCloseRef = useRef(false);
-  const amountLimitToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
+  const hasOpenedRef = useRef(false);
+  const amountLimitToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const discardShakeX = useRef(new Animated.Value(0)).current;
   const analyzer = useRef(createDebouncedAnalyzer()).current;
 
   // Data Hooks
   const { addOfflineTransaction } = useSync();
-  const { accounts } = useAccounts();
-  const { categories } = useCategories();
+  const { accounts, loading: accountsLoading } = useAccounts();
+  const { categories, loading: categoriesLoading } = useCategories();
 
-  // State
+  // Skeleton pulse animation
+  const skeletonOpacity = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(skeletonOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(skeletonOpacity, { toValue: 0.4, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [skeletonOpacity]);
+
+  // ─── State ────────────────────────────────────────────────────────────────
   const initialMode = route.params?.mode ?? 'expense';
-  const [type, setType] = useState<TxType>(
-    initialMode === 'income' ? 'inc' : 'exp'
-  );
-  const [amount, setAmount] = useState<string>('');
+  const [type, setType] = useState<TxType>(initialMode === 'income' ? 'inc' : 'exp');
+
+  // Amount / calculator state
+  const [amount, setAmount] = useState<string>('');        // active input (2nd operand or result)
+  const [firstOperand, setFirstOperand] = useState<string>(''); // saved 1st operand
+  const [operator, setOperator] = useState<string | null>(null);
+  const [justEvaled, setJustEvaled] = useState(false);
+
+  // Other state
   const [accountId, setAccountId] = useState<string>('');
   const [category, setCategory] = useState<string>('');
   const [aiText, setAiText] = useState<string>('');
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
   const [aiInputFocused, setAiInputFocused] = useState(false);
-  const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>(
-    'manual'
-  );
+  const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>('manual');
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardPrompt, setShowDiscardPrompt] = useState(false);
   const [showAmountLimitToast, setShowAmountLimitToast] = useState(false);
@@ -98,19 +131,83 @@ export default function AddTransactionSheet({ route }: Props) {
     new Date().toISOString().split('T')[0]
   );
   const [showDatePickerModal, setShowDatePickerModal] = useState(false);
+  const [recentAccountIds, setRecentAccountIds] = useState<string[]>([]);
+  const [recentCategoryNames, setRecentCategoryNames] = useState<string[]>([]);
 
-  const hasUnsavedInput = amount.trim().length > 0 || aiText.trim().length > 0;
+  const hasUnsavedInput = amount.trim().length > 0 || firstOperand.trim().length > 0 || aiText.trim().length > 0;
 
-  // Cleanup
+  // ─── Derived ──────────────────────────────────────────────────────────────
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.id === accountId),
+    [accounts, accountId]
+  );
+
+  const allCategories = useMemo(
+    () => (type === 'inc' ? INCOME_CATEGORIES : categories),
+    [type, categories]
+  );
+
+  const sortedAccounts = useMemo(() => {
+    if (!recentAccountIds.length) return accounts;
+    return [...accounts].sort((a, b) => {
+      const ai = recentAccountIds.indexOf(a.id);
+      const bi = recentAccountIds.indexOf(b.id);
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }, [accounts, recentAccountIds]);
+
+  const sortedCategories = useMemo(() => {
+    if (!recentCategoryNames.length) return allCategories;
+    return [...allCategories].sort((a: any, b: any) => {
+      const ai = recentCategoryNames.indexOf(a.name);
+      const bi = recentCategoryNames.indexOf(b.name);
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  }, [allCategories, recentCategoryNames]);
+
+  const resolveCategoryStyle = useCallback(
+    (key: string) => {
+      const map: Record<string, { bg: string; text: string }> = {
+        food: { bg: colors.catFoodBg, text: colors.catFoodText },
+        business: { bg: colors.catFoodBg, text: colors.catFoodText },
+        transport: { bg: colors.catTransportBg, text: colors.catTransportText },
+        allowance: { bg: colors.catTransportBg, text: colors.catTransportText },
+        shopping: { bg: colors.catShoppingBg, text: colors.catShoppingText },
+        gifts: { bg: colors.catShoppingBg, text: colors.catShoppingText },
+        bills: { bg: colors.catBillsBg, text: colors.catBillsText },
+        freelance: { bg: colors.catBillsBg, text: colors.catBillsText },
+        health: { bg: colors.catHealthBg, text: colors.catHealthText },
+        salary: { bg: colors.catHealthBg, text: colors.catHealthText },
+        investment: { bg: colors.tagCashBg, text: colors.tagCashText },
+      };
+      return map[key.toLowerCase()] || { bg: colors.catTileEmptyBg, text: colors.textSecondary };
+    },
+    [colors]
+  );
+
+  // ─── Effects ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    AsyncStorage.getItem('@fino/recent_accounts').then((v) => {
+      if (v) setRecentAccountIds(JSON.parse(v));
+    });
+    AsyncStorage.getItem('@fino/recent_categories').then((v) => {
+      if (v) setRecentCategoryNames(JSON.parse(v));
+    });
+  }, []);
+
   useEffect(() => {
     return () => {
       analyzer.cancel();
-      if (amountLimitToastTimerRef.current)
-        clearTimeout(amountLimitToastTimerRef.current);
+      if (amountLimitToastTimerRef.current) clearTimeout(amountLimitToastTimerRef.current);
     };
   }, [analyzer]);
 
-  // Defaults — respect prefill account if provided
   useEffect(() => {
     if (accounts.length > 0 && !accountId) {
       const prefillId = route.params?.prefill?.account;
@@ -130,29 +227,15 @@ export default function AddTransactionSheet({ route }: Props) {
     }
   }, [type, categories]);
 
-  // Logic Handlers
+  // ─── Handlers ─────────────────────────────────────────────────────────────
   const triggerBlockedFeedback = useCallback(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(
-      () => {}
-    );
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     Vibration.vibrate([0, 24, 36, 28]);
     discardShakeX.setValue(0);
     Animated.sequence([
-      Animated.timing(discardShakeX, {
-        toValue: -8,
-        duration: 32,
-        useNativeDriver: true,
-      }),
-      Animated.timing(discardShakeX, {
-        toValue: 8,
-        duration: 42,
-        useNativeDriver: true,
-      }),
-      Animated.timing(discardShakeX, {
-        toValue: 0,
-        duration: 28,
-        useNativeDriver: true,
-      }),
+      Animated.timing(discardShakeX, { toValue: -8, duration: 32, useNativeDriver: true }),
+      Animated.timing(discardShakeX, { toValue: 8, duration: 42, useNativeDriver: true }),
+      Animated.timing(discardShakeX, { toValue: 0, duration: 28, useNativeDriver: true }),
     ]).start();
   }, [discardShakeX]);
 
@@ -170,7 +253,12 @@ export default function AddTransactionSheet({ route }: Props) {
 
   const handleSheetChanges = useCallback(
     (index: number) => {
+      if (index >= 0) {
+        hasOpenedRef.current = true;
+        return;
+      }
       if (index === -1) {
+        if (!hasOpenedRef.current) return; // initial mount animation — not yet visible
         if (allowCloseRef.current || !hasUnsavedInput) {
           navigation.goBack();
         } else {
@@ -183,26 +271,87 @@ export default function AddTransactionSheet({ route }: Props) {
     [hasUnsavedInput, navigation, triggerBlockedFeedback]
   );
 
-  const handleNumTap = (key: string) => {
+  const showLimitToast = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setShowAmountLimitToast(true);
+    if (amountLimitToastTimerRef.current) clearTimeout(amountLimitToastTimerRef.current);
+    amountLimitToastTimerRef.current = setTimeout(() => setShowAmountLimitToast(false), 1100);
+  }, []);
+
+  const handleNumTap = useCallback((key: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+
+    // ── Clear ──
+    if (key === 'C') {
+      setAmount('');
+      setFirstOperand('');
+      setOperator(null);
+      setJustEvaled(false);
+      return;
+    }
+
+    // ── Backspace ──
     if (key === 'back') {
       setAmount((prev) => prev.slice(0, -1));
-    } else if (key === '.' && !amount.includes('.')) {
-      setAmount((prev) => prev + key);
-    } else if (key !== '.') {
-      if (amount.replace('.', '').length >= 7) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-        setShowAmountLimitToast(true);
-        if (amountLimitToastTimerRef.current)
-          clearTimeout(amountLimitToastTimerRef.current);
-        amountLimitToastTimerRef.current = setTimeout(
-          () => setShowAmountLimitToast(false),
-          1100
-        );
-        return;
-      }
-      setAmount((prev) => prev + key);
+      return;
     }
-  };
+
+    // ── Operators ──
+    if (['+', '-', '×', '÷'].includes(key)) {
+      const current = amount || firstOperand;
+      if (!current) return;
+      if (operator !== null && amount) {
+        // Chain: evaluate pending, then set new operator
+        const res = evaluateExpr(firstOperand, operator, amount);
+        setFirstOperand(res);
+        setAmount('');
+      } else if (amount) {
+        setFirstOperand(amount);
+        setAmount('');
+      }
+      // else just replace the operator (nothing changes except operator key)
+      setOperator(key);
+      setJustEvaled(false);
+      return;
+    }
+
+    // ── Equals ──
+    if (key === '=') {
+      if (!operator || !firstOperand || !amount) return;
+      const res = evaluateExpr(firstOperand, operator, amount);
+      setAmount(res);
+      setFirstOperand('');
+      setOperator(null);
+      setJustEvaled(true);
+      return;
+    }
+
+    // ── Digits & dot ──
+    if (justEvaled && operator === null) {
+      // Start fresh after =
+      if (key === '.') {
+        setAmount('0.');
+      } else {
+        setAmount(key);
+      }
+      setJustEvaled(false);
+      return;
+    }
+
+    if (key === '.') {
+      if (amount.includes('.')) return;
+      setAmount((prev) => (prev || '0') + '.');
+      return;
+    }
+
+    // 7-digit limit
+    if (amount.replace('.', '').length >= 10) {
+      showLimitToast();
+      return;
+    }
+
+    setAmount((prev) => prev + key);
+  }, [amount, firstOperand, operator, justEvaled, showLimitToast]);
 
   const handleAiTextChange = (text: string) => {
     setAiText(text);
@@ -227,8 +376,8 @@ export default function AddTransactionSheet({ route }: Props) {
   };
 
   const handleSave = async () => {
-    const selectedAccount = accounts.find((a) => a.id === accountId);
-    if (!selectedAccount || !amount || isSaving) return;
+    const acc = accounts.find((a) => a.id === accountId);
+    if (!acc || !amount || isSaving) return;
 
     setIsSaving(true);
     const parsedAmount = parseFloat(amount);
@@ -236,15 +385,14 @@ export default function AddTransactionSheet({ route }: Props) {
 
     try {
       const txPayload = {
-        user_id: selectedAccount.user_id,
+        user_id: acc.user_id,
         account_id: accountId,
         amount: parsedAmount,
         type: txType,
         category: category || null,
         display_name: aiText || category || 'Other',
         transaction_note: aiText || null,
-        signal_source:
-          signalSource === 'ai_description' ? 'description' : 'manual',
+        signal_source: signalSource === 'ai_description' ? 'description' : 'manual',
         date: selectedDate.toISOString(),
         account_deleted: false,
       };
@@ -254,19 +402,27 @@ export default function AddTransactionSheet({ route }: Props) {
       const delta = txType === 'expense' ? -parsedAmount : parsedAmount;
       supabase
         .from('accounts')
-        .update({ balance: selectedAccount.balance + delta })
+        .update({ balance: acc.balance + delta })
         .eq('id', accountId)
         .then();
 
       setLastSaved({
         id: `temp_${Date.now()}`,
         accountId,
-        previousBalance: selectedAccount.balance,
+        previousBalance: acc.balance,
         amount: parsedAmount,
         type: txType,
-        accountName: selectedAccount.name,
+        accountName: acc.name,
         categoryName: category || 'Other',
       });
+
+      const newRecentAccounts = [accountId, ...recentAccountIds.filter((id) => id !== accountId)].slice(0, 10);
+      setRecentAccountIds(newRecentAccounts);
+      AsyncStorage.setItem('@fino/recent_accounts', JSON.stringify(newRecentAccounts));
+
+      const newRecentCategories = [category, ...recentCategoryNames.filter((n) => n !== category)].slice(0, 20);
+      setRecentCategoryNames(newRecentCategories);
+      AsyncStorage.setItem('@fino/recent_categories', JSON.stringify(newRecentCategories));
 
       allowCloseRef.current = true;
       bottomSheetRef.current?.close();
@@ -277,37 +433,18 @@ export default function AddTransactionSheet({ route }: Props) {
     }
   };
 
-  const resolveCategoryStyle = useCallback(
-    (key: string) => {
-      const map: Record<string, { bg: string; text: string }> = {
-        food: { bg: colors.catFoodBg, text: colors.catFoodText },
-        business: { bg: colors.catFoodBg, text: colors.catFoodText },
-        transport: { bg: colors.catTransportBg, text: colors.catTransportText },
-        allowance: { bg: colors.catTransportBg, text: colors.catTransportText },
-        shopping: { bg: colors.catShoppingBg, text: colors.catShoppingText },
-        gifts: { bg: colors.catShoppingBg, text: colors.catShoppingText },
-        bills: { bg: colors.catBillsBg, text: colors.catBillsText },
-        freelance: { bg: colors.catBillsBg, text: colors.catBillsText },
-        health: { bg: colors.catHealthBg, text: colors.catHealthText },
-        salary: { bg: colors.catHealthBg, text: colors.catHealthText },
-        investment: { bg: colors.tagCashBg, text: colors.tagCashText },
-      };
-      return (
-        map[key.toLowerCase()] || {
-          bg: colors.catTileEmptyBg,
-          text: colors.textSecondary,
-        }
-      );
-    },
-    [colors]
-  );
+  // ─── Render ───────────────────────────────────────────────────────────────
+  const displayValue = amount || (firstOperand && !operator ? firstOperand : '') || '0';
+  const amountColor = type === 'exp' ? colors.expenseRed : colors.primary;
+  const amountBorderColor = type === 'exp' ? 'rgba(192,80,58,0.18)' : 'rgba(91,140,110,0.18)';
 
   return (
     <View style={styles.container}>
       <BottomSheet
         ref={bottomSheetRef}
         index={0}
-        snapPoints={['90%']}
+        enableDynamicSizing
+        maxDynamicContentSize={windowHeight * 0.94}
         enablePanDownToClose
         onChange={handleSheetChanges}
         backdropComponent={(props) => (
@@ -321,243 +458,217 @@ export default function AddTransactionSheet({ route }: Props) {
         backgroundStyle={styles.sheetBackground}
         handleIndicatorStyle={styles.sheetHandle}
       >
-        <BottomSheetScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          <TouchableOpacity
-            onPress={() => setShowDatePickerModal(true)}
-            style={styles.datePill}
-          >
-            <Text style={styles.datePillText}>
-              📅{' '}
-              {selectedDate.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}
-            </Text>
-          </TouchableOpacity>
+        <BottomSheetScrollView contentContainerStyle={styles.sheetContent}>
 
-          <Text style={styles.sheetTitle}>Add transaction</Text>
-          <Text style={styles.sheetSub}>Log expense or income</Text>
+          {/* ── Header ─────────────────────────────────────────────────── */}
+          <View style={styles.newHeader}>
+            <TouchableOpacity style={styles.dismissBtn} onPress={requestClose}>
+              <Ionicons name="close" size={18} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Add Transaction</Text>
+            <TouchableOpacity
+              style={styles.newDatePill}
+              onPress={() => setShowDatePickerModal(true)}
+            >
+              <Ionicons name="calendar-outline" size={13} color={colors.primary} />
+              <Text style={styles.newDatePillText}>
+                {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-          <View style={styles.typeToggle}>
+          {/* ── Type Toggle (segmented) ──────────────────────────────── */}
+          <View style={styles.segmentTrack}>
             {(['exp', 'inc'] as const).map((t) => (
-              <TouchableOpacity
+              <Pressable
                 key={t}
                 onPress={() => setType(t)}
                 style={[
-                  styles.typeBtn,
-                  { width: typeToggleBtnWidth },
-                  type === t &&
-                    (t === 'exp'
-                      ? styles.typeBtnExpActive
-                      : styles.typeBtnIncActive),
+                  styles.segmentBtn,
+                  type === t && (t === 'exp' ? styles.segmentExpActive : styles.segmentIncActive),
                 ]}
               >
-                <Text
-                  style={[
-                    styles.typeBtnText,
-                    type === t &&
-                      (t === 'exp' ? styles.textExp : styles.textInc),
-                  ]}
-                >
-                  {t === 'exp' ? 'Expense ↓' : 'Income ↑'}
+                <Text style={[styles.segmentText, type === t && (t === 'exp' ? styles.textExp : styles.textInc)]}>
+                  {t === 'exp' ? '↓ Expense' : '↑ Income'}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             ))}
           </View>
 
-          <View
-            style={[
-              styles.amountDisplay,
-              amount.length > 0 && { borderColor: colors.primary },
-            ]}
-          >
-            <View style={styles.amountRow}>
-              <Text style={styles.amountCurr}>₱</Text>
-              <Text style={styles.amountVal}>{amount || '0'}</Text>
-            </View>
-            <Text style={styles.amountSub}>
-              {amount.length > 0
-                ? 'Long-press ⌫ to clear'
-                : 'Tap a number to enter amount'}
-            </Text>
-            {showAmountLimitToast && (
-              <View style={styles.amountLimitToast}>
-                <Text style={styles.amountLimitToastText}>
-                  Max 7 digits reached
+          {/* ── Amount Box ──────────────────────────────────────────────── */}
+          <View style={[styles.amountBox, { borderColor: amountBorderColor }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.amountBoxLabel}>AMOUNT</Text>
+              <View style={styles.amountRow}>
+                <Text style={[styles.amountCurr, { color: amountColor }]}>₱</Text>
+                <Text
+                  style={[styles.amountResult, { color: amountColor }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.55}
+                >
+                  {displayValue}
                 </Text>
               </View>
-            )}
-          </View>
-
-          <View style={styles.numpad}>
-            {[
-              '1',
-              '2',
-              '3',
-              '4',
-              '5',
-              '6',
-              '7',
-              '8',
-              '9',
-              '.',
-              '0',
-              'back',
-            ].map((key) => (
-              <TouchableOpacity
-                key={key}
-                onPress={() => handleNumTap(key)}
-                onLongPress={key === 'back' ? () => setAmount('') : undefined}
-                style={[
-                  styles.numKey,
-                  { width: numpadKeyWidth },
-                  key === 'back' && styles.numKeyDel,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.numKeyText,
-                    key === 'back' && styles.numKeyTextDel,
-                  ]}
-                >
-                  {key === 'back' ? '⌫' : key}
+            </View>
+            {operator ? (
+              <View style={styles.amountExprWrap}>
+                <Text style={styles.amountExprLabel}>PENDING</Text>
+                <Text style={styles.amountExpr}>
+                  {firstOperand} {operator}
                 </Text>
-              </TouchableOpacity>
-            ))}
+              </View>
+            ) : null}
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.fieldLabel}>From Account</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8 }}
-            >
-              {accounts.map((acc) => {
-                const isSel = accountId === acc.id;
-                const logo = ACCOUNT_LOGOS[acc.name];
-                return (
-                  <TouchableOpacity
-                    key={acc.id}
-                    onPress={() => setAccountId(acc.id)}
-                    style={[styles.accCard, isSel && styles.accCardActive]}
+          {showAmountLimitToast && (
+            <View style={styles.amountLimitToast}>
+              <Text style={styles.amountLimitToastText}>Max 10 digits reached</Text>
+            </View>
+          )}
+
+          {/* ── Numpad ──────────────────────────────────────────────────── */}
+          <View style={styles.numpadWrap}>
+
+            {/* Operator column — C / − / + / = aligned with 4 number rows */}
+            <View style={styles.opCol}>
+              <TouchableOpacity style={styles.clearKey} onPress={() => handleNumTap('C')}>
+                <Text style={styles.clearKeyText}>C</Text>
+              </TouchableOpacity>
+              {(['-', '+'] as const).map((op) => (
+                <TouchableOpacity
+                  key={op}
+                  style={[styles.opKey, operator === op && styles.opKeyActive]}
+                  onPress={() => handleNumTap(op)}
+                >
+                  <Text style={[styles.opKeyText, operator === op && styles.opKeyTextActive]}>
+                    {op}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity style={styles.equalsKey} onPress={() => handleNumTap('=')}>
+                <LinearGradient colors={['#4a7a5e', '#5B8C6E']} style={styles.equalsKeyGradient}>
+                  <Text style={styles.equalsKeyText}>=</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            {/* Number grid — calculator order: 7-8-9 / 4-5-6 / 1-2-3 / . 0 ⌫ */}
+            <View style={styles.numGrid}>
+              {(['7','8','9','4','5','6','1','2','3','.','0','back'] as const).map((key) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[
+                    styles.numKey,
+                    { width: numKeyWidth },
+                    key === 'back' && styles.numKeyDel,
+                    key === '.' && styles.numKeyDot,
+                  ]}
+                  onPress={() => handleNumTap(key)}
+                  onLongPress={key === 'back' ? () => handleNumTap('C') : undefined}
+                >
+                  <Text
+                    style={[
+                      styles.numKeyText,
+                      key === 'back' && styles.numKeyTextDel,
+                      key === '.' && styles.numKeyTextDot,
+                    ]}
                   >
-                    {logo ? (
-                      <Image source={logo} style={styles.accLogo} />
-                    ) : (
-                      <View
-                        style={[
-                          styles.accAvatar,
-                          { backgroundColor: acc.brand_colour },
-                        ]}
+                    {key === 'back' ? '⌫' : key}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+
+          {/* ── Account Chips ────────────────────────────────────────────── */}
+          <View style={styles.chipSection}>
+            <Text style={styles.chipSectionLabel}>ACCOUNT</Text>
+            <GHScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipWrap}>
+              {accountsLoading && accounts.length === 0
+                ? [80, 100, 72, 90, 84].map((w, i) => (
+                    <Animated.View key={i} style={[styles.skeletonChip, { width: w, opacity: skeletonOpacity }]} />
+                  ))
+                : sortedAccounts.map((acc) => {
+                    const isSel = accountId === acc.id;
+                    const logo = ACCOUNT_LOGOS[acc.name];
+                    return (
+                      <TouchableOpacity
+                        key={acc.id}
+                        style={[styles.acctChip, isSel && styles.acctChipActive]}
+                        onPress={() => setAccountId(acc.id)}
                       >
-                        <Text style={styles.accAvatarText}>
-                          {acc.letter_avatar}
+                        <View style={[styles.chipIconWrap, { backgroundColor: acc.brand_colour ?? colors.primaryLight }]}>
+                          {logo ? (
+                            <Image source={logo} style={styles.acctChipLogo} />
+                          ) : (
+                            <Text style={styles.acctChipAvatar}>{acc.letter_avatar ?? '?'}</Text>
+                          )}
+                        </View>
+                        <Text style={[styles.acctChipName, isSel && styles.acctChipNameActive]} numberOfLines={1}>
+                          {acc.name}
                         </Text>
-                      </View>
-                    )}
-                    <Text
-                      style={[
-                        styles.accName,
-                        isSel && { color: colors.primary },
-                      ]}
-                    >
-                      {acc.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+                      </TouchableOpacity>
+                    );
+                  })}
+            </GHScrollView>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.fieldLabel}>
-              Category{' '}
-              {type === 'exp' && (
-                <Text style={styles.aiLabel}>✦ AI suggested</Text>
-              )}
-            </Text>
-            <View style={styles.pillsRow}>
-              {(type === 'inc' ? INCOME_CATEGORIES : categories).map(
-                (cat: any) => {
-                  const catKey =
-                    type === 'inc' ? cat.key : (cat.emoji ?? '').toLowerCase();
-                  const isSel = category === cat.name;
-                  const themeStyles = resolveCategoryStyle(catKey);
-                  return (
-                    <TouchableOpacity
-                      key={cat.id || cat.key}
-                      onPress={() => {
-                        setCategory(cat.name);
-                        setSignalSource('manual');
-                      }}
-                      style={[
-                        styles.catPill,
-                        isSel && {
-                          borderColor: themeStyles.text,
-                          backgroundColor: themeStyles.bg,
-                          borderWidth: 2,
-                        },
-                      ]}
-                    >
-                      <CategoryIcon
-                        categoryKey={catKey}
-                        color={isSel ? themeStyles.text : colors.textSecondary}
-                        size={14}
-                      />
-                      <Text
-                        style={[
-                          styles.catPillText,
-                          {
-                            color: isSel
-                              ? themeStyles.text
-                              : colors.textSecondary,
-                          },
-                        ]}
+          {/* ── Category Chips ───────────────────────────────────────────── */}
+          <View style={styles.chipSection}>
+            <Text style={styles.chipSectionLabel}>CATEGORY</Text>
+            <GHScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipWrap}>
+              {categoriesLoading && categories.length === 0
+                ? [88, 68, 96, 76, 104, 72].map((w, i) => (
+                    <Animated.View key={i} style={[styles.skeletonChip, { width: w, opacity: skeletonOpacity }]} />
+                  ))
+                : sortedCategories.map((cat: any) => {
+                    const catKey = type === 'inc' ? cat.key : (cat.emoji ?? '').toLowerCase();
+                    const isSel = category === cat.name;
+                    const cs = resolveCategoryStyle(catKey);
+                    return (
+                      <TouchableOpacity
+                        key={cat.id || cat.key}
+                        style={[styles.catChip, isSel && { backgroundColor: cs.bg, borderColor: cs.text + '55' }]}
+                        onPress={() => {
+                          setCategory(cat.name);
+                          setSignalSource('manual');
+                        }}
                       >
-                        {cat.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                }
-              )}
-            </View>
+                        <View style={[styles.chipIconWrap, { backgroundColor: cs.bg }]}>
+                          <CategoryIcon categoryKey={catKey} color={isSel ? cs.text : colors.textSecondary} size={12} />
+                        </View>
+                        <Text style={[styles.catChipText, isSel && { color: cs.text, fontFamily: 'Inter_700Bold' }]}>
+                          {cat.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+            </GHScrollView>
           </View>
 
-          <View style={styles.aiFieldWrap}>
-            <View style={styles.orDivider}>
-              <View style={styles.orLine} />
-              <Text style={styles.orText}>OR DESCRIBE</Text>
-              <View style={styles.orLine} />
-            </View>
-            <View
-              style={[
-                styles.aiField,
-                aiInputFocused && { borderColor: colors.primary },
-              ]}
-            >
-              <BottomSheetTextInput
-                style={styles.aiFieldText}
-                placeholder='e.g. "lunch", "grab ride"'
-                value={aiText}
-                onChangeText={handleAiTextChange}
-                onFocus={() => setAiInputFocused(true)}
-                onBlur={() => setAiInputFocused(false)}
-              />
-            </View>
-            {aiResult?.suggestedCategory && (
-              <View style={styles.aiConfirm}>
-                <Text style={styles.aiConfirmText}>
-                  "{aiResult.matchedKeyword}" → {aiResult.suggestedCategory} ✓
-                </Text>
+          {/* ── AI Description Field ────────────────────────────────────── */}
+          <View style={[styles.noteRow, aiInputFocused && styles.noteRowFocused]}>
+            <Text style={styles.noteSparkle}>✦</Text>
+            <BottomSheetTextInput
+              style={styles.noteInput}
+              value={aiText}
+              onChangeText={handleAiTextChange}
+              onFocus={() => setAiInputFocused(true)}
+              onBlur={() => setAiInputFocused(false)}
+              placeholder="Describe… AI will suggest a category"
+              placeholderTextColor={colors.textSecondary}
+              returnKeyType="done"
+            />
+            {aiResult?.suggestedCategory ? (
+              <View style={styles.noteAiBadge}>
+                <Text style={styles.noteAiBadgeText}>✦ {aiResult.suggestedCategory}</Text>
               </View>
-            )}
+            ) : null}
           </View>
 
+          {/* ── Save Button ─────────────────────────────────────────────── */}
           <TouchableOpacity
             disabled={!amount || isSaving}
             onPress={handleSave}
@@ -565,26 +676,18 @@ export default function AddTransactionSheet({ route }: Props) {
           >
             <LinearGradient
               colors={['#4a7a5e', '#5B8C6E']}
-              style={[
-                styles.saveBtn,
-                (!amount || isSaving) && { opacity: 0.5 },
-              ]}
+              style={[styles.saveBtn, (!amount || isSaving) && { opacity: 0.45 }]}
             >
               <Text style={styles.saveBtnText}>
-                {isSaving
-                  ? 'Saving...'
-                  : type === 'exp'
-                    ? 'Save Expense'
-                    : 'Save Income'}
+                {isSaving ? 'Saving…' : type === 'exp' ? 'Save Expense' : 'Save Income'}
               </Text>
             </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity onPress={requestClose} style={styles.cancelBtn}>
-            <Text style={styles.cancelBtnText}>Cancel</Text>
-          </TouchableOpacity>
+
         </BottomSheetScrollView>
       </BottomSheet>
 
+      {/* ── Discard Prompt ────────────────────────────────────────────────── */}
       {showDiscardPrompt && (
         <View style={styles.discardOverlay}>
           <Pressable
@@ -592,10 +695,7 @@ export default function AddTransactionSheet({ route }: Props) {
             onPress={() => setShowDiscardPrompt(false)}
           />
           <Animated.View
-            style={[
-              styles.discardCard,
-              { transform: [{ translateX: discardShakeX }] },
-            ]}
+            style={[styles.discardCard, { transform: [{ translateX: discardShakeX }] }]}
           >
             <Text style={styles.discardTitle}>Discard transaction?</Text>
             <Text style={styles.discardBody}>Your progress will be lost.</Text>
@@ -621,6 +721,7 @@ export default function AddTransactionSheet({ route }: Props) {
         </View>
       )}
 
+      {/* ── Date Picker Modal ─────────────────────────────────────────────── */}
       <Modal visible={showDatePickerModal} transparent animationType="fade">
         <View style={styles.dateModalOverlay}>
           <Pressable
@@ -658,10 +759,13 @@ export default function AddTransactionSheet({ route }: Props) {
           </View>
         </View>
       </Modal>
+
+      {/* picker modals removed — replaced by inline chip rows */}
     </View>
   );
 }
 
+// ─── Styles ─────────────────────────────────────────────────────────────────
 const createStyles = (colors: any, isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1 },
@@ -676,152 +780,393 @@ const createStyles = (colors: any, isDark: boolean) =>
       backgroundColor: isDark ? '#444' : '#D8D6D0',
       marginTop: 10,
     },
-    scrollContent: { padding: 20, paddingBottom: 60 },
-    datePill: {
-      alignSelf: 'flex-start',
-      backgroundColor: isDark ? 'rgba(91,140,110,0.15)' : '#EBF2EE',
-      padding: 8,
-      borderRadius: 20,
-      marginBottom: 12,
+    sheetContent: {
+      paddingBottom: 16,
     },
-    datePillText: { fontSize: 12, color: colors.primary, fontWeight: '600' },
-    sheetTitle: { fontSize: 22, fontWeight: '800', color: colors.textPrimary },
-    sheetSub: { fontSize: 13, color: colors.textSecondary, marginBottom: 20 },
-    typeToggle: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-    typeBtn: {
-      flex: 1,
-      height: 50,
-      borderRadius: 12,
-      borderWidth: 1.5,
-      borderColor: isDark ? '#333' : '#EEE',
+
+    // ── Header
+    newHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+    },
+    dismissBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.catTileEmptyBg,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    typeBtnExpActive: {
-      backgroundColor: 'rgba(192,57,42,0.1)',
-      borderColor: colors.expenseRed,
+    headerTitle: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 16,
+      color: colors.textPrimary,
     },
-    typeBtnIncActive: {
-      backgroundColor: 'rgba(45,106,79,0.1)',
-      borderColor: colors.incomeGreen,
-    },
-    typeBtnText: { fontWeight: '700', color: colors.textSecondary },
-    textExp: { color: colors.expenseRed },
-    textInc: { color: colors.incomeGreen },
-    amountDisplay: {
-      backgroundColor: colors.catTileEmptyBg,
-      padding: 20,
-      borderRadius: 16,
+    newDatePill: {
+      flexDirection: 'row',
       alignItems: 'center',
+      gap: 5,
+      backgroundColor: colors.catTileEmptyBg,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    newDatePillText: {
+      fontSize: 12,
+      fontFamily: 'Inter_600SemiBold',
+      color: colors.primary,
+    },
+
+    // ── Type Toggle (segmented)
+    segmentTrack: {
+      flexDirection: 'row',
+      marginHorizontal: 20,
+      marginBottom: 10,
+      height: 42,
+      borderRadius: 12,
+      backgroundColor: isDark ? '#1E1E1E' : '#F0EEE9',
+      padding: 3,
+      gap: 3,
+    },
+    segmentBtn: {
+      flex: 1,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    segmentExpActive: {
+      backgroundColor: isDark ? 'rgba(192,57,42,0.22)' : '#FDE8E0',
+    },
+    segmentIncActive: {
+      backgroundColor: isDark ? 'rgba(45,106,79,0.22)' : '#DFF0E8',
+    },
+    segmentText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    textExp: { color: colors.expenseRed },
+    textInc: { color: colors.incomeGreen ?? colors.primary },
+
+    // ── Amount Box
+    amountBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.catTileEmptyBg,
+      borderRadius: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      marginHorizontal: 20,
+      marginBottom: 8,
       borderWidth: 2,
-      borderColor: 'transparent',
-      marginBottom: 20,
     },
-    amountRow: { flexDirection: 'row', alignItems: 'center' },
-    amountCurr: { fontSize: 24, color: colors.textSecondary, marginRight: 4 },
-    amountVal: { fontSize: 48, fontWeight: '700', color: colors.textPrimary },
-    amountSub: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+    amountBoxLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 9,
+      letterSpacing: 0.6,
+      color: colors.textSecondary,
+      marginBottom: 2,
+    },
+    amountRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+    },
+    amountCurr: {
+      fontSize: 20,
+      fontFamily: 'Inter_600SemiBold',
+      marginTop: 2,
+    },
+    amountResult: {
+      fontSize: 36,
+      fontFamily: 'DMMono_500Medium',
+      letterSpacing: -1,
+    },
+    amountExprWrap: {
+      alignItems: 'flex-end',
+      paddingLeft: 8,
+    },
+    amountExprLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 9,
+      letterSpacing: 0.5,
+      color: colors.textSecondary,
+      marginBottom: 2,
+    },
+    amountExpr: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
     amountLimitToast: {
-      marginTop: 8,
-      backgroundColor: 'rgba(232,133,106,0.1)',
-      padding: 6,
+      marginHorizontal: 20,
+      marginBottom: 4,
+      paddingVertical: 5,
+      paddingHorizontal: 12,
       borderRadius: 8,
+      backgroundColor: isDark ? 'rgba(192,57,42,0.15)' : 'rgba(192,57,42,0.08)',
+      alignSelf: 'flex-start',
     },
-    amountLimitToastText: { fontSize: 11, color: colors.coral },
-    numpad: {
+    amountLimitToastText: {
+      fontSize: 11,
+      color: colors.coral ?? colors.expenseRed,
+      fontFamily: 'Inter_600SemiBold',
+    },
+
+    // ── Numpad
+    // 4 op keys match 4 number rows exactly
+    numpadWrap: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 20,
+      marginBottom: 8,
+      marginTop: 6,
+      alignItems: 'flex-start',
+    },
+    opCol: {
+      width: 54,
+      height: 205, // 4 × 46px keys + 3 × 7px gaps = exact numGrid height
+      gap: 7,
+    },
+    opKey: {
+      height: 46,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: isDark ? '#2A2A2A' : '#FFFFFF',
+      borderWidth: 1,
+      borderColor: isDark ? '#3A3A3A' : '#E8E6E0',
+    },
+    opKeyClear: { /* unused — C moved to calcActionRow */
+      height: 46,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: isDark ? 'rgba(192,80,58,0.2)' : 'rgba(192,80,58,0.1)',
+    },
+    opKeyClearText: {
+      fontSize: 15,
+      fontFamily: 'Inter_700Bold',
+      color: colors.expenseRed,
+    },
+    opKeyActive: {
+      backgroundColor: isDark ? 'rgba(91,140,110,0.2)' : 'rgba(91,140,110,0.1)',
+      borderColor: colors.primary,
+    },
+    opKeyText: {
+      fontSize: 20,
+      fontFamily: 'Inter_600SemiBold',
+      color: colors.textPrimary,
+    },
+    opKeyTextActive: {
+      color: colors.primary,
+      fontFamily: 'Inter_700Bold',
+    },
+    opKeyEq: { /* unused */
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
+    opKeyEqGradient: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    opKeyEqText: {
+      fontSize: 22,
+      fontFamily: 'Inter_700Bold',
+      color: '#FFF',
+    },
+
+    // ── C + = action row (below numpad)
+    calcActionRow: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 20,
+      marginBottom: 10,
+    },
+    clearKey: {
+      height: 46,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: isDark ? 'rgba(192,80,58,0.18)' : 'rgba(192,80,58,0.09)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(192,80,58,0.3)' : 'rgba(192,80,58,0.18)',
+    },
+    clearKeyText: {
+      fontSize: 16,
+      fontFamily: 'Inter_700Bold',
+      color: colors.expenseRed,
+    },
+    equalsKey: {
+      height: 46,
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
+    equalsKeyGradient: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    equalsKeyText: {
+      fontSize: 22,
+      fontFamily: 'Inter_700Bold',
+      color: '#FFF',
+    },
+
+    numGrid: {
+      flex: 1,
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 8,
-      marginBottom: 24,
+      gap: 7,
     },
     numKey: {
-      height: 50,
-      backgroundColor: colors.white,
+      height: 46,
+      backgroundColor: colors.white ?? colors.background,
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
-      borderColor: isDark ? '#333' : '#EEE',
+      borderColor: isDark ? '#333' : '#EEECE8',
     },
-    numKeyDel: { backgroundColor: 'rgba(192,57,42,0.1)' },
-    numKeyText: { fontSize: 20, fontWeight: '600', color: colors.textPrimary },
+    numKeyDel: {
+      backgroundColor: isDark ? 'rgba(192,57,42,0.12)' : 'rgba(192,57,42,0.07)',
+      borderColor: 'transparent',
+    },
+    numKeyDot: {
+      borderColor: 'transparent',
+    },
+    numKeyText: {
+      fontSize: 20,
+      fontFamily: 'Inter_600SemiBold',
+      color: colors.textPrimary,
+    },
     numKeyTextDel: { color: colors.expenseRed },
-    section: { marginBottom: 24 },
-    fieldLabel: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: colors.textSecondary,
+    numKeyTextDot: { color: colors.textSecondary },
+
+    // ── Chip Rows (account & category)
+    chipSection: {
+      marginBottom: 8,
+    },
+    skeletonChip: {
+      height: 34,
+      borderRadius: 10,
+      backgroundColor: isDark ? '#2A2A2A' : '#E8E6E0',
+    },
+    chipSectionLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      letterSpacing: 0.6,
       textTransform: 'uppercase',
-      marginBottom: 12,
+      color: colors.textSecondary,
+      paddingHorizontal: 20,
+      marginBottom: 5,
     },
-    aiLabel: { color: colors.lavenderDark, textTransform: 'none' },
-    accCard: {
-      padding: 12,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: isDark ? '#333' : '#EEE',
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: 8,
-      minWidth: 100,
+    chipWrap: {
+      paddingHorizontal: 20,
+      gap: 7,
     },
-    accCardActive: {
-      borderColor: colors.primary,
-      backgroundColor: isDark ? 'rgba(91,140,110,0.1)' : '#F0F7F3',
-    },
-    accLogo: { width: 24, height: 24 },
-    accAvatar: {
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    accAvatarText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
-    accName: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
-    pillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    catPill: {
+    acctChip: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
-      padding: 10,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: isDark ? '#333' : '#EEE',
+      height: 36,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      backgroundColor: isDark ? '#1E1E1E' : '#FFFFFF',
+      borderWidth: 1.5,
+      borderColor: isDark ? '#333' : '#E8E6E0',
     },
-    catPillText: { fontSize: 13, fontWeight: '600' },
-    aiFieldWrap: { marginBottom: 24 },
-    orDivider: {
+    acctChipActive: {
+      backgroundColor: isDark ? 'rgba(91,140,110,0.18)' : 'rgba(91,140,110,0.1)',
+      borderColor: colors.primary,
+    },
+    acctChipLogo: { width: 16, height: 16, resizeMode: 'contain' },
+    acctChipAvatar: { color: '#FFF', fontSize: 9, fontFamily: 'Inter_700Bold' },
+    acctChipName: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.textPrimary,
+      maxWidth: 100,
+    },
+    acctChipNameActive: {
+      color: colors.primary,
+      fontFamily: 'Inter_700Bold',
+    },
+    catChip: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
-      marginBottom: 12,
-    },
-    orLine: { flex: 1, height: 1, backgroundColor: isDark ? '#333' : '#EEE' },
-    orText: { fontSize: 10, fontWeight: '700', color: colors.textSecondary },
-    aiField: {
-      backgroundColor: colors.catTileEmptyBg,
-      borderRadius: 12,
-      padding: 14,
+      gap: 5,
+      height: 34,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      backgroundColor: isDark ? '#2A2A2A' : '#F5F4F0',
       borderWidth: 1.5,
       borderColor: 'transparent',
     },
-    aiFieldText: { fontSize: 14, color: colors.textPrimary },
-    aiConfirm: {
-      marginTop: 8,
-      backgroundColor: 'rgba(91,140,110,0.1)',
-      padding: 8,
-      borderRadius: 8,
-    },
-    aiConfirmText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
-    saveBtnWrap: { marginBottom: 12 },
-    saveBtn: { padding: 16, borderRadius: 16, alignItems: 'center' },
-    saveBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-    cancelBtn: { alignItems: 'center', padding: 10 },
-    cancelBtnText: {
+    catChipText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
       color: colors.textSecondary,
-      textDecorationLine: 'underline',
     },
+    chipIconWrap: {
+      width: 26,
+      height: 26,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+    },
+
+    // ── AI Note Field
+    noteRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginHorizontal: 20,
+      marginBottom: 10,
+      backgroundColor: colors.white ?? colors.background,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      borderColor: isDark ? '#333' : '#EEECE8',
+      paddingHorizontal: 12,
+      height: 44,
+    },
+    noteRowFocused: {
+      borderColor: colors.primary,
+    },
+    noteSparkle: {
+      fontSize: 14,
+      color: colors.primary,
+      fontFamily: 'Inter_700Bold',
+    },
+    noteInput: {
+      flex: 1,
+      fontSize: 13,
+      color: colors.textPrimary,
+      fontFamily: 'Inter_400Regular',
+    },
+    noteAiBadge: {
+      backgroundColor: isDark ? 'rgba(91,140,110,0.2)' : 'rgba(91,140,110,0.1)',
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+    },
+    noteAiBadgeText: {
+      fontSize: 11,
+      fontFamily: 'Inter_700Bold',
+      color: colors.primary,
+    },
+
+    // ── Save Button
+    saveBtnWrap: { marginHorizontal: 20 },
+    saveBtn: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+    saveBtnText: { color: '#FFF', fontSize: 16, fontFamily: 'Nunito_700Bold' },
+
+    // ── Discard Prompt
     discardOverlay: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: 'rgba(0,0,0,0.4)',
@@ -832,30 +1177,22 @@ const createStyles = (colors: any, isDark: boolean) =>
     discardOverlayTap: { ...StyleSheet.absoluteFillObject },
     discardCard: {
       width: '85%',
-      backgroundColor: colors.white,
+      backgroundColor: colors.white ?? colors.background,
       padding: 20,
       borderRadius: 20,
     },
-    discardTitle: {
-      fontSize: 18,
-      fontWeight: '800',
-      color: colors.textPrimary,
-    },
-    discardBody: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      marginVertical: 12,
-    },
+    discardTitle: { fontSize: 18, fontFamily: 'Nunito_800ExtraBold', color: colors.textPrimary },
+    discardBody: { fontSize: 14, color: colors.textSecondary, marginVertical: 12 },
     discardActions: { flexDirection: 'row', gap: 10 },
     discardKeepBtn: {
       flex: 1,
       padding: 12,
       borderRadius: 10,
       borderWidth: 1,
-      borderColor: '#EEE',
+      borderColor: isDark ? '#333' : '#EEE',
       alignItems: 'center',
     },
-    discardKeepText: { fontWeight: '700' },
+    discardKeepText: { fontFamily: 'Inter_700Bold', color: colors.textPrimary },
     discardDropBtn: {
       flex: 1,
       padding: 12,
@@ -863,7 +1200,9 @@ const createStyles = (colors: any, isDark: boolean) =>
       backgroundColor: colors.expenseRed,
       alignItems: 'center',
     },
-    discardDropText: { color: '#FFF', fontWeight: '700' },
+    discardDropText: { color: '#FFF', fontFamily: 'Inter_700Bold' },
+
+    // ── Date Modal
     dateModalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.4)',
@@ -872,7 +1211,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     dateModalBackdrop: { ...StyleSheet.absoluteFillObject },
     dateModalCard: {
-      backgroundColor: colors.white,
+      backgroundColor: colors.white ?? colors.background,
       borderRadius: 20,
       padding: 20,
     },
@@ -885,4 +1224,5 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderRadius: 10,
       alignItems: 'center',
     },
+
   });
