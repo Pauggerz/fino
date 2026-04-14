@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MoreScreen — Redesign Mockup</title>
+<style>
+  /* ── Reset & base ─────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #E8E6E1;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 48px;
+    padding: 48px 32px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    flex-wrap: wrap;
+  }
+
+  /* ── Design tokens ────────────────────────────────────────────────────── */
+  :root {
+    --primary:        #5B8C6E;
+    --primary-dark:   #3f6b52;
+    --primary-light:  #EBF2EE;
+    --bg:             #F7F5F2;
+    --white:          #FFFFFF;
+    --text-primary:   #1E1E2E;
+    --text-secondary: #8A8A9A;
+    --expense-red:    #C0503A;
+    --income-green:   #3f6b52;
+    --purple:         #4B2DA3;
+    --lavender:       #F0ECFD;
+    --amber:          #BA7517;
+    --bill-bg:        #fff8f0;
+    --bill-border:    #EF9F27;
+    --tile-empty:     #F0EFEA;
+    --border:         #e0dfd7;
+    --card-border:    rgba(30,30,46,0.08);
+    --hero-bg:        #2a4f3a;
+    --screen-pad:     20px;
+    --radius-card:    16px;
+    --radius-lg:      20px;
+    --radius-xl:      24px;
+  }
+
+  /* ── Phone shell ──────────────────────────────────────────────────────── */
+  .phone {
+    width: 375px;
+    background: var(--bg);
+    border-radius: 44px;
+    overflow: hidden;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.08);
+    position: relative;
+    flex-shrink: 0;
+  }
+  .phone-label {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 12px;
+    letter-spacing: 0.3px;
+  }
+
+  /* Status bar */
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 28px 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .status-icons { display: flex; gap: 6px; align-items: center; font-size: 11px; }
+
+  /* Screen content */
+  .screen { overflow-y: auto; max-height: 760px; padding-bottom: 90px; }
+
+  /* ── Header ───────────────────────────────────────────────────────────── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px var(--screen-pad) 12px;
+  }
+  .header-title {
+    font-size: 27px;
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: -0.4px;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .auth-pill {
+    background: var(--primary-light);
+    border: 1px solid rgba(91,140,110,0.3);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── NEW: Net Worth Hero Card ─────────────────────────────────────────── */
+  .hero-card {
+    margin: 0 var(--screen-pad) 20px;
+    background: var(--hero-bg);
+    border-radius: var(--radius-xl);
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-card::before {
+    content: '';
+    position: absolute;
+    top: -30px; right: -30px;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+  }
+  .hero-card::after {
+    content: '';
+    position: absolute;
+    bottom: -20px; left: 60px;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.03);
+  }
+  .hero-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .hero-amount {
+    font-size: 32px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.5px;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 16px;
+  }
+  .hero-amount span { font-size: 18px; opacity: 0.7; margin-right: 2px; }
+  .hero-stats {
+    display: flex;
+    gap: 0;
+  }
+  .hero-stat {
+    flex: 1;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 12px;
+    margin-right: 8px;
+  }
+  .hero-stat:last-child { margin-right: 0; }
+  .hero-stat-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 0.4px;
+    margin-bottom: 3px;
+    text-transform: uppercase;
+  }
+  .hero-stat-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+  }
+  .hero-stat-value.red { color: #F4907A; }
+  .hero-stat-value.green { color: #86D0A6; }
+
+  /* ── Section label ────────────────────────────────────────────────────── */
+  .section-wrap { margin-bottom: 20px; }
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    padding: 0 var(--screen-pad);
+  }
+
+  /* ── Accounts card ────────────────────────────────────────────────────── */
+  .acct-card {
+    background: var(--white);
+    border-radius: var(--radius-card);
+    border: 1px solid var(--card-border);
+    margin: 0 var(--screen-pad);
+    overflow: hidden;
+  }
+  .acct-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .acct-row:last-child { border-bottom: none; }
+  .acct-row:hover { background: #FAFAF8; }
+  .acct-left { display: flex; align-items: center; gap: 13px; }
+  .avatar {
+    width: 40px; height: 40px;
+    border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 800; color: #fff;
+    flex-shrink: 0;
+  }
+  .avatar img { width: 22px; height: 22px; object-fit: contain; }
+  .avatar.white-bg { background: #fff; border: 1px solid var(--border); }
+  .acct-name {
+    font-size: 15px; font-weight: 600; color: var(--text-primary);
+  }
+  .acct-right { display: flex; align-items: center; gap: 6px; }
+  .acct-balance {
+    font-size: 14px; font-weight: 500;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    font-family: 'SF Mono', 'Fira Mono', monospace;
+  }
+  .acct-balance.negative { color: var(--expense-red); }
+  .chevron { color: var(--text-secondary); font-size: 13px; opacity: 0.6; }
+
+  /* ── NEW: Balance indicator dot ───────────────────────────────────────── */
+  .balance-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .balance-dot.pos { background: var(--primary); }
+  .balance-dot.neg { background: var(--expense-red); }
+
+  /* ── Add account row ──────────────────────────────────────────────────── */
+  .add-acct-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 10px var(--screen-pad) 0;
+    padding: 13px 14px;
+    border-radius: var(--radius-card);
+    border: 1.5px dashed rgba(91,140,110,0.5);
+    background: rgba(91,140,110,0.05);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .add-acct-row:hover { background: rgba(91,140,110,0.09); }
+  .add-circle {
+    width: 32px; height: 32px; border-radius: 16px;
+    background: var(--primary-light);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: var(--primary); font-weight: 300;
+    flex-shrink: 0;
+  }
+  .add-acct-text { font-size: 14px; font-weight: 600; color: var(--primary); }
+
+  /* ── Bill reminder card ───────────────────────────────────────────────── */
+  .bill-card {
+    margin: 0 var(--screen-pad) 20px;
+    background: var(--bill-bg);
+    border: 1px solid var(--bill-border);
+    border-radius: var(--radius-card);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .bill-card::before {
+    content: '';
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 4px;
+    background: var(--bill-border);
+    border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  }
+  .bill-icon-box {
+    width: 44px; height: 44px; border-radius: 22px;
+    background: #FAEEDA;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .bill-content { flex: 1; min-width: 0; }
+  .bill-tag {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 700; color: var(--amber);
+    letter-spacing: 0.5px; text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  .bill-title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+  .bill-meta { font-size: 12px; color: var(--text-secondary); }
+  .bill-amount {
+    font-size: 14px; font-weight: 700;
+    color: var(--amber);
+    font-family: 'SF Mono', monospace;
+    white-space: nowrap;
+  }
+
+  /* ── NEW: Tools — 2×2 Grid ────────────────────────────────────────────── */
+  .tools-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 0 var(--screen-pad);
+  }
+  .tool-tile {
+    background: var(--white);
+    border-radius: var(--radius-card);
+    border: 1px solid var(--card-border);
+    padding: 16px;
+    cursor: pointer;
+    transition: transform 0.12s, box-shadow 0.12s;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .tool-tile:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,0.07); }
+  .tool-icon-box {
+    width: 40px; height: 40px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .tool-name { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.2; }
+  .tool-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.4; margin-top: 1px; }
+
+  /* ── Bottom tab bar ───────────────────────────────────────────────────── */
+  .tab-bar {
+    position: sticky;
+    bottom: 0;
+    background: rgba(255,255,255,0.96);
+    border-top: 1px solid var(--border);
+    display: flex;
+    padding: 10px 0 20px;
+  }
+  .tab {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; gap: 3px; cursor: pointer;
+  }
+  .tab-icon { font-size: 20px; color: var(--text-secondary); }
+  .tab-icon.active { color: var(--primary); }
+  .tab-label { font-size: 10px; font-weight: 600; color: var(--text-secondary); }
+  .tab-label.active { color: var(--primary); }
+  .tab-fab {
+    width: 44px; height: 44px; border-radius: 22px;
+    background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; margin-top: -18px;
+    box-shadow: 0 4px 14px rgba(91,140,110,0.4);
+  }
+
+  /* ── Comparison labels ────────────────────────────────────────────────── */
+  .compare-label {
+    font-size: 18px; font-weight: 700; color: #333;
+    margin-bottom: 8px; text-align: center;
+  }
+  .compare-sub {
+    font-size: 12px; color: #888; text-align: center; margin-bottom: 20px;
+  }
+  .change-badge {
+    display: inline-block;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 11px; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px;
+    margin-left: 8px;
+  }
+  .change-badge.new { background: #e8f5e9; color: #2e7d32; }
+
+  /* icons (emoji fallbacks) */
+  .i-sparkles::before  { content: '✦'; }
+  .i-pie::before       { content: '◉'; }
+  .i-receipt::before   { content: '🧾'; }
+  .i-settings::before  { content: '⚙'; }
+  .i-bell::before      { content: '🔔'; }
+  .i-time::before      { content: '◷'; }
+  .i-chevron::before   { content: '›'; }
+  .i-plus::before      { content: '+'; }
+  .i-arrow::before     { content: '→'; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SCREEN A — CURRENT (reference)
+════════════════════════════════════════════════════════════════ -->
+<div>
+  <p class="phone-label">Current</p>
+  <div class="phone">
+    <!-- Status bar -->
+    <div class="status-bar">
+      <span>10:13</span>
+      <div class="status-icons">
+        <span>▾▴▾</span>
+        <span>📶</span>
+        <span>🔋</span>
+      </div>
+    </div>
+
+    <div class="screen">
+      <!-- Header -->
+      <div class="header">
+        <span class="header-title">More</span>
+        <span class="auth-pill">testuser@gmail.com</span>
+      </div>
+
+      <!-- MY ACCOUNTS -->
+      <div class="section-wrap">
+        <div class="section-label">My Accounts</div>
+        <div class="acct-card">
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#1a7a6e">P</div>
+              <span class="acct-name">Cash</span>
+            </div>
+            <div class="acct-right">
+              <span class="acct-balance negative">₱-1,152,470.16</span>
+              <span class="chevron"><i class="i-chevron"></i></span>
+            </div>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar white-bg" style="background:#007DFF">G</div>
+              <span class="acct-name">GCash</span>
+            </div>
+            <div class="acct-right">
+              <span class="acct-balance negative">₱-122,407.44</span>
+              <span class="chevron"><i class="i-chevron"></i></span>
+            </div>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#CC0000">B</div>
+              <span class="acct-name">BDO</span>
+            </div>
+            <div class="acct-right">
+              <span class="acct-balance">₱604,933.00</span>
+              <span class="chevron"><i class="i-chevron"></i></span>
+            </div>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#F5841F">M</div>
+              <span class="acct-name">Maya</span>
+            </div>
+            <div class="acct-right">
+              <span class="acct-balance">₱123,456.00</span>
+              <span class="chevron"><i class="i-chevron"></i></span>
+            </div>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#007DFF">G</div>
+              <span class="acct-name">Gcash</span>
+            </div>
+            <div class="acct-right">
+              <span class="acct-balance">₱100.00</span>
+              <span class="chevron"><i class="i-chevron"></i></span>
+            </div>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#F5841F">M</div>
+              <span class="acct-name">Maya</span>
+            </div>
+            <div class="acct-right">
+              <span class="acct-balance">₱500.00</span>
+              <span class="chevron"><i class="i-chevron"></i></span>
+            </div>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#00C07B">S</div>
+              <span class="acct-name">Seabank</span>
+            </div>
+            <div class="acct-right">
+              <span class="acct-balance">₱69,420.00</span>
+              <span class="chevron"><i class="i-chevron"></i></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Add account -->
+        <div class="add-acct-row">
+          <div class="add-circle"><i class="i-plus"></i></div>
+          <span class="add-acct-text">Add new account</span>
+        </div>
+      </div>
+
+      <!-- Bill reminder -->
+      <div class="bill-card">
+        <div class="bill-icon-box"><i class="i-bell"></i></div>
+        <div class="bill-content">
+          <div class="bill-tag"><i class="i-time"></i> BILL REMINDER</div>
+          <div class="bill-title">Rent</div>
+          <div class="bill-meta">Due today</div>
+        </div>
+        <div class="bill-amount">₱100,000.00</div>
+        <span class="chevron"><i class="i-chevron"></i></span>
+      </div>
+
+      <!-- TOOLS — old list style -->
+      <div class="section-wrap">
+        <div class="section-label">Tools</div>
+        <div class="acct-card" style="margin: 0 20px;">
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="tool-icon-box" style="background:#F0ECFD; width:36px; height:36px; border-radius:10px; font-size:16px; margin-right:14px;">✦</div>
+              <span class="acct-name">Ask Fino</span>
+            </div>
+            <span class="chevron"><i class="i-chevron"></i></span>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="tool-icon-box" style="background:#EBF2EE; width:36px; height:36px; border-radius:10px; font-size:16px; margin-right:14px;">◉</div>
+              <span class="acct-name">Budget settings</span>
+            </div>
+            <span class="chevron"><i class="i-chevron"></i></span>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="tool-icon-box" style="background:#FFF8F0; width:36px; height:36px; border-radius:10px; font-size:16px; margin-right:14px;">🧾</div>
+              <span class="acct-name">Bill reminders</span>
+            </div>
+            <span class="chevron"><i class="i-chevron"></i></span>
+          </div>
+          <div class="acct-row" style="border-bottom:none;">
+            <div class="acct-left">
+              <div class="tool-icon-box" style="background:#F0EFEA; width:36px; height:36px; border-radius:10px; font-size:16px; margin-right:14px;">⚙</div>
+              <span class="acct-name">App settings</span>
+            </div>
+            <span class="chevron"><i class="i-chevron"></i></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <div class="tab"><div class="tab-icon">🏠</div><div class="tab-label">Home</div></div>
+      <div class="tab"><div class="tab-icon">☰</div><div class="tab-label">Txns</div></div>
+      <div class="tab"><div class="tab-fab">+</div></div>
+      <div class="tab"><div class="tab-icon">📊</div><div class="tab-label">Insights</div></div>
+      <div class="tab"><div class="tab-icon active">···</div><div class="tab-label active">More</div></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SCREEN B — REDESIGN
+════════════════════════════════════════════════════════════════ -->
+<div>
+  <p class="phone-label">Redesign</p>
+  <div class="phone">
+    <!-- Status bar -->
+    <div class="status-bar">
+      <span>10:13</span>
+      <div class="status-icons">
+        <span>▾▴▾</span><span>📶</span><span>🔋</span>
+      </div>
+    </div>
+
+    <div class="screen">
+
+      <!-- ── Header ────────────────────────────────────────────────────── -->
+      <div class="header">
+        <span class="header-title">More</span>
+        <span class="auth-pill">testuser@gmail.com</span>
+      </div>
+
+      <!-- ── NEW: Net Worth Hero Card ───────────────────────────────────── -->
+      <div class="hero-card">
+        <div class="hero-label">Total Net Worth</div>
+        <div class="hero-amount"><span>₱</span>-374,468.60</div>
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <div class="hero-stat-label">Assets</div>
+            <div class="hero-stat-value green">₱798,409</div>
+          </div>
+          <div class="hero-stat">
+            <div class="hero-stat-label">Liabilities</div>
+            <div class="hero-stat-value red">₱1,172,877</div>
+          </div>
+          <div class="hero-stat">
+            <div class="hero-stat-label">Accounts</div>
+            <div class="hero-stat-value">7</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── MY ACCOUNTS ────────────────────────────────────────────────── -->
+      <div class="section-wrap">
+        <div class="section-label">My Accounts</div>
+        <div class="acct-card">
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#1a7a6e">P</div>
+              <div>
+                <div class="acct-name">Cash</div>
+              </div>
+            </div>
+            <div class="acct-right">
+              <div class="balance-dot neg"></div>
+              <span class="acct-balance negative">₱-1,152,470</span>
+              <span class="chevron">›</span>
+            </div>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#007DFF">G</div>
+              <span class="acct-name">GCash</span>
+            </div>
+            <div class="acct-right">
+              <div class="balance-dot neg"></div>
+              <span class="acct-balance negative">₱-122,407</span>
+              <span class="chevron">›</span>
+            </div>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#CC0000">B</div>
+              <span class="acct-name">BDO</span>
+            </div>
+            <div class="acct-right">
+              <div class="balance-dot pos"></div>
+              <span class="acct-balance">₱604,933</span>
+              <span class="chevron">›</span>
+            </div>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#F5841F">M</div>
+              <span class="acct-name">Maya</span>
+            </div>
+            <div class="acct-right">
+              <div class="balance-dot pos"></div>
+              <span class="acct-balance">₱123,456</span>
+              <span class="chevron">›</span>
+            </div>
+          </div>
+          <div class="acct-row">
+            <div class="acct-left">
+              <div class="avatar" style="background:#00C07B">S</div>
+              <span class="acct-name">Seabank</span>
+            </div>
+            <div class="acct-right">
+              <div class="balance-dot pos"></div>
+              <span class="acct-balance">₱69,420</span>
+              <span class="chevron">›</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Add account — cleaner -->
+        <div class="add-acct-row">
+          <div class="add-circle" style="font-size:16px; font-weight:600;">+</div>
+          <span class="add-acct-text">Add new account</span>
+        </div>
+      </div>
+
+      <!-- ── Bill reminder ──────────────────────────────────────────────── -->
+      <div class="bill-card">
+        <div class="bill-icon-box">🔔</div>
+        <div class="bill-content">
+          <div class="bill-tag">◷ BILL REMINDER</div>
+          <div class="bill-title">Rent</div>
+          <div class="bill-meta">Due today · ₱100,000.00</div>
+        </div>
+        <span style="color:var(--amber); font-size:18px;">›</span>
+      </div>
+
+      <!-- ── Tools — NEW 2×2 grid ───────────────────────────────────────── -->
+      <div class="section-wrap">
+        <div class="section-label">Tools</div>
+        <div class="tools-grid">
+
+          <div class="tool-tile">
+            <div class="tool-icon-box" style="background:#F0ECFD;">
+              <span style="color:#4B2DA3; font-size:18px;">✦</span>
+            </div>
+            <div>
+              <div class="tool-name">Ask Fino</div>
+              <div class="tool-desc">Chat with your AI money coach</div>
+            </div>
+          </div>
+
+          <div class="tool-tile">
+            <div class="tool-icon-box" style="background:#EBF2EE;">
+              <span style="color:#5B8C6E; font-size:18px;">◉</span>
+            </div>
+            <div>
+              <div class="tool-name">Budget</div>
+              <div class="tool-desc">Set monthly spending limits</div>
+            </div>
+          </div>
+
+          <div class="tool-tile">
+            <div class="tool-icon-box" style="background:#FFF8F0;">
+              <span style="color:#BA7517; font-size:18px;">🧾</span>
+            </div>
+            <div>
+              <div class="tool-name">Bills</div>
+              <div class="tool-desc">Manage upcoming reminders</div>
+            </div>
+          </div>
+
+          <div class="tool-tile">
+            <div class="tool-icon-box" style="background:#F0EFEA;">
+              <span style="color:#8A8A9A; font-size:18px;">⚙</span>
+            </div>
+            <div>
+              <div class="tool-name">Settings</div>
+              <div class="tool-desc">Theme and app preferences</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /screen -->
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <div class="tab"><div class="tab-icon">🏠</div><div class="tab-label">Home</div></div>
+      <div class="tab"><div class="tab-icon">☰</div><div class="tab-label">Txns</div></div>
+      <div class="tab"><div class="tab-fab">+</div></div>
+      <div class="tab"><div class="tab-icon">📊</div><div class="tab-label">Insights</div></div>
+      <div class="tab"><div class="tab-icon active" style="color:var(--primary)">···</div><div class="tab-label active">More</div></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     CHANGE NOTES
+════════════════════════════════════════════════════════════════ -->
+<div style="max-width:360px; align-self:flex-start; margin-top:36px;">
+  <p style="font-size:20px; font-weight:800; color:#1E1E2E; margin-bottom:4px;">Redesign Notes</p>
+  <p style="font-size:12px; color:#888; margin-bottom:24px;">What changed and why</p>
+
+  <div style="display:flex; flex-direction:column; gap:14px;">
+
+    <div style="background:#fff; border-radius:14px; padding:14px 16px; border:1px solid #e0dfd7;">
+      <div style="font-size:12px; font-weight:700; color:#5B8C6E; letter-spacing:0.5px; margin-bottom:4px;">① NET WORTH HERO CARD <span class="change-badge new">NEW</span></div>
+      <div style="font-size:13px; color:#444; line-height:1.5;">Dark green card showing total net worth, assets vs liabilities, and account count. Gives the screen a strong anchor instead of jumping straight into the list. Reuses the existing hero-bg color token.</div>
+    </div>
+
+    <div style="background:#fff; border-radius:14px; padding:14px 16px; border:1px solid #e0dfd7;">
+      <div style="font-size:12px; font-weight:700; color:#5B8C6E; letter-spacing:0.5px; margin-bottom:4px;">② BALANCE DOT INDICATORS <span class="change-badge new">NEW</span></div>
+      <div style="font-size:13px; color:#444; line-height:1.5;">A 6px colored dot (green = positive, red = negative) before each balance. Lets users scan account health at a glance without reading every number. Balance amounts also colored red when negative.</div>
+    </div>
+
+    <div style="background:#fff; border-radius:14px; padding:14px 16px; border:1px solid #e0dfd7;">
+      <div style="font-size:12px; font-weight:700; color:#5B8C6E; letter-spacing:0.5px; margin-bottom:4px;">③ TOOLS → 2×2 GRID <span class="change-badge new">REDESIGNED</span></div>
+      <div style="font-size:13px; color:#444; line-height:1.5;">Tools changed from a plain vertical list to a 2-column tile grid. Each tile has icon + name + short description. More visual, easier to navigate, no chevrons needed since tiles are obviously tappable.</div>
+    </div>
+
+    <div style="background:#fff; border-radius:14px; padding:14px 16px; border:1px solid #e0dfd7;">
+      <div style="font-size:12px; font-weight:700; color:#5B8C6E; letter-spacing:0.5px; margin-bottom:4px;">④ BILL CARD — AMOUNT ON ROW</div>
+      <div style="font-size:13px; color:#444; line-height:1.5;">Amount moved into the meta line ("Due today · ₱100,000") instead of floating on the right — reduces visual clutter on narrow cards. Left accent bar added for urgency.</div>
+    </div>
+
+    <div style="background:#fff; border-radius:14px; padding:14px 16px; border:1px solid #e0dfd7;">
+      <div style="font-size:12px; font-weight:700; color:#5B8C6E; letter-spacing:0.5px; margin-bottom:4px;">⑤ CONDENSED BALANCES</div>
+      <div style="font-size:13px; color:#444; line-height:1.5;">Balances show without decimal places (₱69,420 vs ₱69,420.00). Reduces visual noise in the list. Full precision still shown on the Account Detail screen.</div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
