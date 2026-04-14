@@ -1068,7 +1068,7 @@ export default function MoreScreen() {
   ];
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 16) }]}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top + 8, 20) }]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>More</Text>
         {authEmail ? (

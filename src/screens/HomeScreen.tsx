@@ -25,6 +25,7 @@ import Svg, { Path as SvgPath } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSync } from '@/contexts/SyncContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -255,7 +256,8 @@ export default function HomeScreen() {
   const userName = profile?.name || 'User';
 
   const { colors, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => createStyles(colors, isDark, insets.top), [colors, isDark, insets.top]);
 
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
 
@@ -802,12 +804,12 @@ export default function HomeScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const createStyles = (colors: any, isDark: boolean) =>
+const createStyles = (colors: any, isDark: boolean, topInset: number) =>
   StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
+    container: { flex: 1, backgroundColor: colors.background, paddingTop: Math.max(topInset + 8, 20) },
     scroll: { flex: 1 },
     scrollContent: { paddingBottom: 98 }, // tabBarHeight (82) + 16 breathing room
-    greeting: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8 },
+    greeting: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8 },
     greetingTop: {
       flexDirection: 'row',
       alignItems: 'flex-start',

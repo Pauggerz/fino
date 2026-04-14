@@ -140,10 +140,10 @@ export default function RootNavigator() {
           name="AddTransaction"
           component={AddTransactionSheet}
           options={{
-            presentation: Platform.OS === 'android' ? 'modal' : 'transparentModal',
-            animation: Platform.OS === 'android' ? 'slide_from_bottom' : 'none',
+            presentation: 'transparentModal',
+            animation: 'none',
             contentStyle: {
-              backgroundColor: Platform.OS === 'android' ? '#00000000' : 'transparent',
+              backgroundColor: 'transparent',
             },
           }}
         />
