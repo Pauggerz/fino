@@ -345,7 +345,9 @@ export default function FeedScreen() {
   const [filterAccountId, setFilterAccountId] = useState<string | undefined>(
     route.params?.filterAccount ?? undefined
   );
-  const [filterSortOrder, setFilterSortOrder] = useState<SortOrder>('date_desc');
+  const [filterSortOrder, setFilterSortOrder] = useState<SortOrder>(
+    (route.params?.filterSortOrder as SortOrder | undefined) ?? 'date_desc'
+  );
   // draft state while panel is open
   const [draftAccountId, setDraftAccountId] = useState<string | undefined>(undefined);
   const [draftSortOrder, setDraftSortOrder] = useState<SortOrder>('date_desc');
@@ -430,6 +432,12 @@ export default function FeedScreen() {
       setFilterAccountId(route.params.filterAccount);
     }
   }, [route.params?.filterAccount]);
+
+  React.useEffect(() => {
+    if (route.params?.filterSortOrder !== undefined) {
+      setFilterSortOrder(route.params.filterSortOrder as SortOrder);
+    }
+  }, [route.params?.filterSortOrder]);
 
   // Reset category filter when switching tabs
   const handleViewTypeSwitch = (type: 'expense' | 'income') => {

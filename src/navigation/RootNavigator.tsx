@@ -22,7 +22,7 @@ import ChatScreen from '../screens/ChatScreen';
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type FeedStackParamList = {
-  FeedMain: { filterCategory?: string; filterAccount?: string } | undefined;
+  FeedMain: { filterCategory?: string; filterAccount?: string; filterSortOrder?: string } | undefined;
   TransactionDetail: { id: string };
 };
 
