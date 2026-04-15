@@ -1,14 +1,14 @@
 import React, { useRef } from 'react';
 import {
+  View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Animated,
   Platform,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
-import { colors } from '../constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../contexts/ThemeContext';
 
 export type TabRoute = 'home' | 'feed' | 'stats' | 'more';
@@ -19,157 +19,156 @@ interface TabBarProps {
   onFabPress: () => void;
 }
 
-export default function TabBar({
-  activeTab,
-  onTabPress,
-  onFabPress,
-}: TabBarProps) {
+const TAB_ICONS: Record<TabRoute, [string, string]> = {
+  home:  ['home-outline',      'home'],
+  feed:  ['receipt-outline',   'receipt'],
+  stats: ['bar-chart-outline', 'bar-chart'],
+  more:  ['grid-outline',      'grid'],
+};
+
+const TAB_LABELS: Record<TabRoute, string> = {
+  home:  'Home',
+  feed:  'Txns',
+  stats: 'Insights',
+  more:  'Tools',
+};
+
+export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProps) {
   const { colors, isDark } = useTheme();
-  // FAB bounce animation
+  const insets = useSafeAreaInsets();
   const fabScale = useRef(new Animated.Value(1)).current;
 
   const handleFabPress = () => {
     Animated.sequence([
-      Animated.timing(fabScale, {
-        toValue: 0.88,
-        duration: 80,
-        useNativeDriver: true,
-      }),
-      Animated.spring(fabScale, {
-        toValue: 1,
-        friction: 4,
-        tension: 200,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fabScale, { toValue: 0.86, duration: 70, useNativeDriver: true }),
+      Animated.spring(fabScale, { toValue: 1, friction: 4, tension: 240, useNativeDriver: true }),
     ]).start();
     onFabPress();
   };
 
-  const renderTab = (id: TabRoute, icon: string, label: string) => {
+  const pillBg   = isDark ? '#1C1C1E' : '#FFFFFF';
+  const fabBg    = isDark ? '#FFFFFF' : '#1C1C1E';
+  const fabColor = isDark ? '#1C1C1E' : '#FFFFFF';
+
+  const renderTab = (id: TabRoute) => {
     const isActive = activeTab === id;
+    const [outline, filled] = TAB_ICONS[id];
     return (
       <TouchableOpacity
         key={id}
-        style={[styles.tabItem, isActive && styles.tabItemActive]}
+        style={styles.tabItem}
         onPress={() => onTabPress(id)}
         activeOpacity={0.7}
       >
-        <Text style={styles.tabIcon}>{icon}</Text>
-        <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
-          {label}
+        <Ionicons
+          name={(isActive ? filled : outline) as any}
+          size={22}
+          color={isActive ? colors.primary : (isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.35)')}
+        />
+        <Text style={[
+          styles.tabLabel,
+          {
+            color: isActive
+              ? colors.primary
+              : (isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.35)'),
+            fontFamily: isActive ? 'Inter_600SemiBold' : 'Inter_400Regular',
+          },
+        ]}>
+          {TAB_LABELS[id]}
         </Text>
       </TouchableOpacity>
     );
   };
 
+  const bottomOffset = Math.max(insets.bottom, 16);
+
   return (
-    <BlurView
-      intensity={isDark ? 40 : 20}
-      tint={isDark ? 'dark' : 'light'}
-      style={[
-        styles.tabBar,
-        {
-          backgroundColor: colors.tabBarBg,
-          borderTopColor: colors.cardBorderTransparent,
-        },
-      ]}
+    <View
+      style={[styles.wrapper, { bottom: bottomOffset }]}
+      pointerEvents="box-none"
     >
-      {renderTab('home', '🏠', 'Home')}
-      {renderTab('feed', '📋', 'Txns')}
-      {/* ── FAB ── */}
-      <Animated.View
-        style={[styles.fabContainer, { transform: [{ scale: fabScale }] }]}
-      >
-        <TouchableOpacity activeOpacity={1} onPress={handleFabPress}>
-          <LinearGradient
-            colors={['#4a7a5e', '#5B8C6E', '#6a9e7f']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.fab}
-          >
-            <Text style={styles.fabIcon}>+</Text>
-          </LinearGradient>
+      {/* ── Floating pill ── */}
+      <View style={[
+        styles.pill,
+        {
+          backgroundColor: pillBg,
+          shadowColor: isDark ? '#000' : '#1C1C1E',
+        },
+      ]}>
+        {renderTab('home')}
+        {renderTab('feed')}
+        {renderTab('stats')}
+        {renderTab('more')}
+      </View>
+
+      {/* ── FAB circle ── */}
+      <Animated.View style={[
+        styles.fabWrap,
+        {
+          shadowColor: isDark ? '#fff' : '#000',
+          transform: [{ scale: fabScale }],
+        },
+      ]}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={handleFabPress}
+          style={[styles.fab, { backgroundColor: fabBg }]}
+        >
+          <Ionicons name="add" size={28} color={fabColor} />
         </TouchableOpacity>
       </Animated.View>
-
-      {renderTab('stats', '📊', 'Insights')}
-      {renderTab('more', '⋯', 'More')}
-    </BlurView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
+  // Outer row containing pill + FAB
+  wrapper: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 82,
-    // spec: rgba(255,255,255,0.95)
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(30,30,46,0.08)',
-    // spec: borderRadius 0 0 50px 50px (bottom corners only)
-    borderBottomLeftRadius: 50,
-    borderBottomRightRadius: 50,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-    paddingHorizontal: 8,
-    shadowColor: '#1E1E2E',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 20,
-    elevation: 10,
+    gap: 10,
   },
+
+  // The oval pill
+  pill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 64,
+    borderRadius: 100,
+    paddingHorizontal: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 16,
+  },
+
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    borderRadius: 12,
     gap: 3,
-  },
-  tabItemActive: {
-    backgroundColor: colors.primaryLight,
-  },
-  tabIcon: {
-    fontSize: 20,
+    paddingVertical: 8,
   },
   tabLabel: {
-    fontFamily: 'Inter_600SemiBold',
     fontSize: 10,
-    color: colors.textSecondary,
   },
-  tabLabelActive: {
-    // spec: Nunito 700 for active label
-    fontFamily: 'Nunito_700Bold',
-    color: colors.primary,
-  },
-  fabContainer: {
-    shadowColor: colors.primary,
+
+  // FAB
+  fabWrap: {
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 8,
-    marginHorizontal: 4,
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 14,
   },
   fab: {
-    // spec: 58px circle
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.25)',
-  },
-  fabIcon: {
-    fontSize: 28,
-    fontWeight: '300',
-    color: colors.white,
-    lineHeight: 28,
-    marginTop: Platform.OS === 'ios' ? -2 : 0,
   },
 });

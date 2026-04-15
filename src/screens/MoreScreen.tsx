@@ -84,7 +84,7 @@ interface BillReminder {
 
 // ─── ADD ACCOUNT MODAL ───────────────────────────────────────────────────────
 
-function AddAccountModal({
+export function AddAccountModal({
   visible,
   onClose,
   onSaved,
@@ -159,7 +159,7 @@ function AddAccountModal({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1, backgroundColor: colors.background }}
+        style={{ flex: 1, backgroundColor: colors.white }}
       >
         <View style={modalStyles.sheet}>
           <View style={modalStyles.handle} />
@@ -280,7 +280,7 @@ function AddAccountModal({
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-function getDueLabel(diffDays: number): string {
+export function getDueLabel(diffDays: number): string {
   if (diffDays === 0) return 'Due today';
   if (diffDays > 0) return `Due in ${diffDays} day${diffDays !== 1 ? 's' : ''}`;
   return `${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? 's' : ''} overdue`;
@@ -953,83 +953,23 @@ function BillRemindersModal({
 export default function MoreScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { accounts, loading, refetch: refetchAccounts } = useAccounts();
-  const { colors, isDark, mode, setMode } = useTheme();
+  const { colors, isDark } = useTheme();
 
   const styles = useMemo(
     () => createMainStyles(colors, isDark),
     [colors, isDark]
   );
-  const modalStyles = useMemo(
-    () => createModalStyles(colors, isDark),
-    [colors, isDark]
-  );
 
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [showAddAccount, setShowAddAccount] = useState(false);
   const [showBudgetSettings, setShowBudgetSettings] = useState(false);
   const [showBillReminders, setShowBillReminders] = useState(false);
-  const [showAppSettings, setShowAppSettings] = useState(false);
-
-  const [authEmail, setAuthEmail] = useState<string | null>(null);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-
   const [quickViewBill, setQuickViewBill] = useState<BillReminder | null>(null);
-  const [upcomingBills, setUpcomingBills] = useState<BillReminder[]>([]);
-
-  const fetchUpcomingBills = useCallback(async () => {
-    const { data } = await supabase
-      .from('bill_reminders')
-      .select('*')
-      .eq('is_paid', false)
-      .order('due_date')
-      .limit(1);
-    setUpcomingBills((data as BillReminder[]) ?? []);
-  }, []);
-
-  const refreshAuthState = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    setAuthEmail(user?.email ?? null);
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchUpcomingBills();
-      refreshAuthState();
-    }, [fetchUpcomingBills, refreshAuthState])
-  );
-
-  const nextBill = upcomingBills[0] ?? null;
-
-  const handleLogin = async () => {
-    if (!loginEmail.trim() || !loginPassword) {
-      Alert.alert('Required', 'Please enter your email and password.');
-      return;
-    }
-    setIsLoggingIn(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: loginEmail.trim(),
-      password: loginPassword,
-    });
-    setIsLoggingIn(false);
-    if (error) {
-      Alert.alert('Log in failed', error.message);
-      return;
-    }
-    setShowLoginModal(false);
-    setLoginPassword('');
-    refreshAuthState();
-  };
 
   const handleToolPress = (id: string) => {
     if (id === 'fino') navigation.navigate('ChatScreen');
     else if (id === 'budget') setShowBudgetSettings(true);
     else if (id === 'bills') setShowBillReminders(true);
     else if (id === 'settings') setShowAppSettings(true);
+    else if (id === 'splitter') navigation.navigate('BillSplitter');
   };
 
   const TOOLS = [
@@ -1058,6 +998,14 @@ export default function MoreScreen() {
       bg: isDark ? '#3A2E1D' : '#FFF8F0',
     },
     {
+      id: 'splitter',
+      label: 'Bill Splitter',
+      desc: 'Split a receipt between friends',
+      icon: 'people',
+      color: '#3A7BD5',
+      bg: isDark ? '#111E30' : '#EAF1FB',
+    },
+    {
       id: 'settings',
       label: 'Settings',
       desc: 'Theme and app preferences',
@@ -1067,335 +1015,86 @@ export default function MoreScreen() {
     },
   ];
 
+  const otherTools = TOOLS.filter(t => t.id !== 'fino');
+
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top + 8, 20) }]}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>More</Text>
-        {authEmail ? (
-          <View style={styles.loggedInPill}>
-            <Text style={styles.loggedInPillText} numberOfLines={1} ellipsizeMode="tail">
-              {authEmail}
-            </Text>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.loginBtn}
-            activeOpacity={0.8}
-            onPress={() => setShowLoginModal(true)}
-          >
-            <Text style={styles.loginBtnText}>Log in</Text>
-          </TouchableOpacity>
-        )}
+        <Text style={styles.headerTitle}>Tools</Text>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>MY ACCOUNTS</Text>
-          <View style={styles.acctCard}>
-            {loading ? (
-              <View style={styles.loadingAccountsWrap}>
-                {Array.from({ length: 4 }).map((_, index) => (
-                  <View
-                    key={`more-acct-skel-${index}`}
-                    style={[
-                      styles.acctRow,
-                      index === 3 && { borderBottomWidth: 0 },
-                    ]}
-                  >
-                    <View style={styles.acctRowLeft}>
-                      <Skeleton
-                        width={40}
-                        height={40}
-                        borderRadius={20}
-                        style={{ marginRight: 14 }}
-                      />
-                      <Skeleton width={104} height={15} />
-                    </View>
-                    <View style={styles.acctRowRight}>
-                      <Skeleton width={84} height={14} />
-                      <Skeleton
-                        width={16}
-                        height={16}
-                        borderRadius={8}
-                        style={{ marginLeft: 8 }}
-                      />
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              accounts.map((acct, index) => (
-                <TouchableOpacity
-                  key={acct.id}
-                  style={[
-                    styles.acctRow,
-                    index === accounts.length - 1 && { borderBottomWidth: 0 },
-                  ]}
-                  onPress={() =>
-                    navigation.navigate('AccountDetail', { id: acct.id })
-                  }
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.acctRowLeft}>
-                    {(() => {
-                      const logo = ACCOUNT_LOGOS[acct.name];
-                      const avatarLetter =
-                        ACCOUNT_AVATAR_OVERRIDE[acct.name] ??
-                        acct.letter_avatar;
-                      if (logo) {
-                        return (
-                          <View
-                            style={[
-                              styles.avatar,
-                              { backgroundColor: colors.white },
-                            ]}
-                          >
-                            <Image
-                              source={logo}
-                              style={{ width: 20, height: 20 }}
-                              resizeMode="contain"
-                            />
-                          </View>
-                        );
-                      }
-                      return (
-                        <View
-                          style={[
-                            styles.avatar,
-                            {
-                              backgroundColor:
-                                acct.brand_colour ?? colors.catTileEmptyBg,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[styles.avatarText, { color: '#FFFFFF' }]}
-                          >
-                            {avatarLetter}
-                          </Text>
-                        </View>
-                      );
-                    })()}
-                    <Text style={styles.acctName}>{acct.name}</Text>
-                  </View>
-                  <View style={styles.acctRowRight}>
-                    <View style={[
-                      styles.balanceDot,
-                      { backgroundColor: acct.balance >= 0 ? colors.primary : colors.expenseRed },
-                    ]} />
-                    <Text style={[
-                      styles.acctBalance,
-                      acct.balance < 0 && { color: colors.expenseRed },
-                    ]}>
-                      {acct.balance < 0 ? '-' : ''}₱{Math.abs(acct.balance).toLocaleString('en-PH', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      })}
-                    </Text>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={16}
-                      color={colors.textSecondary}
-                      style={{ marginLeft: 6 }}
-                    />
-                  </View>
-                </TouchableOpacity>
-              ))
-            )}
+        {/* ── Ask Fino hero card ── */}
+        <TouchableOpacity
+          style={styles.finoHero}
+          onPress={() => handleToolPress('fino')}
+          activeOpacity={0.88}
+        >
+          {/* gradient bg */}
+          <View style={StyleSheet.absoluteFillObject}>
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: isDark ? '#1A1426' : colors.lavenderLight }]} />
+            {/* decorative blobs */}
+            <View style={styles.heroBlob1} />
+            <View style={styles.heroBlob2} />
           </View>
-          <TouchableOpacity
-            style={styles.addAccountRow}
-            activeOpacity={0.7}
-            onPress={() => setShowAddAccount(true)}
-          >
-            <View style={styles.addAccountCircle}>
-              <Ionicons name="add" size={18} color={colors.primary} />
-            </View>
-            <Text style={styles.addAccountText}>Add new account</Text>
-          </TouchableOpacity>
-        </View>
 
-        {nextBill ? (
-          <TouchableOpacity
-            style={styles.billCard}
-            activeOpacity={0.8}
-            onPress={() => setQuickViewBill(nextBill)}
-          >
-            <View style={styles.billIconBox}>
-              <Ionicons
-                name="notifications"
-                size={22}
-                color={colors.statWarnBar}
-              />
+          {/* Left content */}
+          <View style={{ flex: 1 }}>
+            <View style={styles.finoBadge}>
+              <Ionicons name="sparkles" size={11} color={colors.insightPurple} />
+              <Text style={[styles.finoBadgeText, { color: colors.insightPurple }]}>AI POWERED</Text>
             </View>
-            <View style={styles.billContent}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-                <Ionicons name="time-outline" size={11} color={colors.statWarnBar} />
-                <Text style={[styles.billTag, { marginBottom: 0 }]}>BILL REMINDER</Text>
-              </View>
-              <Text style={styles.billTitle}>{nextBill.title}</Text>
-              <Text style={styles.billMeta}>
-                {(() => {
-                  const diff = Math.ceil(
-                    (new Date(nextBill.due_date).getTime() - Date.now()) /
-                      86400000
-                  );
-                  const dueStr = getDueLabel(diff);
-                  return nextBill.amount != null
-                    ? `${dueStr} · ₱${nextBill.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
-                    : dueStr;
-                })()}
+            <Text style={[styles.finoTitle, { color: isDark ? '#E8E0FF' : colors.lavenderDark }]}>
+              Ask Fino
+            </Text>
+            <Text style={[styles.finoSub, { color: isDark ? 'rgba(220,210,255,0.65)' : colors.insightPurple }]}>
+              Your personal AI money coach. Ask anything about your finances.
+            </Text>
+            <View style={[styles.finoBtn, { backgroundColor: isDark ? 'rgba(176,154,224,0.18)' : 'rgba(75,45,163,0.1)' }]}>
+              <Text style={[styles.finoBtnText, { color: isDark ? '#C9B8F5' : colors.lavenderDark }]}>
+                Start chatting
               </Text>
+              <Ionicons name="arrow-forward" size={13} color={isDark ? '#C9B8F5' : colors.lavenderDark} />
             </View>
-            <Ionicons
-              name="chevron-forward"
-              size={16}
-              color={colors.statWarnBar}
-            />
-          </TouchableOpacity>
-        ) : null}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>TOOLS</Text>
-          <View style={styles.toolsGrid}>
-            {TOOLS.map((tool) => (
-              <TouchableOpacity
-                key={tool.id}
-                style={styles.toolTile}
-                onPress={() => handleToolPress(tool.id)}
-                activeOpacity={0.75}
-              >
-                <View style={[styles.toolIconBox, { backgroundColor: tool.bg }]}>
-                  <Ionicons name={tool.icon as any} size={20} color={tool.color} />
-                </View>
-                <View>
-                  <Text style={styles.toolName}>{tool.label}</Text>
-                  <Text style={styles.toolDesc}>{tool.desc}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
           </View>
+
+          {/* Right icon */}
+          <View style={[styles.finoIconWrap, { backgroundColor: isDark ? 'rgba(176,154,224,0.15)' : 'rgba(75,45,163,0.08)' }]}>
+            <Ionicons name="sparkles" size={36} color={isDark ? '#C9B8F5' : colors.lavenderDark} />
+          </View>
+        </TouchableOpacity>
+
+        {/* ── Other tools ── */}
+        <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
+        <View style={styles.toolsGrid}>
+          {otherTools.map((tool) => (
+            <TouchableOpacity
+              key={tool.id}
+              style={[styles.toolTile, { backgroundColor: colors.white }]}
+              onPress={() => handleToolPress(tool.id)}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.toolIconBox, { backgroundColor: tool.bg }]}>
+                <Ionicons name={tool.icon as any} size={22} color={tool.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toolName}>{tool.label}</Text>
+                <Text style={styles.toolDesc}>{tool.desc}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color={colors.textSecondary} style={{ opacity: 0.5 }} />
+            </TouchableOpacity>
+          ))}
         </View>
       </ScrollView>
 
-      {/* ─── APP SETTINGS MODAL ─── */}
-      <Modal
-        visible={showAppSettings}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowAppSettings(false)}
-      >
-        <View style={modalStyles.sheet}>
-          <View style={modalStyles.handle} />
-          <View style={modalStyles.sheetHeader}>
-            <Text style={modalStyles.sheetTitle}>App Settings</Text>
-            <TouchableOpacity onPress={() => setShowAppSettings(false)} style={{ padding: 11 }}>
-              <Ionicons name="close" size={22} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={modalStyles.fieldLabel}>APPEARANCE</Text>
-          <View style={styles.segmentContainer}>
-            {(['system', 'light', 'dark'] as const).map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[
-                  styles.segmentBtn,
-                  mode === t && styles.segmentBtnActive,
-                ]}
-                onPress={() => setMode(t)}
-              >
-                <Text
-                  style={[
-                    styles.segmentText,
-                    mode === t && styles.segmentTextActive,
-                  ]}
-                >
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showLoginModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowLoginModal(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1, backgroundColor: colors.background }}
-        >
-          <View style={modalStyles.sheet}>
-            <View style={modalStyles.handle} />
-            <View style={modalStyles.sheetHeader}>
-              <Text style={modalStyles.sheetTitle}>Log in</Text>
-              <TouchableOpacity
-                onPress={() => setShowLoginModal(false)}
-                activeOpacity={0.7}
-                style={{ padding: 11 }}
-              >
-                <Ionicons name="close" size={22} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            <View style={modalStyles.fieldGroup}>
-              <Text style={modalStyles.fieldLabel}>EMAIL</Text>
-              <TextInput
-                style={modalStyles.input}
-                value={loginEmail}
-                onChangeText={setLoginEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                placeholder="you@example.com"
-                placeholderTextColor={colors.textSecondary}
-              />
-            </View>
-            <View style={modalStyles.fieldGroup}>
-              <Text style={modalStyles.fieldLabel}>PASSWORD</Text>
-              <TextInput
-                style={modalStyles.input}
-                value={loginPassword}
-                onChangeText={setLoginPassword}
-                secureTextEntry
-                placeholder="Password"
-                placeholderTextColor={colors.textSecondary}
-              />
-            </View>
-            <TouchableOpacity
-              style={[modalStyles.primaryBtn, { marginTop: 24 }, isLoggingIn && { opacity: 0.6 }]}
-              onPress={handleLogin}
-              activeOpacity={0.8}
-              disabled={isLoggingIn}
-            >
-              {isLoggingIn ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={modalStyles.primaryBtnText}>Log in</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      <AddAccountModal
-        visible={showAddAccount}
-        onClose={() => setShowAddAccount(false)}
-        onSaved={refetchAccounts}
-      />
       <BillQuickViewModal
         visible={!!quickViewBill}
         bill={quickViewBill}
         onClose={() => setQuickViewBill(null)}
-        onPaid={() => {
-          setQuickViewBill(null);
-          fetchUpcomingBills();
-        }}
+        onPaid={() => setQuickViewBill(null)}
       />
       <BudgetSettingsModal
         visible={showBudgetSettings}
@@ -1403,10 +1102,7 @@ export default function MoreScreen() {
       />
       <BillRemindersModal
         visible={showBillReminders}
-        onClose={() => {
-          setShowBillReminders(false);
-          fetchUpcomingBills();
-        }}
+        onClose={() => setShowBillReminders(false)}
       />
     </View>
   );
@@ -1457,18 +1153,10 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       color: colors.primary,
     },
     scrollContent: {
-      paddingHorizontal: spacing.screenPadding,
-      paddingBottom: 80,
+      paddingTop: 8,
+      paddingBottom: 120,
     },
     section: { marginBottom: 28 },
-    sectionLabel: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 11,
-      color: colors.textSecondary,
-      letterSpacing: 0.8,
-      marginBottom: 12,
-      marginLeft: 2,
-    },
     acctCard: {
       backgroundColor: colors.white,
       borderRadius: 16,
@@ -1585,43 +1273,138 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       fontSize: 13,
       color: colors.textSecondary,
     },
-    toolsGrid: {
+    // ── Ask Fino hero ──
+    finoHero: {
+      marginHorizontal: spacing.screenPadding,
+      marginBottom: 24,
+      borderRadius: 24,
+      padding: 22,
       flexDirection: 'row',
-      flexWrap: 'wrap',
+      alignItems: 'center',
+      gap: 16,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(176,154,224,0.2)' : 'rgba(75,45,163,0.1)',
+      shadowColor: isDark ? '#4B2DA3' : '#7B5EA7',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: isDark ? 0.3 : 0.12,
+      shadowRadius: 20,
+      elevation: 8,
+      minHeight: 160,
+    },
+    heroBlob1: {
+      position: 'absolute',
+      width: 160,
+      height: 160,
+      borderRadius: 80,
+      backgroundColor: isDark ? 'rgba(176,154,224,0.12)' : 'rgba(201,184,245,0.4)',
+      top: -40,
+      right: -30,
+    },
+    heroBlob2: {
+      position: 'absolute',
+      width: 100,
+      height: 100,
+      borderRadius: 50,
+      backgroundColor: isDark ? 'rgba(176,154,224,0.07)' : 'rgba(201,184,245,0.25)',
+      bottom: -20,
+      left: 40,
+    },
+    finoBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: isDark ? 'rgba(176,154,224,0.15)' : 'rgba(75,45,163,0.08)',
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 20,
+      alignSelf: 'flex-start',
+      marginBottom: 10,
+    },
+    finoBadgeText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 9,
+      letterSpacing: 0.8,
+    },
+    finoTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 26,
+      letterSpacing: -0.3,
+      marginBottom: 6,
+    },
+    finoSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12.5,
+      lineHeight: 18,
+      marginBottom: 14,
+    },
+    finoBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      alignSelf: 'flex-start',
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 20,
+    },
+    finoBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+    },
+    finoIconWrap: {
+      width: 72,
+      height: 72,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    sectionLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 11,
+      color: colors.textSecondary,
+      letterSpacing: 1,
+      marginBottom: 12,
+      marginHorizontal: spacing.screenPadding,
+    },
+    // ── Other tools ──
+    toolsGrid: {
+      marginHorizontal: spacing.screenPadding,
       gap: 10,
     },
     toolTile: {
-      flex: 1,
-      flexBasis: '47%',
-      backgroundColor: colors.white,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: colors.cardBorderTransparent,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: 18,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: isDark ? colors.border : 'rgba(30,30,46,0.07)',
       padding: 16,
-      gap: 10,
+      gap: 14,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: isDark ? 0 : 0.05,
+      shadowOpacity: isDark ? 0 : 0.04,
       shadowRadius: 8,
       elevation: isDark ? 0 : 1,
     },
     toolIconBox: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
+      width: 44,
+      height: 44,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
+      flexShrink: 0,
     },
     toolName: {
       fontFamily: 'Inter_600SemiBold',
-      fontSize: 14,
+      fontSize: 14.5,
       color: colors.textPrimary,
+      marginBottom: 2,
     },
     toolDesc: {
       fontFamily: 'Inter_400Regular',
-      fontSize: 11,
+      fontSize: 12,
       color: colors.textSecondary,
-      lineHeight: 15,
+      lineHeight: 16,
       marginTop: 1,
     },
 
@@ -1665,8 +1448,6 @@ const createModalStyles = (colors: any, isDark: boolean) =>
     sheet: {
       flex: 1,
       backgroundColor: colors.white,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
       paddingHorizontal: spacing.screenPadding,
       paddingTop: 12,
     },

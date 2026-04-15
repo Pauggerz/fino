@@ -9,6 +9,7 @@ import {
   TextInput,
   Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import BottomSheet, {
   BottomSheetScrollView,
   BottomSheetTextInput,
@@ -27,6 +28,7 @@ import { Skeleton } from '@/components/Skeleton';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { CATEGORY_COLOR, INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import type { MoreStackParamList } from '../navigation/RootNavigator';
+import WalletCard, { getCfg } from '../components/WalletCard';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,7 +66,7 @@ export default function AccountDetailScreen() {
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
-  const { accounts } = useAccounts();
+  const { accounts, refetch: refetchAccounts } = useAccounts();
   const { categories } = useCategories();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +79,12 @@ export default function AccountDetailScreen() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // ── Edit Account ──
+  const [editSheetVisible, setEditSheetVisible] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editType, setEditType] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
 
   // ── Adjust Balance ──
   const [adjustSheetVisible, setAdjustSheetVisible] = useState(false);
@@ -126,6 +134,7 @@ export default function AccountDetailScreen() {
     color: selectedAccount?.brand_colour ?? colors.primary,
     label: selectedAccount?.name ?? id,
   };
+  const cardGrad = selectedAccount ? getCfg(selectedAccount).grad : ([config.color, config.color, config.color] as [string, string, string]);
   const balance = selectedAccount?.balance ?? 0;
 
   // ── Monthly stats + trends ──
@@ -277,6 +286,21 @@ export default function AccountDetailScreen() {
     setAdjustNote('');
     fetchAccountTransactions();
   }, [selectedAccount, balance, newBalance, adjustNote, fetchAccountTransactions]);
+
+  // ── Save Edit Account ──
+  const handleSaveEdit = useCallback(async () => {
+    const trimmedName = editName.trim();
+    const trimmedType = editType.trim();
+    if (!selectedAccount?.id || !trimmedName) return;
+    setEditSaving(true);
+    await supabase
+      .from('accounts')
+      .update({ name: trimmedName, type: trimmedType })
+      .eq('id', selectedAccount.id);
+    setEditSaving(false);
+    setEditSheetVisible(false);
+    refetchAccounts();
+  }, [selectedAccount, editName, editType, refetchAccounts]);
 
   // ── Save Transfer ──
   const handleSaveTransfer = useCallback(async () => {
@@ -441,24 +465,32 @@ export default function AccountDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* ════ HERO ════ */}
-        <View
-          style={[styles.hero, { backgroundColor: config.color, paddingTop: Math.max(insets.top, 16) + 10 }]}
+        <LinearGradient
+          colors={cardGrad}
+          start={{ x: 0.1, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.hero, { paddingTop: Math.max(insets.top, 16) + 10 }]}
         >
           <View style={styles.heroTopBar}>
             <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
               <Text style={styles.backBtnText}>← Back</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.heroEditBtn}>
+            <TouchableOpacity
+              style={styles.heroEditBtn}
+              onPress={() => {
+                setEditName(selectedAccount?.name ?? '');
+                setEditType(selectedAccount?.type ?? '');
+                setEditSheetVisible(true);
+              }}
+            >
               <Text style={styles.backBtnText}>✏️ Edit</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.heroBody}>
-            <View style={styles.avatarWrap}>
-              <Text style={[styles.avatarLetter, { color: config.color }]}>{config.letter}</Text>
+            <View style={styles.cardWrapper}>
+              <WalletCard account={selectedAccount} />
             </View>
-            <Text style={styles.accountName}>{config.label}</Text>
-            <Text style={styles.accountBalance}>{fmtPeso(balance)}</Text>
 
             <View style={styles.quickActionsRow}>
               <TouchableOpacity
@@ -483,7 +515,7 @@ export default function AccountDetailScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </LinearGradient>
 
         {/* ════ STAT CHIPS ════ */}
         <View style={styles.statsRow}>
@@ -532,14 +564,14 @@ export default function AccountDetailScreen() {
             <Text style={styles.metaValue}>{lastReconciledLabel}</Text>
           </View>
           <TouchableOpacity
-            style={styles.adjustBadge}
+            style={[styles.adjustBadge, { backgroundColor: `${config.color}22` }]}
             onPress={() => {
               setNewBalance('');
               setAdjustNote('');
               setAdjustSheetVisible(true);
             }}
           >
-            <Text style={styles.adjustBadgeText}>⚖️ Adjust Balance</Text>
+            <Text style={[styles.adjustBadgeText, { color: config.color }]}>⚖️ Adjust Balance</Text>
           </TouchableOpacity>
         </View>
 
@@ -566,7 +598,7 @@ export default function AccountDetailScreen() {
                 })
               }
             >
-              <Text style={styles.seeAll}>See all →</Text>
+              <Text style={[styles.seeAll, { color: config.color }]}>See all →</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -593,7 +625,7 @@ export default function AccountDetailScreen() {
             style={styles.filterPillsWrap}
           >
             <TouchableOpacity
-              style={[styles.filterPill, activeCategory === null && styles.filterPillActive]}
+              style={[styles.filterPill, activeCategory === null && [styles.filterPillActive, { backgroundColor: config.color, borderColor: config.color }]]}
               onPress={() => setActiveCategory(null)}
             >
               <Text style={[styles.filterPillText, activeCategory === null && styles.filterPillTextActive]}>
@@ -606,7 +638,7 @@ export default function AccountDetailScreen() {
               return (
                 <TouchableOpacity
                   key={cat}
-                  style={[styles.filterPill, isActive && styles.filterPillActive]}
+                  style={[styles.filterPill, isActive && [styles.filterPillActive, { backgroundColor: config.color, borderColor: config.color }]]}
                   onPress={() => setActiveCategory(isActive ? null : cat)}
                 >
                   <View style={styles.pillInner}>
@@ -868,6 +900,76 @@ export default function AccountDetailScreen() {
       </BottomSheet>
       )}
 
+      {/* ════ EDIT ACCOUNT ════ */}
+      {editSheetVisible && (
+        <BottomSheet
+          index={0}
+          snapPoints={['45%']}
+          enablePanDownToClose
+          keyboardBehavior={Platform.OS === 'ios' ? 'interactive' : 'fillParent'}
+          keyboardBlurBehavior="restore"
+          enableBlurKeyboardOnGesture
+          android_keyboardInputMode="adjustPan"
+          backdropComponent={(props) => (
+            <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} pressBehavior="close" />
+          )}
+          backgroundStyle={{ backgroundColor: colors.white }}
+          handleIndicatorStyle={{ backgroundColor: isDark ? '#555' : '#ccc' }}
+          onClose={() => setEditSheetVisible(false)}
+        >
+          <BottomSheetScrollView
+            contentContainerStyle={styles.bsContent}
+            keyboardShouldPersistTaps="always"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
+          >
+            <Text style={styles.adjustTitle}>Edit Account</Text>
+            <Text style={styles.adjustSub}>Update the name or type for this account.</Text>
+
+            <Text style={[styles.metaLabel, { marginBottom: 6, marginTop: 8 }]}>Account Name</Text>
+            <BottomSheetTextInput
+              style={styles.adjustInputField}
+              placeholder="e.g. GCash"
+              placeholderTextColor={colors.textSecondary}
+              value={editName}
+              onChangeText={setEditName}
+              returnKeyType="next"
+              autoCapitalize="words"
+            />
+
+            <Text style={[styles.metaLabel, { marginBottom: 6, marginTop: 16 }]}>Account Type</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+              {['E-WALLET', 'BANK ACCOUNT', 'CASH WALLET', 'CREDIT CARD'].map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  onPress={() => setEditType(t)}
+                  style={[
+                    styles.filterPill,
+                    editType === t && [styles.filterPillActive, { backgroundColor: config.color, borderColor: config.color }],
+                  ]}
+                >
+                  <Text style={[styles.filterPillText, editType === t && styles.filterPillTextActive]}>{t}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.adjustSaveBtn,
+                { marginTop: 20, opacity: editSaving || !editName.trim() ? 0.45 : 1 },
+              ]}
+              onPress={handleSaveEdit}
+              disabled={editSaving || !editName.trim()}
+            >
+              <Text style={styles.adjustSaveBtnText}>{editSaving ? 'Saving…' : 'Save Changes'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditSheetVisible(false)}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </BottomSheetScrollView>
+        </BottomSheet>
+      )}
+
     </View>
   );
 }
@@ -927,6 +1029,11 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     backBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#FFFFFF' },
     heroBody: { alignItems: 'center', paddingBottom: 16 },
+    cardWrapper: {
+      alignItems: 'center',
+      width: '100%',
+      marginBottom: 16,
+    },
     avatarWrap: {
       width: 48,
       height: 48,

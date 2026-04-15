@@ -71,7 +71,7 @@ function NfcIcon({ color = 'rgba(255,255,255,0.5)' }: { color?: string }) {
 }
 
 // ── Per-brand visual config ───────────────────────────────────────────────────
-interface CardCfg {
+export interface CardCfg {
   grad: [string, string, string];
   typeLabel: string;
   watermark?: string;
@@ -123,7 +123,7 @@ const BRAND_CFGS: Record<string, CardCfg> = {
   },
 };
 
-function getCfg(acc: Account): CardCfg {
+export function getCfg(acc: Account): CardCfg {
   if (BRAND_CFGS[acc.name]) return BRAND_CFGS[acc.name];
   const c = acc.brand_colour || '#2a2a3e';
   return {

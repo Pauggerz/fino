@@ -631,25 +631,16 @@ export default function FeedScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.heroToggleWrap}>
-              <TouchableOpacity
-                style={[styles.heroToggleBtn, viewType === 'expense' && styles.heroToggleBtnActive]}
-                activeOpacity={0.8}
-                onPress={() => handleViewTypeSwitch('expense')}
-              >
-                <Text style={[styles.heroToggleText, viewType === 'expense' && styles.heroToggleTextActive]}>
-                  Expenses
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.heroToggleBtn, viewType === 'income' && styles.heroToggleBtnActive]}
-                activeOpacity={0.8}
-                onPress={() => handleViewTypeSwitch('income')}
-              >
-                <Text style={[styles.heroToggleText, viewType === 'income' && styles.heroToggleTextActive]}>
-                  Income
-                </Text>
-              </TouchableOpacity>
+            {/* type indicator — reflects current viewType, no duplicate toggle */}
+            <View style={styles.heroTypeChip}>
+              <Ionicons
+                name={viewType === 'expense' ? 'trending-down' : 'trending-up'}
+                size={12}
+                color={viewType === 'expense' ? colors.expenseRed : colors.incomeGreen}
+              />
+              <Text style={[styles.heroTypeChipText, { color: viewType === 'expense' ? colors.expenseRed : colors.incomeGreen }]}>
+                {viewType === 'expense' ? 'Expenses' : 'Income'}
+              </Text>
             </View>
           </View>
 
@@ -689,6 +680,28 @@ export default function FeedScreen() {
     if (item.type === 'sticky') {
       return (
         <View style={styles.stickyBar}>
+          {/* Expenses / Income segment — single source of truth */}
+          <View style={styles.segmentRow}>
+            <TouchableOpacity
+              style={[styles.segmentBtn, viewType === 'expense' && styles.segmentBtnExpenseActive]}
+              onPress={() => handleViewTypeSwitch('expense')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.segmentText, viewType === 'expense' && styles.segmentTextActive]}>
+                Expenses
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segmentBtn, viewType === 'income' && styles.segmentBtnIncomeActive]}
+              onPress={() => handleViewTypeSwitch('income')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.segmentText, viewType === 'income' && styles.segmentTextActive]}>
+                Income
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.searchRow}>
             <View style={styles.searchBar}>
               <Ionicons name="search-outline" size={16} color={colors.textSecondary} />
@@ -821,28 +834,11 @@ export default function FeedScreen() {
       );
     }
 
-    // ── Toggle + chips + swipe hint (scrolls away with hero) ──
+    // ── Category chips + swipe hint ──
     if (item.type === 'controls') {
       if (loading) return renderSkeletonList();
       return (
         <View>
-          <View style={styles.toggleRow}>
-            <TouchableOpacity
-              style={[styles.toggleBtn, viewType === 'expense' && styles.toggleBtnActive]}
-              onPress={() => handleViewTypeSwitch('expense')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.toggleBtnText, viewType === 'expense' && styles.toggleBtnTextActive]}>Expenses</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleBtn, viewType === 'income' && styles.toggleBtnIncomeActive]}
-              onPress={() => handleViewTypeSwitch('income')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.toggleBtnText, viewType === 'income' && styles.toggleBtnTextActive]}>Income</Text>
-            </TouchableOpacity>
-          </View>
-
           <View style={styles.filterWrapper}>
             <FlatList
               data={filterOptions}
@@ -1244,25 +1240,21 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       color: colors.whiteTransparent80,
       paddingHorizontal: 6,
     },
-    heroToggleWrap: {
+    // Hero type chip (read-only indicator replacing the old toggle)
+    heroTypeChip: {
       flexDirection: 'row',
-      borderRadius: 999,
-      padding: 3,
-      gap: 2,
+      alignItems: 'center',
+      gap: 5,
       backgroundColor: colors.blackTransparent15,
-    },
-    heroToggleBtn: {
       borderRadius: 999,
       paddingVertical: 6,
       paddingHorizontal: 12,
+      alignSelf: 'flex-start',
     },
-    heroToggleBtnActive: { backgroundColor: colors.whiteTransparent18 },
-    heroToggleText: {
+    heroTypeChipText: {
       fontFamily: 'Inter_600SemiBold',
       fontSize: 12,
-      color: colors.whiteTransparent55,
     },
-    heroToggleTextActive: { color: colors.whiteTransparent80 },
 
     heroInfoHeader: {
       marginTop: 2,
@@ -1383,7 +1375,8 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
     // ── Sticky search wrapper ──
     stickyBar: {
       backgroundColor: colors.background,
-      paddingTop: 10,
+      paddingTop: 14,
+      paddingBottom: 2,
     },
 
     // ── Search bar ──
@@ -1513,29 +1506,43 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       color: '#FFFFFF',
     },
 
-    // ── Expense / Income toggle ──
-    toggleRow: {
+    // ── Segment control (in sticky bar) ──
+    segmentRow: {
       flexDirection: 'row',
       marginHorizontal: spacing.screenPadding,
-      marginBottom: 12,
-      backgroundColor: isDark ? '#2A2A2A' : '#F0EFEA',
-      borderRadius: 12,
+      marginBottom: 10,
+      backgroundColor: isDark ? colors.surfaceSubdued : '#F0EFEA',
+      borderRadius: 14,
       padding: 3,
     },
-    toggleBtn: {
+    segmentBtn: {
       flex: 1,
-      paddingVertical: 8,
-      borderRadius: 10,
+      paddingVertical: 9,
+      borderRadius: 11,
       alignItems: 'center',
     },
-    toggleBtnActive: { backgroundColor: colors.expenseRed },
-    toggleBtnIncomeActive: { backgroundColor: colors.incomeGreen },
-    toggleBtnText: {
+    segmentBtnExpenseActive: {
+      backgroundColor: colors.expenseRed,
+      shadowColor: colors.expenseRed,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 6,
+      elevation: 3,
+    },
+    segmentBtnIncomeActive: {
+      backgroundColor: colors.incomeGreen,
+      shadowColor: colors.incomeGreen,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 6,
+      elevation: 3,
+    },
+    segmentText: {
       fontFamily: 'Inter_600SemiBold',
-      fontSize: 13,
+      fontSize: 13.5,
       color: colors.textSecondary,
     },
-    toggleBtnTextActive: { color: '#FFFFFF' },
+    segmentTextActive: { color: '#FFFFFF' },
 
     // ── Hero empty hint ──
     heroEmptyHint: {
