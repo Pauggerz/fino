@@ -1,5 +1,11 @@
 // src/screens/FeedScreen.tsx
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useMemo,
+} from 'react';
 import {
   View,
   Text,
@@ -11,6 +17,8 @@ import {
   Animated,
   PanResponder,
   Modal,
+  RefreshControl,
+  Platform,
 } from 'react-native';
 import {
   useNavigation,
@@ -20,7 +28,7 @@ import {
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { radius, spacing } from '../constants/theme';
-import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Global Theme Context
+import { useTheme } from '../contexts/ThemeContext';
 import {
   useTransactions,
   FeedTransaction,
@@ -36,6 +44,115 @@ import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
 import { Skeleton } from '@/components/Skeleton';
+
+// ─── Custom Pull-To-Refresh Indicator ─────────────────────────────────────────
+
+function FinoRefreshIndicator({
+  scrollY,
+  refreshing,
+  colors,
+}: {
+  scrollY: Animated.Value;
+  refreshing: boolean;
+  colors: any;
+}) {
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const androidDropAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (refreshing) {
+      Animated.loop(
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        })
+      ).start();
+      if (Platform.OS === 'android') {
+        Animated.spring(androidDropAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+        }).start();
+      }
+    } else {
+      spinAnim.stopAnimation();
+      spinAnim.setValue(0);
+      if (Platform.OS === 'android') {
+        Animated.timing(androidDropAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }).start();
+      }
+    }
+  }, [refreshing, spinAnim, androidDropAnim]);
+
+  const isAndroid = Platform.OS === 'android';
+
+  const scale = isAndroid
+    ? androidDropAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] })
+    : scrollY.interpolate({
+        inputRange: [-80, -20, 0],
+        outputRange: [1, 0.5, 0],
+        extrapolate: 'clamp',
+      });
+
+  const translateY = isAndroid
+    ? androidDropAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 70] })
+    : scrollY.interpolate({
+        inputRange: [-100, 0],
+        outputRange: [50, 0],
+        extrapolate: 'clamp',
+      });
+
+  const spin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  const pullRotate = scrollY.interpolate({
+    inputRange: [-100, 0],
+    outputRange: ['-360deg', '0deg'],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        top: isAndroid ? -10 : 10,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        zIndex: 100,
+        transform: [
+          { translateY },
+          { scale },
+          { rotate: refreshing ? spin : pullRotate },
+        ],
+      }}
+      pointerEvents="none"
+    >
+      <View
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          backgroundColor: colors.primary,
+          justifyContent: 'center',
+          alignItems: 'center',
+          shadowColor: colors.primary,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 6,
+        }}
+      >
+        <Ionicons name="sparkles" size={22} color="#FFFFFF" />
+      </View>
+    </Animated.View>
+  );
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -178,7 +295,7 @@ function MonthPickerModal({
   const [draftYear, setDraftYear] = useState(year);
   const [draftMonth, setDraftMonth] = useState(month);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (visible) {
       setDraftYear(year);
       setDraftMonth(month);
@@ -290,35 +407,31 @@ export default function FeedScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<FeedStackParamList, 'FeedMain'>>();
 
-  // 🌙 Dynamic Theme Injection
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
-  // ── View type: expense or income ──
   const [viewType, setViewType] = useState<'expense' | 'income'>('expense');
-
-  // ── Active category filter ──
   const [activeCategory, setActiveCategory] = useState(
     route.params?.filterCategory ?? 'All'
   );
 
-  // ── Selected month/year ──
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [monthPickerVisible, setMonthPickerVisible] = useState(false);
 
-  // ── Toast for delete ──
   const [toastVisible, setToastVisible] = useState(false);
   const [toastTitle, setToastTitle] = useState('');
   const [toastSubtitle, setToastSubtitle] = useState('');
+
+  const [refreshing, setRefreshing] = useState(false);
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   const dateRange = useMemo(
     () => getMonthRange(selectedYear, selectedMonth),
     [selectedYear, selectedMonth]
   );
 
-  // Build effective category filter for the hook
   let hookCategory = activeCategory;
   if (viewType === 'income' && activeCategory === 'All') {
     hookCategory = 'Income';
@@ -329,29 +442,38 @@ export default function FeedScreen() {
 
   const { categories } = useCategories();
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refetch(),
+        new Promise((resolve) => setTimeout(resolve, 800)), // ensure brand animation plays
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
   useFocusEffect(
     useCallback(() => {
       refetch();
     }, [refetch])
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     setActiveCategory(route.params?.filterCategory ?? 'All');
   }, [route.params?.filterCategory]);
 
-  // Reset category filter when switching tabs
   const handleViewTypeSwitch = (type: 'expense' | 'income') => {
     setViewType(type);
     setActiveCategory('All');
   };
 
-  // ── Filter chip options ──
   const expenseFilterOptions = ['All', ...categories.map((c) => c.name)];
   const incomeFilterOptions = ['All', ...INCOME_CATEGORIES.map((c) => c.name)];
   const filterOptions =
     viewType === 'income' ? incomeFilterOptions : expenseFilterOptions;
 
-  // ── Delete handler ──
   const handleDelete = async (tx: FeedTransaction) => {
     await supabase.from('transactions').delete().eq('id', tx.id);
 
@@ -382,7 +504,6 @@ export default function FeedScreen() {
     setToastVisible(true);
   };
 
-  // ── Flatten sections → FlatList items ──
   const listData: ListItem[] = sections.flatMap((s) => [
     { type: 'header', title: s.title },
     ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
@@ -415,7 +536,6 @@ export default function FeedScreen() {
     </View>
   );
 
-  // ── Render row ──
   const renderItem = ({ item }: { item: ListItem }) => {
     if (item.type === 'header') {
       return (
@@ -428,7 +548,6 @@ export default function FeedScreen() {
     const tx = item.data;
     const isExpense = tx.type === 'expense';
 
-    // Icon + color resolution
     let iconKey = 'default';
     let iconColor = colors.textSecondary;
 
@@ -613,11 +732,16 @@ export default function FeedScreen() {
       </View>
 
       {/* ─── TRANSACTION LIST ─── */}
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, zIndex: 10 }}>
+        <FinoRefreshIndicator
+          scrollY={scrollY}
+          refreshing={refreshing}
+          colors={colors}
+        />
         {loading ? (
           renderSkeletonList()
         ) : (
-          <FlatList
+          <Animated.FlatList
             data={listData}
             renderItem={renderItem}
             keyExtractor={(item, index) =>
@@ -626,6 +750,21 @@ export default function FeedScreen() {
                 : `tx-${item.data.id}-${index}`
             }
             contentContainerStyle={{ paddingBottom: 120 }}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+              { useNativeDriver: true }
+            )}
+            scrollEventThrottle={16}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="transparent"
+                colors={['transparent']}
+                style={{ backgroundColor: 'transparent' }}
+                progressBackgroundColor="transparent"
+              />
+            }
             ListEmptyComponent={
               <Text style={styles.emptyText}>No transactions found.</Text>
             }

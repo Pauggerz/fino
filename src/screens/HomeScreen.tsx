@@ -12,6 +12,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
+  RefreshControl,
+  Platform,
 } from 'react-native';
 import Svg, { Path as SvgPath } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -72,17 +74,121 @@ function onTrackLabel(pct: number): string {
   return 'Over budget';
 }
 
+// ─── Custom Pull-To-Refresh Indicator ─────────────────────────────────────────
+
+function FinoRefreshIndicator({
+  scrollY,
+  refreshing,
+  colors,
+}: {
+  scrollY: Animated.Value;
+  refreshing: boolean;
+  colors: any;
+}) {
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const androidDropAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (refreshing) {
+      Animated.loop(
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        })
+      ).start();
+      if (Platform.OS === 'android') {
+        Animated.spring(androidDropAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+        }).start();
+      }
+    } else {
+      spinAnim.stopAnimation();
+      spinAnim.setValue(0);
+      if (Platform.OS === 'android') {
+        Animated.timing(androidDropAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }).start();
+      }
+    }
+  }, [refreshing, spinAnim, androidDropAnim]);
+
+  const isAndroid = Platform.OS === 'android';
+
+  const scale = isAndroid
+    ? androidDropAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] })
+    : scrollY.interpolate({
+        inputRange: [-80, -20, 0],
+        outputRange: [1, 0.5, 0],
+        extrapolate: 'clamp',
+      });
+
+  const translateY = isAndroid
+    ? androidDropAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 70] })
+    : scrollY.interpolate({
+        inputRange: [-100, 0],
+        outputRange: [50, 0],
+        extrapolate: 'clamp',
+      });
+
+  const spin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  const pullRotate = scrollY.interpolate({
+    inputRange: [-100, 0],
+    outputRange: ['-360deg', '0deg'],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        top: isAndroid ? -10 : 10,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        zIndex: 100,
+        transform: [
+          { translateY },
+          { scale },
+          { rotate: refreshing ? spin : pullRotate },
+        ],
+      }}
+      pointerEvents="none"
+    >
+      <View
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          backgroundColor: colors.primary,
+          justifyContent: 'center',
+          alignItems: 'center',
+          shadowColor: colors.primary,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 6,
+        }}
+      >
+        <Ionicons name="sparkles" size={22} color="#FFFFFF" />
+      </View>
+    </Animated.View>
+  );
+}
+
 // ─── WaveFill ─────────────────────────────────────────────────────────────────
 
 const TILE_W = 160;
 const TILE_H = 120;
-// SVG must be wide enough that translating by -TILE_W never exposes a gap.
 const WAVE_SVG_W = TILE_W * 4;
 
-/**
- * Builds a filled wave path using quadratic beziers.
- * Wavelength = TILE_W, so translating by -TILE_W is a seamless loop.
- */
 function makeWavePath(yBase: number, amp: number): string {
   const halfWl = TILE_W / 2;
   const numArcs = WAVE_SVG_W / halfWl + 2;
@@ -122,7 +228,6 @@ function WaveFill({ pct, color }: { pct: number; color: string }) {
   const clampedPct = Math.min(Math.max(pct, 0), 1);
   const yBase = TILE_H - TILE_H * clampedPct;
 
-  // Translate exactly one wavelength → start and end frames are identical → no snap
   const tx1 = anim1.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -TILE_W],
@@ -145,13 +250,11 @@ function WaveFill({ pct, color }: { pct: number; color: string }) {
       style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}
       pointerEvents="none"
     >
-      {/* Back wave — slower, subtler */}
       <Animated.View style={[waveStyle, { transform: [{ translateX: tx2 }] }]}>
         <Svg width={WAVE_SVG_W} height={TILE_H}>
           <SvgPath d={makeWavePath(yBase + 6, 8)} fill={color} opacity={0.18} />
         </Svg>
       </Animated.View>
-      {/* Front wave — faster, more opaque */}
       <Animated.View style={[waveStyle, { transform: [{ translateX: tx1 }] }]}>
         <Svg width={WAVE_SVG_W} height={TILE_H}>
           <SvgPath d={makeWavePath(yBase, 10)} fill={color} opacity={0.42} />
@@ -173,6 +276,8 @@ export default function HomeScreen() {
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
   const { categories, refetch: refetchCategories } = useCategories();
@@ -181,6 +286,20 @@ export default function HomeScreen() {
     totalExpense: monthlyExpense,
     refetch: refetchTotals,
   } = useMonthlyTotals();
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refetchAccounts(),
+        refetchCategories(),
+        refetchTotals(),
+        new Promise((resolve) => setTimeout(resolve, 800)), // Ensure animation plays smoothly
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchAccounts, refetchCategories, refetchTotals]);
 
   useEffect(() => {
     if (syncVersion > 0) {
@@ -304,10 +423,30 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView
+      <FinoRefreshIndicator
+        scrollY={scrollY}
+        refreshing={refreshing}
+        colors={colors}
+      />
+      <Animated.ScrollView
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="transparent"
+            colors={['transparent']}
+            style={{ backgroundColor: 'transparent' }}
+            progressBackgroundColor="transparent"
+          />
+        }
       >
         <View style={styles.greeting}>
           <View style={styles.greetingTop}>
@@ -391,7 +530,6 @@ export default function HomeScreen() {
 
         {/* ── Unified dark card: balance + accounts ── */}
         <View style={styles.unifiedCard}>
-          {/* Ambient blobs */}
           <LinearGradient
             colors={[colors.primaryLight60, 'transparent']}
             style={[
@@ -407,7 +545,6 @@ export default function HomeScreen() {
             ]}
           />
 
-          {/* ── Balance section ── */}
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => navigation.navigate('stats')}
@@ -423,7 +560,6 @@ export default function HomeScreen() {
                 </Text>
               </View>
 
-              {/* EYE ICON TOGGLE */}
               <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={() => setIsPrivacyMode(!isPrivacyMode)}
@@ -471,7 +607,6 @@ export default function HomeScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* ── Hairline divider + accounts label ── */}
           <View style={styles.unifiedDividerRow}>
             <View style={styles.unifiedHairline} />
             <Text style={styles.unifiedDividerLabel}>Accounts</Text>
@@ -486,7 +621,6 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* ── Scaled wallet cards ── */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -522,7 +656,6 @@ export default function HomeScreen() {
                       top: -Math.round((CARD_HEIGHT * (1 - CARD_SCALE)) / 2),
                     }}
                   >
-                    {/* Passed isPrivacyMode to WalletCard */}
                     <WalletCard account={acc} isPrivacyMode={isPrivacyMode} />
                   </View>
                 </View>
@@ -531,9 +664,7 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
 
-        {/* ── Budgets + insight, directly on background ── */}
         <View style={styles.belowCard}>
-          {/* Monthly budgets */}
           <View style={styles.acctHeader}>
             <View style={styles.acctHeaderLeft}>
               <View style={styles.sectionDot} />
@@ -563,7 +694,6 @@ export default function HomeScreen() {
                       },
                     ]}
                   >
-                    {/* Animated wave liquid fill in solid brand color */}
                     <WaveFill pct={cat.pct} color={solidColor} />
 
                     <View style={styles.catBadgeWrap}>
@@ -644,7 +774,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       <Toast
         visible={toastVisible}
@@ -694,7 +824,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     avatarLetter: {
       fontFamily: 'Inter_700Bold',
       fontSize: 15,
-      color: '#FFFFFF', // Keep hardcoded white since it sits on a primary gradient background
+      color: '#FFFFFF',
     },
     onTrackWrap: { paddingHorizontal: 20, marginBottom: 14 },
     onTrackPill: {
@@ -727,7 +857,6 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.onTrackSub,
       marginTop: 1,
     },
-    // ── Unified dark card ──────────────────────────────────────────────────────
     unifiedCard: {
       marginHorizontal: 20,
       marginBottom: 0,
@@ -824,7 +953,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     heroAmount: {
       fontFamily: 'DMMono_500Medium',
       fontSize: 42,
-      color: '#FFFFFF', // Ensures it stays bright white on the dark hero background
+      color: '#FFFFFF',
       letterSpacing: -2,
       lineHeight: 48,
     },
@@ -865,7 +994,6 @@ const createStyles = (colors: any, isDark: boolean) =>
       fontSize: 17,
       color: '#FFFFFF',
     },
-    // ── Accounts section ────────────────────────────────────────────────────────
     acctHeader: {
       flexDirection: 'row',
       alignItems: 'center',
