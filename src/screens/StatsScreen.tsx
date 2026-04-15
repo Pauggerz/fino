@@ -3793,7 +3793,7 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       borderRadius: 28,
       padding: 20,
       marginBottom: 16,
-      backgroundColor: isDark ? colors.statsHeroBg1 : '#2a4f3a',
+      backgroundColor: colors.statsHeroBg1,
       overflow: 'hidden',
     },
     loadingHeroTopRow: {

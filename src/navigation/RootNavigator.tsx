@@ -18,6 +18,7 @@ import ScreenshotScreen from '../screens/ScreenshotScreen';
 import AccountDetailScreen from '../screens/AccountDetailScreen';
 import MoreScreen from '../screens/MoreScreen';
 import ChatScreen from '../screens/ChatScreen';
+import BillSplitterScreen from '../screens/BillSplitterScreen';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,7 @@ export type RootStackParamList = {
   };
   ScreenshotScreen: undefined;
   ChatScreen: undefined;
+  BillSplitter: undefined;
 };
 
 // ─── Navigators ─────────────────────────────────────────────────────────────
@@ -160,6 +162,14 @@ export default function RootNavigator() {
         <Stack.Screen
           name="ChatScreen"
           component={ChatScreen}
+          options={{
+            headerShown: false,
+            presentation: 'modal',
+          }}
+        />
+        <Stack.Screen
+          name="BillSplitter"
+          component={BillSplitterScreen}
           options={{
             headerShown: false,
             presentation: 'modal',

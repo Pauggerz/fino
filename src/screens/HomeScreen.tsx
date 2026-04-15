@@ -39,6 +39,7 @@ import { useCategories, CategoryWithSpend } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
+import ProfileSidebar from '@/components/ProfileSidebar';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -260,6 +261,7 @@ export default function HomeScreen() {
   const styles = useMemo(() => createStyles(colors, isDark, insets.top), [colors, isDark, insets.top]);
 
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
 
   const { accounts, totalBalance, loading: accountsLoading, refetch: refetchAccounts } = useAccounts();
   const { categories, loading: categoriesLoading, refetch: refetchCategories } = useCategories();
@@ -356,18 +358,23 @@ export default function HomeScreen() {
     null
   );
 
+  const hasAnimated = useRef(false);
+
   useFocusEffect(
     useCallback(() => {
-      // Reset + trigger staggered entrance animation on every screen focus
-      greetingOpacity.value = 0; greetingTransY.value = 12;
-      cardOpacity.value = 0;    cardTransY.value = 16;
-      belowOpacity.value = 0;   belowTransY.value = 20;
-      greetingOpacity.value = withTiming(1, { duration: 280 });
-      greetingTransY.value  = withTiming(0, { duration: 280 });
-      cardOpacity.value     = withDelay(80,  withTiming(1, { duration: 320 }));
-      cardTransY.value      = withDelay(80,  withSpring(0, { damping: 18, stiffness: 180 }));
-      belowOpacity.value    = withDelay(180, withTiming(1, { duration: 360 }));
-      belowTransY.value     = withDelay(180, withSpring(0, { damping: 16, stiffness: 160 }));
+      // Only play entrance animation on first mount, not on every back-navigation
+      if (!hasAnimated.current) {
+        hasAnimated.current = true;
+        greetingOpacity.value = 0; greetingTransY.value = 12;
+        cardOpacity.value = 0;    cardTransY.value = 16;
+        belowOpacity.value = 0;   belowTransY.value = 20;
+        greetingOpacity.value = withTiming(1, { duration: 280 });
+        greetingTransY.value  = withTiming(0, { duration: 280 });
+        cardOpacity.value     = withDelay(80,  withTiming(1, { duration: 320 }));
+        cardTransY.value      = withDelay(80,  withSpring(0, { damping: 18, stiffness: 180 }));
+        belowOpacity.value    = withDelay(180, withTiming(1, { duration: 360 }));
+        belowTransY.value     = withDelay(180, withSpring(0, { damping: 16, stiffness: 160 }));
+      }
 
       refetchAccounts();
       refetchCategories();
@@ -485,14 +492,16 @@ export default function HomeScreen() {
                 </Text>
               </Text>
             </View>
-            <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
-              style={styles.avatar}
-            >
-              <Text style={styles.avatarLetter}>
-                {userName.charAt(0).toUpperCase()}
-              </Text>
-            </LinearGradient>
+            <TouchableOpacity onPress={() => setSidebarVisible(true)} activeOpacity={0.8}>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                style={styles.avatar}
+              >
+                <Text style={styles.avatarLetter}>
+                  {userName.charAt(0).toUpperCase()}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </RAnim.View>
 
@@ -798,6 +807,10 @@ export default function HomeScreen() {
         onUndo={!toastIsUndo && undoTxId ? handleUndo : undefined}
         onDismiss={() => setToastVisible(false)}
       />
+      <ProfileSidebar
+        visible={sidebarVisible}
+        onClose={() => setSidebarVisible(false)}
+      />
     </View>
   );
 }
@@ -808,7 +821,7 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background, paddingTop: Math.max(topInset + 8, 20) },
     scroll: { flex: 1 },
-    scrollContent: { paddingBottom: 98 }, // tabBarHeight (82) + 16 breathing room
+    scrollContent: { paddingBottom: 120 }, // floating pill (64) + bottom inset (~34) + breathing room
     greeting: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8 },
     greetingTop: {
       flexDirection: 'row',
@@ -833,12 +846,11 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       borderRadius: 18,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 4,
     },
     avatarLetter: {
       fontFamily: 'Inter_700Bold',
       fontSize: 15,
-      color: '#FFFFFF', // Keep hardcoded white since it sits on a primary gradient background
+      color: '#FFFFFF',
     },
     onTrackWrap: { paddingHorizontal: 20, marginBottom: 14 },
     onTrackPill: {
