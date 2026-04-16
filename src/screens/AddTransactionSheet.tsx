@@ -9,7 +9,6 @@ import {
   Animated,
   View,
   Text,
-  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -17,6 +16,7 @@ import {
   Vibration,
   useWindowDimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { TouchableOpacity, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -424,6 +424,7 @@ export default function AddTransactionSheet({ route }: Props) {
       setRecentCategoryNames(newRecentCategories);
       AsyncStorage.setItem('@fino/recent_categories', JSON.stringify(newRecentCategories));
 
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       allowCloseRef.current = true;
       bottomSheetRef.current?.close();
     } catch (error) {
@@ -601,7 +602,7 @@ export default function AddTransactionSheet({ route }: Props) {
                       >
                         <View style={[styles.chipIconWrap, { backgroundColor: acc.brand_colour ?? colors.primaryLight }]}>
                           {logo ? (
-                            <Image source={logo} style={styles.acctChipLogo} />
+                            <Image source={logo} style={styles.acctChipLogo} contentFit="contain" />
                           ) : (
                             <Text style={styles.acctChipAvatar}>{acc.letter_avatar ?? '?'}</Text>
                           )}
@@ -1084,7 +1085,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       backgroundColor: isDark ? 'rgba(91,140,110,0.18)' : 'rgba(91,140,110,0.1)',
       borderColor: colors.primary,
     },
-    acctChipLogo: { width: 16, height: 16, resizeMode: 'contain' },
+    acctChipLogo: { width: 16, height: 16 },
     acctChipAvatar: { color: '#FFF', fontSize: 9, fontFamily: 'Inter_700Bold' },
     acctChipName: {
       fontFamily: 'Inter_600SemiBold',

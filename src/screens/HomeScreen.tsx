@@ -11,13 +11,14 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Animated,
+  TextInput,
 } from 'react-native';
 import RAnim, {
   Easing,
   cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedProps,
   withTiming,
   withDelay,
   withSpring,
@@ -42,24 +43,36 @@ import { useCategories, CategoryWithSpend } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
+import { removeFromQueue } from '@/services/syncService';
 import ProfileSidebar from '@/components/ProfileSidebar';
+
+// ─── Animated primitives (module-level) ──────────────────────────────────────
+
+const AnimatedTextInput = RAnim.createAnimatedComponent(TextInput);
+
+/** Worklet-safe number formatter — mimics toLocaleString('en-PH', { minimumFractionDigits: 2 }) */
+function formatBalanceWorklet(n: number): string {
+  'worklet';
+
+  const neg = n < 0;
+  const abs = Math.abs(n);
+  const rounded = Math.round(abs * 100) / 100;
+  const int = Math.floor(rounded);
+  const frac = Math.round((rounded - int) * 100).toString().padStart(2, '0');
+  const s = int.toString();
+  let out = '';
+  for (let i = 0; i < s.length; i += 1) {
+    if (i > 0 && (s.length - i) % 3 === 0) out += ',';
+    out += s[i];
+  }
+  return `${neg ? '-' : ''}${out}.${frac}`;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CARD_SCALE = 0.78;
 const SCALED_CARD_W = Math.round(CARD_WIDTH * CARD_SCALE);
 const SCALED_CARD_H = Math.round(CARD_HEIGHT * CARD_SCALE);
-
-const SPARKLINE_BASE = [
-  { id: 'day0', val: 0.38 },
-  { id: 'day1', val: 0.6 },
-  { id: 'day2', val: 0.27 },
-  { id: 'day3', val: 0.74 },
-  { id: 'day4', val: 0.45 },
-  { id: 'day5', val: 0.88 },
-  // day6 val is overridden at render time with real pctSpent
-  { id: 'day6', val: 0 },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -200,7 +213,8 @@ type BudgetTileProps = {
   onPress: () => void;
 };
 
-function BudgetTile({ cat, index, isPrivacyMode, isDark, colors, styles, onPress }: BudgetTileProps) {
+const BudgetTile = React.memo(
+  ({ cat, index, isPrivacyMode, isDark, colors, styles, onPress }: BudgetTileProps) => {
   const opacity = useSharedValue(0);
   const transY = useSharedValue(16);
   const animStyle = useAnimatedStyle(() => ({
@@ -255,7 +269,17 @@ function BudgetTile({ cat, index, isPrivacyMode, isDark, colors, styles, onPress
       </TouchableOpacity>
     </RAnim.View>
   );
-}
+  },
+  (prev, next) =>
+    prev.cat.id === next.cat.id &&
+    prev.cat.pct === next.cat.pct &&
+    prev.cat.state === next.cat.state &&
+    prev.cat.spent === next.cat.spent &&
+    prev.isPrivacyMode === next.isPrivacyMode &&
+    prev.isDark === next.isDark &&
+    prev.colors === next.colors &&
+    prev.styles === next.styles
+);
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -277,6 +301,7 @@ export default function HomeScreen() {
   const {
     totalIncome,
     totalExpense: monthlyExpense,
+    sparklineData,
     loading: totalsLoading,
     refetch: refetchTotals,
   } = useMonthlyTotals();
@@ -333,8 +358,16 @@ export default function HomeScreen() {
     }
   };
 
-  const animBalance = useRef(new Animated.Value(totalBalance)).current;
-  const [displayBalance, setDisplayBalance] = useState(totalBalance);
+  // ── Balance animation (off-JS-thread via reanimated shared value) ────────────
+  const balanceSV = useSharedValue(totalBalance);
+  const animatedBalanceProps = useAnimatedProps(() => ({
+    text: formatBalanceWorklet(balanceSV.value),
+    defaultValue: formatBalanceWorklet(balanceSV.value),
+  }));
+
+  useEffect(() => {
+    balanceSV.value = withTiming(totalBalance, { duration: BALANCE_ANIMATE_MS });
+  }, [totalBalance, balanceSV]);
 
   useEffect(() => {
     const getMyId = async () => {
@@ -342,20 +375,6 @@ export default function HomeScreen() {
     };
     getMyId();
   }, []);
-
-  useEffect(() => {
-    const listenerId = animBalance.addListener(({ value }) => {
-      setDisplayBalance(value);
-    });
-
-    Animated.timing(animBalance, {
-      toValue: totalBalance,
-      duration: BALANCE_ANIMATE_MS,
-      useNativeDriver: false,
-    }).start();
-
-    return () => animBalance.removeListener(listenerId);
-  }, [totalBalance, animBalance]);
 
   const [toastVisible, setToastVisible] = useState(false);
   const [toastTitle, setToastTitle] = useState('');
@@ -407,7 +426,12 @@ export default function HomeScreen() {
 
   const handleUndo = useCallback(async () => {
     if (!undoTxId) return;
-    await supabase.from('transactions').delete().eq('id', undoTxId);
+    if (undoTxId.startsWith('temp_')) {
+      // Offline transaction — remove from the local pending queue only
+      await removeFromQueue(undoTxId);
+    } else {
+      await supabase.from('transactions').delete().eq('id', undoTxId);
+    }
     if (undoAccountId !== null && undoPreviousBalance !== null) {
       await supabase
         .from('accounts')
@@ -439,9 +463,11 @@ export default function HomeScreen() {
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
 
+  // Use real 7-day daily-expense sparkline from useMonthlyTotals.
+  // Override the last bar with today's actual pctSpent so it always reflects reality.
   const lastBarVal = Math.min(pctSpent > 0 ? pctSpent : getMonthPace(), 1);
-  const SPARKLINE = SPARKLINE_BASE.map((bar, i) =>
-    i === SPARKLINE_BASE.length - 1 ? { ...bar, val: lastBarVal } : bar
+  const SPARKLINE = sparklineData.map((bar, i) =>
+    i === sparklineData.length - 1 ? { ...bar, val: lastBarVal } : bar
   );
 
   const delta = totalIncome - monthlyExpense;
@@ -613,14 +639,15 @@ export default function HomeScreen() {
               ) : (
                 <>
                   <Text style={styles.heroCurr}>₱</Text>
-                  <Text style={styles.heroAmount}>
-                    {isPrivacyMode
-                      ? '***'
-                      : displayBalance.toLocaleString('en-PH', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                  </Text>
+                  {isPrivacyMode ? (
+                    <Text style={styles.heroAmount}>***</Text>
+                  ) : (
+                    <AnimatedTextInput
+                      animatedProps={animatedBalanceProps}
+                      editable={false}
+                      style={styles.heroAmount}
+                    />
+                  )}
                 </>
               )}
             </View>
@@ -685,7 +712,17 @@ export default function HomeScreen() {
               </>
             ) : accounts.length === 0 ? (
               <View style={styles.emptyCarousel}>
-                <Ionicons name="wallet-outline" size={28} color={colors.whiteTransparent55} />
+                {/* Branded wallet illustration */}
+                <Svg width={56} height={48} viewBox="0 0 56 48">
+                  {/* Card body */}
+                  <SvgPath d="M4 10 Q4 4 10 4 L46 4 Q52 4 52 10 L52 38 Q52 44 46 44 L10 44 Q4 44 4 38 Z" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.22)" strokeWidth="1.5" />
+                  {/* Chip */}
+                  <SvgPath d="M12 18 Q12 15 15 15 L22 15 Q25 15 25 18 L25 25 Q25 28 22 28 L15 28 Q12 28 12 25 Z" fill="rgba(255,255,255,0.18)" />
+                  {/* Stripe */}
+                  <SvgPath d="M4 31 L52 31 L52 36 L4 36 Z" fill="rgba(255,255,255,0.08)" />
+                  {/* Plus badge */}
+                  <SvgPath d="M42 30 m0-6 v12 M36 36 h12" stroke="rgba(255,255,255,0.55)" strokeWidth="2.5" strokeLinecap="round" />
+                </Svg>
                 <Text style={styles.emptyCarouselText}>No accounts yet</Text>
                 <TouchableOpacity
                   onPress={() => navigation.navigate('more')}
@@ -750,7 +787,16 @@ export default function HomeScreen() {
               </>
             ) : categories.length === 0 ? (
               <View style={styles.emptyBudget}>
-                <Ionicons name="pie-chart-outline" size={28} color={colors.textSecondary} />
+                {/* Branded pie/budget illustration */}
+                <Svg width={52} height={52} viewBox="0 0 52 52">
+                  {/* Outer ring */}
+                  <SvgPath d="M26 4 A22 22 0 0 1 48 26" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.9" />
+                  <SvgPath d="M48 26 A22 22 0 0 1 26 48" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.45" />
+                  <SvgPath d="M26 48 A22 22 0 0 1 4 26" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.22" />
+                  <SvgPath d="M4 26 A22 22 0 0 1 26 4" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.12" />
+                  {/* Center plus */}
+                  <SvgPath d="M26 18 v16 M18 26 h16" stroke={colors.primary} strokeWidth="2.5" strokeLinecap="round" opacity="0.7" />
+                </Svg>
                 <Text style={styles.emptyBudgetText}>No budgets set up yet</Text>
                 <TouchableOpacity
                   onPress={() => navigation.navigate('more')}

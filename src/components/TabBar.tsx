@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../contexts/ThemeContext';
 
 export type TabRoute = 'home' | 'feed' | 'stats' | 'more';
@@ -39,6 +40,7 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
   const fabScale = useRef(new Animated.Value(1)).current;
 
   const handleFabPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     Animated.sequence([
       Animated.timing(fabScale, { toValue: 0.86, duration: 70, useNativeDriver: true }),
       Animated.spring(fabScale, { toValue: 1, friction: 4, tension: 240, useNativeDriver: true }),
@@ -57,7 +59,10 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
       <TouchableOpacity
         key={id}
         style={styles.tabItem}
-        onPress={() => onTabPress(id)}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          onTabPress(id);
+        }}
         activeOpacity={0.7}
       >
         <Ionicons

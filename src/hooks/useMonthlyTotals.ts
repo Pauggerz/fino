@@ -1,13 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/services/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/services/supabase';
 import { getPendingQueue } from '@/services/syncService';
 
 const CACHE_KEY = 'FINO_TOTALS_CACHE';
 
+export interface SparklinePoint {
+  id: string;
+  val: number;
+}
+
 export interface MonthlyTotals {
   totalIncome: number;
   totalExpense: number;
+  sparklineData: SparklinePoint[];
   loading: boolean;
   refetch: () => Promise<void>;
 }
@@ -15,6 +21,9 @@ export interface MonthlyTotals {
 export const useMonthlyTotals = (): MonthlyTotals => {
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalExpense, setTotalExpense] = useState(0);
+  const [sparklineData, setSparklineData] = useState<SparklinePoint[]>(
+    Array.from({ length: 7 }, (_, i) => ({ id: `day${i}`, val: 0 }))
+  );
   const [loading, setLoading] = useState(true);
 
   const fetchTotals = useCallback(async () => {
@@ -41,7 +50,7 @@ export const useMonthlyTotals = (): MonthlyTotals => {
 
     const { data, error } = await supabase
       .from('transactions')
-      .select('amount, type')
+      .select('amount, type, date')
       .gte('date', startOfMonth)
       .lte('date', endOfMonth);
 
@@ -52,9 +61,26 @@ export const useMonthlyTotals = (): MonthlyTotals => {
       baseExpense = data
         .filter((t) => t.type === 'expense')
         .reduce((s, t) => s + t.amount, 0);
-      
+
       // Save to cache
       AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ totalIncome: baseIncome, totalExpense: baseExpense })).catch(() => {});
+
+      // Compute 7-day trailing sparkline from expense data
+      const buckets: number[] = new Array(7).fill(0);
+      data
+        .filter((t) => t.type === 'expense' && t.date)
+        .forEach((t) => {
+          const dayDiff = Math.floor(
+            (now.getTime() - new Date(t.date).getTime()) / (1000 * 60 * 60 * 24)
+          );
+          if (dayDiff >= 0 && dayDiff < 7) {
+            buckets[6 - dayDiff] += t.amount;
+          }
+        });
+      const maxBucket = Math.max(...buckets, 1);
+      setSparklineData(
+        buckets.map((val, i) => ({ id: `day${i}`, val: val / maxBucket }))
+      );
     }
 
     // 2. OFFLINE CALCULATION: Apply pending offline transactions
@@ -73,5 +99,5 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     fetchTotals();
   }, [fetchTotals]);
 
-  return { totalIncome, totalExpense, loading, refetch: fetchTotals };
+  return { totalIncome, totalExpense, sparklineData, loading, refetch: fetchTotals };
 };
