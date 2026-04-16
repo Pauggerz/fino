@@ -4,6 +4,7 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
+  useTransition,
 } from 'react';
 import {
   Animated,
@@ -807,6 +808,7 @@ export default function InsightsScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors, isDark, insets.top), [colors, isDark, insets.top]);
+  const [, startTransition] = useTransition();
 
   // ── Date state ──
   const now = new Date();
@@ -1144,8 +1146,9 @@ export default function InsightsScreen() {
         withSpring(0, { damping: 18, stiffness: 180 })
       );
 
-      fetchStats();
+      startTransition(() => { fetchStats(); });
     }, [
+      startTransition,
       fetchStats,
       headerOpacity,
       headerTransY,

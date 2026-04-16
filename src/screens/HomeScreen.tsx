@@ -4,6 +4,7 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
+  useTransition,
 } from 'react';
 import {
   View,
@@ -288,6 +289,7 @@ export default function HomeScreen() {
   const { status: syncStatus, syncVersion } = useSync();
   const { profile } = useAuth();
   const userName = profile?.name || 'User';
+  const [, startTransition] = useTransition();
 
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -339,11 +341,13 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (syncVersion > 0) {
-      refetchAccounts();
-      refetchCategories();
-      refetchTotals();
+      startTransition(() => {
+        refetchAccounts();
+        refetchCategories();
+        refetchTotals();
+      });
     }
-  }, [syncVersion, refetchAccounts, refetchCategories, refetchTotals]);
+  }, [syncVersion, startTransition, refetchAccounts, refetchCategories, refetchTotals]);
 
   const getSyncColor = () => {
     switch (syncStatus) {
@@ -404,9 +408,11 @@ export default function HomeScreen() {
         belowTransY.value     = withDelay(180, withSpring(0, { damping: 16, stiffness: 160 }));
       }
 
-      refetchAccounts();
-      refetchCategories();
-      refetchTotals();
+      startTransition(() => {
+        refetchAccounts();
+        refetchCategories();
+        refetchTotals();
+      });
       const last = getLastSaved();
       if (!last) return;
       clearLastSaved();
@@ -420,7 +426,7 @@ export default function HomeScreen() {
       setUndoAccountId(last.accountId);
       setUndoPreviousBalance(last.previousBalance);
       setToastVisible(true);
-    }, [refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode,
+    }, [startTransition, refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode,
         greetingOpacity, greetingTransY, cardOpacity, cardTransY, belowOpacity, belowTransY])
   );
 
