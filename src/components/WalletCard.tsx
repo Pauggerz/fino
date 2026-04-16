@@ -134,7 +134,7 @@ export function getCfg(acc: Account): CardCfg {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function WalletCard({
+const WalletCard = React.memo(function WalletCard({
   account,
   isPrivacyMode = false,
 }: {
@@ -293,7 +293,9 @@ export default function WalletCard({
       </LinearGradient>
     </View>
   );
-}
+});
+
+export default WalletCard;
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({

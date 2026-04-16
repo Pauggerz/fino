@@ -200,7 +200,7 @@ type BudgetTileProps = {
   onPress: () => void;
 };
 
-function BudgetTile({ cat, index, isPrivacyMode, isDark, colors, styles, onPress }: BudgetTileProps) {
+const BudgetTile = React.memo(function BudgetTile({ cat, index, isPrivacyMode, isDark, colors, styles, onPress }: BudgetTileProps) {
   const opacity = useSharedValue(0);
   const transY = useSharedValue(16);
   const animStyle = useAnimatedStyle(() => ({
@@ -255,7 +255,16 @@ function BudgetTile({ cat, index, isPrivacyMode, isDark, colors, styles, onPress
       </TouchableOpacity>
     </RAnim.View>
   );
-}
+}, (prev, next) =>
+  prev.cat.id === next.cat.id &&
+  prev.cat.pct === next.cat.pct &&
+  prev.cat.state === next.cat.state &&
+  prev.cat.spent === next.cat.spent &&
+  prev.isPrivacyMode === next.isPrivacyMode &&
+  prev.isDark === next.isDark &&
+  prev.colors === next.colors &&
+  prev.styles === next.styles
+);
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
