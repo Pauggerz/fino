@@ -56,28 +56,51 @@ export const useTransactions = (
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const offset = useRef(0);
+
+  // Cursor state: for date-ordered pages we track last seen (date, id).
+  // For amount_desc we fall back to numeric offset to keep things simple.
+  const cursorRef = useRef<{ date: string; id: string } | null>(null);
+  const offsetRef = useRef(0); // used only for amount_desc
 
   const fetch = useCallback(
     async (reset: boolean) => {
-      const start = reset ? 0 : offset.current;
-
-      // 1. Fetch from Supabase
-      const order = sortOrder === 'date_asc' ? true : false;
-      let q = supabase
-        .from('transactions')
-        .select('*, accounts(name, brand_colour, letter_avatar)')
-        .order('date', { ascending: order })
-        .range(start, start + PAGE_SIZE - 1);
-
-      if (sortOrder === 'amount_desc') {
-        q = supabase
-          .from('transactions')
-          .select('*, accounts(name, brand_colour, letter_avatar)')
-          .order('amount', { ascending: false })
-          .range(start, start + PAGE_SIZE - 1);
+      if (reset) {
+        cursorRef.current = null;
+        offsetRef.current = 0;
       }
 
+      const isAmountDesc = sortOrder === 'amount_desc';
+      const isDateAsc = sortOrder === 'date_asc';
+
+      // ── Build base query ──────────────────────────────────────────────────
+      let q = supabase
+        .from('transactions')
+        .select('*, accounts(name, brand_colour, letter_avatar)');
+
+      if (isAmountDesc) {
+        // amount_desc: use classic offset pagination (no stable cursor available)
+        q = q
+          .order('amount', { ascending: false })
+          .range(offsetRef.current, offsetRef.current + PAGE_SIZE - 1);
+      } else {
+        // date_desc / date_asc: cursor-based pagination
+        q = q
+          .order('date', { ascending: isDateAsc })
+          .order('id', { ascending: isDateAsc });
+
+        if (!reset && cursorRef.current) {
+          const { date: cDate, id: cId } = cursorRef.current;
+          if (isDateAsc) {
+            q = q.or(`date.gt.${cDate},and(date.eq.${cDate},id.gt.${cId})`);
+          } else {
+            q = q.or(`date.lt.${cDate},and(date.eq.${cDate},id.lt.${cId})`);
+          }
+        }
+
+        q = q.limit(PAGE_SIZE);
+      }
+
+      // ── Apply filters ─────────────────────────────────────────────────────
       if (transactionType) {
         q = q.eq('type', transactionType);
       }
@@ -107,7 +130,7 @@ export const useTransactions = (
 
       const { data, error } = await q;
 
-      // 2. Fetch local pending items
+      // ── Fetch local pending items ─────────────────────────────────────────
       const pendingQueue = await getPendingQueue();
       const searchTerm = searchQuery?.trim().toLowerCase() ?? '';
       const fromTs = dateRange ? new Date(dateRange.from).getTime() : undefined;
@@ -149,19 +172,31 @@ export const useTransactions = (
 
       if (!error && data) {
         const mappedDb = data.map(mapRow);
-        
+
+        // Advance cursor to last fetched row (for date-ordered queries)
+        if (!isAmountDesc && data.length > 0) {
+          const last = data[data.length - 1];
+          cursorRef.current = { date: last.date, id: last.id };
+        }
+        // Advance offset for amount_desc
+        if (isAmountDesc) {
+          offsetRef.current += PAGE_SIZE;
+        }
+
         if (reset) {
           setItems([...mappedPending, ...mappedDb]);
-          offset.current = PAGE_SIZE;
         } else {
-          setItems((prev) => [...prev, ...mappedDb]);
-          offset.current = start + PAGE_SIZE;
+          setItems((prev) => {
+            // Strip pending items from prev on non-reset appends to avoid duplication
+            const withoutPending = prev.filter((tx) => !tx.isPending);
+            return [...mappedPending, ...withoutPending, ...mappedDb];
+          });
         }
         setHasMore(data.length === PAGE_SIZE);
       } else if (error && reset) {
         // OFFLINE FALLBACK: Preserve old items, just update pending queue
         setItems((prev) => {
-          const withoutPending = prev.filter(tx => !tx.isPending);
+          const withoutPending = prev.filter((tx) => !tx.isPending);
           return [...mappedPending, ...withoutPending];
         });
         setHasMore(false);

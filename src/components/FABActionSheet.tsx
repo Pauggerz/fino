@@ -1,11 +1,10 @@
-import React, { useRef, useCallback, useMemo } from 'react';
+import React, { useRef, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Keyboard,
-  InteractionManager,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { TouchableOpacity } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,7 +20,10 @@ type NavProp = NativeStackNavigationProp<RootStackParamList>;
 export default function FABActionSheet() {
   const navigation = useNavigation<NavProp>();
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const nextActionRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }, []);
 
   // 🌙 Dynamic Theme Injection
   const { colors, isDark } = useTheme();
