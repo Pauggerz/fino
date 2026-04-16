@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View } from 'react-native';
 import Svg from 'react-native-svg';
 import { CATEGORY_ICON_PATHS } from '@/constants/categoryIcons';
@@ -12,21 +12,46 @@ interface CategoryIconProps {
   wrapperSize?: number; // circle size in px, default 38
 }
 
-export const CategoryIcon: React.FC<CategoryIconProps> = ({
+const rgbaCache = new Map<string, string>();
+
+function hexToRgba(hex: string, alpha: number): string {
+  const cacheKey = `${hex}-${alpha}`;
+  const cached = rgbaCache.get(cacheKey);
+  if (cached) return cached;
+
+  const cleanHex = hex.startsWith('#') ? hex.slice(1) : hex;
+  if (cleanHex.length !== 6) {
+    const fallback = `rgba(0, 0, 0, ${alpha})`;
+    rgbaCache.set(cacheKey, fallback);
+    return fallback;
+  }
+
+  const r = parseInt(cleanHex.slice(0, 2), 16);
+  const g = parseInt(cleanHex.slice(2, 4), 16);
+  const b = parseInt(cleanHex.slice(4, 6), 16);
+  const rgba = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  rgbaCache.set(cacheKey, rgba);
+  return rgba;
+}
+
+const CategoryIconBase: React.FC<CategoryIconProps> = ({
   categoryKey,
   color,
   size = 20,
   wrapperSize = 38,
 }) => {
-  const iconConfig =
-    CATEGORY_ICON_PATHS[categoryKey] ?? CATEGORY_ICON_PATHS.default;
-
-  const hexToRgba = (hex: string, alpha: number): string => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
+  const iconConfig = useMemo(
+    () => CATEGORY_ICON_PATHS[categoryKey] ?? CATEGORY_ICON_PATHS.default,
+    [categoryKey]
+  );
+  const bgColor = useMemo(() => hexToRgba(color, 0.18), [color]);
+  const iconPaths = useMemo(
+    () =>
+      React.Children.map(iconConfig.paths as any, (child) =>
+        React.cloneElement(child, { fill: color })
+      ),
+    [iconConfig, color]
+  );
 
   return (
     <View
@@ -34,7 +59,7 @@ export const CategoryIcon: React.FC<CategoryIconProps> = ({
         width: wrapperSize,
         height: wrapperSize,
         borderRadius: wrapperSize / 2,
-        backgroundColor: hexToRgba(color, 0.18),
+        backgroundColor: bgColor,
         alignItems: 'center',
         justifyContent: 'center',
       }}
@@ -44,10 +69,11 @@ export const CategoryIcon: React.FC<CategoryIconProps> = ({
         height={size}
         viewBox={iconConfig.viewBox ?? '0 0 24 24'}
       >
-        {React.Children.map(iconConfig.paths as any, (child) =>
-          React.cloneElement(child, { fill: color })
-        )}
+        {iconPaths}
       </Svg>
     </View>
   );
 };
+
+export const CategoryIcon = React.memo(CategoryIconBase);
+CategoryIcon.displayName = 'CategoryIcon';

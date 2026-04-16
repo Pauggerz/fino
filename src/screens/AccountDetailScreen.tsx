@@ -355,22 +355,24 @@ export default function AccountDetailScreen() {
     const categoryLabel = item.category ?? 'other';
     const { key, color } = getCategoryIcon(item);
     return (
-      <View style={styles.txItem}>
-        <View style={styles.txLeft}>
-          <CategoryIcon categoryKey={key} color={color} wrapperSize={36} size={18} />
-          <View>
-            <Text style={styles.txCategory}>
-              {categoryLabel.charAt(0).toUpperCase() + categoryLabel.slice(1)}
-            </Text>
-            <Text style={styles.txDate}>
-              {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-            </Text>
+      <View style={styles.txRowPad}>
+        <View style={styles.txItem}>
+          <View style={styles.txLeft}>
+            <CategoryIcon categoryKey={key} color={color} wrapperSize={36} size={18} />
+            <View>
+              <Text style={styles.txCategory}>
+                {categoryLabel.charAt(0).toUpperCase() + categoryLabel.slice(1)}
+              </Text>
+              <Text style={styles.txDate}>
+                {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </Text>
+            </View>
           </View>
+          <Text style={[styles.txAmount, { color: isInc ? colors.incomeGreen : colors.expenseRed }]}>
+            {isInc ? '+' : '−'}
+            {fmtPeso(item.amount)}
+          </Text>
         </View>
-        <Text style={[styles.txAmount, { color: isInc ? colors.incomeGreen : colors.expenseRed }]}>
-          {isInc ? '+' : '−'}
-          {fmtPeso(item.amount)}
-        </Text>
       </View>
     );
   };
@@ -457,314 +459,311 @@ export default function AccountDetailScreen() {
   // ─── Main render ──────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-
-      {/* ══ Main scrollable content ══ */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.contentContainer}
+      <FlashList<Transaction>
+        data={filteredTxns}
+        renderItem={renderTxn}
+        keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
-      >
-        {/* ════ HERO ════ */}
-        <LinearGradient
-          colors={cardGrad}
-          start={{ x: 0.1, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.hero, { paddingTop: Math.max(insets.top, 16) + 10 }]}
-        >
-          <View style={styles.heroTopBar}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-              <Text style={styles.backBtnText}>← Back</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.heroEditBtn}
-              onPress={() => {
-                setEditName(selectedAccount?.name ?? '');
-                setEditType(selectedAccount?.type ?? '');
-                setEditSheetVisible(true);
-              }}
+        contentContainerStyle={styles.contentContainer}
+        ListHeaderComponent={
+          <>
+            <LinearGradient
+              colors={cardGrad}
+              start={{ x: 0.1, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.hero, { paddingTop: Math.max(insets.top, 16) + 10 }]}
             >
-              <Text style={styles.backBtnText}>✏️ Edit</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.heroTopBar}>
+                <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+                  <Text style={styles.backBtnText}>← Back</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.heroEditBtn}
+                  onPress={() => {
+                    setEditName(selectedAccount?.name ?? '');
+                    setEditType(selectedAccount?.type ?? '');
+                    setEditSheetVisible(true);
+                  }}
+                >
+                  <Text style={styles.backBtnText}>✏️ Edit</Text>
+                </TouchableOpacity>
+              </View>
 
-          <View style={styles.heroBody}>
-            <View style={styles.cardWrapper}>
-              <WalletCard account={selectedAccount} />
+              <View style={styles.heroBody}>
+                <View style={styles.cardWrapper}>
+                  <WalletCard account={selectedAccount} />
+                </View>
+
+                <View style={styles.quickActionsRow}>
+                  <TouchableOpacity
+                    style={styles.qaBtn}
+                    onPress={() =>
+                      navigation.navigate('AddTransaction', {
+                        mode: 'income',
+                        prefill: { account: selectedAccount.id, merchant: '', amount: '', category: '' },
+                      })
+                    }
+                  >
+                    <Text style={styles.qaBtnText}>➕ Add Funds</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.qaBtn}
+                    onPress={() => {
+                      if (otherAccounts.length > 0) setTransferDestId(otherAccounts[0].id);
+                      setShowTransferModal(true);
+                    }}
+                  >
+                    <Text style={styles.qaBtnText}>↗ Transfer</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </LinearGradient>
+
+            <View style={styles.statsRow}>
+              <View style={styles.statChip}>
+                <Text style={styles.statLabel}>In (This Month)</Text>
+                <Text style={[styles.statValue, { color: colors.incomeGreen }]}>+{fmtPeso(monthIn)}</Text>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: '100%', backgroundColor: colors.incomeGreen }]} />
+                </View>
+                {!!fmtTrend(monthIn, prevMonthIn) && (
+                  <Text style={[styles.trendText, { color: monthIn >= prevMonthIn ? colors.incomeGreen : colors.expenseRed }]}>
+                    {fmtTrend(monthIn, prevMonthIn)}
+                  </Text>
+                )}
+              </View>
+
+              <View style={styles.statChip}>
+                <Text style={styles.statLabel}>Out (This Month)</Text>
+                <Text style={[styles.statValue, { color: colors.expenseRed }]}>−{fmtPeso(monthOut)}</Text>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${outBarPct}%`, backgroundColor: colors.expenseRed }]} />
+                </View>
+                {!!fmtTrend(monthOut, prevMonthOut) && (
+                  <Text style={[styles.trendText, { color: monthOut <= prevMonthOut ? colors.incomeGreen : colors.expenseRed }]}>
+                    {fmtTrend(monthOut, prevMonthOut)}
+                  </Text>
+                )}
+              </View>
+
+              <View style={styles.statChip}>
+                <Text style={styles.statLabel}>Transactions</Text>
+                <Text style={styles.statValue}>{curMonthCount}</Text>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${countBarPct}%`, backgroundColor: colors.textSecondary }]} />
+                </View>
+                {!!fmtTrendCount(curMonthCount, prevMonthCount) && (
+                  <Text style={styles.trendText}>{fmtTrendCount(curMonthCount, prevMonthCount)}</Text>
+                )}
+              </View>
             </View>
 
-            <View style={styles.quickActionsRow}>
+            <View style={styles.metaCard}>
+              <View>
+                <Text style={styles.metaLabel}>Last Reconciled</Text>
+                <Text style={styles.metaValue}>{lastReconciledLabel}</Text>
+              </View>
               <TouchableOpacity
-                style={styles.qaBtn}
-                onPress={() =>
-                  navigation.navigate('AddTransaction', {
-                    mode: 'income',
-                    prefill: { account: selectedAccount.id, merchant: '', amount: '', category: '' },
-                  })
-                }
-              >
-                <Text style={styles.qaBtnText}>➕ Add Funds</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.qaBtn}
+                style={[styles.adjustBadge, { backgroundColor: `${config.color}22` }]}
                 onPress={() => {
-                  if (otherAccounts.length > 0) setTransferDestId(otherAccounts[0].id);
-                  setShowTransferModal(true);
+                  setNewBalance('');
+                  setAdjustNote('');
+                  setAdjustSheetVisible(true);
                 }}
               >
-                <Text style={styles.qaBtnText}>↗ Transfer</Text>
+                <Text style={[styles.adjustBadgeText, { color: config.color }]}>⚖️ Adjust Balance</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </LinearGradient>
 
-        {/* ════ STAT CHIPS ════ */}
-        <View style={styles.statsRow}>
-          <View style={styles.statChip}>
-            <Text style={styles.statLabel}>In (This Month)</Text>
-            <Text style={[styles.statValue, { color: colors.incomeGreen }]}>+{fmtPeso(monthIn)}</Text>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: '100%', backgroundColor: colors.incomeGreen }]} />
-            </View>
-            {!!fmtTrend(monthIn, prevMonthIn) && (
-              <Text style={[styles.trendText, { color: monthIn >= prevMonthIn ? colors.incomeGreen : colors.expenseRed }]}>
-                {fmtTrend(monthIn, prevMonthIn)}
-              </Text>
-            )}
-          </View>
-
-          <View style={styles.statChip}>
-            <Text style={styles.statLabel}>Out (This Month)</Text>
-            <Text style={[styles.statValue, { color: colors.expenseRed }]}>−{fmtPeso(monthOut)}</Text>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${outBarPct}%`, backgroundColor: colors.expenseRed }]} />
-            </View>
-            {!!fmtTrend(monthOut, prevMonthOut) && (
-              <Text style={[styles.trendText, { color: monthOut <= prevMonthOut ? colors.incomeGreen : colors.expenseRed }]}>
-                {fmtTrend(monthOut, prevMonthOut)}
-              </Text>
-            )}
-          </View>
-
-          <View style={styles.statChip}>
-            <Text style={styles.statLabel}>Transactions</Text>
-            <Text style={styles.statValue}>{curMonthCount}</Text>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${countBarPct}%`, backgroundColor: colors.textSecondary }]} />
-            </View>
-            {!!fmtTrendCount(curMonthCount, prevMonthCount) && (
-              <Text style={styles.trendText}>{fmtTrendCount(curMonthCount, prevMonthCount)}</Text>
-            )}
-          </View>
-        </View>
-
-        {/* ════ METADATA CARD ════ */}
-        <View style={styles.metaCard}>
-          <View>
-            <Text style={styles.metaLabel}>Last Reconciled</Text>
-            <Text style={styles.metaValue}>{lastReconciledLabel}</Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.adjustBadge, { backgroundColor: `${config.color}22` }]}
-            onPress={() => {
-              setNewBalance('');
-              setAdjustNote('');
-              setAdjustSheetVisible(true);
-            }}
-          >
-            <Text style={[styles.adjustBadgeText, { color: config.color }]}>⚖️ Adjust Balance</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ════ RECENT TRANSACTIONS ════ */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Transactions</Text>
-          <View style={styles.sectionActions}>
-            <TouchableOpacity
-              onPress={() => {
-                setSearchVisible((v) => !v);
-                if (searchVisible) setSearchQuery('');
-              }}
-            >
-              <Text style={styles.searchIconText}>🔍</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate('Tabs', {
-                  screen: 'feed',
-                  params: {
-                    screen: 'FeedMain',
-                    params: { filterAccount: id, filterCategory: activeCategory ?? undefined },
-                  },
-                })
-              }
-            >
-              <Text style={[styles.seeAll, { color: config.color }]}>See all →</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {searchVisible && (
-          <View style={styles.searchWrap}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search transactions…"
-              placeholderTextColor={colors.textSecondary}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              autoFocus
-              returnKeyType="search"
-            />
-          </View>
-        )}
-
-        {uniqueCategories.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterPillsContent}
-            style={styles.filterPillsWrap}
-          >
-            <TouchableOpacity
-              style={[styles.filterPill, activeCategory === null && [styles.filterPillActive, { backgroundColor: config.color, borderColor: config.color }]]}
-              onPress={() => setActiveCategory(null)}
-            >
-              <Text style={[styles.filterPillText, activeCategory === null && styles.filterPillTextActive]}>
-                All
-              </Text>
-            </TouchableOpacity>
-            {uniqueCategories.map((cat) => {
-              const isActive = activeCategory === cat;
-              const { key, color } = getPillIcon(cat);
-              return (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recent Transactions</Text>
+              <View style={styles.sectionActions}>
                 <TouchableOpacity
-                  key={cat}
-                  style={[styles.filterPill, isActive && [styles.filterPillActive, { backgroundColor: config.color, borderColor: config.color }]]}
-                  onPress={() => setActiveCategory(isActive ? null : cat)}
+                  onPress={() => {
+                    setSearchVisible((v) => !v);
+                    if (searchVisible) setSearchQuery('');
+                  }}
                 >
-                  <View style={styles.pillInner}>
-                    <CategoryIcon categoryKey={key} color={isActive ? '#FFFFFF' : color} wrapperSize={18} size={10} />
-                    <Text style={[styles.filterPillText, isActive && styles.filterPillTextActive]}>
-                      {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                    </Text>
-                  </View>
+                  <Text style={styles.searchIconText}>🔍</Text>
                 </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
-
-        <View style={styles.listWrap}>
-          <FlashList<Transaction>
-            data={filteredTxns}
-            renderItem={renderTxn}
-            ListEmptyComponent={
-              <Text style={styles.emptyText}>
-                {searchQuery || activeCategory ? 'No matching transactions' : 'No recent transactions'}
-              </Text>
-            }
-          />
-        </View>
-
-        <View style={styles.actionWrap}>
-          <TouchableOpacity onPress={() => setShowDeleteModal(true)}>
-            <Text style={styles.deleteLinkText}>Delete Account</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ════ DELETE MODAL ════ */}
-        <Modal visible={showDeleteModal} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalSheet}>
-              <Text style={styles.modalTitle}>Delete {config.label}?</Text>
-              <Text style={styles.modalSub}>
-                This will remove the account and all its transaction history. This action cannot be undone.
-              </Text>
-              <TouchableOpacity
-                style={styles.confirmBtn}
-                onPress={() => { setShowDeleteModal(false); navigation.goBack(); }}
-              >
-                <Text style={styles.confirmBtnText}>Yes, Delete Account</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowDeleteModal(false)}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
-        {/* ════ TRANSFER MODAL ════ */}
-        <Modal
-          visible={showTransferModal}
-          transparent
-          animationType="slide"
-          onShow={() => { setTimeout(() => transferInputRef.current?.focus(), 150); }}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalSheet}>
-              <Text style={styles.modalTitle}>Transfer Money</Text>
-              <Text style={styles.modalSub}>
-                Move funds from{' '}
-                <Text style={{ fontFamily: 'Inter_700Bold' }}>{config.label}</Text>
-                {' '}to another account.
-              </Text>
-
-              {otherAccounts.length === 0 ? (
-                <Text style={styles.emptyText}>No other accounts available.</Text>
-              ) : (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.transferAccountsContent}
-                  style={styles.transferAccountsWrap}
+                <TouchableOpacity
+                  onPress={() =>
+                    navigation.navigate('Tabs', {
+                      screen: 'feed',
+                      params: {
+                        screen: 'FeedMain',
+                        params: { filterAccount: id, filterCategory: activeCategory ?? undefined },
+                      },
+                    })
+                  }
                 >
-                  {otherAccounts.map((acct) => {
-                    const isSelected = transferDestId === acct.id;
-                    return (
-                      <TouchableOpacity
-                        key={acct.id}
-                        style={[styles.transferAcctChip, isSelected && { borderColor: acct.brand_colour, borderWidth: 2 }]}
-                        onPress={() => setTransferDestId(acct.id)}
-                      >
-                        <View style={[styles.transferAcctAvatar, { backgroundColor: acct.brand_colour }]}>
-                          <Text style={styles.transferAcctLetter}>{acct.letter_avatar}</Text>
-                        </View>
-                        <Text style={styles.transferAcctName} numberOfLines={1}>{acct.name}</Text>
-                        <Text style={styles.transferAcctBal}>{fmtPeso(acct.balance)}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              )}
-
-              <TextInput
-                ref={transferInputRef}
-                style={[styles.adjustInput, { marginTop: 16 }]}
-                placeholder="Amount to transfer"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="decimal-pad"
-                value={transferAmount}
-                onChangeText={setTransferAmount}
-              />
-
-              <TouchableOpacity
-                style={[styles.confirmBtn, { marginTop: 20, opacity: transferSaving || !transferDestId ? 0.6 : 1 }]}
-                onPress={handleSaveTransfer}
-                disabled={transferSaving || !transferDestId}
-              >
-                <Text style={styles.confirmBtnText}>
-                  {transferSaving ? 'Transferring…' : 'Confirm Transfer'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => { setShowTransferModal(false); setTransferAmount(''); setTransferDestId(''); }}
-              >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
+                  <Text style={[styles.seeAll, { color: config.color }]}>See all →</Text>
+                </TouchableOpacity>
+              </View>
             </View>
+
+            {searchVisible && (
+              <View style={styles.searchWrap}>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search transactions…"
+                  placeholderTextColor={colors.textSecondary}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoFocus
+                  returnKeyType="search"
+                />
+              </View>
+            )}
+
+            {uniqueCategories.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterPillsContent}
+                style={styles.filterPillsWrap}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.filterPill,
+                    activeCategory === null && [styles.filterPillActive, { backgroundColor: config.color, borderColor: config.color }],
+                  ]}
+                  onPress={() => setActiveCategory(null)}
+                >
+                  <Text style={[styles.filterPillText, activeCategory === null && styles.filterPillTextActive]}>
+                    All
+                  </Text>
+                </TouchableOpacity>
+                {uniqueCategories.map((cat) => {
+                  const isActive = activeCategory === cat;
+                  const { key, color } = getPillIcon(cat);
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[
+                        styles.filterPill,
+                        isActive && [styles.filterPillActive, { backgroundColor: config.color, borderColor: config.color }],
+                      ]}
+                      onPress={() => setActiveCategory(isActive ? null : cat)}
+                    >
+                      <View style={styles.pillInner}>
+                        <CategoryIcon categoryKey={key} color={isActive ? '#FFFFFF' : color} wrapperSize={18} size={10} />
+                        <Text style={[styles.filterPillText, isActive && styles.filterPillTextActive]}>
+                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </>
+        }
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>
+            {searchQuery || activeCategory ? 'No matching transactions' : 'No recent transactions'}
+          </Text>
+        }
+        ListFooterComponent={
+          <View style={styles.actionWrap}>
+            <TouchableOpacity onPress={() => setShowDeleteModal(true)}>
+              <Text style={styles.deleteLinkText}>Delete Account</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
-      </ScrollView>
+        }
+      />
+
+      <Modal visible={showDeleteModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Delete {config.label}?</Text>
+            <Text style={styles.modalSub}>
+              This will remove the account and all its transaction history. This action cannot be undone.
+            </Text>
+            <TouchableOpacity
+              style={styles.confirmBtn}
+              onPress={() => { setShowDeleteModal(false); navigation.goBack(); }}
+            >
+              <Text style={styles.confirmBtnText}>Yes, Delete Account</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowDeleteModal(false)}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showTransferModal}
+        transparent
+        animationType="slide"
+        onShow={() => { setTimeout(() => transferInputRef.current?.focus(), 150); }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Transfer Money</Text>
+            <Text style={styles.modalSub}>
+              Move funds from{' '}
+              <Text style={{ fontFamily: 'Inter_700Bold' }}>{config.label}</Text>
+              {' '}to another account.
+            </Text>
+
+            {otherAccounts.length === 0 ? (
+              <Text style={styles.emptyText}>No other accounts available.</Text>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.transferAccountsContent}
+                style={styles.transferAccountsWrap}
+              >
+                {otherAccounts.map((acct) => {
+                  const isSelected = transferDestId === acct.id;
+                  return (
+                    <TouchableOpacity
+                      key={acct.id}
+                      style={[styles.transferAcctChip, isSelected && { borderColor: acct.brand_colour, borderWidth: 2 }]}
+                      onPress={() => setTransferDestId(acct.id)}
+                    >
+                      <View style={[styles.transferAcctAvatar, { backgroundColor: acct.brand_colour }]}>
+                        <Text style={styles.transferAcctLetter}>{acct.letter_avatar}</Text>
+                      </View>
+                      <Text style={styles.transferAcctName} numberOfLines={1}>{acct.name}</Text>
+                      <Text style={styles.transferAcctBal}>{fmtPeso(acct.balance)}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <TextInput
+              ref={transferInputRef}
+              style={[styles.adjustInput, { marginTop: 16 }]}
+              placeholder="Amount to transfer"
+              placeholderTextColor={colors.textSecondary}
+              keyboardType="decimal-pad"
+              value={transferAmount}
+              onChangeText={setTransferAmount}
+            />
+
+            <TouchableOpacity
+              style={[styles.confirmBtn, { marginTop: 20, opacity: transferSaving || !transferDestId ? 0.6 : 1 }]}
+              onPress={handleSaveTransfer}
+              disabled={transferSaving || !transferDestId}
+            >
+              <Text style={styles.confirmBtnText}>
+                {transferSaving ? 'Transferring…' : 'Confirm Transfer'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => { setShowTransferModal(false); setTransferAmount(''); setTransferDestId(''); }}
+            >
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ════ ADJUST BALANCE — only mounted when open, so no gesture blocker at rest ════ */}
       {adjustSheetVisible && (
@@ -1147,6 +1146,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     // Transactions
     listWrap: { minHeight: 80, paddingHorizontal: spacing.screenPadding },
     emptyText: { fontFamily: 'Inter_400Regular', fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: 24 },
+    txRowPad: { paddingHorizontal: spacing.screenPadding },
     txItem: {
       flexDirection: 'row',
       justifyContent: 'space-between',

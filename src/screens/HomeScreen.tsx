@@ -14,11 +14,14 @@ import {
   Animated,
 } from 'react-native';
 import RAnim, {
+  Easing,
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withDelay,
   withSpring,
+  withRepeat,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path as SvgPath } from 'react-native-svg';
@@ -117,38 +120,44 @@ function makeWavePath(yBase: number, amp: number): string {
 }
 
 function WaveFill({ pct, color }: { pct: number; color: string }) {
-  const anim1 = useRef(new Animated.Value(0)).current;
-  const anim2 = useRef(new Animated.Value(0)).current;
+  const wave1X = useSharedValue(0);
+  const wave2X = useSharedValue(0);
+
+  const wave1Style = useAnimatedStyle(() => ({
+    transform: [{ translateX: wave1X.value }],
+  }));
+  const wave2Style = useAnimatedStyle(() => ({
+    transform: [{ translateX: wave2X.value }],
+  }));
 
   useEffect(() => {
-    Animated.loop(
-      Animated.timing(anim1, {
-        toValue: 1,
+    wave1X.value = withRepeat(
+      withTiming(-TILE_W, {
         duration: 3000,
-        useNativeDriver: true,
-      })
-    ).start();
-    Animated.loop(
-      Animated.timing(anim2, {
-        toValue: 1,
+        easing: Easing.linear,
+      }),
+      -1,
+      false
+    );
+    wave2X.value = withRepeat(
+      withTiming(-TILE_W, {
         duration: 4600,
-        useNativeDriver: true,
-      })
-    ).start();
-  }, [anim1, anim2]);
+        easing: Easing.linear,
+      }),
+      -1,
+      false
+    );
+
+    return () => {
+      cancelAnimation(wave1X);
+      cancelAnimation(wave2X);
+      wave1X.value = 0;
+      wave2X.value = 0;
+    };
+  }, [wave1X, wave2X]);
 
   const clampedPct = Math.min(Math.max(pct, 0), 1);
   const yBase = TILE_H - TILE_H * clampedPct;
-
-  // Translate exactly one wavelength → start and end frames are identical → no snap
-  const tx1 = anim1.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -TILE_W],
-  });
-  const tx2 = anim2.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -TILE_W],
-  });
 
   const waveStyle = {
     position: 'absolute' as const,
@@ -164,17 +173,17 @@ function WaveFill({ pct, color }: { pct: number; color: string }) {
       pointerEvents="none"
     >
       {/* Back wave — slower, subtler */}
-      <Animated.View style={[waveStyle, { transform: [{ translateX: tx2 }] }]}>
+      <RAnim.View style={[waveStyle, wave2Style]}>
         <Svg width={WAVE_SVG_W} height={TILE_H}>
           <SvgPath d={makeWavePath(yBase + 6, 8)} fill={color} opacity={0.18} />
         </Svg>
-      </Animated.View>
+      </RAnim.View>
       {/* Front wave — faster, more opaque */}
-      <Animated.View style={[waveStyle, { transform: [{ translateX: tx1 }] }]}>
+      <RAnim.View style={[waveStyle, wave1Style]}>
         <Svg width={WAVE_SVG_W} height={TILE_H}>
           <SvgPath d={makeWavePath(yBase, 10)} fill={color} opacity={0.42} />
         </Svg>
-      </Animated.View>
+      </RAnim.View>
     </View>
   );
 }
