@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   TextInput, Modal, Alert, ActivityIndicator, KeyboardAvoidingView,
@@ -9,6 +9,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
+import { useCachedQuery } from '@/hooks/useCachedQuery';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,8 +99,10 @@ export default function SavingsGoalScreen() {
   const navigation = useNavigation();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
-  const [goals, setGoals]     = useState<Goal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: goals, loading, mutate, refetch } = useCachedQuery<Goal>(
+    'FINO_GOALS_CACHE',
+    () => supabase.from('savings_goals').select('*').order('created_at', { ascending: false }),
+  );
 
   // ── Add/Edit modal
   const [showForm, setShowForm]   = useState(false);
@@ -108,7 +111,6 @@ export default function SavingsGoalScreen() {
     name: '', description: '', target_amount: '', target_date: '',
     icon: 'star', color: PRESET_COLORS[0],
   });
-  const [formLoading, setFormLoading] = useState(false);
 
   // ── Deposit modal
   const [depositTarget, setDepositTarget] = useState<Goal | null>(null);
@@ -118,19 +120,6 @@ export default function SavingsGoalScreen() {
 
   // ── Detail modal
   const [detail, setDetail] = useState<Goal | null>(null);
-
-  // ── Fetch ─────────────────────────────────────────────────────────────────
-  const fetchGoals = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('savings_goals')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (!error && data) setGoals(data as Goal[]);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchGoals(); }, [fetchGoals]);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -161,45 +150,84 @@ export default function SavingsGoalScreen() {
     setShowForm(true);
   };
 
-  // ── Submit form ────────────────────────────────────────────────────────────
+  // ── Submit form (optimistic) ───────────────────────────────────────────────
   const submitForm = async () => {
     const name   = form.name.trim();
     const amount = parseFloat(form.target_amount);
-    if (!name)             { Alert.alert('Missing name', 'Enter a goal name.'); return; }
+    if (!name)               { Alert.alert('Missing name', 'Enter a goal name.'); return; }
     if (!amount || amount <= 0) { Alert.alert('Invalid amount', 'Enter a valid target amount.'); return; }
 
-    setFormLoading(true);
+    const snapshot = goals;
+    const now      = new Date().toISOString();
+
     if (editGoal) {
+      // Optimistically patch edited goal in the list
+      const updated: Goal = {
+        ...editGoal,
+        name,
+        description:   form.description.trim() || null,
+        target_amount: amount,
+        target_date:   form.target_date.trim() || null,
+        icon:          form.icon,
+        color:         form.color,
+      };
+      await mutate(goals.map(g => g.id === editGoal.id ? updated : g));
+      setShowForm(false);
+
       const { error } = await supabase.from('savings_goals').update({
         name,
-        description:   form.description.trim() || null,
+        description:   updated.description,
         target_amount: amount,
-        target_date:   form.target_date.trim() || null,
+        target_date:   updated.target_date,
         icon:          form.icon,
         color:         form.color,
-        updated_at:    new Date().toISOString(),
+        updated_at:    now,
       }).eq('id', editGoal.id);
-      if (error) { Alert.alert('Error', error.message); setFormLoading(false); return; }
+
+      if (error) {
+        await mutate(snapshot);
+        Alert.alert('Sync failed', error.message);
+      }
     } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from('savings_goals').insert({
-        user_id:       user!.id,
+      // Optimistically prepend a new goal placeholder
+      const optimisticId = `optimistic-${Date.now()}`;
+      const optimistic: Goal = {
+        id:             optimisticId,
         name,
-        description:   form.description.trim() || null,
-        target_amount: amount,
+        description:    form.description.trim() || null,
+        target_amount:  amount,
         current_amount: 0,
-        target_date:   form.target_date.trim() || null,
-        icon:          form.icon,
-        color:         form.color,
-      });
-      if (error) { Alert.alert('Error', error.message); setFormLoading(false); return; }
+        target_date:    form.target_date.trim() || null,
+        icon:           form.icon,
+        color:          form.color,
+        created_at:     now,
+      };
+      await mutate([optimistic, ...goals]);
+      setShowForm(false);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: inserted, error } = await supabase.from('savings_goals').insert({
+        user_id:        user!.id,
+        name,
+        description:    optimistic.description,
+        target_amount:  amount,
+        current_amount: 0,
+        target_date:    optimistic.target_date,
+        icon:           form.icon,
+        color:          form.color,
+      }).select().single();
+
+      if (error) {
+        await mutate(snapshot);
+        Alert.alert('Sync failed', error.message);
+        return;
+      }
+      // Swap placeholder with real DB row
+      await mutate([inserted as Goal, ...snapshot]);
     }
-    setFormLoading(false);
-    setShowForm(false);
-    fetchGoals();
   };
 
-  // ── Deposit / Withdraw ─────────────────────────────────────────────────────
+  // ── Deposit / Withdraw (optimistic) ───────────────────────────────────────
   const submitDeposit = async () => {
     if (!depositTarget) return;
     const amount = parseFloat(depositAmount);
@@ -208,29 +236,47 @@ export default function SavingsGoalScreen() {
     let newAmount = depositTarget.current_amount + (depositMode === 'add' ? amount : -amount);
     newAmount = Math.max(0, newAmount);
 
+    const snapshot = goals;
+
+    // 1. Instantly update list and detail modal
+    const updatedGoals = goals.map(g =>
+      g.id === depositTarget.id ? { ...g, current_amount: newAmount } : g
+    );
+    await mutate(updatedGoals);
+    setDepositTarget(null);
+    setDepositAmount('');
+    if (detail) setDetail(prev => prev ? { ...prev, current_amount: newAmount } : null);
+
+    // 2. Persist to Supabase in background
     setDepositLoading(true);
     const { error } = await supabase.from('savings_goals').update({
       current_amount: newAmount,
       updated_at: new Date().toISOString(),
     }).eq('id', depositTarget.id);
     setDepositLoading(false);
-    if (error) { Alert.alert('Error', error.message); return; }
-    setDepositTarget(null);
-    setDepositAmount('');
-    if (detail) setDetail(prev => prev ? { ...prev, current_amount: newAmount } : null);
-    fetchGoals();
+
+    if (error) {
+      await mutate(snapshot);
+      Alert.alert('Sync failed', error.message);
+    }
   };
 
-  // ── Delete ─────────────────────────────────────────────────────────────────
+  // ── Delete (optimistic) ────────────────────────────────────────────────────
   const deleteGoal = (goal: Goal) => {
     Alert.alert('Delete goal', `Delete "${goal.name}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
-          await supabase.from('savings_goals').delete().eq('id', goal.id);
+          const snapshot = goals;
           setDetail(null);
-          fetchGoals();
+          await mutate(goals.filter(g => g.id !== goal.id));
+
+          const { error } = await supabase.from('savings_goals').delete().eq('id', goal.id);
+          if (error) {
+            await mutate(snapshot);
+            Alert.alert('Sync failed', error.message);
+          }
         },
       },
     ]);
@@ -503,12 +549,8 @@ export default function SavingsGoalScreen() {
               onPress={submitForm}
               activeOpacity={0.85}
               style={[styles.submitBtn, { backgroundColor: form.color }]}
-              disabled={formLoading}
             >
-              {formLoading
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.submitBtnText}>{editGoal ? 'Save Changes' : 'Create Goal'}</Text>
-              }
+              <Text style={styles.submitBtnText}>{editGoal ? 'Save Changes' : 'Create Goal'}</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>

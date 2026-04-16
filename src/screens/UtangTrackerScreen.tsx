@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   TextInput, Modal, Alert, ActivityIndicator, KeyboardAvoidingView,
@@ -9,6 +9,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
+import { useCachedQuery } from '@/hooks/useCachedQuery';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,8 +53,11 @@ export default function UtangTrackerScreen() {
   const navigation = useNavigation();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
-  const [debts, setDebts]       = useState<Debt[]>([]);
-  const [loading, setLoading]   = useState(true);
+  const { data: debts, loading, mutate, refetch } = useCachedQuery<Debt>(
+    'FINO_DEBTS_CACHE',
+    () => supabase.from('debts').select('*').order('created_at', { ascending: false }),
+  );
+
   const [filter, setFilter]     = useState<FilterTab>('all');
 
   // ── Add debt modal state
@@ -61,7 +65,6 @@ export default function UtangTrackerScreen() {
   const [addForm, setAddForm]   = useState({
     debtor_name: '', description: '', total_amount: '', due_date: '',
   });
-  const [addLoading, setAddLoading] = useState(false);
 
   // ── Payment modal state
   const [payTarget, setPayTarget]   = useState<Debt | null>(null);
@@ -70,19 +73,6 @@ export default function UtangTrackerScreen() {
 
   // ── Detail modal state
   const [detail, setDetail] = useState<Debt | null>(null);
-
-  // ── Fetch ────────────────────────────────────────────────────────────────────
-  const fetchDebts = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('debts')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (!error && data) setDebts(data as Debt[]);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchDebts(); }, [fetchDebts]);
 
   // ── Stats ────────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -98,31 +88,53 @@ export default function UtangTrackerScreen() {
     filter === 'all' ? debts : debts.filter(d => getStatus(d) === filter),
   [debts, filter]);
 
-  // ── Add debt ─────────────────────────────────────────────────────────────────
+  // ── Add debt (optimistic) ────────────────────────────────────────────────────
   const submitAdd = async () => {
     const name   = addForm.debtor_name.trim();
     const amount = parseFloat(addForm.total_amount);
-    if (!name)      { Alert.alert('Missing name', 'Enter the debtor\'s name.'); return; }
+    if (!name)               { Alert.alert('Missing name', 'Enter the debtor\'s name.'); return; }
     if (!amount || amount <= 0) { Alert.alert('Invalid amount', 'Enter a valid amount.'); return; }
 
-    setAddLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('debts').insert({
-      user_id:      user!.id,
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimistic: Debt = {
+      id:           optimisticId,
       debtor_name:  name,
       description:  addForm.description.trim() || null,
       total_amount: amount,
       amount_paid:  0,
       due_date:     addForm.due_date.trim() || null,
-    });
-    setAddLoading(false);
-    if (error) { Alert.alert('Error', error.message); return; }
+      created_at:   new Date().toISOString(),
+    };
+
+    // 1. Instantly show the new debt in the list
+    const snapshot = debts;
+    await mutate([optimistic, ...debts]);
     setShowAdd(false);
     setAddForm({ debtor_name: '', description: '', total_amount: '', due_date: '' });
-    fetchDebts();
+
+    // 2. Persist to Supabase in background
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: inserted, error } = await supabase.from('debts').insert({
+      user_id:      user!.id,
+      debtor_name:  name,
+      description:  optimistic.description,
+      total_amount: amount,
+      amount_paid:  0,
+      due_date:     optimistic.due_date,
+    }).select().single();
+
+    if (error) {
+      // Rollback optimistic entry
+      await mutate(snapshot);
+      Alert.alert('Sync failed', error.message);
+      return;
+    }
+
+    // 3. Swap optimistic placeholder with the real DB row
+    await mutate([inserted as Debt, ...snapshot]);
   };
 
-  // ── Record payment ────────────────────────────────────────────────────────────
+  // ── Record payment (optimistic) ───────────────────────────────────────────────
   const submitPayment = async () => {
     if (!payTarget) return;
     const amount = parseFloat(payAmount);
@@ -134,21 +146,34 @@ export default function UtangTrackerScreen() {
       return;
     }
 
-    setPayLoading(true);
     const newPaid = payTarget.amount_paid + amount;
+    const snapshot = debts;
+
+    // 1. Optimistically update list & close modal
+    const updatedDebts = debts.map(d =>
+      d.id === payTarget.id ? { ...d, amount_paid: newPaid } : d
+    );
+    await mutate(updatedDebts);
+    setPayTarget(null);
+    setPayAmount('');
+    if (detail) setDetail(prev => prev ? { ...prev, amount_paid: newPaid } : null);
+
+    // 2. Persist to Supabase in background
+    setPayLoading(true);
     const { error } = await supabase.from('debts').update({
       amount_paid: newPaid,
       updated_at:  new Date().toISOString(),
     }).eq('id', payTarget.id);
     setPayLoading(false);
-    if (error) { Alert.alert('Error', error.message); return; }
-    setPayTarget(null);
-    setPayAmount('');
-    if (detail) setDetail(prev => prev ? { ...prev, amount_paid: newPaid } : null);
-    fetchDebts();
+
+    if (error) {
+      // Rollback
+      await mutate(snapshot);
+      Alert.alert('Sync failed', error.message);
+    }
   };
 
-  // ── Delete ────────────────────────────────────────────────────────────────────
+  // ── Delete (optimistic) ───────────────────────────────────────────────────────
   const deleteDebt = (debt: Debt) => {
     Alert.alert(
       'Delete debt',
@@ -158,9 +183,17 @@ export default function UtangTrackerScreen() {
         {
           text: 'Delete', style: 'destructive',
           onPress: async () => {
-            await supabase.from('debts').delete().eq('id', debt.id);
+            const snapshot = debts;
+            // 1. Remove from UI immediately
             setDetail(null);
-            fetchDebts();
+            await mutate(debts.filter(d => d.id !== debt.id));
+
+            // 2. Delete from Supabase in background
+            const { error } = await supabase.from('debts').delete().eq('id', debt.id);
+            if (error) {
+              await mutate(snapshot);
+              Alert.alert('Sync failed', error.message);
+            }
           },
         },
       ],
@@ -403,12 +436,8 @@ export default function UtangTrackerScreen() {
               onPress={submitAdd}
               activeOpacity={0.85}
               style={[styles.submitBtn, { backgroundColor: colors.primary }]}
-              disabled={addLoading}
             >
-              {addLoading
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.submitBtnText}>Add Debt</Text>
-              }
+              <Text style={styles.submitBtnText}>Add Debt</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>

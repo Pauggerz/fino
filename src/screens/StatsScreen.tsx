@@ -45,6 +45,7 @@ import { Skeleton } from '@/components/Skeleton';
 import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
 import { useAccounts } from '@/hooks/useAccounts';
 import { generateBulletInsights } from '@/services/gemini';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -900,9 +901,41 @@ export default function InsightsScreen() {
     return { from, to };
   }, [selectedYear, selectedMonth]);
 
+  const applyStatsBundle = useCallback((bundle: Record<string, unknown>) => {
+    if (bundle.expenseCategoryKeys) setExpenseCategoryKeys(bundle.expenseCategoryKeys as string[]);
+    if (bundle.expenseCategoryMeta) setExpenseCategoryMeta(bundle.expenseCategoryMeta as Record<string, DbCategoryMeta>);
+    if (bundle.expenseTotals) setExpenseTotals(bundle.expenseTotals as Record<string, number>);
+    if (bundle.expenseBudgets) setExpenseBudgets(bundle.expenseBudgets as Record<string, number>);
+    if (bundle.incomeTotals) setIncomeTotals(bundle.incomeTotals as Record<string, number>);
+    if (bundle.dailySpend) setDailySpend(bundle.dailySpend as Record<string, number>);
+    if (bundle.dowAvgSpend) setDowAvgSpend(bundle.dowAvgSpend as number[]);
+    if (bundle.topTransactions) setTopTransactions(bundle.topTransactions as TopTx[]);
+    if (bundle.accountActivity) setAccountActivity(bundle.accountActivity as { expense: Record<string, number>; income: Record<string, number> });
+    if (bundle.prevMonthExpenseTotals) setPrevMonthExpenseTotals(bundle.prevMonthExpenseTotals as Record<string, number>);
+    if (typeof bundle.totalTxCount === 'number') setTotalTxCount(bundle.totalTxCount);
+    if (typeof bundle.prevMonthTxCount === 'number') setPrevMonthTxCount(bundle.prevMonthTxCount);
+  }, []);
+
   const fetchStats = useCallback(async () => {
+    const cacheKey = `FINO_STATS_CACHE_${selectedYear}_${selectedMonth}`;
+
+    // 1. Serve stale cache immediately — no spinner for returning users
     try {
-      setLoading(true);
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        applyStatsBundle(JSON.parse(cached));
+        setLoading(false);
+      }
+    } catch (_) {
+      // ignore cache errors
+    }
+
+    try {
+      if (!loading) {
+        // Already rendered from cache; keep loading false during background refresh
+      } else {
+        setLoading(true);
+      }
 
       // Compute prev month range for delta badges
       const prevMonthNum = selectedMonth === 0 ? 11 : selectedMonth - 1;
@@ -1064,10 +1097,27 @@ export default function InsightsScreen() {
       });
       setPrevMonthExpenseTotals(prevTotals);
       setPrevMonthTxCount(prevTxData?.length ?? 0);
+
+      // 3. Persist the computed bundle to cache for next open
+      const bundle = {
+        expenseCategoryKeys: nextKeys,
+        expenseCategoryMeta: nextMeta,
+        expenseTotals:       nextTotals,
+        expenseBudgets:      nextBudgets,
+        incomeTotals:        nextIncomeTotals,
+        dailySpend:          dailyMap,
+        dowAvgSpend:         dowAvg,
+        topTransactions:     topTxData ?? [],
+        accountActivity:     { expense: acctExpense, income: acctIncome },
+        prevMonthExpenseTotals: prevTotals,
+        totalTxCount:        dailyTxData?.length ?? 0,
+        prevMonthTxCount:    prevTxData?.length ?? 0,
+      };
+      AsyncStorage.setItem(cacheKey, JSON.stringify(bundle)).catch(() => {});
     } finally {
       setLoading(false);
     }
-  }, [monthRange, selectedMonth, selectedYear]);
+  }, [applyStatsBundle, monthRange, selectedMonth, selectedYear]);
 
   useEffect(() => {
     fetchStats();

@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAccounts } from '@/hooks/useAccounts';
 import {
   ACCOUNT_LOGOS,
@@ -643,14 +644,30 @@ function BillRemindersModal({
   const [newRecurring, setNewRecurring] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const BILLS_CACHE_KEY = 'FINO_BILLS_CACHE';
+
   const fetchBills = useCallback(async () => {
-    setLoading(true);
+    // 1. Serve from cache immediately — no spinner for returning users
+    try {
+      const cached = await AsyncStorage.getItem(BILLS_CACHE_KEY);
+      if (cached) {
+        setBills(JSON.parse(cached) as BillReminder[]);
+        setLoading(false);
+      }
+    } catch (_) {
+      // ignore cache errors
+    }
+
+    // 2. Background revalidation from Supabase
     const { data } = await supabase
       .from('bill_reminders')
       .select('*')
       .eq('is_paid', false)
       .order('due_date');
-    setBills((data as BillReminder[]) ?? []);
+
+    const fresh = (data as BillReminder[]) ?? [];
+    setBills(fresh);
+    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(fresh)).catch(() => {});
     setLoading(false);
   }, []);
 
@@ -676,14 +693,18 @@ function BillRemindersModal({
     const safeDay = Math.min(dueDay, daysInMonth);
     const dueDateISO = `${dueYear}-${String(dueMonth + 1).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`;
 
-    await supabase.from('bill_reminders').insert({
+    // Optimistic: add a placeholder to the list immediately, then close
+    const optimisticBill: BillReminder = {
+      id: `optimistic-${Date.now()}`,
       user_id: user.id,
       title: newTitle.trim(),
       amount: newAmount ? parseFloat(newAmount) : null,
       due_date: dueDateISO,
       is_recurring: newRecurring,
       is_paid: false,
-    });
+    };
+    const snapshot = bills;
+    updateBillsCache([...bills, optimisticBill]);
 
     setNewTitle('');
     setNewAmount('');
@@ -693,15 +714,41 @@ function BillRemindersModal({
     setNewRecurring(false);
     setSaving(false);
     setShowAdd(false);
-    fetchBills();
+
+    // Background insert, then refetch to get the real row with correct ID/sort
+    const { error } = await supabase.from('bill_reminders').insert({
+      user_id: user.id,
+      title: optimisticBill.title,
+      amount: optimisticBill.amount,
+      due_date: dueDateISO,
+      is_recurring: newRecurring,
+      is_paid: false,
+    });
+
+    if (error) {
+      updateBillsCache(snapshot);
+      Alert.alert('Sync failed', error.message);
+    } else {
+      // Silent background refetch to get the canonical sorted list
+      fetchBills();
+    }
+  };
+
+  const updateBillsCache = (updated: BillReminder[]) => {
+    setBills(updated);
+    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(updated)).catch(() => {});
   };
 
   const handleMarkPaid = async (id: string) => {
-    await supabase
+    // Optimistically remove from the unpaid list
+    const snapshot = bills;
+    updateBillsCache(bills.filter((b) => b.id !== id));
+
+    const { error } = await supabase
       .from('bill_reminders')
       .update({ is_paid: true })
       .eq('id', id);
-    fetchBills();
+    if (error) updateBillsCache(snapshot);
   };
 
   const handleDelete = async (id: string) => {
@@ -711,8 +758,11 @@ function BillRemindersModal({
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          await supabase.from('bill_reminders').delete().eq('id', id);
-          fetchBills();
+          const snapshot = bills;
+          updateBillsCache(bills.filter((b) => b.id !== id));
+
+          const { error } = await supabase.from('bill_reminders').delete().eq('id', id);
+          if (error) updateBillsCache(snapshot);
         },
       },
     ]);
