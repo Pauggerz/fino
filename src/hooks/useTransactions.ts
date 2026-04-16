@@ -1,10 +1,21 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/services/supabase';
 import { Transaction } from '@/types';
 import { formatSectionTitle } from '@/utils/groupByDate';
 import { getPendingQueue } from '@/services/syncService';
 
 const PAGE_SIZE = 20;
+
+/** Deterministic cache key from the active filter combination. */
+function makeCacheKey(
+  category?: string,
+  sortOrder?: SortOrder,
+  transactionType?: string,
+  accountId?: string,
+): string {
+  return `FINO_TX_CACHE_${category ?? ''}_${sortOrder ?? 'date_desc'}_${transactionType ?? ''}_${accountId ?? ''}`;
+}
 
 export interface FeedTransaction extends Transaction {
   account_name: string;
@@ -205,10 +216,56 @@ export const useTransactions = (
     [category, dateRange, searchQuery, accountId, sortOrder, transactionType]
   );
 
+  const cacheKey = useMemo(
+    () => makeCacheKey(category, sortOrder, transactionType, accountId),
+    [category, sortOrder, transactionType, accountId],
+  );
+
+  // Date-range and search are intentionally excluded from caching: they are
+  // transient/user-driven filters where stale data would be confusing.
+  const isCacheable = !dateRange && (!searchQuery || searchQuery.trim() === '');
+
   useEffect(() => {
-    setLoading(true);
-    fetch(true).finally(() => setLoading(false));
-  }, [fetch]);
+    let cancelled = false;
+
+    const load = async () => {
+      // 1. Serve first-page cache immediately — skip the skeleton for returning users
+      if (isCacheable) {
+        try {
+          const raw = await AsyncStorage.getItem(cacheKey);
+          if (raw && !cancelled) {
+            setItems(JSON.parse(raw));
+            setLoading(false);
+          }
+        } catch (_) {
+          // ignore cache read errors
+        }
+      }
+
+      // 2. Background network fetch
+      if (!cancelled) {
+        if (isCacheable) {
+          // Already rendered from cache — don't flash spinner on revalidation
+          await fetch(true);
+        } else {
+          setLoading(true);
+          await fetch(true);
+        }
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => { cancelled = true; };
+  }, [fetch, cacheKey, isCacheable]);
+
+  // After a successful first-page fetch, persist to cache
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  useEffect(() => {
+    if (!isCacheable || items.length === 0) return;
+    AsyncStorage.setItem(cacheKey, JSON.stringify(items)).catch(() => {});
+  }, [items, cacheKey, isCacheable]);
 
   const loadMore = useCallback(() => {
     if (loadingMore || !hasMore) return;
@@ -217,7 +274,8 @@ export const useTransactions = (
   }, [fetch, hasMore, loadingMore]);
 
   const refetch = useCallback(() => {
-    setLoading(true);
+    // Only show spinner if we have no data to display yet
+    if (itemsRef.current.length === 0) setLoading(true);
     fetch(true).finally(() => setLoading(false));
   }, [fetch]);
 
