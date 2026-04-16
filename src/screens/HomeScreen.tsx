@@ -11,13 +11,14 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Animated,
+  TextInput,
 } from 'react-native';
 import RAnim, {
   Easing,
   cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedProps,
   withTiming,
   withDelay,
   withSpring,
@@ -42,24 +43,35 @@ import { useCategories, CategoryWithSpend } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
+import { removeFromQueue } from '@/services/syncService';
 import ProfileSidebar from '@/components/ProfileSidebar';
+
+// ─── Animated primitives (module-level) ──────────────────────────────────────
+
+const AnimatedTextInput = RAnim.createAnimatedComponent(TextInput);
+
+/** Worklet-safe number formatter — mimics toLocaleString('en-PH', { minimumFractionDigits: 2 }) */
+function formatBalanceWorklet(n: number): string {
+  'worklet';
+  const neg = n < 0;
+  const abs = Math.abs(n);
+  const rounded = Math.round(abs * 100) / 100;
+  const int = Math.floor(rounded);
+  const frac = Math.round((rounded - int) * 100).toString().padStart(2, '0');
+  let s = int.toString();
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 === 0) out += ',';
+    out += s[i];
+  }
+  return `${neg ? '-' : ''}${out}.${frac}`;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CARD_SCALE = 0.78;
 const SCALED_CARD_W = Math.round(CARD_WIDTH * CARD_SCALE);
 const SCALED_CARD_H = Math.round(CARD_HEIGHT * CARD_SCALE);
-
-const SPARKLINE_BASE = [
-  { id: 'day0', val: 0.38 },
-  { id: 'day1', val: 0.6 },
-  { id: 'day2', val: 0.27 },
-  { id: 'day3', val: 0.74 },
-  { id: 'day4', val: 0.45 },
-  { id: 'day5', val: 0.88 },
-  // day6 val is overridden at render time with real pctSpent
-  { id: 'day6', val: 0 },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -286,6 +298,7 @@ export default function HomeScreen() {
   const {
     totalIncome,
     totalExpense: monthlyExpense,
+    sparklineData,
     loading: totalsLoading,
     refetch: refetchTotals,
   } = useMonthlyTotals();
@@ -342,8 +355,16 @@ export default function HomeScreen() {
     }
   };
 
-  const animBalance = useRef(new Animated.Value(totalBalance)).current;
-  const [displayBalance, setDisplayBalance] = useState(totalBalance);
+  // ── Balance animation (off-JS-thread via reanimated shared value) ────────────
+  const balanceSV = useSharedValue(totalBalance);
+  const animatedBalanceProps = useAnimatedProps(() => ({
+    text: formatBalanceWorklet(balanceSV.value),
+    defaultValue: formatBalanceWorklet(balanceSV.value),
+  }));
+
+  useEffect(() => {
+    balanceSV.value = withTiming(totalBalance, { duration: BALANCE_ANIMATE_MS });
+  }, [totalBalance, balanceSV]);
 
   useEffect(() => {
     const getMyId = async () => {
@@ -351,20 +372,6 @@ export default function HomeScreen() {
     };
     getMyId();
   }, []);
-
-  useEffect(() => {
-    const listenerId = animBalance.addListener(({ value }) => {
-      setDisplayBalance(value);
-    });
-
-    Animated.timing(animBalance, {
-      toValue: totalBalance,
-      duration: BALANCE_ANIMATE_MS,
-      useNativeDriver: false,
-    }).start();
-
-    return () => animBalance.removeListener(listenerId);
-  }, [totalBalance, animBalance]);
 
   const [toastVisible, setToastVisible] = useState(false);
   const [toastTitle, setToastTitle] = useState('');
@@ -416,7 +423,12 @@ export default function HomeScreen() {
 
   const handleUndo = useCallback(async () => {
     if (!undoTxId) return;
-    await supabase.from('transactions').delete().eq('id', undoTxId);
+    if (undoTxId.startsWith('temp_')) {
+      // Offline transaction — remove from the local pending queue only
+      await removeFromQueue(undoTxId);
+    } else {
+      await supabase.from('transactions').delete().eq('id', undoTxId);
+    }
     if (undoAccountId !== null && undoPreviousBalance !== null) {
       await supabase
         .from('accounts')
@@ -448,9 +460,11 @@ export default function HomeScreen() {
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
 
+  // Use real 7-day daily-expense sparkline from useMonthlyTotals.
+  // Override the last bar with today's actual pctSpent so it always reflects reality.
   const lastBarVal = Math.min(pctSpent > 0 ? pctSpent : getMonthPace(), 1);
-  const SPARKLINE = SPARKLINE_BASE.map((bar, i) =>
-    i === SPARKLINE_BASE.length - 1 ? { ...bar, val: lastBarVal } : bar
+  const SPARKLINE = sparklineData.map((bar, i) =>
+    i === sparklineData.length - 1 ? { ...bar, val: lastBarVal } : bar
   );
 
   const delta = totalIncome - monthlyExpense;
@@ -622,14 +636,15 @@ export default function HomeScreen() {
               ) : (
                 <>
                   <Text style={styles.heroCurr}>₱</Text>
-                  <Text style={styles.heroAmount}>
-                    {isPrivacyMode
-                      ? '***'
-                      : displayBalance.toLocaleString('en-PH', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                  </Text>
+                  {isPrivacyMode ? (
+                    <Text style={styles.heroAmount}>***</Text>
+                  ) : (
+                    <AnimatedTextInput
+                      animatedProps={animatedBalanceProps}
+                      editable={false}
+                      style={styles.heroAmount}
+                    />
+                  )}
                 </>
               )}
             </View>
