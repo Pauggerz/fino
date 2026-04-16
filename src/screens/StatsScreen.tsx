@@ -1120,10 +1120,10 @@ export default function InsightsScreen() {
   );
   const totalBudget = Object.values(expenseBudgets).reduce((s, v) => s + v, 0);
   const budgetUsedPct =
-    totalBudget > 0
-      ? Math.min((totalExpenseSpent / totalBudget) * 100, 100)
-      : 0;
+    totalBudget > 0 ? (totalExpenseSpent / totalBudget) * 100 : 0;
+  const isOverBudget = totalBudget > 0 && totalExpenseSpent > totalBudget;
   const remaining = Math.max(totalBudget - totalExpenseSpent, 0);
+  const overage   = Math.max(totalExpenseSpent - totalBudget, 0);
   const totalIncome = Object.values(incomeTotals).reduce((s, v) => s + v, 0);
   const incomeActiveKeys = INCOME_CATEGORIES.filter(
     (c) => (incomeTotals[c.key] ?? 0) > 0
@@ -1138,22 +1138,32 @@ export default function InsightsScreen() {
   const donutSegments = useMemo(() => {
     let cumulativeOffset = 0;
     if (viewType === 'expense') {
+      // When over budget: scale to actual spending so segments always fit the ring.
+      // When under budget: scale to total budget so empty space = remaining budget.
+      const denom = isOverBudget
+        ? totalExpenseSpent
+        : totalBudget > 0 ? totalBudget : (totalExpenseSpent > 0 ? totalExpenseSpent : 1);
+
       return expenseCategoryKeys
         .filter((k) => expenseTotals[k] > 0)
         .map((cat, index) => {
-          const maxBudget = totalBudget > 0 ? totalBudget : 1;
-          const catSpent = Math.min(expenseTotals[cat], maxBudget);
-          const strokeLength = Math.max(0, (catSpent / maxBudget) * donutCircumference - donutGap);
+          const catSpent  = expenseTotals[cat]; // no cap — actual spending
+          const catBudget = expenseBudgets[cat] ?? 0;
+          const isCatOver = catBudget > 0 && catSpent > catBudget;
+          const strokeLength = Math.max(0, (catSpent / denom) * donutCircumference - donutGap);
           const gapLength = donutCircumference - strokeLength;
           const meta = expenseCategoryMeta[cat];
           const fallbackColor =
             Object.values(CATEGORY_THEME)[
               index % Object.values(CATEGORY_THEME).length
             ].barColor;
-          const color = meta?.textColor ?? fallbackColor;
+          // Over-budget categories turn red
+          const baseColor = meta?.textColor ?? fallbackColor;
+          const color = isCatOver ? '#EF4444' : baseColor;
           const segment = {
             key: cat,
             color,
+            isCatOver,
             strokeDasharray: `${strokeLength} ${gapLength}`,
             strokeDashoffset: -cumulativeOffset,
             catSpent,
@@ -1183,7 +1193,10 @@ export default function InsightsScreen() {
     expenseCategoryKeys,
     expenseTotals,
     expenseCategoryMeta,
+    expenseBudgets,
     totalBudget,
+    totalExpenseSpent,
+    isOverBudget,
     totalIncome,
     incomeActiveKeys,
     incomeTotals,
@@ -1276,6 +1289,10 @@ export default function InsightsScreen() {
       centerPctText = `${catPct.toFixed(0)}%`;
       centerSubText = meta?.label ?? selectedCategory;
       centerTextColor = selectedDonut.color;
+    } else if (isOverBudget) {
+      centerPctText = `${budgetUsedPct.toFixed(0)}%`;
+      centerSubText = 'over limit';
+      centerTextColor = '#EF4444';
     } else {
       centerPctText = `${budgetUsedPct.toFixed(0)}%`;
       centerSubText = 'of budget';
@@ -1965,14 +1982,21 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
           <View {...panResponder.panHandlers} style={styles.donutContainer}>
             <Svg width={168} height={168} viewBox="0 0 160 160">
               <G transform="rotate(-90, 80, 80)">
+                {/* Background track — red tint when over budget */}
                 <Circle
                   cx="80"
                   cy="80"
                   r={donutRadius}
-                  stroke={colors.whiteTransparent15}
+                  stroke={
+                    viewType === 'expense' && isOverBudget
+                      ? 'rgba(239,68,68,0.22)'
+                      : colors.whiteTransparent15
+                  }
                   strokeWidth={donutStrokeWidth}
                   fill="transparent"
                 />
+
+                {/* Segments */}
                 {donutSegments.map((segment, index) => {
                   const isFocused = activeDonutIndex === index;
                   const isDimmed = activeDonutIndex >= 0 && !isFocused;
@@ -1992,6 +2016,23 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                     />
                   );
                 })}
+
+                {/* Budget-limit tick mark — white notch at the 100% budget position */}
+                {viewType === 'expense' && isOverBudget && totalBudget > 0 && (
+                  <Circle
+                    cx="80"
+                    cy="80"
+                    r={donutRadius}
+                    stroke="white"
+                    strokeWidth={donutStrokeWidth + 6}
+                    fill="transparent"
+                    strokeDasharray={`3 ${donutCircumference - 3}`}
+                    strokeDashoffset={
+                      -(totalBudget / totalExpenseSpent) * donutCircumference
+                    }
+                    opacity={0.9}
+                  />
+                )}
               </G>
             </Svg>
             <View style={styles.donutCenterText} pointerEvents="none">

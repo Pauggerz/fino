@@ -970,6 +970,8 @@ export default function MoreScreen() {
     else if (id === 'bills') setShowBillReminders(true);
     else if (id === 'settings') setShowAppSettings(true);
     else if (id === 'splitter') navigation.navigate('BillSplitter');
+    else if (id === 'utang') navigation.navigate('UtangTracker');
+    else if (id === 'savings') navigation.navigate('SavingsGoal');
   };
 
   const TOOLS = [
@@ -1004,6 +1006,22 @@ export default function MoreScreen() {
       icon: 'people',
       color: '#3A7BD5',
       bg: isDark ? '#111E30' : '#EAF1FB',
+    },
+    {
+      id: 'utang',
+      label: 'Utang Tracker',
+      desc: 'Track who owes you money',
+      icon: 'cash',
+      color: '#10B981',
+      bg: isDark ? '#0D2E23' : '#ECFDF5',
+    },
+    {
+      id: 'savings',
+      label: 'Savings Goals',
+      desc: 'Set and track financial targets',
+      icon: 'flag',
+      color: '#F59E0B',
+      bg: isDark ? '#2E2208' : '#FFFBEB',
     },
     {
       id: 'settings',

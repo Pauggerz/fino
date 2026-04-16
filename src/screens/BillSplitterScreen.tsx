@@ -19,7 +19,7 @@ interface ReceiptItem {
   name: string;
   price: number;
   quantity: number;
-  assignees: string[]; // person IDs
+  assignees: { [personId: string]: number }; // personId → qty they're taking
 }
 
 interface Person {
@@ -59,6 +59,35 @@ export default function BillSplitterScreen() {
   const [newName, setNewName]   = useState('');
   const nameInputRef            = useRef<TextInput>(null);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ name: '', quantity: '', price: '' });
+
+  const startEdit = useCallback((item: ReceiptItem) => {
+    setEditingId(item.id);
+    setEditDraft({
+      name: item.name,
+      quantity: item.quantity.toString(),
+      price: item.price.toString(),
+    });
+  }, []);
+
+  const confirmEdit = useCallback(() => {
+    if (!editingId) return;
+    setItems(prev => prev.map(item => {
+      if (item.id !== editingId) return item;
+      const qty = Math.max(1, parseInt(editDraft.quantity) || 1);
+      const price = parseFloat(editDraft.price) || item.price;
+      const name = editDraft.name.trim() || item.name;
+      // clamp existing assignee qtys to new quantity
+      const assignees: { [id: string]: number } = {};
+      Object.entries(item.assignees).forEach(([pid, q]) => {
+        assignees[pid] = Math.min(q, qty);
+      });
+      return { ...item, name, quantity: qty, price, assignees };
+    }));
+    setEditingId(null);
+  }, [editingId, editDraft]);
+
   // ── Image pick ──────────────────────────────────────────────────────────────
   const pickImage = async (fromCamera: boolean) => {
     const { status } = fromCamera
@@ -73,8 +102,8 @@ export default function BillSplitterScreen() {
     }
 
     const result = fromCamera
-      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', allowsEditing: true, quality: 0.8 });
+      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.5 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', allowsEditing: true, quality: 0.5 });
 
     if (!result.canceled && result.assets[0]) {
       setImageUri(result.assets[0].uri);
@@ -95,11 +124,24 @@ export default function BillSplitterScreen() {
       const { data, error } = await supabase.functions.invoke('split-receipt', {
         body: { imageBase64: base64, mimeType: 'image/jpeg' },
       });
-      if (error) throw new Error(error.message);
+      if (error) {
+        // Try to extract a more descriptive error from the function response body
+        let detail = error.message;
+        try {
+          const ctx = (error as any).context;
+          if (ctx?.json) {
+            const body = await ctx.json();
+            if (body?.error) detail = body.error + (body.details ? `: ${body.details}` : '');
+          } else if (typeof ctx?.text === 'function') {
+            detail = await ctx.text();
+          }
+        } catch { /* ignore */ }
+        throw new Error(detail);
+      }
 
       const parsed = data as {
         merchant?: string | null;
-        items?: { name: string; price: number; quantity?: number }[];
+        items?: { name: string; price: number; unit_price?: number; quantity?: number }[];
         total?: number | null;
       };
 
@@ -111,13 +153,18 @@ export default function BillSplitterScreen() {
 
       setMerchant(parsed.merchant ?? null);
       setReceiptTotal(parsed.total ?? null);
-      setItems(parsed.items.map((item, i) => ({
-        id: `item-${i}`,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity ?? 1,
-        assignees: [],
-      })));
+      setItems(parsed.items.map((item, i) => {
+        const qty = item.quantity ?? 1;
+        // Normalise: price should always be the total for the line
+        const total = item.price ?? (item.unit_price ? item.unit_price * qty : 0);
+        return {
+          id: `item-${i}`,
+          name: item.name,
+          price: total,
+          quantity: qty,
+          assignees: {},
+        };
+      }));
       setPhase('assigning');
     } catch (err: any) {
       Alert.alert('Parse failed', err.message ?? 'Something went wrong. Please try again.');
@@ -141,23 +188,21 @@ export default function BillSplitterScreen() {
 
   const removePerson = (id: string) => {
     setPeople(prev => prev.filter(p => p.id !== id));
-    // unassign this person from all items
-    setItems(prev => prev.map(item => ({
-      ...item,
-      assignees: item.assignees.filter(a => a !== id),
-    })));
+    setItems(prev => prev.map(item => {
+      const { [id]: _, ...rest } = item.assignees;
+      return { ...item, assignees: rest };
+    }));
   };
 
   // ── Item assignment ──────────────────────────────────────────────────────────
-  const toggleAssignee = useCallback((itemId: string, personId: string) => {
+  const cycleAssignee = useCallback((itemId: string, personId: string) => {
     setItems(prev => prev.map(item => {
       if (item.id !== itemId) return item;
-      const has = item.assignees.includes(personId);
+      const current = item.assignees[personId] ?? 0;
+      const next = current >= item.quantity ? 0 : current + 1;
       return {
         ...item,
-        assignees: has
-          ? item.assignees.filter(id => id !== personId)
-          : [...item.assignees, personId],
+        assignees: { ...item.assignees, [personId]: next },
       };
     }));
   }, []);
@@ -167,16 +212,25 @@ export default function BillSplitterScreen() {
     const totals: Record<string, number> = {};
     people.forEach(p => { totals[p.id] = 0; });
     items.forEach(item => {
-      if (item.assignees.length === 0) return;
-      const share = item.price / item.assignees.length;
-      item.assignees.forEach(id => { totals[id] = (totals[id] ?? 0) + share; });
+      const unitPrice = item.price / item.quantity;
+      Object.entries(item.assignees).forEach(([personId, qty]) => {
+        if (qty > 0) totals[personId] = (totals[personId] ?? 0) + unitPrice * qty;
+      });
     });
     return totals;
   }, [items, people]);
 
   const unassignedTotal = useMemo(() =>
-    items.reduce((sum, item) => item.assignees.length === 0 ? sum + item.price : sum, 0),
+    items.reduce((sum, item) => {
+      const assignedQty = Object.values(item.assignees).reduce((s, q) => s + q, 0);
+      const unassignedQty = Math.max(0, item.quantity - assignedQty);
+      return sum + (item.price / item.quantity) * unassignedQty;
+    }, 0),
   [items]);
+
+  const totalAssigned = useMemo(() =>
+    Object.values(summary).reduce((s, v) => s + v, 0),
+  [summary]);
 
   // ── Reset ────────────────────────────────────────────────────────────────────
   const reset = () => {
@@ -296,7 +350,10 @@ export default function BillSplitterScreen() {
             </View>
 
             {/* ── Items ── */}
-            <Text style={[styles.sectionLabel, { marginHorizontal: 20, marginBottom: 8 }]}>ITEMS</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>ITEMS</Text>
+              <Text style={[styles.sectionCount, { color: colors.textSecondary }]}>{items.length} items</Text>
+            </View>
             <View style={[styles.itemsCard, { backgroundColor: colors.white, borderColor: colors.border }]}>
               {items.map((item, idx) => (
                 <ItemRow
@@ -304,7 +361,12 @@ export default function BillSplitterScreen() {
                   item={item}
                   people={people}
                   isLast={idx === items.length - 1}
-                  onToggle={toggleAssignee}
+                  onCycle={cycleAssignee}
+                  isEditing={editingId === item.id}
+                  editDraft={editDraft}
+                  onEditDraftChange={setEditDraft}
+                  onEditStart={startEdit}
+                  onEditConfirm={confirmEdit}
                   colors={colors}
                   isDark={isDark}
                   styles={styles}
@@ -317,6 +379,7 @@ export default function BillSplitterScreen() {
               <View style={[styles.summaryCard, { backgroundColor: colors.white, borderColor: colors.border }]}>
                 <Text style={styles.sectionLabel}>SPLIT SUMMARY</Text>
 
+                {/* Per-person rows */}
                 {people.map(person => (
                   <View key={person.id} style={[styles.summaryRow, { borderBottomColor: colors.border }]}>
                     <View style={[styles.summaryAvatar, { backgroundColor: person.color }]}>
@@ -329,22 +392,36 @@ export default function BillSplitterScreen() {
                   </View>
                 ))}
 
-                {unassignedTotal > 0 && (
-                  <View style={[styles.summaryRow, { borderBottomWidth: 0 }]}>
-                    <View style={[styles.summaryAvatar, { backgroundColor: colors.border }]}>
-                      <Ionicons name="help" size={13} color={colors.textSecondary} />
-                    </View>
-                    <Text style={[styles.summaryName, { color: colors.textSecondary }]}>Unassigned</Text>
-                    <Text style={[styles.summaryAmount, { color: colors.textSecondary }]}>{fmt(unassignedTotal)}</Text>
+                {/* Totals block */}
+                <View style={[styles.totalsBlock, { borderTopColor: colors.border, backgroundColor: isDark ? colors.surfaceSubdued : '#F8F8FA' }]}>
+                  {/* Total assigned */}
+                  <View style={styles.totalsRow}>
+                    <Text style={[styles.totalsLabel, { color: colors.textSecondary }]}>Total Assigned</Text>
+                    <Text style={[styles.totalsValue, { color: colors.textPrimary }]}>{fmt(totalAssigned)}</Text>
                   </View>
-                )}
 
-                {receiptTotal != null && (
-                  <View style={[styles.totalRow, { borderTopColor: colors.border, backgroundColor: isDark ? colors.surfaceSubdued : '#F8F8FA' }]}>
-                    <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Receipt Total</Text>
-                    <Text style={[styles.totalAmount, { color: colors.textPrimary }]}>{fmt(receiptTotal)}</Text>
-                  </View>
-                )}
+                  {/* Unassigned */}
+                  {unassignedTotal > 0.005 && (
+                    <View style={styles.totalsRow}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <View style={[styles.unassignedDot, { backgroundColor: colors.border }]} />
+                        <Text style={[styles.totalsLabel, { color: colors.textSecondary }]}>Unassigned</Text>
+                      </View>
+                      <Text style={[styles.totalsValue, { color: '#E07A5F' }]}>{fmt(unassignedTotal)}</Text>
+                    </View>
+                  )}
+
+                  {/* Divider + Receipt total */}
+                  {receiptTotal != null && (
+                    <>
+                      <View style={[styles.totalsDivider, { backgroundColor: colors.border }]} />
+                      <View style={styles.totalsRow}>
+                        <Text style={[styles.receiptTotalLabel, { color: colors.textPrimary }]}>Receipt Total</Text>
+                        <Text style={[styles.receiptTotalValue, { color: colors.primary }]}>{fmt(receiptTotal)}</Text>
+                      </View>
+                    </>
+                  )}
+                </View>
               </View>
             )}
 
@@ -362,27 +439,108 @@ interface ItemRowProps {
   item: ReceiptItem;
   people: Person[];
   isLast: boolean;
-  onToggle: (itemId: string, personId: string) => void;
+  onCycle: (itemId: string, personId: string) => void;
+  isEditing: boolean;
+  editDraft: { name: string; quantity: string; price: string };
+  onEditDraftChange: (d: { name: string; quantity: string; price: string }) => void;
+  onEditStart: (item: ReceiptItem) => void;
+  onEditConfirm: () => void;
   colors: any;
   isDark: boolean;
   styles: any;
 }
 
-function ItemRow({ item, people, isLast, onToggle, colors, isDark, styles }: ItemRowProps) {
+function ItemRow({
+  item, people, isLast, onCycle,
+  isEditing, editDraft, onEditDraftChange, onEditStart, onEditConfirm,
+  colors, isDark, styles,
+}: ItemRowProps) {
+  const unitPrice = item.price / item.quantity;
+  const assignedQty = Object.values(item.assignees).reduce((s, q) => s + q, 0);
+  const isMulti = item.quantity > 1;
+  const inputBg = isDark ? colors.surfaceSubdued : '#F4F4F8';
+
+  if (isEditing) {
+    return (
+      <View style={[
+        styles.itemRow,
+        { flexDirection: 'column', alignItems: 'stretch', gap: 8 },
+        !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(0,0,0,0.07)' },
+      ]}>
+        {/* Name input */}
+        <TextInput
+          style={[styles.editInput, { backgroundColor: inputBg, color: colors.textPrimary }]}
+          value={editDraft.name}
+          onChangeText={t => onEditDraftChange({ ...editDraft, name: t })}
+          placeholder="Item name"
+          placeholderTextColor={colors.textSecondary}
+          autoFocus
+        />
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {/* Quantity input */}
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.editLabel, { color: colors.textSecondary }]}>QTY</Text>
+            <TextInput
+              style={[styles.editInput, { backgroundColor: inputBg, color: colors.textPrimary }]}
+              value={editDraft.quantity}
+              onChangeText={t => onEditDraftChange({ ...editDraft, quantity: t.replace(/[^0-9]/g, '') })}
+              keyboardType="number-pad"
+              placeholder="1"
+              placeholderTextColor={colors.textSecondary}
+            />
+          </View>
+          {/* Price input */}
+          <View style={{ flex: 2 }}>
+            <Text style={[styles.editLabel, { color: colors.textSecondary }]}>TOTAL PRICE (₱)</Text>
+            <TextInput
+              style={[styles.editInput, { backgroundColor: inputBg, color: colors.textPrimary }]}
+              value={editDraft.price}
+              onChangeText={t => onEditDraftChange({ ...editDraft, price: t.replace(/[^0-9.]/g, '') })}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor={colors.textSecondary}
+            />
+          </View>
+          {/* Confirm */}
+          <TouchableOpacity
+            onPress={onEditConfirm}
+            activeOpacity={0.8}
+            style={[styles.editConfirmBtn, { backgroundColor: colors.primary }]}
+          >
+            <Ionicons name="checkmark" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.itemRow, !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(0,0,0,0.07)' }]}>
       {/* Left: name + price */}
       <View style={styles.itemLeft}>
-        <Text style={[styles.itemName, { color: colors.textPrimary }]} numberOfLines={2}>{item.name}</Text>
+        {/* Name row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+          <Text style={[styles.itemName, { color: colors.textPrimary, flex: 1 }]} numberOfLines={2}>{item.name}</Text>
+          <TouchableOpacity onPress={() => onEditStart(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="pencil-outline" size={13} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        {/* Price row */}
         <View style={styles.itemPriceMeta}>
-          {item.quantity > 1 && (
-            <Text style={[styles.itemQty, { color: colors.textSecondary }]}>{item.quantity}×  </Text>
-          )}
-          <Text style={[styles.itemPrice, { color: colors.textPrimary }]}>{fmt(item.price)}</Text>
-          {item.assignees.length > 1 && (
-            <Text style={[styles.itemShare, { color: colors.primary }]}>
-              {' '}· {fmt(item.price / item.assignees.length)} each
-            </Text>
+          {isMulti ? (
+            <>
+              <Text style={[styles.itemQtyBadge, { backgroundColor: isDark ? colors.surfaceSubdued : colors.primaryLight + '88', color: colors.primary }]}>
+                {item.quantity}×
+              </Text>
+              <Text style={[styles.itemUnitPrice, { color: colors.textSecondary }]}> {fmt(unitPrice)} each</Text>
+              <Text style={[styles.itemPriceDot, { color: colors.border }]}>  ·  </Text>
+              <Text style={[styles.itemPrice, { color: colors.textPrimary }]}>{fmt(item.price)}</Text>
+              {assignedQty > 0 && assignedQty < item.quantity && (
+                <Text style={[styles.itemLeftBadge, { color: '#E07A5F' }]}>  {item.quantity - assignedQty} left</Text>
+              )}
+            </>
+          ) : (
+            <Text style={[styles.itemPrice, { color: colors.textPrimary }]}>{fmt(item.price)}</Text>
           )}
         </View>
       </View>
@@ -393,11 +551,12 @@ function ItemRow({ item, people, isLast, onToggle, colors, isDark, styles }: Ite
           <Text style={[styles.itemNopeople, { color: colors.textSecondary }]}>Add people first</Text>
         ) : (
           people.map(person => {
-            const assigned = item.assignees.includes(person.id);
+            const qty = item.assignees[person.id] ?? 0;
+            const assigned = qty > 0;
             return (
               <TouchableOpacity
                 key={person.id}
-                onPress={() => onToggle(item.id, person.id)}
+                onPress={() => onCycle(item.id, person.id)}
                 activeOpacity={0.7}
                 style={[
                   styles.assigneeBtn,
@@ -407,7 +566,7 @@ function ItemRow({ item, people, isLast, onToggle, colors, isDark, styles }: Ite
                 ]}
               >
                 <Text style={[styles.assigneeBtnText, { color: assigned ? '#fff' : person.color }]}>
-                  {person.name[0].toUpperCase()}
+                  {isMulti && assigned ? qty.toString() : person.name[0].toUpperCase()}
                 </Text>
               </TouchableOpacity>
             );
@@ -511,9 +670,17 @@ const createStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   assignScroll: {
     paddingTop: 8, paddingHorizontal: 16, gap: 12,
   },
+  sectionHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   sectionLabel: {
     fontFamily: 'Inter_700Bold', fontSize: 11,
     color: colors.textSecondary, letterSpacing: 0.7,
+    marginBottom: 10,
+  },
+  sectionCount: {
+    fontFamily: 'Inter_400Regular', fontSize: 11,
     marginBottom: 10,
   },
 
@@ -569,20 +736,28 @@ const createStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   },
   itemLeft: { flex: 1, minWidth: 0 },
   itemName: {
-    fontFamily: 'Inter_500Medium', fontSize: 13.5,
-    lineHeight: 18, marginBottom: 3,
+    fontFamily: 'Inter_600SemiBold', fontSize: 13.5,
+    lineHeight: 18,
   },
   itemPriceMeta: {
     flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap',
   },
-  itemQty: {
-    fontFamily: 'Inter_400Regular', fontSize: 12,
+  itemQtyBadge: {
+    fontFamily: 'Nunito_800ExtraBold', fontSize: 11,
+    paddingHorizontal: 6, paddingVertical: 1,
+    borderRadius: 6, overflow: 'hidden',
+  },
+  itemUnitPrice: {
+    fontFamily: 'Inter_400Regular', fontSize: 11.5,
+  },
+  itemPriceDot: {
+    fontFamily: 'Inter_400Regular', fontSize: 11,
   },
   itemPrice: {
-    fontFamily: 'DMMono_400Regular', fontSize: 12.5,
+    fontFamily: 'DMMono_400Regular', fontSize: 13,
   },
-  itemShare: {
-    fontFamily: 'Inter_400Regular', fontSize: 11,
+  itemLeftBadge: {
+    fontFamily: 'Inter_600SemiBold', fontSize: 11,
   },
   itemAssignees: {
     flexDirection: 'row', flexWrap: 'wrap', gap: 6,
@@ -600,6 +775,22 @@ const createStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     fontFamily: 'Nunito_800ExtraBold', fontSize: 12,
   },
 
+  // Edit mode
+  editInput: {
+    height: 38, borderRadius: 10,
+    paddingHorizontal: 10,
+    fontFamily: 'Inter_400Regular', fontSize: 13,
+  },
+  editLabel: {
+    fontFamily: 'Inter_700Bold', fontSize: 9,
+    letterSpacing: 0.5, marginBottom: 4,
+  },
+  editConfirmBtn: {
+    width: 38, height: 38, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    alignSelf: 'flex-end',
+  },
+
   // Summary
   summaryCard: {
     borderRadius: 16, overflow: 'hidden',
@@ -608,31 +799,47 @@ const createStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   },
   summaryRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 12, gap: 10,
+    paddingHorizontal: 16, paddingVertical: 13, gap: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   summaryAvatar: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 34, height: 34, borderRadius: 17,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   summaryAvatarText: {
-    fontFamily: 'Nunito_800ExtraBold', fontSize: 13, color: '#fff',
+    fontFamily: 'Nunito_800ExtraBold', fontSize: 14, color: '#fff',
   },
   summaryName: {
     fontFamily: 'Inter_500Medium', fontSize: 14, flex: 1,
   },
   summaryAmount: {
-    fontFamily: 'DMMono_400Regular', fontSize: 14,
+    fontFamily: 'DMMono_400Regular', fontSize: 15,
   },
-  totalRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 14, paddingVertical: 12,
+
+  // Totals block
+  totalsBlock: {
+    paddingHorizontal: 16, paddingVertical: 12, gap: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  totalLabel: {
-    fontFamily: 'Inter_600SemiBold', fontSize: 13,
+  totalsRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  totalAmount: {
-    fontFamily: 'DMMono_400Regular', fontSize: 14,
+  totalsLabel: {
+    fontFamily: 'Inter_500Medium', fontSize: 13,
+  },
+  totalsValue: {
+    fontFamily: 'DMMono_400Regular', fontSize: 13,
+  },
+  unassignedDot: {
+    width: 8, height: 8, borderRadius: 4,
+  },
+  totalsDivider: {
+    height: StyleSheet.hairlineWidth, marginVertical: 4,
+  },
+  receiptTotalLabel: {
+    fontFamily: 'Nunito_800ExtraBold', fontSize: 15,
+  },
+  receiptTotalValue: {
+    fontFamily: 'DMMono_400Regular', fontSize: 17,
   },
 });
