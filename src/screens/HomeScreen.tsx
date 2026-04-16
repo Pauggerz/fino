@@ -53,14 +53,15 @@ const AnimatedTextInput = RAnim.createAnimatedComponent(TextInput);
 /** Worklet-safe number formatter — mimics toLocaleString('en-PH', { minimumFractionDigits: 2 }) */
 function formatBalanceWorklet(n: number): string {
   'worklet';
+
   const neg = n < 0;
   const abs = Math.abs(n);
   const rounded = Math.round(abs * 100) / 100;
   const int = Math.floor(rounded);
   const frac = Math.round((rounded - int) * 100).toString().padStart(2, '0');
-  let s = int.toString();
+  const s = int.toString();
   let out = '';
-  for (let i = 0; i < s.length; i++) {
+  for (let i = 0; i < s.length; i += 1) {
     if (i > 0 && (s.length - i) % 3 === 0) out += ',';
     out += s[i];
   }
@@ -212,7 +213,8 @@ type BudgetTileProps = {
   onPress: () => void;
 };
 
-const BudgetTile = React.memo(function BudgetTile({ cat, index, isPrivacyMode, isDark, colors, styles, onPress }: BudgetTileProps) {
+const BudgetTile = React.memo(
+  ({ cat, index, isPrivacyMode, isDark, colors, styles, onPress }: BudgetTileProps) => {
   const opacity = useSharedValue(0);
   const transY = useSharedValue(16);
   const animStyle = useAnimatedStyle(() => ({
@@ -267,15 +269,16 @@ const BudgetTile = React.memo(function BudgetTile({ cat, index, isPrivacyMode, i
       </TouchableOpacity>
     </RAnim.View>
   );
-}, (prev, next) =>
-  prev.cat.id === next.cat.id &&
-  prev.cat.pct === next.cat.pct &&
-  prev.cat.state === next.cat.state &&
-  prev.cat.spent === next.cat.spent &&
-  prev.isPrivacyMode === next.isPrivacyMode &&
-  prev.isDark === next.isDark &&
-  prev.colors === next.colors &&
-  prev.styles === next.styles
+  },
+  (prev, next) =>
+    prev.cat.id === next.cat.id &&
+    prev.cat.pct === next.cat.pct &&
+    prev.cat.state === next.cat.state &&
+    prev.cat.spent === next.cat.spent &&
+    prev.isPrivacyMode === next.isPrivacyMode &&
+    prev.isDark === next.isDark &&
+    prev.colors === next.colors &&
+    prev.styles === next.styles
 );
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
@@ -709,7 +712,17 @@ export default function HomeScreen() {
               </>
             ) : accounts.length === 0 ? (
               <View style={styles.emptyCarousel}>
-                <Ionicons name="wallet-outline" size={28} color={colors.whiteTransparent55} />
+                {/* Branded wallet illustration */}
+                <Svg width={56} height={48} viewBox="0 0 56 48">
+                  {/* Card body */}
+                  <SvgPath d="M4 10 Q4 4 10 4 L46 4 Q52 4 52 10 L52 38 Q52 44 46 44 L10 44 Q4 44 4 38 Z" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.22)" strokeWidth="1.5" />
+                  {/* Chip */}
+                  <SvgPath d="M12 18 Q12 15 15 15 L22 15 Q25 15 25 18 L25 25 Q25 28 22 28 L15 28 Q12 28 12 25 Z" fill="rgba(255,255,255,0.18)" />
+                  {/* Stripe */}
+                  <SvgPath d="M4 31 L52 31 L52 36 L4 36 Z" fill="rgba(255,255,255,0.08)" />
+                  {/* Plus badge */}
+                  <SvgPath d="M42 30 m0-6 v12 M36 36 h12" stroke="rgba(255,255,255,0.55)" strokeWidth="2.5" strokeLinecap="round" />
+                </Svg>
                 <Text style={styles.emptyCarouselText}>No accounts yet</Text>
                 <TouchableOpacity
                   onPress={() => navigation.navigate('more')}
@@ -774,7 +787,16 @@ export default function HomeScreen() {
               </>
             ) : categories.length === 0 ? (
               <View style={styles.emptyBudget}>
-                <Ionicons name="pie-chart-outline" size={28} color={colors.textSecondary} />
+                {/* Branded pie/budget illustration */}
+                <Svg width={52} height={52} viewBox="0 0 52 52">
+                  {/* Outer ring */}
+                  <SvgPath d="M26 4 A22 22 0 0 1 48 26" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.9" />
+                  <SvgPath d="M48 26 A22 22 0 0 1 26 48" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.45" />
+                  <SvgPath d="M26 48 A22 22 0 0 1 4 26" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.22" />
+                  <SvgPath d="M4 26 A22 22 0 0 1 26 4" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.12" />
+                  {/* Center plus */}
+                  <SvgPath d="M26 18 v16 M18 26 h16" stroke={colors.primary} strokeWidth="2.5" strokeLinecap="round" opacity="0.7" />
+                </Svg>
                 <Text style={styles.emptyBudgetText}>No budgets set up yet</Text>
                 <TouchableOpacity
                   onPress={() => navigation.navigate('more')}

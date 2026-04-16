@@ -134,13 +134,14 @@ export function getCfg(acc: Account): CardCfg {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-const WalletCard = React.memo(function WalletCard({
-  account,
-  isPrivacyMode = false,
-}: {
-  account: Account;
-  isPrivacyMode?: boolean;
-}) {
+const WalletCard = React.memo(
+  ({
+    account,
+    isPrivacyMode = false,
+  }: {
+    account: Account;
+    isPrivacyMode?: boolean;
+  }) => {
   const cfg = getCfg(account);
   const token = pseudo4(account.id);
   const isNeg = account.balance < 0;
@@ -293,7 +294,8 @@ const WalletCard = React.memo(function WalletCard({
       </LinearGradient>
     </View>
   );
-});
+  }
+);
 
 export default WalletCard;
 

@@ -11,6 +11,7 @@ import {
   TextInput,
   ScrollView,
 } from 'react-native';
+import Svg, { Path as SvgPath } from 'react-native-svg';
 import {
   useNavigation,
   useFocusEffect,
@@ -806,12 +807,18 @@ const FeedListItem = React.memo(function FeedListItem({
 
         {!ctx.loading && ctx.sectionsLength === 0 && (
           <View style={ctx.styles.emptyState}>
-            <Ionicons
-              name="receipt-outline"
-              size={44}
-              color={ctx.colors.textSecondary}
-              style={{ opacity: 0.4 }}
-            />
+            {/* Branded receipt illustration */}
+            <Svg width={56} height={64} viewBox="0 0 56 64" style={{ opacity: 0.55 }}>
+              {/* Receipt body */}
+              <SvgPath d="M6 2 L50 2 L50 58 L44 54 L38 58 L32 54 L26 58 L20 54 L14 58 L8 54 L6 58 Z" fill={ctx.colors.primary} opacity={0.12} stroke={ctx.colors.primary} strokeWidth="1.5" />
+              {/* Lines */}
+              <SvgPath d="M14 16 H42" stroke={ctx.colors.textSecondary} strokeWidth="2" strokeLinecap="round" opacity="0.5" />
+              <SvgPath d="M14 24 H36" stroke={ctx.colors.textSecondary} strokeWidth="2" strokeLinecap="round" opacity="0.35" />
+              <SvgPath d="M14 32 H39" stroke={ctx.colors.textSecondary} strokeWidth="2" strokeLinecap="round" opacity="0.25" />
+              {/* Amount */}
+              <SvgPath d="M14 42 H28" stroke={ctx.colors.primary} strokeWidth="2.5" strokeLinecap="round" opacity="0.6" />
+              <SvgPath d="M34 42 H42" stroke={ctx.colors.primary} strokeWidth="2.5" strokeLinecap="round" opacity="0.6" />
+            </Svg>
             <Text style={ctx.styles.emptyStateTitle}>No transactions</Text>
             <Text style={ctx.styles.emptyStateText}>
               {ctx.searchQuery.length > 0

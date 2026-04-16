@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/services/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/services/supabase';
 import { getPendingQueue } from '@/services/syncService';
 
 const CACHE_KEY = 'FINO_TOTALS_CACHE';
