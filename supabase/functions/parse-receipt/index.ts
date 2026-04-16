@@ -1,35 +1,30 @@
-// @ts-ignore
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-// @ts-ignore
-serve(async (req) => {
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   try {
     const { imageBase64, mimeType = 'image/jpeg' } = await req.json();
 
     if (!imageBase64) {
-      return new Response(
-        JSON.stringify({ error: 'imageBase64 is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      return json({ error: 'imageBase64 is required' }, 400);
     }
 
-    // @ts-ignore
     const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-
     if (!GEMINI_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: 'GEMINI_API_KEY not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      return json({ error: 'GEMINI_API_KEY not configured' }, 500);
     }
 
     const prompt = `You are a receipt parser for a Filipino budgeting app.
@@ -80,73 +75,57 @@ Rules:
 
 If a field cannot be found, set value to null and confidence to 0.`;
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+    const geminiBody = JSON.stringify({
+      contents: [{
+        parts: [
+          { inline_data: { mime_type: mimeType, data: imageBase64 } },
+          { text: prompt },
+        ],
+      }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 700 },
+    });
+
+    // Retry once on 429 (rate-limit), waiting the suggested delay (capped at 10 s).
+    let geminiResponse = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: geminiBody,
+    });
+
+    if (geminiResponse.status === 429) {
+      const retryAfterMs = await (async () => {
+        try {
+          const body = await geminiResponse.clone().json();
+          const delaySec = body?.error?.details?.find((d: any) => d.retryDelay)?.retryDelay;
+          if (delaySec) return Math.min(parseInt(delaySec) * 1000, 10_000);
+        } catch { /* ignore */ }
+        return 3_000;
+      })();
+      await new Promise((r) => setTimeout(r, retryAfterMs));
+      geminiResponse = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              {
-                inline_data: {
-                  mime_type: mimeType,
-                  data: imageBase64,
-                },
-              },
-              { text: prompt },
-            ],
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 700,
-          },
-        }),
-      },
-    );
+        body: geminiBody,
+      });
+    }
 
     if (!geminiResponse.ok) {
-      const errorText = await geminiResponse.text();
-      return new Response(
-        JSON.stringify({ error: 'Gemini API error', details: errorText }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      const details = await geminiResponse.text();
+      return json({ error: 'Gemini API error', details }, 500);
     }
 
     const geminiData = await geminiResponse.json();
     const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
 
-    // Strip any markdown formatting if present
-    const cleanJson = rawText
-      .replace(/```json/g, '')
-      .replace(/```/g, '')
-      .trim();
-
-    let result;
     try {
-      result = JSON.parse(cleanJson);
+      return json(JSON.parse(cleanJson));
     } catch {
-      return new Response(
-        JSON.stringify({
-          error: 'Failed to parse Gemini response',
-          raw: rawText,
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      return json({ error: 'Failed to parse Gemini response', raw: rawText }, 500);
     }
 
-    return new Response(
-      JSON.stringify(result),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
-
-  } catch (error) {
-    return new Response(
-      JSON.stringify({
-        error: 'Failed to process receipt',
-        details: String(error),
-      }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
+  } catch (err) {
+    return json({ error: 'Failed to process receipt', details: String(err) }, 500);
   }
 });

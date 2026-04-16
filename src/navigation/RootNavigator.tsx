@@ -19,6 +19,8 @@ import AccountDetailScreen from '../screens/AccountDetailScreen';
 import MoreScreen from '../screens/MoreScreen';
 import ChatScreen from '../screens/ChatScreen';
 import BillSplitterScreen from '../screens/BillSplitterScreen';
+import UtangTrackerScreen from '../screens/UtangTrackerScreen';
+import SavingsGoalScreen from '../screens/SavingsGoalScreen';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +57,8 @@ export type RootStackParamList = {
   ScreenshotScreen: undefined;
   ChatScreen: undefined;
   BillSplitter: undefined;
+  UtangTracker: undefined;
+  SavingsGoal: undefined;
 };
 
 // ─── Navigators ─────────────────────────────────────────────────────────────
@@ -170,10 +174,17 @@ export default function RootNavigator() {
         <Stack.Screen
           name="BillSplitter"
           component={BillSplitterScreen}
-          options={{
-            headerShown: false,
-            presentation: 'modal',
-          }}
+          options={{ headerShown: false, presentation: 'modal' }}
+        />
+        <Stack.Screen
+          name="UtangTracker"
+          component={UtangTrackerScreen}
+          options={{ headerShown: false, presentation: 'modal' }}
+        />
+        <Stack.Screen
+          name="SavingsGoal"
+          component={SavingsGoalScreen}
+          options={{ headerShown: false, presentation: 'modal' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
