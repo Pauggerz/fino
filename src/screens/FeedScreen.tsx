@@ -6,10 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Pressable,
-  FlatList,
   ActivityIndicator,
-  Animated,
-  PanResponder,
   Modal,
   TextInput,
   ScrollView,
@@ -23,6 +20,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FlashList, ListRenderItem } from '@shopify/flash-list';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { radius, spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext';
 import {
@@ -92,85 +91,56 @@ const SWIPE_DELETE_WIDTH = 80;
 function SwipeableRow({
   children,
   onDelete,
+  swipeStyles,
 }: {
   children: React.ReactNode;
   onDelete: () => void;
+  swipeStyles: ReturnType<typeof createSwipeStyles>;
 }) {
-  const { colors, isDark } = useTheme();
-  const swipeStyles = useMemo(
-    () => createSwipeStyles(colors, isDark),
-    [colors, isDark]
-  );
+  const swipeableRef = useRef<any>(null);
 
-  const translateX = useRef(new Animated.Value(0)).current;
-  const isOpen = useRef(false);
+  const handleOpen = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  }, []);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
-        Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy),
-      onPanResponderMove: (_, { dx }) => {
-        if (!isOpen.current && dx < 0) {
-          translateX.setValue(Math.max(dx, -SWIPE_DELETE_WIDTH));
-        } else if (isOpen.current && dx > 0) {
-          translateX.setValue(Math.min(dx - SWIPE_DELETE_WIDTH, 0));
-        }
-      },
-      onPanResponderRelease: (_, { dx, vx }) => {
-        const shouldOpen = isOpen.current
-          ? !(dx > SWIPE_DELETE_WIDTH / 2 || vx > 0.5)
-          : dx < -SWIPE_DELETE_WIDTH / 2 || vx < -0.5;
+  const handleDeletePress = useCallback(() => {
+    swipeableRef.current?.close();
+    onDelete();
+  }, [onDelete]);
 
-        if (shouldOpen && !isOpen.current) {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-        }
-
-        isOpen.current = shouldOpen;
-        Animated.spring(translateX, {
-          toValue: shouldOpen ? -SWIPE_DELETE_WIDTH : 0,
-          useNativeDriver: true,
-          damping: 20,
-          stiffness: 200,
-        }).start();
-      },
-    })
-  ).current;
-
-  const close = () => {
-    isOpen.current = false;
-    Animated.spring(translateX, {
-      toValue: 0,
-      useNativeDriver: true,
-      damping: 20,
-      stiffness: 200,
-    }).start();
-  };
-
-  return (
-    <View style={{ overflow: 'hidden' }}>
+  const renderRightActions = useCallback(
+    () => (
       <View style={swipeStyles.deleteZone}>
         <TouchableOpacity
           style={swipeStyles.deleteBtn}
           activeOpacity={0.8}
-          onPress={() => {
-            close();
-            onDelete();
-          }}
+          onPress={handleDeletePress}
         >
           <Ionicons name="trash" size={22} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
+    ),
+    [handleDeletePress, swipeStyles]
+  );
 
-      <Animated.View
-        style={{ transform: [{ translateX }] }}
-        {...panResponder.panHandlers}
-      >
+  return (
+    <ReanimatedSwipeable
+      ref={swipeableRef}
+      friction={2}
+      overshootRight={false}
+      rightThreshold={SWIPE_DELETE_WIDTH * 0.55}
+      renderRightActions={renderRightActions}
+      onSwipeableWillOpen={handleOpen}
+      containerStyle={swipeStyles.swipeContainer}
+    >
+      <View style={swipeStyles.rowContent}>
         {children}
-      </Animated.View>
-    </View>
+      </View>
+    </ReanimatedSwipeable>
   );
 }
+
+const MemoizedSwipeableRow = React.memo(SwipeableRow);
 
 // ─── Month picker modal ───────────────────────────────────────────────────────
 
@@ -305,6 +275,647 @@ type ListItem =
   | { type: 'header'; title: string }
   | { type: 'transaction'; data: FeedTransaction };
 
+type DatePreset = 'month' | '30d' | '90d' | 'custom';
+
+type FeedListItemContext = {
+  colors: any;
+  isDark: boolean;
+  styles: ReturnType<typeof createStyles>;
+  swipeStyles: ReturnType<typeof createSwipeStyles>;
+  navigation: any;
+  monthLabel: string;
+  isAtMaxMonth: boolean;
+  handlePrevMonth: () => void;
+  handleNextMonth: () => void;
+  onOpenMonthPicker: () => void;
+  viewType: 'expense' | 'income';
+  onSwitchViewType: (type: 'expense' | 'income') => void;
+  searchInputRef: React.RefObject<TextInput | null>;
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
+  hasActiveFilters: boolean;
+  onToggleFilterPanel: () => void;
+  filterPanelVisible: boolean;
+  resetFilters: () => void;
+  draftDatePreset: DatePreset;
+  setDraftDatePreset: (preset: DatePreset) => void;
+  draftAccountId?: string;
+  setDraftAccountId: (id: string | undefined) => void;
+  accounts: any[];
+  draftSortOrder: SortOrder;
+  setDraftSortOrder: (value: SortOrder) => void;
+  applyFilters: () => void;
+  closeFilterPanel: () => void;
+  filterOptions: string[];
+  activeCategory: string;
+  setActiveCategory: (value: string) => void;
+  loading: boolean;
+  totalEntries: number;
+  swipeHintVisible: boolean;
+  sectionsLength: number;
+  accountSpend: { name: string; colour: string; amount: number }[];
+  heroInfoTitle: string;
+  heroInfoSubtitle: string;
+  heroAmountLabel: string;
+  heroAmountPrefix: string;
+  categories: any[];
+  onDeleteTransaction: (tx: FeedTransaction) => void;
+};
+
+const FeedSkeletonList = React.memo(function FeedSkeletonList({
+  styles,
+}: {
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.dateHeaderContainer}>
+        <Skeleton width={100} height={12} borderRadius={4} />
+      </View>
+      {Array.from({ length: 7 }).map((_, i) => (
+        <View key={`skel-tx-${i}`} style={styles.transactionItem}>
+          <Skeleton
+            width={44}
+            height={44}
+            borderRadius={22}
+            style={{ marginRight: 14 }}
+          />
+          <View style={styles.txContent}>
+            <Skeleton width={140} height={16} style={{ marginBottom: 6 }} />
+            <View style={styles.txSubtitleRow}>
+              <Skeleton width={40} height={12} />
+              <View style={styles.metaDot} />
+              <Skeleton width={60} height={16} borderRadius={4} />
+            </View>
+          </View>
+          <Skeleton width={75} height={16} />
+        </View>
+      ))}
+    </View>
+  );
+});
+
+const FeedListItem = React.memo(function FeedListItem({
+  item,
+  ctx,
+}: {
+  item: ListItem;
+  ctx: FeedListItemContext;
+}) {
+  if (item.type === 'hero') {
+    return (
+      <LinearGradient
+        colors={[ctx.colors.statsHeroBg1, ctx.colors.statsHeroBg2]}
+        style={ctx.styles.heroCard}
+      >
+        <LinearGradient
+          colors={[ctx.colors.primaryLight60, 'transparent']}
+          style={[
+            ctx.styles.heroBlob,
+            { top: -30, right: -20, width: 160, height: 160 },
+          ]}
+        />
+        <LinearGradient
+          colors={[ctx.colors.primaryTransparent50, 'transparent']}
+          style={[
+            ctx.styles.heroBlob,
+            { bottom: 44, left: -20, width: 110, height: 110, opacity: 0.6 },
+          ]}
+        />
+
+        <View style={ctx.styles.heroTopRow}>
+          <View style={ctx.styles.monthNavPill}>
+            <TouchableOpacity
+              style={ctx.styles.monthArrow}
+              activeOpacity={0.75}
+              onPress={ctx.handlePrevMonth}
+            >
+              <Ionicons
+                name="chevron-back"
+                size={14}
+                color={ctx.colors.whiteTransparent80}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.75} onPress={ctx.onOpenMonthPicker}>
+              <Text style={ctx.styles.monthNavLabel}>{ctx.monthLabel}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[ctx.styles.monthArrow, ctx.isAtMaxMonth && { opacity: 0.35 }]}
+              activeOpacity={0.75}
+              onPress={ctx.handleNextMonth}
+              disabled={ctx.isAtMaxMonth}
+            >
+              <Ionicons
+                name="chevron-forward"
+                size={14}
+                color={ctx.colors.whiteTransparent80}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <View style={ctx.styles.heroTypeChip}>
+            <Ionicons
+              name={ctx.viewType === 'expense' ? 'trending-down' : 'trending-up'}
+              size={12}
+              color={
+                ctx.viewType === 'expense'
+                  ? ctx.colors.expenseRed
+                  : ctx.colors.incomeGreen
+              }
+            />
+            <Text
+              style={[
+                ctx.styles.heroTypeChipText,
+                {
+                  color:
+                    ctx.viewType === 'expense'
+                      ? ctx.colors.expenseRed
+                      : ctx.colors.incomeGreen,
+                },
+              ]}
+            >
+              {ctx.viewType === 'expense' ? 'Expenses' : 'Income'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={ctx.styles.heroInfoHeader}>
+          <Text style={ctx.styles.heroInfoTitle}>{ctx.heroInfoTitle}</Text>
+          <Text style={ctx.styles.heroInfoSubtitle}>{ctx.heroInfoSubtitle}</Text>
+        </View>
+
+        {ctx.accountSpend.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={ctx.styles.balanceCarousel}
+          >
+            {ctx.accountSpend.map((acc, i) => (
+              <View key={`${acc.name}-${i}`} style={ctx.styles.balanceCard}>
+                <View style={ctx.styles.balanceCardLabel}>
+                  <View
+                    style={[
+                      ctx.styles.balanceCardDot,
+                      { backgroundColor: acc.colour },
+                    ]}
+                  />
+                  <Text style={ctx.styles.balanceCardLabelText}>
+                    {acc.name.toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={ctx.styles.balanceCardMeta}>{ctx.heroAmountLabel}</Text>
+                <Text style={ctx.styles.balanceCardAmount}>
+                  {ctx.heroAmountPrefix}
+                  {fmtPeso(acc.amount)}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        ) : (
+          <Text style={ctx.styles.heroEmptyHint}>
+            No {ctx.viewType} transactions for this period
+          </Text>
+        )}
+      </LinearGradient>
+    );
+  }
+
+  if (item.type === 'sticky') {
+    return (
+      <View style={ctx.styles.stickyBar}>
+        <View style={ctx.styles.segmentRow}>
+          <TouchableOpacity
+            style={[
+              ctx.styles.segmentBtn,
+              ctx.viewType === 'expense' && ctx.styles.segmentBtnExpenseActive,
+            ]}
+            onPress={() => ctx.onSwitchViewType('expense')}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                ctx.styles.segmentText,
+                ctx.viewType === 'expense' && ctx.styles.segmentTextActive,
+              ]}
+            >
+              Expenses
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              ctx.styles.segmentBtn,
+              ctx.viewType === 'income' && ctx.styles.segmentBtnIncomeActive,
+            ]}
+            onPress={() => ctx.onSwitchViewType('income')}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                ctx.styles.segmentText,
+                ctx.viewType === 'income' && ctx.styles.segmentTextActive,
+              ]}
+            >
+              Income
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={ctx.styles.searchRow}>
+          <View style={ctx.styles.searchBar}>
+            <Ionicons
+              name="search-outline"
+              size={16}
+              color={ctx.colors.textSecondary}
+            />
+            <TextInput
+              ref={ctx.searchInputRef}
+              style={ctx.styles.searchInput}
+              placeholder="Search by name, amount…"
+              placeholderTextColor={ctx.colors.textSecondary}
+              value={ctx.searchQuery}
+              onChangeText={ctx.setSearchQuery}
+              returnKeyType="search"
+            />
+            {ctx.searchQuery.length > 0 && (
+              <TouchableOpacity
+                onPress={() => ctx.setSearchQuery('')}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={16}
+                  color={ctx.colors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[
+              ctx.styles.filterTriggerBtn,
+              ctx.hasActiveFilters && ctx.styles.filterTriggerBtnActive,
+            ]}
+            activeOpacity={0.8}
+            onPress={ctx.onToggleFilterPanel}
+          >
+            <Ionicons
+              name="options-outline"
+              size={18}
+              color={
+                ctx.hasActiveFilters ? ctx.colors.primary : ctx.colors.textSecondary
+              }
+            />
+            {ctx.hasActiveFilters && <View style={ctx.styles.filterBadge} />}
+          </TouchableOpacity>
+        </View>
+
+        {ctx.filterPanelVisible && (
+          <View style={ctx.styles.filterPanel}>
+            <View style={ctx.styles.filterPanelHeader}>
+              <Text style={ctx.styles.filterPanelTitle}>Filters</Text>
+              <TouchableOpacity onPress={ctx.resetFilters} activeOpacity={0.7}>
+                <Text style={ctx.styles.filterResetText}>Reset all</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={ctx.styles.filterSectionLabel}>Date Range</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: 12 }}
+            >
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {(['month', '30d', '90d', 'custom'] as const).map((preset) => {
+                  const labels = {
+                    month: 'This Month',
+                    '30d': 'Last 30 Days',
+                    '90d': 'Last 3 Months',
+                    custom: 'Custom…',
+                  };
+                  const isSelected = ctx.draftDatePreset === preset;
+                  return (
+                    <TouchableOpacity
+                      key={preset}
+                      style={[
+                        ctx.styles.filterChip,
+                        isSelected && ctx.styles.filterChipSelected,
+                      ]}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        if (preset === 'custom') {
+                          ctx.setDraftDatePreset('custom');
+                          ctx.onOpenMonthPicker();
+                        } else {
+                          ctx.setDraftDatePreset(preset);
+                        }
+                      }}
+                    >
+                      <Text
+                        style={[
+                          ctx.styles.filterChipText,
+                          isSelected && ctx.styles.filterChipTextSelected,
+                        ]}
+                      >
+                        {labels[preset]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            <Text style={ctx.styles.filterSectionLabel}>Account</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: 12 }}
+            >
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <TouchableOpacity
+                  style={[
+                    ctx.styles.filterChip,
+                    ctx.draftAccountId === undefined && ctx.styles.filterChipSelected,
+                  ]}
+                  activeOpacity={0.8}
+                  onPress={() => ctx.setDraftAccountId(undefined)}
+                >
+                  <Text
+                    style={[
+                      ctx.styles.filterChipText,
+                      ctx.draftAccountId === undefined &&
+                        ctx.styles.filterChipTextSelected,
+                    ]}
+                  >
+                    All
+                  </Text>
+                </TouchableOpacity>
+                {ctx.accounts.map((acc) => {
+                  const isSelected = ctx.draftAccountId === acc.id;
+                  return (
+                    <TouchableOpacity
+                      key={acc.id}
+                      style={[
+                        ctx.styles.filterChip,
+                        isSelected && {
+                          backgroundColor: `${acc.brand_colour}18`,
+                          borderColor: acc.brand_colour,
+                        },
+                      ]}
+                      activeOpacity={0.8}
+                      onPress={() =>
+                        ctx.setDraftAccountId(isSelected ? undefined : acc.id)
+                      }
+                    >
+                      <Text
+                        style={[
+                          ctx.styles.filterChipText,
+                          isSelected && { color: acc.brand_colour },
+                        ]}
+                      >
+                        {acc.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            <Text style={ctx.styles.filterSectionLabel}>Sort By</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: 14 }}
+            >
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {([
+                  { key: 'date_desc', label: 'Newest First' },
+                  { key: 'date_asc', label: 'Oldest First' },
+                  { key: 'amount_desc', label: 'Highest Amount' },
+                ] as { key: SortOrder; label: string }[]).map(({ key, label }) => {
+                  const isSelected = ctx.draftSortOrder === key;
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[
+                        ctx.styles.filterChip,
+                        isSelected && ctx.styles.filterChipSelected,
+                      ]}
+                      activeOpacity={0.8}
+                      onPress={() => ctx.setDraftSortOrder(key)}
+                    >
+                      <Text
+                        style={[
+                          ctx.styles.filterChipText,
+                          isSelected && ctx.styles.filterChipTextSelected,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            <View style={ctx.styles.filterPanelActions}>
+              <TouchableOpacity
+                style={ctx.styles.filterCancelBtn}
+                activeOpacity={0.7}
+                onPress={ctx.closeFilterPanel}
+              >
+                <Text style={ctx.styles.filterCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={ctx.styles.filterApplyBtn}
+                activeOpacity={0.8}
+                onPress={ctx.applyFilters}
+              >
+                <Text style={ctx.styles.filterApplyText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  if (item.type === 'controls') {
+    if (ctx.loading) {
+      return <FeedSkeletonList styles={ctx.styles} />;
+    }
+
+    return (
+      <View>
+        <View style={ctx.styles.filterWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: spacing.screenPadding }}
+          >
+            {ctx.filterOptions.map((chip) => {
+              const isActive = ctx.activeCategory === chip;
+              let activeBg = ctx.colors.primary;
+              if (ctx.viewType === 'income' && chip !== 'All') {
+                const incCat = INCOME_CATEGORIES.find((c) => c.name === chip);
+                if (incCat) {
+                  activeBg = CATEGORY_COLOR[incCat.key] ?? ctx.colors.primary;
+                }
+              } else if (ctx.viewType === 'expense' && chip !== 'All') {
+                const expCat = ctx.categories.find((c) => c.name === chip);
+                if (expCat?.text_colour) {
+                  activeBg = expCat.text_colour;
+                }
+              }
+
+              return (
+                <TouchableOpacity
+                  key={chip}
+                  style={[
+                    isActive ? ctx.styles.chipActive : ctx.styles.chipInactive,
+                    isActive && { backgroundColor: activeBg },
+                  ]}
+                  onPress={() => ctx.setActiveCategory(chip)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={
+                      isActive
+                        ? ctx.styles.chipTextActive
+                        : ctx.styles.chipTextInactive
+                    }
+                  >
+                    {chip}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {ctx.swipeHintVisible && ctx.totalEntries > 0 && (
+          <View style={ctx.styles.swipeHint}>
+            <Ionicons
+              name="arrow-back-outline"
+              size={12}
+              color={ctx.colors.textSecondary}
+            />
+            <Text style={ctx.styles.swipeHintText}>
+              Swipe left on a transaction to delete
+            </Text>
+          </View>
+        )}
+
+        {!ctx.loading && ctx.sectionsLength === 0 && (
+          <View style={ctx.styles.emptyState}>
+            <Ionicons
+              name="receipt-outline"
+              size={44}
+              color={ctx.colors.textSecondary}
+              style={{ opacity: 0.4 }}
+            />
+            <Text style={ctx.styles.emptyStateTitle}>No transactions</Text>
+            <Text style={ctx.styles.emptyStateText}>
+              {ctx.searchQuery.length > 0
+                ? 'No results for your search.'
+                : 'No transactions recorded for this period.'}
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  if (item.type === 'header') {
+    return (
+      <View style={ctx.styles.dateHeaderContainer}>
+        <Text style={ctx.styles.dateHeader}>{item.title}</Text>
+      </View>
+    );
+  }
+
+  const tx = item.data;
+  const isExpense = tx.type === 'expense';
+
+  let iconKey = 'default';
+  let iconColor = ctx.colors.textSecondary;
+
+  if (isExpense) {
+    const catData = ctx.categories.find(
+      (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
+    );
+    iconKey = catData?.emoji ?? 'default';
+    iconColor = catData?.text_colour ?? ctx.colors.textSecondary;
+  } else {
+    const incCat = INCOME_CATEGORIES.find(
+      (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
+    );
+    iconKey = incCat?.key ?? 'default';
+    iconColor = CATEGORY_COLOR[iconKey] ?? ctx.colors.incomeGreen;
+  }
+
+  const time = new Date(tx.date).toLocaleTimeString('en-PH', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  return (
+    <MemoizedSwipeableRow
+      swipeStyles={ctx.swipeStyles}
+      onDelete={() => ctx.onDeleteTransaction(tx)}
+    >
+      <Pressable
+        onPress={() => ctx.navigation.navigate('TransactionDetail', { id: tx.id })}
+        style={({ pressed }) => [
+          ctx.styles.transactionItem,
+          pressed && {
+            backgroundColor: ctx.isDark
+              ? 'rgba(255,255,255,0.05)'
+              : ctx.colors.primaryLight,
+          },
+        ]}
+      >
+        <View style={{ marginRight: 14 }}>
+          <CategoryIcon
+            categoryKey={iconKey}
+            color={iconColor}
+            wrapperSize={44}
+            size={24}
+          />
+        </View>
+
+        <View style={ctx.styles.txContent}>
+          <Text style={ctx.styles.txTitle} numberOfLines={1}>
+            {tx.display_name ?? tx.merchant_name ?? tx.category ?? '—'}
+          </Text>
+          <View style={ctx.styles.txSubtitleRow}>
+            <Text style={ctx.styles.txTime}>{time}</Text>
+            <View style={ctx.styles.metaDot} />
+            <View
+              style={[
+                ctx.styles.acctTag,
+                { backgroundColor: tagBg(tx.account_brand_colour) },
+              ]}
+            >
+              <Text
+                style={[
+                  ctx.styles.acctTagText,
+                  { color: tx.account_brand_colour },
+                ]}
+              >
+                {tx.account_name}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <Text style={[ctx.styles.txAmount, isExpense ? ctx.styles.neg : ctx.styles.pos]}>
+          {isExpense ? '-' : '+'}
+          {fmtPeso(tx.amount)}
+        </Text>
+      </Pressable>
+    </MemoizedSwipeableRow>
+  );
+});
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function FeedScreen() {
@@ -318,6 +929,10 @@ export default function FeedScreen() {
   const styles = useMemo(
     () => createStyles(colors, isDark, insets.top),
     [colors, isDark, insets.top]
+  );
+  const swipeStyles = useMemo(
+    () => createSwipeStyles(colors, isDark),
+    [colors, isDark]
   );
 
   // ── View type: expense or income ──
@@ -440,10 +1055,10 @@ export default function FeedScreen() {
   }, [route.params?.filterSortOrder]);
 
   // Reset category filter when switching tabs
-  const handleViewTypeSwitch = (type: 'expense' | 'income') => {
+  const handleViewTypeSwitch = useCallback((type: 'expense' | 'income') => {
     setViewType(type);
     setActiveCategory('All');
-  };
+  }, []);
 
   // ── Filter chip options ──
   const expenseFilterOptions = ['All', ...categories.map((c) => c.name)];
@@ -452,7 +1067,7 @@ export default function FeedScreen() {
     viewType === 'income' ? incomeFilterOptions : expenseFilterOptions;
 
   // ── Delete handler ──
-  const handleDelete = async (tx: FeedTransaction) => {
+  const handleDelete = useCallback(async (tx: FeedTransaction) => {
     await supabase.from('transactions').delete().eq('id', tx.id);
 
     if (!tx.account_deleted) {
@@ -480,7 +1095,7 @@ export default function FeedScreen() {
       `${tx.display_name ?? tx.category ?? 'Transaction'} has been removed`
     );
     setToastVisible(true);
-  };
+  }, [refetch]);
 
   const isAtMaxMonth =
     selectedYear > now.getFullYear() ||
@@ -488,16 +1103,16 @@ export default function FeedScreen() {
 
   const monthLabel = `${MONTH_NAMES[selectedMonth]} ${selectedYear}`;
 
-  const handlePrevMonth = () => {
+  const handlePrevMonth = useCallback(() => {
     if (selectedMonth === 0) {
       setSelectedMonth(11);
       setSelectedYear((y) => y - 1);
     } else {
       setSelectedMonth((m) => m - 1);
     }
-  };
+  }, [selectedMonth]);
 
-  const handleNextMonth = () => {
+  const handleNextMonth = useCallback(() => {
     if (isAtMaxMonth) return;
     if (selectedMonth === 11) {
       setSelectedMonth(0);
@@ -505,17 +1120,17 @@ export default function FeedScreen() {
     } else {
       setSelectedMonth((m) => m + 1);
     }
-  };
+  }, [isAtMaxMonth, selectedMonth]);
 
   // ── Apply / reset advanced filters ──
-  const applyFilters = () => {
+  const applyFilters = useCallback(() => {
     setFilterAccountId(draftAccountId);
     setFilterSortOrder(draftSortOrder);
     setFilterDatePreset(draftDatePreset);
     setFilterPanelVisible(false);
-  };
+  }, [draftAccountId, draftSortOrder, draftDatePreset]);
 
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setDraftAccountId(undefined);
     setDraftSortOrder('date_desc');
     setDraftDatePreset('month');
@@ -523,7 +1138,7 @@ export default function FeedScreen() {
     setFilterSortOrder('date_desc');
     setFilterDatePreset('month');
     setFilterPanelVisible(false);
-  };
+  }, []);
 
   const hasActiveFilters =
     filterAccountId !== undefined ||
@@ -557,7 +1172,7 @@ export default function FeedScreen() {
   const heroAmountLabel = viewType === 'expense' ? 'Spent' : 'Received';
   const heroAmountPrefix = viewType === 'expense' ? '-' : '+';
 
-  // ── Flatten sections → FlatList items ──
+  // ── Flatten sections → list items ──
   const listData: ListItem[] = [
     { type: 'hero' },
     { type: 'sticky' },
@@ -568,420 +1183,110 @@ export default function FeedScreen() {
     ]),
   ];
 
-  const renderSkeletonList = () => (
-    <View style={{ flex: 1 }}>
-      <View style={styles.dateHeaderContainer}>
-        <Skeleton width={100} height={12} borderRadius={4} />
-      </View>
-      {Array.from({ length: 7 }).map((_, i) => (
-        <View key={`skel-tx-${i}`} style={styles.transactionItem}>
-          <Skeleton
-            width={44}
-            height={44}
-            borderRadius={22}
-            style={{ marginRight: 14 }}
-          />
-          <View style={styles.txContent}>
-            <Skeleton width={140} height={16} style={{ marginBottom: 6 }} />
-            <View style={styles.txSubtitleRow}>
-              <Skeleton width={40} height={12} />
-              <View style={styles.metaDot} />
-              <Skeleton width={60} height={16} borderRadius={4} />
-            </View>
-          </View>
-          <Skeleton width={75} height={16} />
-        </View>
-      ))}
-    </View>
+  const handleDeleteTransaction = useCallback(
+    (tx: FeedTransaction) => {
+      setSwipeHintVisible(false);
+      handleDelete(tx);
+    },
+    [handleDelete]
   );
 
-  // ── Render row ──
-  const renderItem = ({ item }: { item: ListItem }) => {
-    // ── Hero card (scrolls away) ──
-    if (item.type === 'hero') {
-      return (
-        <LinearGradient
-          colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
-          style={styles.heroCard}
-        >
-          <LinearGradient
-            colors={[colors.primaryLight60, 'transparent']}
-            style={[styles.heroBlob, { top: -30, right: -20, width: 160, height: 160 }]}
-          />
-          <LinearGradient
-            colors={[colors.primaryTransparent50, 'transparent']}
-            style={[styles.heroBlob, { bottom: 44, left: -20, width: 110, height: 110, opacity: 0.6 }]}
-          />
+  const toggleFilterPanel = useCallback(() => {
+    setDraftAccountId(filterAccountId);
+    setDraftSortOrder(filterSortOrder);
+    setDraftDatePreset(filterDatePreset);
+    setFilterPanelVisible((v) => !v);
+  }, [filterAccountId, filterSortOrder, filterDatePreset]);
 
-          <View style={styles.heroTopRow}>
-            <View style={styles.monthNavPill}>
-              <TouchableOpacity style={styles.monthArrow} activeOpacity={0.75} onPress={handlePrevMonth}>
-                <Ionicons name="chevron-back" size={14} color={colors.whiteTransparent80} />
-              </TouchableOpacity>
-              <TouchableOpacity activeOpacity={0.75} onPress={() => setMonthPickerVisible(true)}>
-                <Text style={styles.monthNavLabel}>{monthLabel}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.monthArrow, isAtMaxMonth && { opacity: 0.35 }]}
-                activeOpacity={0.75}
-                onPress={handleNextMonth}
-                disabled={isAtMaxMonth}
-              >
-                <Ionicons name="chevron-forward" size={14} color={colors.whiteTransparent80} />
-              </TouchableOpacity>
-            </View>
+  const listItemContext = useMemo<FeedListItemContext>(
+    () => ({
+      colors,
+      isDark,
+      styles,
+      swipeStyles,
+      navigation,
+      monthLabel,
+      isAtMaxMonth,
+      handlePrevMonth,
+      handleNextMonth,
+      onOpenMonthPicker: () => setMonthPickerVisible(true),
+      viewType,
+      onSwitchViewType: handleViewTypeSwitch,
+      searchInputRef,
+      searchQuery,
+      setSearchQuery,
+      hasActiveFilters,
+      onToggleFilterPanel: toggleFilterPanel,
+      filterPanelVisible,
+      resetFilters,
+      draftDatePreset,
+      setDraftDatePreset,
+      draftAccountId,
+      setDraftAccountId,
+      accounts,
+      draftSortOrder,
+      setDraftSortOrder,
+      applyFilters,
+      closeFilterPanel: () => setFilterPanelVisible(false),
+      filterOptions,
+      activeCategory,
+      setActiveCategory,
+      loading,
+      totalEntries: sections.reduce((s, sec) => s + sec.data.length, 0),
+      swipeHintVisible,
+      sectionsLength: sections.length,
+      accountSpend,
+      heroInfoTitle,
+      heroInfoSubtitle,
+      heroAmountLabel,
+      heroAmountPrefix,
+      categories,
+      onDeleteTransaction: handleDeleteTransaction,
+    }),
+    [
+      colors,
+      isDark,
+      styles,
+      swipeStyles,
+      navigation,
+      monthLabel,
+      isAtMaxMonth,
+      handlePrevMonth,
+      handleNextMonth,
+      viewType,
+      handleViewTypeSwitch,
+      searchInputRef,
+      searchQuery,
+      hasActiveFilters,
+      toggleFilterPanel,
+      filterPanelVisible,
+      resetFilters,
+      draftDatePreset,
+      draftAccountId,
+      accounts,
+      draftSortOrder,
+      applyFilters,
+      filterOptions,
+      activeCategory,
+      loading,
+      sections,
+      swipeHintVisible,
+      accountSpend,
+      heroInfoTitle,
+      heroInfoSubtitle,
+      heroAmountLabel,
+      heroAmountPrefix,
+      categories,
+      handleDeleteTransaction,
+    ]
+  );
 
-            {/* type indicator — reflects current viewType, no duplicate toggle */}
-            <View style={styles.heroTypeChip}>
-              <Ionicons
-                name={viewType === 'expense' ? 'trending-down' : 'trending-up'}
-                size={12}
-                color={viewType === 'expense' ? colors.expenseRed : colors.incomeGreen}
-              />
-              <Text style={[styles.heroTypeChipText, { color: viewType === 'expense' ? colors.expenseRed : colors.incomeGreen }]}>
-                {viewType === 'expense' ? 'Expenses' : 'Income'}
-              </Text>
-            </View>
-          </View>
+  const renderItem = useCallback<ListRenderItem<ListItem>>(
+    ({ item }) => <FeedListItem item={item} ctx={listItemContext} />,
+    [listItemContext]
+  );
 
-          <View style={styles.heroInfoHeader}>
-            <Text style={styles.heroInfoTitle}>{heroInfoTitle}</Text>
-            <Text style={styles.heroInfoSubtitle}>{heroInfoSubtitle}</Text>
-          </View>
-
-          {accountSpend.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.balanceCarousel}
-            >
-              {accountSpend.map((acc, i) => (
-                <View key={i} style={styles.balanceCard}>
-                  <View style={styles.balanceCardLabel}>
-                    <View style={[styles.balanceCardDot, { backgroundColor: acc.colour }]} />
-                    <Text style={styles.balanceCardLabelText}>{acc.name.toUpperCase()}</Text>
-                  </View>
-                  <Text style={styles.balanceCardMeta}>{heroAmountLabel}</Text>
-                  <Text style={styles.balanceCardAmount}>
-                    {heroAmountPrefix}
-                    {fmtPeso(acc.amount)}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-          ) : (
-            <Text style={styles.heroEmptyHint}>No {viewType} transactions for this period</Text>
-          )}
-        </LinearGradient>
-      );
-    }
-
-    // ── Sticky search bar ──
-    if (item.type === 'sticky') {
-      return (
-        <View style={styles.stickyBar}>
-          {/* Expenses / Income segment — single source of truth */}
-          <View style={styles.segmentRow}>
-            <TouchableOpacity
-              style={[styles.segmentBtn, viewType === 'expense' && styles.segmentBtnExpenseActive]}
-              onPress={() => handleViewTypeSwitch('expense')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.segmentText, viewType === 'expense' && styles.segmentTextActive]}>
-                Expenses
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.segmentBtn, viewType === 'income' && styles.segmentBtnIncomeActive]}
-              onPress={() => handleViewTypeSwitch('income')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.segmentText, viewType === 'income' && styles.segmentTextActive]}>
-                Income
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.searchRow}>
-            <View style={styles.searchBar}>
-              <Ionicons name="search-outline" size={16} color={colors.textSecondary} />
-              <TextInput
-                ref={searchInputRef}
-                style={styles.searchInput}
-                placeholder="Search by name, amount…"
-                placeholderTextColor={colors.textSecondary}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                returnKeyType="search"
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7}>
-                  <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
-                </TouchableOpacity>
-              )}
-            </View>
-            <TouchableOpacity
-              style={[styles.filterTriggerBtn, hasActiveFilters && styles.filterTriggerBtnActive]}
-              activeOpacity={0.8}
-              onPress={() => {
-                setDraftAccountId(filterAccountId);
-                setDraftSortOrder(filterSortOrder);
-                setDraftDatePreset(filterDatePreset);
-                setFilterPanelVisible((v) => !v);
-              }}
-            >
-              <Ionicons
-                name="options-outline"
-                size={18}
-                color={hasActiveFilters ? colors.primary : colors.textSecondary}
-              />
-              {hasActiveFilters && <View style={styles.filterBadge} />}
-            </TouchableOpacity>
-          </View>
-
-          {filterPanelVisible && (
-            <View style={styles.filterPanel}>
-              <View style={styles.filterPanelHeader}>
-                <Text style={styles.filterPanelTitle}>Filters</Text>
-                <TouchableOpacity onPress={resetFilters} activeOpacity={0.7}>
-                  <Text style={styles.filterResetText}>Reset all</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.filterSectionLabel}>Date Range</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {(['month', '30d', '90d', 'custom'] as const).map((preset) => {
-                    const labels = { month: 'This Month', '30d': 'Last 30 Days', '90d': 'Last 3 Months', custom: 'Custom…' };
-                    const isSelected = draftDatePreset === preset;
-                    return (
-                      <TouchableOpacity
-                        key={preset}
-                        style={[styles.filterChip, isSelected && styles.filterChipSelected]}
-                        activeOpacity={0.8}
-                        onPress={() => {
-                          if (preset === 'custom') { setDraftDatePreset('custom'); setMonthPickerVisible(true); }
-                          else { setDraftDatePreset(preset); }
-                        }}
-                      >
-                        <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{labels[preset]}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-
-              <Text style={styles.filterSectionLabel}>Account</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <TouchableOpacity
-                    style={[styles.filterChip, draftAccountId === undefined && styles.filterChipSelected]}
-                    activeOpacity={0.8}
-                    onPress={() => setDraftAccountId(undefined)}
-                  >
-                    <Text style={[styles.filterChipText, draftAccountId === undefined && styles.filterChipTextSelected]}>All</Text>
-                  </TouchableOpacity>
-                  {accounts.map((acc) => {
-                    const isSelected = draftAccountId === acc.id;
-                    return (
-                      <TouchableOpacity
-                        key={acc.id}
-                        style={[styles.filterChip, isSelected && { backgroundColor: `${acc.brand_colour}18`, borderColor: acc.brand_colour }]}
-                        activeOpacity={0.8}
-                        onPress={() => setDraftAccountId(isSelected ? undefined : acc.id)}
-                      >
-                        <Text style={[styles.filterChipText, isSelected && { color: acc.brand_colour }]}>{acc.name}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-
-              <Text style={styles.filterSectionLabel}>Sort By</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {([
-                    { key: 'date_desc', label: 'Newest First' },
-                    { key: 'date_asc', label: 'Oldest First' },
-                    { key: 'amount_desc', label: 'Highest Amount' },
-                  ] as { key: SortOrder; label: string }[]).map(({ key, label }) => {
-                    const isSelected = draftSortOrder === key;
-                    return (
-                      <TouchableOpacity
-                        key={key}
-                        style={[styles.filterChip, isSelected && styles.filterChipSelected]}
-                        activeOpacity={0.8}
-                        onPress={() => setDraftSortOrder(key)}
-                      >
-                        <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>{label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-
-              <View style={styles.filterPanelActions}>
-                <TouchableOpacity style={styles.filterCancelBtn} activeOpacity={0.7} onPress={() => setFilterPanelVisible(false)}>
-                  <Text style={styles.filterCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.filterApplyBtn} activeOpacity={0.8} onPress={applyFilters}>
-                  <Text style={styles.filterApplyText}>Apply</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
-      );
-    }
-
-    // ── Category chips + swipe hint ──
-    if (item.type === 'controls') {
-      if (loading) return renderSkeletonList();
-      return (
-        <View>
-          <View style={styles.filterWrapper}>
-            <FlatList
-              data={filterOptions}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(it) => it}
-              contentContainerStyle={{ paddingHorizontal: spacing.screenPadding }}
-              renderItem={({ item: chip }) => {
-                const isActive = activeCategory === chip;
-                let activeBg = colors.primary;
-                if (viewType === 'income' && chip !== 'All') {
-                  const incCat = INCOME_CATEGORIES.find((c) => c.name === chip);
-                  if (incCat) activeBg = CATEGORY_COLOR[incCat.key] ?? colors.primary;
-                } else if (viewType === 'expense' && chip !== 'All') {
-                  const expCat = categories.find((c) => c.name === chip);
-                  if (expCat?.text_colour) activeBg = expCat.text_colour;
-                }
-                return (
-                  <TouchableOpacity
-                    style={[isActive ? styles.chipActive : styles.chipInactive, isActive && { backgroundColor: activeBg }]}
-                    onPress={() => setActiveCategory(chip)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={isActive ? styles.chipTextActive : styles.chipTextInactive}>{chip}</Text>
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          </View>
-
-          {swipeHintVisible && totalEntries > 0 && (
-            <View style={styles.swipeHint}>
-              <Ionicons name="arrow-back-outline" size={12} color={colors.textSecondary} />
-              <Text style={styles.swipeHintText}>Swipe left on a transaction to delete</Text>
-            </View>
-          )}
-
-          {!loading && sections.length === 0 && (
-            <View style={styles.emptyState}>
-              <Ionicons name="receipt-outline" size={44} color={colors.textSecondary} style={{ opacity: 0.4 }} />
-              <Text style={styles.emptyStateTitle}>No transactions</Text>
-              <Text style={styles.emptyStateText}>
-                {searchQuery.length > 0
-                  ? 'No results for your search.'
-                  : 'No transactions recorded for this period.'}
-              </Text>
-            </View>
-          )}
-        </View>
-      );
-    }
-
-    if (item.type === 'header') {
-      return (
-        <View style={styles.dateHeaderContainer}>
-          <Text style={styles.dateHeader}>{item.title}</Text>
-        </View>
-      );
-    }
-
-    const tx = item.data;
-    const isExpense = tx.type === 'expense';
-
-    // Icon + color resolution
-    let iconKey = 'default';
-    let iconColor = colors.textSecondary;
-
-    if (isExpense) {
-      const catData = categories.find(
-        (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
-      );
-      iconKey = catData?.emoji ?? 'default';
-      iconColor = catData?.text_colour ?? colors.textSecondary;
-    } else {
-      const incCat = INCOME_CATEGORIES.find(
-        (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
-      );
-      iconKey = incCat?.key ?? 'default';
-      iconColor = CATEGORY_COLOR[iconKey] ?? colors.incomeGreen;
-    }
-
-    const time = new Date(tx.date).toLocaleTimeString('en-PH', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-
-    return (
-      <SwipeableRow onDelete={() => { setSwipeHintVisible(false); handleDelete(tx); }}>
-        <Pressable
-          onPress={() =>
-            navigation.navigate('TransactionDetail', { id: tx.id })
-          }
-          style={({ pressed }) => [
-            styles.transactionItem,
-            pressed && {
-              backgroundColor: isDark
-                ? 'rgba(255,255,255,0.05)'
-                : colors.primaryLight,
-            },
-          ]}
-        >
-          <View style={{ marginRight: 14 }}>
-            <CategoryIcon
-              categoryKey={iconKey}
-              color={iconColor}
-              wrapperSize={44}
-              size={24}
-            />
-          </View>
-
-          <View style={styles.txContent}>
-            <Text style={styles.txTitle} numberOfLines={1}>
-              {tx.display_name ?? tx.merchant_name ?? tx.category ?? '—'}
-            </Text>
-            <View style={styles.txSubtitleRow}>
-              <Text style={styles.txTime}>{time}</Text>
-              <View style={styles.metaDot} />
-              <View
-                style={[
-                  styles.acctTag,
-                  { backgroundColor: tagBg(tx.account_brand_colour) },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.acctTagText,
-                    { color: tx.account_brand_colour },
-                  ]}
-                >
-                  {tx.account_name}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <Text style={[styles.txAmount, isExpense ? styles.neg : styles.pos]}>
-            {isExpense ? '-' : '+'}
-            {fmtPeso(tx.amount)}
-          </Text>
-        </Pressable>
-      </SwipeableRow>
-    );
-  };
+  const getItemType = useCallback((item: ListItem) => item.type, []);
 
   const totalEntries = sections.reduce((s, sec) => s + sec.data.length, 0);
   const listBottomPadding = Math.max(insets.bottom + 96, 120);
@@ -1000,37 +1305,39 @@ export default function FeedScreen() {
         </TouchableOpacity>
       </RAnim.View>
 
-      {/* ─── SINGLE FLATLIST — hero scrolls away, search bar sticks ─── */}
+      {/* ─── SINGLE FLASHLIST — hero scrolls away, search bar sticks ─── */}
       <RAnim.View style={[{ flex: 1 }, listAnim]}>
-      <FlatList
-        data={listData}
-        renderItem={renderItem}
-        keyExtractor={(item, index) => {
-          if (item.type === 'hero') return 'hero';
-          if (item.type === 'sticky') return 'sticky';
-          if (item.type === 'controls') return 'controls';
-          if (item.type === 'header') return `header-${item.title}`;
-          return `tx-${item.data.id}-${index}`;
-        }}
-        stickyHeaderIndices={[1]}
-        contentContainerStyle={{ paddingBottom: listBottomPadding }}
-        ListEmptyComponent={null}
-        ListFooterComponent={() =>
-          !loading && listData.length > 3 && hasMore ? (
-            <TouchableOpacity
-              style={styles.loadMoreBtn}
-              activeOpacity={0.7}
-              onPress={loadMore}
-              disabled={loadingMore}
-            >
-              {loadingMore
-                ? <ActivityIndicator color={colors.primary} />
-                : <Text style={styles.loadMoreText}>Load 20 more</Text>
-              }
-            </TouchableOpacity>
-          ) : null
-        }
-      />
+        <FlashList
+          data={listData}
+          renderItem={renderItem}
+          getItemType={getItemType}
+          keyExtractor={(item, index) => {
+            if (item.type === 'hero') return 'hero';
+            if (item.type === 'sticky') return 'sticky';
+            if (item.type === 'controls') return 'controls';
+            if (item.type === 'header') return `header-${item.title}`;
+            return `tx-${item.data.id}-${index}`;
+          }}
+          stickyHeaderIndices={[1]}
+          contentContainerStyle={{ paddingBottom: listBottomPadding }}
+          ListEmptyComponent={null}
+          ListFooterComponent={() =>
+            !loading && totalEntries > 0 && hasMore ? (
+              <TouchableOpacity
+                style={styles.loadMoreBtn}
+                activeOpacity={0.7}
+                onPress={loadMore}
+                disabled={loadingMore}
+              >
+                {loadingMore ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  <Text style={styles.loadMoreText}>Load 20 more</Text>
+                )}
+              </TouchableOpacity>
+            ) : null
+          }
+        />
       </RAnim.View>
 
       {/* ─── MONTH PICKER MODAL ─── */}
@@ -1061,13 +1368,16 @@ export default function FeedScreen() {
 
 // ─── DYNAMIC STYLES ──────────────────────────────────────────────────────────
 
-const createSwipeStyles = (colors: any, isDark: boolean) =>
+const createSwipeStyles = (colors: any, _isDark: boolean) =>
   StyleSheet.create({
+    swipeContainer: {
+      overflow: 'hidden',
+      backgroundColor: colors.background,
+    },
+    rowContent: {
+      backgroundColor: colors.background,
+    },
     deleteZone: {
-      position: 'absolute',
-      right: 0,
-      top: 0,
-      bottom: 0,
       width: SWIPE_DELETE_WIDTH,
       backgroundColor: colors.expenseRed,
       justifyContent: 'center',
@@ -1075,7 +1385,7 @@ const createSwipeStyles = (colors: any, isDark: boolean) =>
     },
     deleteBtn: {
       width: SWIPE_DELETE_WIDTH,
-      height: '100%',
+      flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
     },
