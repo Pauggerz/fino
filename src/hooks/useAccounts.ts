@@ -31,24 +31,16 @@ export const useAccounts = () => {
         setLoading(true);
       }
     } catch (e) {
-      console.error('Failed to load accounts cache', e);
+      if (__DEV__) console.error('Failed to load accounts cache', e);
       setLoading(true);
     }
 
-    // Show whatever we have from cache right away
+    // Show cache immediately (no pending delta yet — we apply it once after
+    // fresh data arrives to avoid double-counting if the sync queue drains
+    // between the two reads).
     if (fetchedAccounts.length > 0) {
-      const pendingQueueEarly = await getPendingQueue();
-      const earlyAdjusted = fetchedAccounts.map((acc) => {
-        let delta = 0;
-        pendingQueueEarly.forEach((tx) => {
-          if (tx.account_id === acc.id) {
-            delta += tx.type === 'expense' ? -tx.amount : tx.amount;
-          }
-        });
-        return { ...acc, balance: acc.balance + delta };
-      });
       startTransition(() => {
-        setAccounts(earlyAdjusted);
+        setAccounts(fetchedAccounts);
         setLoading(false);
       });
     }
@@ -71,7 +63,8 @@ export const useAccounts = () => {
       setError(error.message ?? 'Failed to load accounts');
     }
 
-    // 4. OFFLINE CALCULATION: Apply pending transactions to balances
+    // 4. OFFLINE CALCULATION: Apply pending transactions to balances.
+    // Read the queue exactly once here so we never apply it twice.
     const pendingQueue = await getPendingQueue();
     const adjustedAccounts = fetchedAccounts.map((acc) => {
       let pendingDelta = 0;

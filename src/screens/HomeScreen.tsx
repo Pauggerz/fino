@@ -197,6 +197,7 @@ export default function HomeScreen() {
       case 'syncing':
         return colors.syncSyncing;
       case 'offline':
+      case 'error':
         return colors.syncOffline;
       default:
         return colors.syncSynced;
@@ -523,6 +524,8 @@ export default function HomeScreen() {
                   setIsPrivacyMode(!isPrivacyMode);
                 }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityLabel={isPrivacyMode ? 'Show balance' : 'Hide balance'}
+                accessibilityRole="button"
               >
                 <RAnim.View style={eyeAnim}>
                   <Ionicons

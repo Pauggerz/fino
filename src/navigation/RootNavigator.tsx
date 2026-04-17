@@ -20,6 +20,8 @@ import ChatScreen from '../screens/ChatScreen';
 import BillSplitterScreen from '../screens/BillSplitterScreen';
 import UtangTrackerScreen from '../screens/UtangTrackerScreen';
 import SavingsGoalScreen from '../screens/SavingsGoalScreen';
+import LoginScreen from '../screens/LoginScreen';
+import { useAuth } from '../contexts/AuthContext';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -128,64 +130,71 @@ function TabNavigator() {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
+  const { session, isLoading } = useAuth();
+
+  // Keep splash screen up while auth resolves (handled in App.tsx)
+  if (isLoading) return null;
+
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Tabs" component={TabNavigator} />
+        {!session ? (
+          // ── Unauthenticated ───────────────────────────────────────────────
+          <Stack.Screen
+            name={'Login' as any}
+            component={LoginScreen}
+            options={{ animation: 'fade' }}
+          />
+        ) : (
+          // ── Authenticated ─────────────────────────────────────────────────
+          <>
+            <Stack.Screen name="Tabs" component={TabNavigator} />
 
-        <Stack.Screen
-          name="FABActionSheet"
-          component={FABActionSheet}
-          options={{
-            presentation: 'transparentModal',
-            animation: 'none',
-            contentStyle: { backgroundColor: 'transparent' },
-          }}
-        />
-        <Stack.Screen
-          name="AddTransaction"
-          component={AddTransactionSheet}
-          options={{
-            presentation: 'transparentModal',
-            animation: 'none',
-            contentStyle: {
-              backgroundColor: 'transparent',
-            },
-          }}
-        />
-
-        <Stack.Screen
-          name="ScreenshotScreen"
-          component={ScreenshotScreen}
-          options={{
-            headerShown: false,
-            presentation: 'modal',
-          }}
-        />
-
-        <Stack.Screen
-          name="ChatScreen"
-          component={ChatScreen}
-          options={{
-            headerShown: false,
-            presentation: 'modal',
-          }}
-        />
-        <Stack.Screen
-          name="BillSplitter"
-          component={BillSplitterScreen}
-          options={{ headerShown: false, presentation: 'modal' }}
-        />
-        <Stack.Screen
-          name="UtangTracker"
-          component={UtangTrackerScreen}
-          options={{ headerShown: false, presentation: 'modal' }}
-        />
-        <Stack.Screen
-          name="SavingsGoal"
-          component={SavingsGoalScreen}
-          options={{ headerShown: false, presentation: 'modal' }}
-        />
+            <Stack.Screen
+              name="FABActionSheet"
+              component={FABActionSheet}
+              options={{
+                presentation: 'transparentModal',
+                animation: 'none',
+                contentStyle: { backgroundColor: 'transparent' },
+              }}
+            />
+            <Stack.Screen
+              name="AddTransaction"
+              component={AddTransactionSheet}
+              options={{
+                presentation: 'transparentModal',
+                animation: 'none',
+                contentStyle: { backgroundColor: 'transparent' },
+              }}
+            />
+            <Stack.Screen
+              name="ScreenshotScreen"
+              component={ScreenshotScreen}
+              options={{ headerShown: false, presentation: 'modal' }}
+            />
+            <Stack.Screen
+              name="ChatScreen"
+              component={ChatScreen}
+              options={{ headerShown: false, presentation: 'modal' }}
+            />
+            <Stack.Screen
+              name="BillSplitter"
+              component={BillSplitterScreen}
+              options={{ headerShown: false, presentation: 'modal' }}
+            />
+            <Stack.Screen
+              name="UtangTracker"
+              component={UtangTrackerScreen}
+              options={{ headerShown: false, presentation: 'modal' }}
+            />
+            <Stack.Screen
+              name="SavingsGoal"
+              component={SavingsGoalScreen}
+              options={{ headerShown: false, presentation: 'modal' }}
+            />
+          </>
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );

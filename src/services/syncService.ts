@@ -16,7 +16,7 @@ export const getPendingQueue = async (): Promise<OfflineTransaction[]> => {
     const data = await AsyncStorage.getItem(QUEUE_KEY);
     return data ? JSON.parse(data) : [];
   } catch (error) {
-    console.error('Error reading offline queue:', error);
+    if (__DEV__) console.error('Error reading offline queue:', error);
     return [];
   }
 };
@@ -29,7 +29,7 @@ export const addToQueue = async (transaction: OfflineTransaction) => {
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
     return newTx;
   } catch (error) {
-    console.error('Error adding to offline queue:', error);
+    if (__DEV__) console.error('Error adding to offline queue:', error);
     throw error;
   }
 };
@@ -40,7 +40,7 @@ export const removeFromQueue = async (tempId: string) => {
     const filtered = queue.filter((tx) => tx.id !== tempId);
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(filtered));
   } catch (error) {
-    console.error('Error removing from offline queue:', error);
+    if (__DEV__) console.error('Error removing from offline queue:', error);
   }
 };
 
@@ -67,12 +67,9 @@ async function insertTxWithRetry(dbPayload: Record<string, unknown>): Promise<bo
         return false;
       }
 
-      console.error(
-        `[sync] RPC attempt ${attempt + 1}/${RETRY_ATTEMPTS} failed:`,
-        error.message,
-      );
+      if (__DEV__) console.error(`[sync] RPC attempt ${attempt + 1}/${RETRY_ATTEMPTS} failed:`, error.message);
     } catch (e) {
-      console.error(`[sync] RPC attempt ${attempt + 1}/${RETRY_ATTEMPTS} threw:`, e);
+      if (__DEV__) console.error(`[sync] RPC attempt ${attempt + 1}/${RETRY_ATTEMPTS} threw:`, e);
     }
 
     // Backoff before the next attempt (but not after the last one).
@@ -84,10 +81,13 @@ async function insertTxWithRetry(dbPayload: Record<string, unknown>): Promise<bo
 }
 
 /**
- * Legacy non-atomic fallback: insert the transaction then update the balance
- * in two separate calls. Only used if the RPC function hasn't been deployed.
- * Partial-failure risk is documented; the caller keeps the tx in the queue
- * on any error.
+ * Legacy non-atomic fallback: insert the transaction then atomically increment
+ * the account balance via a dedicated RPC. Only used when the main
+ * insert_tx_with_balance RPC isn't deployed.
+ *
+ * The balance increment uses adjust_account_balance(p_account_id, p_delta)
+ * which runs `UPDATE accounts SET balance = balance + p_delta WHERE id = p_account_id`
+ * server-side — safe under concurrent writes.
  */
 async function insertTxFallback(
   tx: OfflineTransaction,
@@ -100,29 +100,22 @@ async function insertTxFallback(
     .single();
 
   if (error || !data) {
-    console.error('[sync] fallback insert failed:', error?.message);
+    if (__DEV__) console.error('[sync] fallback insert failed:', error?.message);
     return false;
   }
 
   const delta = tx.type === 'expense' ? -tx.amount : tx.amount;
-  const { data: accData } = await supabase
-    .from('accounts')
-    .select('balance')
-    .eq('id', tx.account_id)
-    .single();
 
-  if (accData) {
-    const { error: balErr } = await supabase
-      .from('accounts')
-      .update({ balance: accData.balance + delta })
-      .eq('id', tx.account_id);
-    if (balErr) {
-      console.error('[sync] fallback balance update failed:', balErr.message);
-      // Tx already inserted — returning true would strand the queue item, but
-      // returning false would re-insert a duplicate. Prefer the former and
-      // surface the drift via logs; real fix is deploying the RPC.
-      return true;
-    }
+  // Atomic increment — avoids the read-then-write race condition.
+  const { error: balErr } = await supabase.rpc('adjust_account_balance', {
+    p_account_id: tx.account_id,
+    p_delta: delta,
+  });
+
+  if (balErr) {
+    // RPC not deployed yet — last resort: skip balance update rather than
+    // risk a duplicate insert on retry.
+    if (__DEV__) console.warn('[sync] adjust_account_balance RPC not available:', balErr.message);
   }
 
   return true;
@@ -151,7 +144,7 @@ export const processQueue = async (): Promise<boolean> => {
         allSuccess = false;
       }
     } catch (e) {
-      console.error('[sync] unexpected exception during sync:', e);
+      if (__DEV__) console.error('[sync] unexpected exception during sync:', e);
       allSuccess = false;
     }
   }

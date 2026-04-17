@@ -9,6 +9,7 @@ interface AuthContextData {
   user: SupabaseUser | null;
   profile: User | null;
   isLoading: boolean;
+  profileError: boolean;
   refreshProfile: () => Promise<void>;
 }
 
@@ -19,6 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [profile, setProfile] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileError, setProfileError] = useState(false);
 
   const fetchProfile = async (userId: string) => {
     try {
@@ -29,12 +31,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (error) {
-        console.warn('Error fetching user profile:', error.message);
+        if (__DEV__) console.warn('Error fetching user profile:', error.message);
+        setProfileError(true);
       } else {
         setProfile(data as User);
+        setProfileError(false);
       }
     } catch (error) {
-      console.error('Failed to fetch profile', error);
+      if (__DEV__) console.error('Failed to fetch profile', error);
+      setProfileError(true);
     }
   };
 
@@ -63,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await fetchProfile(session.user.id);
         } else {
           setProfile(null);
+          setProfileError(false);
         }
         setIsLoading(false);
       }
@@ -74,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ session, user, profile, isLoading, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user, profile, isLoading, profileError, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

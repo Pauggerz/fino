@@ -14,6 +14,7 @@ import {
   StyleSheet,
   Keyboard,
   Vibration,
+  Alert,
   useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -377,11 +378,32 @@ export default function AddTransactionSheet({ route }: Props) {
   };
 
   const handleSave = async () => {
+    if (isSaving) return;
     const acc = accounts.find((a) => a.id === accountId);
-    if (!acc || !amount || isSaving) return;
+    if (!acc) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      Alert.alert('No account selected', 'Please select an account before saving.');
+      return;
+    }
+    if (!amount || parseFloat(amount) <= 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      Alert.alert('Invalid amount', 'Please enter an amount greater than zero.');
+      return;
+    }
+    if (!category) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      Alert.alert('No category selected', 'Please select a category before saving.');
+      return;
+    }
+
+    const parsedAmount = parseFloat(amount);
+    if (parsedAmount > 9_999_999) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      Alert.alert('Amount too large', 'Please enter an amount under ₱9,999,999.');
+      return;
+    }
 
     setIsSaving(true);
-    const parsedAmount = parseFloat(amount);
     const txType: OfflineTransaction['type'] = type === 'exp' ? 'expense' : 'income';
 
     try {

@@ -49,7 +49,7 @@ export function useCachedQuery<T>(
       try {
         await AsyncStorage.setItem(key, JSON.stringify(newData));
       } catch (e) {
-        console.error(`[useCachedQuery] mutate cache write failed (${key})`, e);
+        if (__DEV__) console.error(`[useCachedQuery] mutate cache write failed (${key})`, e);
       }
     },
     [key],
@@ -73,7 +73,7 @@ export function useCachedQuery<T>(
         await AsyncStorage.setItem(key, JSON.stringify(remote)).catch(() => {});
         if (mountedRef.current) setData(remote);
       } catch (e) {
-        console.error(`[useCachedQuery] background fetch failed (${key})`, e);
+        if (__DEV__) console.error(`[useCachedQuery] background fetch failed (${key})`, e);
       }
     })();
 
@@ -94,7 +94,7 @@ export function useCachedQuery<T>(
           setLoading(false);
         }
       } catch (e) {
-        console.error(`[useCachedQuery] cache read failed (${key})`, e);
+        if (__DEV__) console.error(`[useCachedQuery] cache read failed (${key})`, e);
       }
 
       // 2. Revalidate in the background

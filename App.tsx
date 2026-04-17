@@ -28,6 +28,7 @@ import {
 
 import RootNavigator from './src/navigation/RootNavigator';
 import { SyncProvider } from './src/contexts/SyncContext';
+import { AuthProvider } from './src/contexts/AuthContext';
 import { supabase } from './src/services/supabase';
 import { ACCOUNT_LOGOS } from './src/constants/accountLogos';
 import { ThemeProvider } from './src/contexts/ThemeContext';
@@ -108,10 +109,12 @@ export default function App() {
       <ErrorBoundary>
         <ThemeProvider>
           <SafeAreaProvider>
-            <SyncProvider>
-              <RootNavigator />
-              <StatusBar style="auto" />
-            </SyncProvider>
+            <AuthProvider>
+              <SyncProvider>
+                <RootNavigator />
+                <StatusBar style="auto" />
+              </SyncProvider>
+            </AuthProvider>
           </SafeAreaProvider>
         </ThemeProvider>
       </ErrorBoundary>
