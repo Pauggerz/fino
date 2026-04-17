@@ -65,7 +65,7 @@ export type RootStackParamList = {
 const FeedStack = createNativeStackNavigator<FeedStackParamList>();
 function FeedNavigator() {
   return (
-    <FeedStack.Navigator screenOptions={{ headerShown: false }}>
+    <FeedStack.Navigator screenOptions={{ headerShown: false, freezeOnBlur: true }}>
       <FeedStack.Screen name="FeedMain" component={FeedScreen} />
       <FeedStack.Screen
         name="TransactionDetail"
@@ -78,7 +78,7 @@ function FeedNavigator() {
 const MoreStack = createNativeStackNavigator<MoreStackParamList>();
 function MoreNavigator() {
   return (
-    <MoreStack.Navigator screenOptions={{ headerShown: false }}>
+    <MoreStack.Navigator screenOptions={{ headerShown: false, freezeOnBlur: true }}>
       <MoreStack.Screen name="MoreMain" component={MoreScreen} />
       <MoreStack.Screen name="AccountDetail" component={AccountDetailScreen} />
     </MoreStack.Navigator>

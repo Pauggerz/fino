@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, startTransition } from 'react';
+import { useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import { supabase } from '@/services/supabase';
 import { Account } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,8 +11,12 @@ const CACHE_KEY = 'FINO_ACCOUNTS_CACHE';
 export const useAccounts = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  const isFetchingRef = useRef(false);
 
   const fetchAccounts = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    try {
     let fetchedAccounts: Account[] = [];
 
     // 1. Load from local cache first for instant/offline display
@@ -77,6 +81,9 @@ export const useAccounts = () => {
       setAccounts(adjustedAccounts);
       setLoading(false);
     });
+    } finally {
+      isFetchingRef.current = false;
+    }
   }, []);
 
   useEffect(() => {

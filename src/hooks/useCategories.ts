@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, startTransition } from 'react';
+import { useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import { supabase } from '@/services/supabase';
 import { Category } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,8 +25,12 @@ export interface CategoryWithSpend extends Category {
 export const useCategories = () => {
   const [categories, setCategories] = useState<CategoryWithSpend[]>([]);
   const [loading, setLoading] = useState(true);
+  const isFetchingRef = useRef(false);
 
   const fetchCategoriesAndSpend = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    try {
     let baseCategories: Category[] = [];
     let hasCachedData = false;
 
@@ -118,6 +122,9 @@ export const useCategories = () => {
     });
     if (!catError && catData) {
       AsyncStorage.setItem(CACHE_KEY, JSON.stringify(baseCategories)).catch(() => {});
+    }
+    } finally {
+      isFetchingRef.current = false;
     }
   }, []);
 

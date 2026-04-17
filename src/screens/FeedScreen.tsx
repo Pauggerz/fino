@@ -10,7 +10,6 @@ import {
   Modal,
   TextInput,
   ScrollView,
-  InteractionManager,
 } from 'react-native';
 import Svg, { Path as SvgPath } from 'react-native-svg';
 import {
@@ -43,6 +42,7 @@ import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
 import { Skeleton } from '@/components/Skeleton';
+import { useDeferredRender } from '@/hooks/useDeferredRender';
 import RAnim, {
   useSharedValue,
   useAnimatedStyle,
@@ -1034,19 +1034,20 @@ export default function FeedScreen() {
   const { categories } = useCategories();
   const { accounts } = useAccounts();
 
+  const hasAnimated = useRef(false);
+
   useFocusEffect(
     useCallback(() => {
-      // Reset + stagger entrance animation on every screen focus
-      headerOpacity.value = 0; headerTransY.value = -8;
-      listOpacity.value = 0;   listTransY.value = 16;
-      headerOpacity.value = withTiming(1, { duration: 260 });
-      headerTransY.value  = withTiming(0, { duration: 260 });
-      listOpacity.value   = withDelay(60, withTiming(1, { duration: 320 }));
-      listTransY.value    = withDelay(60, withSpring(0, { damping: 18, stiffness: 180 }));
-      const task = InteractionManager.runAfterInteractions(() => {
-        startTransition(() => { refetch(); });
-      });
-      return () => task.cancel();
+      if (!hasAnimated.current) {
+        hasAnimated.current = true;
+        headerOpacity.value = 0; headerTransY.value = -8;
+        listOpacity.value = 0;   listTransY.value = 16;
+        headerOpacity.value = withTiming(1, { duration: 260 });
+        headerTransY.value  = withTiming(0, { duration: 260 });
+        listOpacity.value   = withDelay(60, withTiming(1, { duration: 320 }));
+        listTransY.value    = withDelay(60, withSpring(0, { damping: 18, stiffness: 180 }));
+      }
+      startTransition(() => { refetch(); });
     }, [startTransition, refetch, headerOpacity, headerTransY, listOpacity, listTransY])
   );
 
@@ -1300,6 +1301,7 @@ export default function FeedScreen() {
 
   const getItemType = useCallback((item: ListItem) => item.type, []);
 
+  const isListReady = useDeferredRender();
   const totalEntries = sections.reduce((s, sec) => s + sec.data.length, 0);
   const listBottomPadding = Math.max(insets.bottom + 96, 120);
 
@@ -1319,37 +1321,41 @@ export default function FeedScreen() {
 
       {/* ─── SINGLE FLASHLIST — hero scrolls away, search bar sticks ─── */}
       <RAnim.View style={[{ flex: 1 }, listAnim]}>
-        <FlashList
-          data={listData}
-          renderItem={renderItem}
-          getItemType={getItemType}
-          keyExtractor={(item, index) => {
-            if (item.type === 'hero') return 'hero';
-            if (item.type === 'sticky') return 'sticky';
-            if (item.type === 'controls') return 'controls';
-            if (item.type === 'header') return `header-${item.title}`;
-            return `tx-${item.data.id}-${index}`;
-          }}
-          stickyHeaderIndices={[1]}
-          contentContainerStyle={{ paddingBottom: listBottomPadding }}
-          ListEmptyComponent={null}
-          ListFooterComponent={() =>
-            !loading && totalEntries > 0 && hasMore ? (
-              <TouchableOpacity
-                style={styles.loadMoreBtn}
-                activeOpacity={0.7}
-                onPress={loadMore}
-                disabled={loadingMore}
-              >
-                {loadingMore ? (
-                  <ActivityIndicator color={colors.primary} />
-                ) : (
-                  <Text style={styles.loadMoreText}>Load 20 more</Text>
-                )}
-              </TouchableOpacity>
-            ) : null
-          }
-        />
+        {isListReady ? (
+          <FlashList
+            data={listData}
+            renderItem={renderItem}
+            getItemType={getItemType}
+            keyExtractor={(item, index) => {
+              if (item.type === 'hero') return 'hero';
+              if (item.type === 'sticky') return 'sticky';
+              if (item.type === 'controls') return 'controls';
+              if (item.type === 'header') return `header-${item.title}`;
+              return `tx-${item.data.id}-${index}`;
+            }}
+            stickyHeaderIndices={[1]}
+            contentContainerStyle={{ paddingBottom: listBottomPadding }}
+            ListEmptyComponent={null}
+            ListFooterComponent={() =>
+              !loading && totalEntries > 0 && hasMore ? (
+                <TouchableOpacity
+                  style={styles.loadMoreBtn}
+                  activeOpacity={0.7}
+                  onPress={loadMore}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <Text style={styles.loadMoreText}>Load 20 more</Text>
+                  )}
+                </TouchableOpacity>
+              ) : null
+            }
+          />
+        ) : (
+          <FeedSkeletonList styles={styles} />
+        )}
       </RAnim.View>
 
       {/* ─── MONTH PICKER MODAL ─── */}

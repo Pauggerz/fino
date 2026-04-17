@@ -48,6 +48,7 @@ import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
 import { useAccounts } from '@/hooks/useAccounts';
 import { generateBulletInsights } from '@/services/gemini';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useDeferredRender } from '@/hooks/useDeferredRender';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -812,6 +813,8 @@ export default function InsightsScreen() {
   const [, startTransition] = useTransition();
 
   const isInitialLoadRef = useRef(true);
+  const hasAnimated = useRef(false);
+  const hasMountedRef = useRef(false);
 
   // ── Date state ──
   const now = new Date();
@@ -891,6 +894,7 @@ export default function InsightsScreen() {
   const lastAiMonthRef = useRef<string>('');
 
   const { accounts } = useAccounts();
+  const isChartReady = useDeferredRender();
 
   const monthRange = useMemo(() => {
     const from = new Date(selectedYear, selectedMonth, 1).toISOString();
@@ -1126,30 +1130,34 @@ export default function InsightsScreen() {
     }
   }, [applyStatsBundle, monthRange, selectedMonth, selectedYear]);
 
+  // Re-fetch when month/year changes while screen is already mounted;
+  // useFocusEffect handles the initial fetch on first focus.
   useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
     fetchStats();
-  }, [fetchStats]);
+  }, [selectedYear, selectedMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useFocusEffect(
     useCallback(() => {
-      headerOpacity.value = 0;
-      headerTransY.value = -8;
-      heroOpacity.value = 0;
-      heroScale.value = 0.97;
-      contentOpacity.value = 0;
-      contentTransY.value = 16;
+      if (!hasAnimated.current) {
+        hasAnimated.current = true;
+        headerOpacity.value = 0;
+        headerTransY.value = -8;
+        heroOpacity.value = 0;
+        heroScale.value = 0.97;
+        contentOpacity.value = 0;
+        contentTransY.value = 16;
 
-      headerOpacity.value = withTiming(1, { duration: 260 });
-      headerTransY.value = withTiming(0, { duration: 260 });
-      heroOpacity.value = withDelay(60, withTiming(1, { duration: 320 }));
-      heroScale.value = withDelay(
-        60,
-        withSpring(1, { damping: 18, stiffness: 160 })
-      );
-      contentOpacity.value = withDelay(140, withTiming(1, { duration: 320 }));
-      contentTransY.value = withDelay(
-        140,
-        withSpring(0, { damping: 18, stiffness: 180 })
-      );
+        headerOpacity.value = withTiming(1, { duration: 260 });
+        headerTransY.value = withTiming(0, { duration: 260 });
+        heroOpacity.value = withDelay(60, withTiming(1, { duration: 320 }));
+        heroScale.value = withDelay(60, withSpring(1, { damping: 18, stiffness: 160 }));
+        contentOpacity.value = withDelay(140, withTiming(1, { duration: 320 }));
+        contentTransY.value = withDelay(140, withSpring(0, { damping: 18, stiffness: 180 }));
+      }
 
       const task = InteractionManager.runAfterInteractions(() => {
         startTransition(() => { fetchStats(); });
@@ -2041,6 +2049,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
           }}
         >
           <View {...panResponder.panHandlers} style={styles.donutContainer}>
+            {isChartReady ? (
             <Svg width={168} height={168} viewBox="0 0 160 160">
               <G transform="rotate(-90, 80, 80)">
                 {/* Background track — red tint when over budget */}
@@ -2096,6 +2105,9 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                 )}
               </G>
             </Svg>
+            ) : (
+              <Skeleton width={168} height={168} borderRadius={84} />
+            )}
             <View style={styles.donutCenterText} pointerEvents="none">
               <Text style={[styles.donutCenterPct, { color: centerTextColor }]}>
                 {centerPctText}

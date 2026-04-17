@@ -396,6 +396,7 @@ export default function HomeScreen() {
   );
 
   const hasAnimated = useRef(false);
+  const hasFocusedOnce = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -413,13 +414,17 @@ export default function HomeScreen() {
         belowTransY.value     = withDelay(180, withSpring(0, { damping: 16, stiffness: 160 }));
       }
 
-      const task = InteractionManager.runAfterInteractions(() => {
-        startTransition(() => {
-          refetchAccounts();
-          refetchCategories();
-          refetchTotals();
+      let task: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+      if (hasFocusedOnce.current) {
+        task = InteractionManager.runAfterInteractions(() => {
+          startTransition(() => {
+            refetchAccounts();
+            refetchCategories();
+            refetchTotals();
+          });
         });
-      });
+      }
+      hasFocusedOnce.current = true;
 
       const last = getLastSaved();
       if (last) {
@@ -436,7 +441,7 @@ export default function HomeScreen() {
         setToastVisible(true);
       }
 
-      return () => task.cancel();
+      return () => { task?.cancel(); };
     }, [startTransition, refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode,
         greetingOpacity, greetingTransY, cardOpacity, cardTransY, belowOpacity, belowTransY])
   );
