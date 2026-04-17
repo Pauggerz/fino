@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, startTransition } from 'react';
 import {
   View,
   Text,
@@ -61,7 +61,7 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
         style={styles.tabItem}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-          onTabPress(id);
+          startTransition(() => { onTabPress(id); });
         }}
         activeOpacity={0.7}
       >
