@@ -811,6 +811,8 @@ export default function InsightsScreen() {
   const styles = useMemo(() => createStyles(colors, isDark, insets.top), [colors, isDark, insets.top]);
   const [, startTransition] = useTransition();
 
+  const isInitialLoadRef = useRef(true);
+
   // ── Date state ──
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -936,11 +938,11 @@ export default function InsightsScreen() {
     }
 
     try {
-      if (!loading) {
-        // Already rendered from cache; keep loading false during background refresh
-      } else {
+      if (isInitialLoadRef.current) {
         setLoading(true);
+        isInitialLoadRef.current = false;
       }
+      // Subsequent focuses: keep loading false so skeletons don't flash
 
       // Compute prev month range for delta badges
       const prevMonthNum = selectedMonth === 0 ? 11 : selectedMonth - 1;
