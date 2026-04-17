@@ -25,9 +25,15 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [syncVersion, setSyncVersion] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date()); 
   
-  const isSyncing = useRef(false); 
+  const isSyncing = useRef(false);
+  const lastTriggerAt = useRef(0);
 
   const triggerSync = useCallback(async (isConnected: boolean) => {
+    // Debounce rapid re-entries (NetInfo listener + 8s polling can fire near-simultaneously).
+    const now = Date.now();
+    if (now - lastTriggerAt.current < 500) return;
+    lastTriggerAt.current = now;
+
     if (!isConnected) {
       setStatus('offline'); // Instantly Red
       return;
@@ -36,7 +42,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const queue = await getPendingQueue();
     if (queue.length === 0) {
       setStatus('synced'); // Instantly Green
-      setLastSyncedAt(new Date()); 
+      setLastSyncedAt(new Date());
       return;
     }
 

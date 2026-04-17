@@ -509,6 +509,8 @@ export default function HomeScreen() {
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        scrollEventThrottle={16}
+        removeClippedSubviews
       >
         <RAnim.View style={[styles.greeting, greetingAnim]}>
           <View style={styles.greetingTop}>

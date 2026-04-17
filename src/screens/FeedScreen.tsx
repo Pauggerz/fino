@@ -1326,6 +1326,7 @@ export default function FeedScreen() {
             data={listData}
             renderItem={renderItem}
             getItemType={getItemType}
+            drawDistance={250}
             keyExtractor={(item, index) => {
               if (item.type === 'hero') return 'hero';
               if (item.type === 'sticky') return 'sticky';
