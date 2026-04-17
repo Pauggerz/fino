@@ -21,6 +21,7 @@ import {
   Image,
   Dimensions,
   TouchableWithoutFeedback,
+  InteractionManager,
 } from 'react-native';
 import RAnim, {
   useSharedValue,
@@ -904,18 +905,20 @@ export default function InsightsScreen() {
   }, [selectedYear, selectedMonth]);
 
   const applyStatsBundle = useCallback((bundle: Record<string, unknown>) => {
-    if (bundle.expenseCategoryKeys) setExpenseCategoryKeys(bundle.expenseCategoryKeys as string[]);
-    if (bundle.expenseCategoryMeta) setExpenseCategoryMeta(bundle.expenseCategoryMeta as Record<string, DbCategoryMeta>);
-    if (bundle.expenseTotals) setExpenseTotals(bundle.expenseTotals as Record<string, number>);
-    if (bundle.expenseBudgets) setExpenseBudgets(bundle.expenseBudgets as Record<string, number>);
-    if (bundle.incomeTotals) setIncomeTotals(bundle.incomeTotals as Record<string, number>);
-    if (bundle.dailySpend) setDailySpend(bundle.dailySpend as Record<string, number>);
-    if (bundle.dowAvgSpend) setDowAvgSpend(bundle.dowAvgSpend as number[]);
-    if (bundle.topTransactions) setTopTransactions(bundle.topTransactions as TopTx[]);
-    if (bundle.accountActivity) setAccountActivity(bundle.accountActivity as { expense: Record<string, number>; income: Record<string, number> });
-    if (bundle.prevMonthExpenseTotals) setPrevMonthExpenseTotals(bundle.prevMonthExpenseTotals as Record<string, number>);
-    if (typeof bundle.totalTxCount === 'number') setTotalTxCount(bundle.totalTxCount);
-    if (typeof bundle.prevMonthTxCount === 'number') setPrevMonthTxCount(bundle.prevMonthTxCount);
+    startTransition(() => {
+      if (bundle.expenseCategoryKeys) setExpenseCategoryKeys(bundle.expenseCategoryKeys as string[]);
+      if (bundle.expenseCategoryMeta) setExpenseCategoryMeta(bundle.expenseCategoryMeta as Record<string, DbCategoryMeta>);
+      if (bundle.expenseTotals) setExpenseTotals(bundle.expenseTotals as Record<string, number>);
+      if (bundle.expenseBudgets) setExpenseBudgets(bundle.expenseBudgets as Record<string, number>);
+      if (bundle.incomeTotals) setIncomeTotals(bundle.incomeTotals as Record<string, number>);
+      if (bundle.dailySpend) setDailySpend(bundle.dailySpend as Record<string, number>);
+      if (bundle.dowAvgSpend) setDowAvgSpend(bundle.dowAvgSpend as number[]);
+      if (bundle.topTransactions) setTopTransactions(bundle.topTransactions as TopTx[]);
+      if (bundle.accountActivity) setAccountActivity(bundle.accountActivity as { expense: Record<string, number>; income: Record<string, number> });
+      if (bundle.prevMonthExpenseTotals) setPrevMonthExpenseTotals(bundle.prevMonthExpenseTotals as Record<string, number>);
+      if (typeof bundle.totalTxCount === 'number') setTotalTxCount(bundle.totalTxCount);
+      if (typeof bundle.prevMonthTxCount === 'number') setPrevMonthTxCount(bundle.prevMonthTxCount);
+    });
   }, []);
 
   const fetchStats = useCallback(async () => {
@@ -1146,7 +1149,10 @@ export default function InsightsScreen() {
         withSpring(0, { damping: 18, stiffness: 180 })
       );
 
-      startTransition(() => { fetchStats(); });
+      const task = InteractionManager.runAfterInteractions(() => {
+        startTransition(() => { fetchStats(); });
+      });
+      return () => task.cancel();
     }, [
       startTransition,
       fetchStats,

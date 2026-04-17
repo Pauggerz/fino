@@ -13,6 +13,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  InteractionManager,
 } from 'react-native';
 import RAnim, {
   Easing,
@@ -341,12 +342,16 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (syncVersion > 0) {
-      startTransition(() => {
-        refetchAccounts();
-        refetchCategories();
-        refetchTotals();
+      const task = InteractionManager.runAfterInteractions(() => {
+        startTransition(() => {
+          refetchAccounts();
+          refetchCategories();
+          refetchTotals();
+        });
       });
+      return () => task.cancel();
     }
+    return undefined;
   }, [syncVersion, startTransition, refetchAccounts, refetchCategories, refetchTotals]);
 
   const getSyncColor = () => {
@@ -408,24 +413,30 @@ export default function HomeScreen() {
         belowTransY.value     = withDelay(180, withSpring(0, { damping: 16, stiffness: 160 }));
       }
 
-      startTransition(() => {
-        refetchAccounts();
-        refetchCategories();
-        refetchTotals();
+      const task = InteractionManager.runAfterInteractions(() => {
+        startTransition(() => {
+          refetchAccounts();
+          refetchCategories();
+          refetchTotals();
+        });
       });
+
       const last = getLastSaved();
-      if (!last) return;
-      clearLastSaved();
-      const typeLabel = last.type === 'expense' ? 'Expense' : 'Income';
-      setToastTitle(`${typeLabel} saved`);
-      setToastSubtitle(
-        `${fmtPeso(last.amount, isPrivacyMode)} · ${last.categoryName} · ${last.accountName}`
-      );
-      setToastIsUndo(false);
-      setUndoTxId(last.id);
-      setUndoAccountId(last.accountId);
-      setUndoPreviousBalance(last.previousBalance);
-      setToastVisible(true);
+      if (last) {
+        clearLastSaved();
+        const typeLabel = last.type === 'expense' ? 'Expense' : 'Income';
+        setToastTitle(`${typeLabel} saved`);
+        setToastSubtitle(
+          `${fmtPeso(last.amount, isPrivacyMode)} · ${last.categoryName} · ${last.accountName}`
+        );
+        setToastIsUndo(false);
+        setUndoTxId(last.id);
+        setUndoAccountId(last.accountId);
+        setUndoPreviousBalance(last.previousBalance);
+        setToastVisible(true);
+      }
+
+      return () => task.cancel();
     }, [startTransition, refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode,
         greetingOpacity, greetingTransY, cardOpacity, cardTransY, belowOpacity, belowTransY])
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/services/supabase';
 import { Transaction } from '@/types';
@@ -194,23 +194,27 @@ export const useTransactions = (
           offsetRef.current += PAGE_SIZE;
         }
 
-        if (reset) {
-          setItems([...mappedPending, ...mappedDb]);
-        } else {
-          setItems((prev) => {
-            // Strip pending items from prev on non-reset appends to avoid duplication
-            const withoutPending = prev.filter((tx) => !tx.isPending);
-            return [...mappedPending, ...withoutPending, ...mappedDb];
-          });
-        }
-        setHasMore(data.length === PAGE_SIZE);
+        startTransition(() => {
+          if (reset) {
+            setItems([...mappedPending, ...mappedDb]);
+          } else {
+            setItems((prev) => {
+              // Strip pending items from prev on non-reset appends to avoid duplication
+              const withoutPending = prev.filter((tx) => !tx.isPending);
+              return [...mappedPending, ...withoutPending, ...mappedDb];
+            });
+          }
+          setHasMore(data.length === PAGE_SIZE);
+        });
       } else if (error && reset) {
         // OFFLINE FALLBACK: Preserve old items, just update pending queue
-        setItems((prev) => {
-          const withoutPending = prev.filter((tx) => !tx.isPending);
-          return [...mappedPending, ...withoutPending];
+        startTransition(() => {
+          setItems((prev) => {
+            const withoutPending = prev.filter((tx) => !tx.isPending);
+            return [...mappedPending, ...withoutPending];
+          });
+          setHasMore(false);
         });
-        setHasMore(false);
       }
     },
     [category, dateRange, searchQuery, accountId, sortOrder, transactionType]

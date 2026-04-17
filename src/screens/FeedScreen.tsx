@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  InteractionManager,
 } from 'react-native';
 import Svg, { Path as SvgPath } from 'react-native-svg';
 import {
@@ -1042,7 +1043,10 @@ export default function FeedScreen() {
       headerTransY.value  = withTiming(0, { duration: 260 });
       listOpacity.value   = withDelay(60, withTiming(1, { duration: 320 }));
       listTransY.value    = withDelay(60, withSpring(0, { damping: 18, stiffness: 180 }));
-      startTransition(() => { refetch(); });
+      const task = InteractionManager.runAfterInteractions(() => {
+        startTransition(() => { refetch(); });
+      });
+      return () => task.cancel();
     }, [startTransition, refetch, headerOpacity, headerTransY, listOpacity, listTransY])
   );
 

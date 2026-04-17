@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { supabase } from '@/services/supabase';
 import { Category } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -112,11 +112,13 @@ export const useCategories = () => {
       });
 
     // 6. Update state and cache
-    setCategories(enriched);
+    startTransition(() => {
+      setCategories(enriched);
+      setLoading(false);
+    });
     if (!catError && catData) {
       AsyncStorage.setItem(CACHE_KEY, JSON.stringify(baseCategories)).catch(() => {});
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {

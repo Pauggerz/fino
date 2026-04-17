@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { supabase } from '@/services/supabase';
 import { Account } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -42,8 +42,10 @@ export const useAccounts = () => {
         });
         return { ...acc, balance: acc.balance + delta };
       });
-      setAccounts(earlyAdjusted);
-      setLoading(false);
+      startTransition(() => {
+        setAccounts(earlyAdjusted);
+        setLoading(false);
+      });
     }
 
     // 2. Fetch fresh data from Supabase
@@ -71,8 +73,10 @@ export const useAccounts = () => {
       return { ...acc, balance: acc.balance + pendingDelta };
     });
 
-    setAccounts(adjustedAccounts);
-    setLoading(false);
+    startTransition(() => {
+      setAccounts(adjustedAccounts);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {

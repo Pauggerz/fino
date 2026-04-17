@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/services/supabase';
 import { getPendingQueue } from '@/services/syncService';
@@ -78,9 +78,11 @@ export const useMonthlyTotals = (): MonthlyTotals => {
           }
         });
       const maxBucket = Math.max(...buckets, 1);
-      setSparklineData(
-        buckets.map((val, i) => ({ id: `day${i}`, val: val / maxBucket }))
-      );
+      startTransition(() => {
+        setSparklineData(
+          buckets.map((val, i) => ({ id: `day${i}`, val: val / maxBucket }))
+        );
+      });
     }
 
     // 2. OFFLINE CALCULATION: Apply pending offline transactions
@@ -90,9 +92,11 @@ export const useMonthlyTotals = (): MonthlyTotals => {
       if (tx.type === 'expense') baseExpense += tx.amount;
     });
 
-    setTotalIncome(baseIncome);
-    setTotalExpense(baseExpense);
-    setLoading(false);
+    startTransition(() => {
+      setTotalIncome(baseIncome);
+      setTotalExpense(baseExpense);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
