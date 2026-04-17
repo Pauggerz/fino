@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { supabase } from '@/services/supabase';
 import { Account } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,7 +13,6 @@ export const useAccounts = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchAccounts = useCallback(async () => {
-    setLoading(true);
     let fetchedAccounts: Account[] = [];
 
     // 1. Load from local cache first for instant/offline display
@@ -21,9 +20,32 @@ export const useAccounts = () => {
       const cachedData = await AsyncStorage.getItem(CACHE_KEY);
       if (cachedData) {
         fetchedAccounts = JSON.parse(cachedData);
+        // Cache hit — render immediately without a loading spinner
+      } else {
+        // First boot — no cache yet, show spinner while we fetch
+        setLoading(true);
       }
     } catch (e) {
       console.error('Failed to load accounts cache', e);
+      setLoading(true);
+    }
+
+    // Show whatever we have from cache right away
+    if (fetchedAccounts.length > 0) {
+      const pendingQueueEarly = await getPendingQueue();
+      const earlyAdjusted = fetchedAccounts.map((acc) => {
+        let delta = 0;
+        pendingQueueEarly.forEach((tx) => {
+          if (tx.account_id === acc.id) {
+            delta += tx.type === 'expense' ? -tx.amount : tx.amount;
+          }
+        });
+        return { ...acc, balance: acc.balance + delta };
+      });
+      startTransition(() => {
+        setAccounts(earlyAdjusted);
+        setLoading(false);
+      });
     }
 
     // 2. Fetch fresh data from Supabase
@@ -51,8 +73,10 @@ export const useAccounts = () => {
       return { ...acc, balance: acc.balance + pendingDelta };
     });
 
-    setAccounts(adjustedAccounts);
-    setLoading(false);
+    startTransition(() => {
+      setAccounts(adjustedAccounts);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {

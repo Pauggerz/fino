@@ -1,5 +1,5 @@
 // src/screens/FeedScreen.tsx
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useTransition } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  InteractionManager,
 } from 'react-native';
 import Svg, { Path as SvgPath } from 'react-native-svg';
 import {
@@ -929,6 +930,7 @@ export default function FeedScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<FeedStackParamList, 'FeedMain'>>();
   const insets = useSafeAreaInsets();
+  const [, startTransition] = useTransition();
   // hero is index 0 in listData; search bar is index 1 (sticky via stickyHeaderIndices)
 
   // 🌙 Dynamic Theme Injection
@@ -1041,8 +1043,11 @@ export default function FeedScreen() {
       headerTransY.value  = withTiming(0, { duration: 260 });
       listOpacity.value   = withDelay(60, withTiming(1, { duration: 320 }));
       listTransY.value    = withDelay(60, withSpring(0, { damping: 18, stiffness: 180 }));
-      refetch();
-    }, [refetch, headerOpacity, headerTransY, listOpacity, listTransY])
+      const task = InteractionManager.runAfterInteractions(() => {
+        startTransition(() => { refetch(); });
+      });
+      return () => task.cancel();
+    }, [startTransition, refetch, headerOpacity, headerTransY, listOpacity, listTransY])
   );
 
   React.useEffect(() => {

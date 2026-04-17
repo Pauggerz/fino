@@ -1,5 +1,4 @@
-import React from 'react';
-import { Platform, StyleSheet } from 'react-native';
+import React, { startTransition } from 'react';
 import {
   NavigationContainer,
   NavigatorScreenParams,
@@ -66,7 +65,7 @@ export type RootStackParamList = {
 const FeedStack = createNativeStackNavigator<FeedStackParamList>();
 function FeedNavigator() {
   return (
-    <FeedStack.Navigator screenOptions={{ headerShown: false }}>
+    <FeedStack.Navigator screenOptions={{ headerShown: false, freezeOnBlur: true }}>
       <FeedStack.Screen name="FeedMain" component={FeedScreen} />
       <FeedStack.Screen
         name="TransactionDetail"
@@ -79,7 +78,7 @@ function FeedNavigator() {
 const MoreStack = createNativeStackNavigator<MoreStackParamList>();
 function MoreNavigator() {
   return (
-    <MoreStack.Navigator screenOptions={{ headerShown: false }}>
+    <MoreStack.Navigator screenOptions={{ headerShown: false, freezeOnBlur: true }}>
       <MoreStack.Screen name="MoreMain" component={MoreScreen} />
       <MoreStack.Screen name="AccountDetail" component={AccountDetailScreen} />
     </MoreStack.Navigator>
@@ -94,24 +93,27 @@ function TabNavigator() {
         <TabBar
           activeTab={props.state.routeNames[props.state.index] as TabRoute}
           onTabPress={(tab) => {
-            // 👇 FIX: By always targeting the nested "Main" screen explicitly,
-            // we force the stack to reset to its base state every time you
-            // tap the tab (whether switching to it, or double-tapping it).
-            if (tab === 'more') {
-              // @ts-ignore
-              props.navigation.navigate('more', { screen: 'MoreMain' });
-            } else if (tab === 'feed') {
-              // @ts-ignore
-              props.navigation.navigate('feed', { screen: 'FeedMain' });
-            } else {
-              props.navigation.navigate(tab);
-            }
+            // Haptics fire on the current frame; heavy screen mounting is
+            // deferred as a background transition via React 19 concurrent mode.
+            startTransition(() => {
+              if (tab === 'more') {
+                // @ts-ignore
+                props.navigation.navigate('more', { screen: 'MoreMain' });
+              } else if (tab === 'feed') {
+                // @ts-ignore
+                props.navigation.navigate('feed', { screen: 'FeedMain' });
+              } else {
+                props.navigation.navigate(tab);
+              }
+            });
           }}
           onFabPress={() => props.navigation.navigate('FABActionSheet')}
         />
       )}
       screenOptions={{
         headerShown: false,
+        freezeOnBlur: true,
+        sceneStyle: { backgroundColor: 'transparent' },
       }}
     >
       <Tab.Screen name="home" component={HomeScreen} />

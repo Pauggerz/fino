@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { supabase } from '@/services/supabase';
 import { Category } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -28,15 +28,26 @@ export const useCategories = () => {
 
   const fetchCategoriesAndSpend = useCallback(async () => {
     let baseCategories: Category[] = [];
+    let hasCachedData = false;
 
     // 1. Load from local cache first
     try {
       const cachedData = await AsyncStorage.getItem(CACHE_KEY);
       if (cachedData) {
         baseCategories = JSON.parse(cachedData);
+        hasCachedData = true;
+      } else {
+        // No cache — show spinner on first boot only
+        setLoading(true);
       }
     } catch (e) {
       console.error('Failed to load categories cache', e);
+      setLoading(true);
+    }
+
+    // Immediately surface cached categories so the UI renders without waiting
+    if (hasCachedData) {
+      setLoading(false);
     }
 
     const now = new Date();
@@ -101,11 +112,13 @@ export const useCategories = () => {
       });
 
     // 6. Update state and cache
-    setCategories(enriched);
+    startTransition(() => {
+      setCategories(enriched);
+      setLoading(false);
+    });
     if (!catError && catData) {
       AsyncStorage.setItem(CACHE_KEY, JSON.stringify(baseCategories)).catch(() => {});
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {

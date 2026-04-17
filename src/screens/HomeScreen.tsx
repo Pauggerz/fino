@@ -4,6 +4,7 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
+  useTransition,
 } from 'react';
 import {
   View,
@@ -12,6 +13,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  InteractionManager,
 } from 'react-native';
 import RAnim, {
   Easing,
@@ -288,6 +290,7 @@ export default function HomeScreen() {
   const { status: syncStatus, syncVersion } = useSync();
   const { profile } = useAuth();
   const userName = profile?.name || 'User';
+  const [, startTransition] = useTransition();
 
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -339,11 +342,17 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (syncVersion > 0) {
-      refetchAccounts();
-      refetchCategories();
-      refetchTotals();
+      const task = InteractionManager.runAfterInteractions(() => {
+        startTransition(() => {
+          refetchAccounts();
+          refetchCategories();
+          refetchTotals();
+        });
+      });
+      return () => task.cancel();
     }
-  }, [syncVersion, refetchAccounts, refetchCategories, refetchTotals]);
+    return undefined;
+  }, [syncVersion, startTransition, refetchAccounts, refetchCategories, refetchTotals]);
 
   const getSyncColor = () => {
     switch (syncStatus) {
@@ -404,23 +413,31 @@ export default function HomeScreen() {
         belowTransY.value     = withDelay(180, withSpring(0, { damping: 16, stiffness: 160 }));
       }
 
-      refetchAccounts();
-      refetchCategories();
-      refetchTotals();
+      const task = InteractionManager.runAfterInteractions(() => {
+        startTransition(() => {
+          refetchAccounts();
+          refetchCategories();
+          refetchTotals();
+        });
+      });
+
       const last = getLastSaved();
-      if (!last) return;
-      clearLastSaved();
-      const typeLabel = last.type === 'expense' ? 'Expense' : 'Income';
-      setToastTitle(`${typeLabel} saved`);
-      setToastSubtitle(
-        `${fmtPeso(last.amount, isPrivacyMode)} · ${last.categoryName} · ${last.accountName}`
-      );
-      setToastIsUndo(false);
-      setUndoTxId(last.id);
-      setUndoAccountId(last.accountId);
-      setUndoPreviousBalance(last.previousBalance);
-      setToastVisible(true);
-    }, [refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode,
+      if (last) {
+        clearLastSaved();
+        const typeLabel = last.type === 'expense' ? 'Expense' : 'Income';
+        setToastTitle(`${typeLabel} saved`);
+        setToastSubtitle(
+          `${fmtPeso(last.amount, isPrivacyMode)} · ${last.categoryName} · ${last.accountName}`
+        );
+        setToastIsUndo(false);
+        setUndoTxId(last.id);
+        setUndoAccountId(last.accountId);
+        setUndoPreviousBalance(last.previousBalance);
+        setToastVisible(true);
+      }
+
+      return () => task.cancel();
+    }, [startTransition, refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode,
         greetingOpacity, greetingTransY, cardOpacity, cardTransY, belowOpacity, belowTransY])
   );
 
