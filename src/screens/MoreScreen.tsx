@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Image,
   ActivityIndicator,
   Modal,
   TextInput,
@@ -15,6 +14,7 @@ import {
   Platform,
   Alert,
   Switch,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +31,7 @@ import { CategoryIcon } from '@/components/CategoryIcon';
 import { Skeleton } from '@/components/Skeleton';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Global Theme Context
+import { useSync } from '@/contexts/SyncContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1017,6 +1018,16 @@ export default function MoreScreen() {
   const [showBudgetSettings, setShowBudgetSettings] = useState(false);
   const [showBillReminders, setShowBillReminders] = useState(false);
   const [quickViewBill, setQuickViewBill] = useState<BillReminder | null>(null);
+  const { forceSync } = useSync();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await forceSync();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [forceSync]);
 
   const handleToolPress = (id: string) => {
     if (id === 'fino') navigation.navigate('ChatScreen');
@@ -1098,6 +1109,14 @@ export default function MoreScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         {/* ── Ask Fino hero card ── */}
         <TouchableOpacity

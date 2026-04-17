@@ -10,13 +10,13 @@ import {
   Text,
   TouchableOpacity,
   TouchableWithoutFeedback,
-  Image,
   Modal,
   ScrollView,
   TextInput,
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
@@ -744,7 +744,8 @@ export default function TransactionDetailScreen() {
                           <Image
                             source={logo}
                             style={{ width: 36, height: 36 }}
-                            resizeMode="contain"
+                            contentFit="contain"
+                            transition={150}
                           />
                         ) : (
                           <Text
@@ -983,7 +984,8 @@ export default function TransactionDetailScreen() {
           <Image
             source={{ uri: tx.receipt_url! }}
             style={styles.receiptImg}
-            resizeMode="contain"
+            contentFit="contain"
+            transition={200}
           />
         </View>
       </Modal>

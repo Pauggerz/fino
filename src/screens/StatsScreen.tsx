@@ -18,11 +18,12 @@ import {
   PanResponder,
   Vibration,
   Modal,
-  Image,
   Dimensions,
   TouchableWithoutFeedback,
   InteractionManager,
+  RefreshControl,
 } from 'react-native';
+import { Image } from 'expo-image';
 import RAnim, {
   useSharedValue,
   useAnimatedStyle,
@@ -756,7 +757,7 @@ function AccountActivityCard({
   return (
     <View style={styles.acctCardWrap}>
       {logo ? (
-        <Image source={logo} style={styles.acctLogo} resizeMode="contain" />
+        <Image source={logo} style={styles.acctLogo} contentFit="contain" transition={150} />
       ) : (
         <View
           style={[
@@ -898,6 +899,7 @@ export default function InsightsScreen() {
   const lastAiMonthRef = useRef<string>('');
 
   const { accounts, error: accountsError, refetch: refetchAccounts } = useAccounts();
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const isChartReady = useDeferredRender();
 
   const monthRange = useMemo(() => {
@@ -1979,6 +1981,21 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
         scrollEnabled={scrollEnabled}
         showsVerticalScrollIndicator={false}
         stickyHeaderIndices={viewType === 'expense' ? [2] : []}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={async () => {
+              setIsRefreshing(true);
+              try {
+                await Promise.all([fetchStats(true), refetchAccounts()]);
+              } finally {
+                setIsRefreshing(false);
+              }
+            }}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
 
         <RAnim.View style={heroAnim}>

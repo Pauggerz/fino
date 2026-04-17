@@ -284,6 +284,9 @@ export const radius = {
 
 export const colors = lightColors; // Fallback for un-migrated components
 
+// Shared palette type so component props can avoid `colors: any`.
+export type ThemeColors = typeof lightColors;
+
 // ─── Accent themes ────────────────────────────────────────────────────────────
 
 export type AccentKey = 'forest' | 'ocean' | 'violet' | 'rose' | 'amber' | 'sunset' | 'slate';

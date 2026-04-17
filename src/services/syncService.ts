@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import type { OfflineTransaction } from '@/types';
 
 const QUEUE_KEY = 'FINO_PENDING_TRANSACTIONS';
 
@@ -10,7 +11,7 @@ const RETRY_BASE_DELAY_MS = 500;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export const getPendingQueue = async (): Promise<any[]> => {
+export const getPendingQueue = async (): Promise<OfflineTransaction[]> => {
   try {
     const data = await AsyncStorage.getItem(QUEUE_KEY);
     return data ? JSON.parse(data) : [];
@@ -20,7 +21,7 @@ export const getPendingQueue = async (): Promise<any[]> => {
   }
 };
 
-export const addToQueue = async (transaction: any) => {
+export const addToQueue = async (transaction: OfflineTransaction) => {
   try {
     const queue = await getPendingQueue();
     const newTx = { ...transaction, id: `temp_${Date.now()}`, isPending: true };
@@ -47,7 +48,7 @@ export const removeFromQueue = async (tempId: string) => {
  * Attempt the server-side atomic insert+balance update, retrying on transient
  * errors with exponential backoff. Returns true if the RPC succeeded.
  */
-async function insertTxWithRetry(dbPayload: any): Promise<boolean> {
+async function insertTxWithRetry(dbPayload: Record<string, unknown>): Promise<boolean> {
   for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt++) {
     try {
       const { error } = await supabase.rpc('insert_tx_with_balance', {
@@ -88,7 +89,10 @@ async function insertTxWithRetry(dbPayload: any): Promise<boolean> {
  * Partial-failure risk is documented; the caller keeps the tx in the queue
  * on any error.
  */
-async function insertTxFallback(tx: any, dbPayload: any): Promise<boolean> {
+async function insertTxFallback(
+  tx: OfflineTransaction,
+  dbPayload: Record<string, unknown>,
+): Promise<boolean> {
   const { data, error } = await supabase
     .from('transactions')
     .insert(dbPayload)

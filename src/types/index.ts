@@ -56,6 +56,14 @@ export interface Category {
   sort_order: number;
 }
 
+export type OfflineTransaction = Partial<Transaction> & {
+  user_id: string;
+  account_id: string;
+  amount: number;
+  type: 'expense' | 'income';
+  isPending?: boolean;
+};
+
 export interface BillReminder {
   id: string;
   user_id: string;

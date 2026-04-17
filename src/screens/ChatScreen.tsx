@@ -158,6 +158,7 @@ export default function ChatScreen() {
   }, [totalBalance, totalIncome, monthlySpent, categories, recentTxns]);
 
   const hasTransactions = recentTxns.length > 0 || monthlySpent > 0;
+  const isSendDisabled = !inputText.trim() || isTyping;
 
   const handleSend = async (textOverride?: string) => {
     const textToSend = textOverride ?? inputText;
@@ -391,25 +392,19 @@ export default function ChatScreen() {
               style={styles.inputField}
               value={inputText}
               onChangeText={setInputText}
-              placeholder={
-                !hasTransactions
-                  ? 'Log some expenses first...'
-                  : 'Ask about your finances...'
-              }
+              placeholder="Ask about your finances..."
               placeholderTextColor={colors.textSecondary}
-              editable={hasTransactions}
+              editable
               multiline
               maxLength={150}
             />
             <TouchableOpacity
               style={[
                 styles.sendBtn,
-                !inputText.trim() || !hasTransactions || isTyping
-                  ? styles.sendBtnDisabled
-                  : undefined,
+                isSendDisabled ? styles.sendBtnDisabled : undefined,
               ]}
               onPress={() => handleSend()}
-              disabled={!inputText.trim() || !hasTransactions || isTyping}
+              disabled={isSendDisabled}
             >
               <Ionicons name="arrow-up" size={18} color="#FFF" />
             </TouchableOpacity>

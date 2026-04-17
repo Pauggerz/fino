@@ -46,6 +46,7 @@ import { useCategories } from '@/hooks/useCategories';
 import { setLastSaved } from '@/services/lastSavedStore';
 import { useSync } from '@/contexts/SyncContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { OfflineTransaction } from '@/types';
 
 type TxType = 'exp' | 'inc';
 type Props = { route: RouteProp<RootStackParamList, 'AddTransaction'> };
@@ -381,10 +382,10 @@ export default function AddTransactionSheet({ route }: Props) {
 
     setIsSaving(true);
     const parsedAmount = parseFloat(amount);
-    const txType = type === 'exp' ? 'expense' : 'income';
+    const txType: OfflineTransaction['type'] = type === 'exp' ? 'expense' : 'income';
 
     try {
-      const txPayload = {
+      const txPayload: OfflineTransaction = {
         user_id: acc.user_id,
         account_id: accountId,
         amount: parsedAmount,

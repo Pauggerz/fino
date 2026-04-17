@@ -1,13 +1,14 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, Image, ActivityIndicator, Alert, KeyboardAvoidingView,
+  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
@@ -293,7 +294,7 @@ export default function BillSplitterScreen() {
       {phase === 'parsing' && (
         <View style={styles.parsingContainer}>
           {imageUri && (
-            <Image source={{ uri: imageUri }} style={styles.receiptPreview} resizeMode="cover" />
+            <Image source={{ uri: imageUri }} style={styles.receiptPreview} contentFit="cover" transition={150} />
           )}
           <View style={[styles.parsingOverlay, { backgroundColor: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.85)' }]}>
             <ActivityIndicator size="large" color={colors.primary} />

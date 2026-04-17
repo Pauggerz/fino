@@ -16,15 +16,12 @@ import {
   InteractionManager,
 } from 'react-native';
 import RAnim, {
-  Easing,
-  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
   useAnimatedProps,
   withTiming,
   withDelay,
   withSpring,
-  withRepeat,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path as SvgPath } from 'react-native-svg';
@@ -38,7 +35,13 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Skeleton } from '@/components/Skeleton';
 import Toast from '../components/Toast';
-import WalletCard, { CARD_WIDTH, CARD_HEIGHT } from '../components/WalletCard';
+import { BudgetTile } from '@/components/home/BudgetTile';
+import {
+  ScaledWalletCard,
+  SCALED_CARD_W,
+  SCALED_CARD_H,
+  CARD_SCALE,
+} from '@/components/home/ScaledWalletCard';
 import { BALANCE_ANIMATE_MS } from '../services/balanceCalc';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories, CategoryWithSpend } from '@/hooks/useCategories';
@@ -48,6 +51,7 @@ import { supabase } from '@/services/supabase';
 import { removeFromQueue } from '@/services/syncService';
 import ProfileSidebar from '@/components/ProfileSidebar';
 import { ErrorBanner } from '@/components/ErrorBanner';
+import type { ThemeColors } from '@/constants/theme';
 
 // ─── Animated primitives (module-level) ──────────────────────────────────────
 
@@ -70,12 +74,6 @@ function formatBalanceWorklet(n: number): string {
   }
   return `${neg ? '-' : ''}${out}.${frac}`;
 }
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const CARD_SCALE = 0.78;
-const SCALED_CARD_W = Math.round(CARD_WIDTH * CARD_SCALE);
-const SCALED_CARD_H = Math.round(CARD_HEIGHT * CARD_SCALE);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -109,226 +107,6 @@ function onTrackLabel(pct: number): string {
   return 'Over budget';
 }
 
-// ─── WaveFill ─────────────────────────────────────────────────────────────────
-
-const TILE_W = 160;
-const TILE_H = 120;
-// SVG must be wide enough that translating by -TILE_W never exposes a gap.
-const WAVE_SVG_W = TILE_W * 4;
-
-/**
- * Builds a filled wave path using quadratic beziers.
- * Wavelength = TILE_W, so translating by -TILE_W is a seamless loop.
- */
-function makeWavePath(yBase: number, amp: number): string {
-  const halfWl = TILE_W / 2;
-  const numArcs = WAVE_SVG_W / halfWl + 2;
-  let d = `M 0 ${yBase}`;
-  for (let i = 0; i < numArcs; i++) {
-    const x0 = i * halfWl;
-    const xMid = x0 + halfWl / 2;
-    const x1 = x0 + halfWl;
-    const yPeak = i % 2 === 0 ? yBase - amp : yBase + amp;
-    d += ` Q ${xMid} ${yPeak} ${x1} ${yBase}`;
-  }
-  d += ` L ${WAVE_SVG_W + halfWl} ${TILE_H} L 0 ${TILE_H} Z`;
-  return d;
-}
-
-function WaveFill({ pct, color }: { pct: number; color: string }) {
-  const wave1X = useSharedValue(0);
-  const wave2X = useSharedValue(0);
-
-  const wave1Style = useAnimatedStyle(() => ({
-    transform: [{ translateX: wave1X.value }],
-  }));
-  const wave2Style = useAnimatedStyle(() => ({
-    transform: [{ translateX: wave2X.value }],
-  }));
-
-  useEffect(() => {
-    wave1X.value = withRepeat(
-      withTiming(-TILE_W, {
-        duration: 3000,
-        easing: Easing.linear,
-      }),
-      -1,
-      false
-    );
-    wave2X.value = withRepeat(
-      withTiming(-TILE_W, {
-        duration: 4600,
-        easing: Easing.linear,
-      }),
-      -1,
-      false
-    );
-
-    return () => {
-      cancelAnimation(wave1X);
-      cancelAnimation(wave2X);
-      wave1X.value = 0;
-      wave2X.value = 0;
-    };
-  }, [wave1X, wave2X]);
-
-  const clampedPct = Math.min(Math.max(pct, 0), 1);
-  const yBase = TILE_H - TILE_H * clampedPct;
-
-  const waveStyle = {
-    position: 'absolute' as const,
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: WAVE_SVG_W,
-  };
-
-  return (
-    <View
-      style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}
-      pointerEvents="none"
-    >
-      {/* Back wave — slower, subtler */}
-      <RAnim.View style={[waveStyle, wave2Style]}>
-        <Svg width={WAVE_SVG_W} height={TILE_H}>
-          <SvgPath d={makeWavePath(yBase + 6, 8)} fill={color} opacity={0.18} />
-        </Svg>
-      </RAnim.View>
-      {/* Front wave — faster, more opaque */}
-      <RAnim.View style={[waveStyle, wave1Style]}>
-        <Svg width={WAVE_SVG_W} height={TILE_H}>
-          <SvgPath d={makeWavePath(yBase, 10)} fill={color} opacity={0.42} />
-        </Svg>
-      </RAnim.View>
-    </View>
-  );
-}
-
-// ─── ScaledWalletCard ─────────────────────────────────────────────────────────
-// Memoized carousel item so Home re-renders don't rebuild every wallet card.
-
-type ScaledWalletCardProps = {
-  account: any;
-  isPrivacyMode: boolean;
-  onPress: () => void;
-};
-
-const SCALED_RADIUS = Math.round(22 * CARD_SCALE);
-const SCALED_OFFSET_X = -Math.round((CARD_WIDTH * (1 - CARD_SCALE)) / 2);
-const SCALED_OFFSET_Y = -Math.round((CARD_HEIGHT * (1 - CARD_SCALE)) / 2);
-
-const ScaledWalletCard = React.memo(
-  ({ account, isPrivacyMode, onPress }: ScaledWalletCardProps) => (
-    <TouchableOpacity activeOpacity={0.88} onPress={onPress}>
-      <View
-        style={{
-          width: SCALED_CARD_W,
-          height: SCALED_CARD_H,
-          overflow: 'hidden',
-          borderRadius: SCALED_RADIUS,
-        }}
-      >
-        <View
-          style={{
-            width: CARD_WIDTH,
-            height: CARD_HEIGHT,
-            transform: [{ scale: CARD_SCALE }],
-            left: SCALED_OFFSET_X,
-            top: SCALED_OFFSET_Y,
-          }}
-        >
-          <WalletCard account={account} isPrivacyMode={isPrivacyMode} />
-        </View>
-      </View>
-    </TouchableOpacity>
-  ),
-  (prev, next) =>
-    prev.account.id === next.account.id &&
-    prev.account.balance === next.account.balance &&
-    prev.account.name === next.account.name &&
-    prev.account.type === next.account.type &&
-    prev.isPrivacyMode === next.isPrivacyMode,
-);
-
-// ─── BudgetTile ───────────────────────────────────────────────────────────────
-
-type BudgetTileProps = {
-  cat: CategoryWithSpend;
-  index: number;
-  isPrivacyMode: boolean;
-  isDark: boolean;
-  colors: any;
-  styles: any;
-  onPress: () => void;
-};
-
-const BudgetTile = React.memo(
-  ({ cat, index, isPrivacyMode, isDark, colors, styles, onPress }: BudgetTileProps) => {
-  const opacity = useSharedValue(0);
-  const transY = useSharedValue(16);
-  const animStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: transY.value }],
-  }));
-
-  useEffect(() => {
-    opacity.value = withDelay(index * 60, withTiming(1, { duration: 280 }));
-    transY.value  = withDelay(index * 60, withSpring(0, { damping: 18, stiffness: 200 }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const bgColor = cat.tile_bg_colour ?? colors.catTileEmptyBg;
-  const solidColor = cat.text_colour ?? colors.primary;
-  const isOver = cat.state === 'over';
-
-  return (
-    <RAnim.View style={[styles.catTileWrap, animStyle]}>
-      <TouchableOpacity activeOpacity={0.8} onPress={onPress}>
-        <View
-          style={[
-            styles.catTile,
-            { backgroundColor: isDark ? colors.surfaceSubdued : bgColor },
-          ]}
-        >
-          <WaveFill pct={cat.pct} color={solidColor} />
-
-          <View style={styles.catBadgeWrap}>
-            {isOver ? (
-              <View style={styles.catOverBadge}>
-                <Text style={styles.catOverBadgeText}>Over!</Text>
-              </View>
-            ) : (
-              <View style={[styles.catPctPill, { backgroundColor: `${solidColor}18` }]}>
-                <Text style={[styles.catPctBadge, { color: solidColor }]}>
-                  {Math.round(cat.pct * 100)}%
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <View style={[styles.catIconCircle, { backgroundColor: `${solidColor}22` }]}>
-            <CategoryIcon categoryKey={cat.name.toLowerCase()} color={solidColor} />
-          </View>
-
-          <Text style={[styles.catName, { color: solidColor }]}>{cat.name}</Text>
-          <Text style={[styles.catAmt, { color: solidColor }]}>
-            {fmtPeso(cat.spent, isPrivacyMode)}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    </RAnim.View>
-  );
-  },
-  (prev, next) =>
-    prev.cat.id === next.cat.id &&
-    prev.cat.pct === next.cat.pct &&
-    prev.cat.state === next.cat.state &&
-    prev.cat.spent === next.cat.spent &&
-    prev.isPrivacyMode === next.isPrivacyMode &&
-    prev.isDark === next.isDark &&
-    prev.colors === next.colors &&
-    prev.styles === next.styles
-);
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -513,7 +291,12 @@ export default function HomeScreen() {
         setToastVisible(true);
       }
 
-      return () => { task?.cancel(); };
+      return () => {
+        task?.cancel();
+        // Sidebar uses a global Modal; always close it when Home loses focus
+        // so it can never intercept touches on other screens.
+        setSidebarVisible(false);
+      };
     }, [startTransition, refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode,
         greetingOpacity, greetingTransY, cardOpacity, cardTransY, belowOpacity, belowTransY])
   );
@@ -569,11 +352,34 @@ export default function HomeScreen() {
     ? `₱*** net this month`
     : `${delta >= 0 ? '↑' : '↓'} ${delta >= 0 ? '+' : ''}${fmtPeso(delta)} net this month`;
 
-  // TODO: Replace with real AI-generated insight from backend once Fino Intelligence API is ready.
-  const insight = {
-    headline: 'You spend most on Tuesdays 📊',
-    body: 'Food is 42% of weekly spend. Want to set a lower limit?',
-  };
+  // Data-driven insight derived from the user's own category spend. Replaces
+  // the previous hardcoded mock. A future PR can swap this for a Gemini call
+  // via generateBulletInsights() — keeping this synchronous keeps Home snappy
+  // and avoids burning API quota on every render.
+  const insight = useMemo(() => {
+    const spent = categories
+      .map((c) => ({ name: c.name, emoji: c.emoji, spend: c.spent ?? 0, limit: c.budget_limit ?? 0 }))
+      .filter((c) => c.spend > 0)
+      .sort((a, b) => b.spend - a.spend);
+
+    if (spent.length === 0 || monthlyExpense <= 0) return null;
+
+    const top = spent[0];
+    const share = Math.round((top.spend / monthlyExpense) * 100);
+    const over = top.limit > 0 && top.spend > top.limit;
+    const emoji = top.emoji || '📊';
+
+    if (over) {
+      return {
+        headline: `${top.name} is over budget ${emoji}`,
+        body: `${share}% of your spend this month. Tap to review the limit.`,
+      };
+    }
+    return {
+      headline: `${top.name} leads your spend ${emoji}`,
+      body: `${share}% of this month so far. Keep an eye on it over the next ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`,
+    };
+  }, [categories, monthlyExpense, daysLeft]);
 
   return (
     <View style={styles.container}>
@@ -954,7 +760,7 @@ export default function HomeScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const createStyles = (colors: any, isDark: boolean, topInset: number) =>
+const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background, paddingTop: Math.max(topInset + 8, 20) },
     scroll: { flex: 1 },
