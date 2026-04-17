@@ -272,6 +272,12 @@ export default function BillSplitterScreen() {
           <Text style={styles.idleTitle}>Split a bill</Text>
           <Text style={styles.idleSub}>Take or upload a photo of a receipt.{'\n'}We'll extract the items for you.</Text>
 
+          {imageUri && (
+            <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: '#10B981' }]} onPress={() => parseReceipt(imageUri)} activeOpacity={0.85}>
+              <Ionicons name="refresh-outline" size={20} color="#fff" />
+              <Text style={styles.primaryBtnText}>Retry Last Photo</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.primary }]} onPress={() => pickImage(false)} activeOpacity={0.85}>
             <Ionicons name="image-outline" size={20} color="#fff" />
             <Text style={styles.primaryBtnText}>Upload Receipt</Text>
