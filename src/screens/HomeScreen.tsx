@@ -203,6 +203,52 @@ function WaveFill({ pct, color }: { pct: number; color: string }) {
   );
 }
 
+// ─── ScaledWalletCard ─────────────────────────────────────────────────────────
+// Memoized carousel item so Home re-renders don't rebuild every wallet card.
+
+type ScaledWalletCardProps = {
+  account: any;
+  isPrivacyMode: boolean;
+  onPress: () => void;
+};
+
+const SCALED_RADIUS = Math.round(22 * CARD_SCALE);
+const SCALED_OFFSET_X = -Math.round((CARD_WIDTH * (1 - CARD_SCALE)) / 2);
+const SCALED_OFFSET_Y = -Math.round((CARD_HEIGHT * (1 - CARD_SCALE)) / 2);
+
+const ScaledWalletCard = React.memo(
+  ({ account, isPrivacyMode, onPress }: ScaledWalletCardProps) => (
+    <TouchableOpacity activeOpacity={0.88} onPress={onPress}>
+      <View
+        style={{
+          width: SCALED_CARD_W,
+          height: SCALED_CARD_H,
+          overflow: 'hidden',
+          borderRadius: SCALED_RADIUS,
+        }}
+      >
+        <View
+          style={{
+            width: CARD_WIDTH,
+            height: CARD_HEIGHT,
+            transform: [{ scale: CARD_SCALE }],
+            left: SCALED_OFFSET_X,
+            top: SCALED_OFFSET_Y,
+          }}
+        >
+          <WalletCard account={account} isPrivacyMode={isPrivacyMode} />
+        </View>
+      </View>
+    </TouchableOpacity>
+  ),
+  (prev, next) =>
+    prev.account.id === next.account.id &&
+    prev.account.balance === next.account.balance &&
+    prev.account.name === next.account.name &&
+    prev.account.type === next.account.type &&
+    prev.isPrivacyMode === next.isPrivacyMode,
+);
+
 // ─── BudgetTile ───────────────────────────────────────────────────────────────
 
 type BudgetTileProps = {
@@ -344,9 +390,12 @@ export default function HomeScreen() {
     if (syncVersion > 0) {
       const task = InteractionManager.runAfterInteractions(() => {
         startTransition(() => {
+          // syncVersion only increments after a successful queue flush,
+          // so force past any freshness gates — data genuinely changed.
           refetchAccounts();
-          refetchCategories();
+          refetchCategories(true);
           refetchTotals();
+          lastFocusRefetchAt.current = Date.now();
         });
       });
       return () => task.cancel();
@@ -397,11 +446,13 @@ export default function HomeScreen() {
 
   const hasAnimated = useRef(false);
   const hasFocusedOnce = useRef(false);
+  const lastFocusRefetchAt = useRef(0);
+  const FOCUS_REFETCH_STALE_MS = 30_000;
 
   useFocusEffect(
     useCallback(() => {
-      // Only play entrance animation on first mount, not on every back-navigation
       if (!hasAnimated.current) {
+        // Full entrance on first mount
         hasAnimated.current = true;
         greetingOpacity.value = 0; greetingTransY.value = 12;
         cardOpacity.value = 0;    cardTransY.value = 16;
@@ -412,10 +463,22 @@ export default function HomeScreen() {
         cardTransY.value      = withDelay(80,  withSpring(0, { damping: 18, stiffness: 180 }));
         belowOpacity.value    = withDelay(180, withTiming(1, { duration: 360 }));
         belowTransY.value     = withDelay(180, withSpring(0, { damping: 16, stiffness: 160 }));
+      } else {
+        // Lightweight re-entry on tab switches — keeps the screen feeling alive without a flash.
+        cardOpacity.value = 0.6;   cardTransY.value = 8;
+        belowOpacity.value = 0.55; belowTransY.value = 10;
+        cardOpacity.value  = withTiming(1, { duration: 200 });
+        cardTransY.value   = withSpring(0, { damping: 20, stiffness: 220 });
+        belowOpacity.value = withDelay(40, withTiming(1, { duration: 220 }));
+        belowTransY.value  = withDelay(40, withSpring(0, { damping: 20, stiffness: 200 }));
       }
 
       let task: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
-      if (hasFocusedOnce.current) {
+      // Skip refetch on fast tab switches — syncVersion effect handles post-sync refresh separately.
+      const now = Date.now();
+      const isFresh = now - lastFocusRefetchAt.current < FOCUS_REFETCH_STALE_MS;
+      if (hasFocusedOnce.current && !isFresh) {
+        lastFocusRefetchAt.current = now;
         task = InteractionManager.runAfterInteractions(() => {
           startTransition(() => {
             refetchAccounts();
@@ -757,37 +820,17 @@ export default function HomeScreen() {
               </View>
             ) : (
               accounts.map((acc) => (
-                <TouchableOpacity
+                <ScaledWalletCard
                   key={acc.id}
-                  activeOpacity={0.88}
+                  account={acc}
+                  isPrivacyMode={isPrivacyMode}
                   onPress={() =>
                     navigation.navigate('more', {
                       screen: 'AccountDetail',
                       params: { id: acc.id },
                     })
                   }
-                >
-                  <View
-                    style={{
-                      width: SCALED_CARD_W,
-                      height: SCALED_CARD_H,
-                      overflow: 'hidden',
-                      borderRadius: Math.round(22 * CARD_SCALE),
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: CARD_WIDTH,
-                        height: CARD_HEIGHT,
-                        transform: [{ scale: CARD_SCALE }],
-                        left: -Math.round((CARD_WIDTH * (1 - CARD_SCALE)) / 2),
-                        top: -Math.round((CARD_HEIGHT * (1 - CARD_SCALE)) / 2),
-                      }}
-                    >
-                      <WalletCard account={acc} isPrivacyMode={isPrivacyMode} />
-                    </View>
-                  </View>
-                </TouchableOpacity>
+                />
               ))
             )}
           </ScrollView>

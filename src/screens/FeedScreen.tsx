@@ -1039,6 +1039,7 @@ export default function FeedScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!hasAnimated.current) {
+        // Full entrance on first mount
         hasAnimated.current = true;
         headerOpacity.value = 0; headerTransY.value = -8;
         listOpacity.value = 0;   listTransY.value = 16;
@@ -1046,6 +1047,11 @@ export default function FeedScreen() {
         headerTransY.value  = withTiming(0, { duration: 260 });
         listOpacity.value   = withDelay(60, withTiming(1, { duration: 320 }));
         listTransY.value    = withDelay(60, withSpring(0, { damping: 18, stiffness: 180 }));
+      } else {
+        // Lightweight re-entry on tab switches
+        listOpacity.value = 0.6; listTransY.value = 6;
+        listOpacity.value = withTiming(1, { duration: 200 });
+        listTransY.value  = withSpring(0, { damping: 20, stiffness: 220 });
       }
       startTransition(() => { refetch(); });
     }, [startTransition, refetch, headerOpacity, headerTransY, listOpacity, listTransY])

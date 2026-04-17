@@ -22,13 +22,17 @@ export interface CategoryWithSpend extends Category {
   state: 'under' | 'nearing' | 'over';
 }
 
+const STALE_WINDOW_MS = 15_000;
+
 export const useCategories = () => {
   const [categories, setCategories] = useState<CategoryWithSpend[]>([]);
   const [loading, setLoading] = useState(true);
   const isFetchingRef = useRef(false);
+  const lastFetchedAt = useRef(0);
 
-  const fetchCategoriesAndSpend = useCallback(async () => {
+  const fetchCategoriesAndSpend = useCallback(async (force = false) => {
     if (isFetchingRef.current) return;
+    if (!force && Date.now() - lastFetchedAt.current < STALE_WINDOW_MS) return;
     isFetchingRef.current = true;
     try {
     let baseCategories: Category[] = [];
@@ -123,6 +127,7 @@ export const useCategories = () => {
     if (!catError && catData) {
       AsyncStorage.setItem(CACHE_KEY, JSON.stringify(baseCategories)).catch(() => {});
     }
+    lastFetchedAt.current = Date.now();
     } finally {
       isFetchingRef.current = false;
     }

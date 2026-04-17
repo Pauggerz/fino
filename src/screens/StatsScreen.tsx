@@ -815,6 +815,9 @@ export default function InsightsScreen() {
   const isInitialLoadRef = useRef(true);
   const hasAnimated = useRef(false);
   const hasMountedRef = useRef(false);
+  const lastFetchedAt = useRef(0);
+  const lastFetchedKey = useRef('');
+  const STATS_STALE_MS = 30_000;
 
   // ── Date state ──
   const now = new Date();
@@ -927,18 +930,30 @@ export default function InsightsScreen() {
     });
   }, []);
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (force = false) => {
     const cacheKey = `FINO_STATS_CACHE_${selectedYear}_${selectedMonth}`;
 
-    // 1. Serve stale cache immediately — no spinner for returning users
-    try {
-      const cached = await AsyncStorage.getItem(cacheKey);
-      if (cached) {
-        applyStatsBundle(JSON.parse(cached));
-        setLoading(false);
+    // Skip entirely if we just fetched the same month within the stale window.
+    if (
+      !force &&
+      lastFetchedKey.current === cacheKey &&
+      Date.now() - lastFetchedAt.current < STATS_STALE_MS
+    ) {
+      return;
+    }
+
+    // 1. Serve stale cache immediately — no spinner for returning users.
+    // Only reapply if we haven't just rendered from it (avoids setState storm on fast tab-switch).
+    if (lastFetchedKey.current !== cacheKey) {
+      try {
+        const cached = await AsyncStorage.getItem(cacheKey);
+        if (cached) {
+          applyStatsBundle(JSON.parse(cached));
+          setLoading(false);
+        }
+      } catch (_) {
+        // ignore cache errors
       }
-    } catch (_) {
-      // ignore cache errors
     }
 
     try {
@@ -1046,11 +1061,6 @@ export default function InsightsScreen() {
         nextTotals[key] += Number(tx.amount) || 0;
       });
 
-      setExpenseCategoryKeys(nextKeys);
-      setExpenseCategoryMeta(nextMeta);
-      setExpenseTotals(nextTotals);
-      setExpenseBudgets(nextBudgets);
-
       const nextIncomeTotals: Record<string, number> = {};
       INCOME_CATEGORIES.forEach((c) => {
         nextIncomeTotals[c.key] = 0;
@@ -1062,8 +1072,6 @@ export default function InsightsScreen() {
         );
         if (incDef) nextIncomeTotals[incDef.key] += Number(tx.amount) || 0;
       });
-
-      setIncomeTotals(nextIncomeTotals);
 
       // ── Daily spend + day-of-week aggregation ──
       const dailyMap: Record<string, number> = {};
@@ -1080,12 +1088,6 @@ export default function InsightsScreen() {
       const dowAvg = dowTotals.map((total, i) =>
         dowCounts[i] > 0 ? total / dowCounts[i] : 0
       );
-      setDailySpend(dailyMap);
-      setDowAvgSpend(dowAvg);
-      setTotalTxCount(dailyTxData?.length ?? 0);
-
-      // ── Top transactions ──
-      setTopTransactions((topTxData ?? []) as TopTx[]);
 
       // ── Account-level activity ──
       const acctExpense: Record<string, number> = {};
@@ -1098,7 +1100,6 @@ export default function InsightsScreen() {
           acctIncome[id] = (acctIncome[id] ?? 0) + Number(tx.amount);
         }
       });
-      setAccountActivity({ expense: acctExpense, income: acctIncome });
 
       // ── Previous month totals for delta badges ──
       const prevTotals: Record<string, number> = {};
@@ -1106,8 +1107,24 @@ export default function InsightsScreen() {
         const key = normalizeCategoryKey(tx.category);
         prevTotals[key] = (prevTotals[key] ?? 0) + Number(tx.amount);
       });
-      setPrevMonthExpenseTotals(prevTotals);
-      setPrevMonthTxCount(prevTxData?.length ?? 0);
+
+      // Batch all fresh state through applyStatsBundle so every setState is
+      // wrapped in startTransition — async post-await setStates would otherwise
+      // run urgently and block the JS thread during tab-switch.
+      applyStatsBundle({
+        expenseCategoryKeys: nextKeys,
+        expenseCategoryMeta: nextMeta,
+        expenseTotals: nextTotals,
+        expenseBudgets: nextBudgets,
+        incomeTotals: nextIncomeTotals,
+        dailySpend: dailyMap,
+        dowAvgSpend: dowAvg,
+        topTransactions: (topTxData ?? []) as TopTx[],
+        accountActivity: { expense: acctExpense, income: acctIncome },
+        prevMonthExpenseTotals: prevTotals,
+        totalTxCount: dailyTxData?.length ?? 0,
+        prevMonthTxCount: prevTxData?.length ?? 0,
+      });
 
       // 3. Persist the computed bundle to cache for next open
       const bundle = {
@@ -1125,6 +1142,8 @@ export default function InsightsScreen() {
         prevMonthTxCount:    prevTxData?.length ?? 0,
       };
       AsyncStorage.setItem(cacheKey, JSON.stringify(bundle)).catch(() => {});
+      lastFetchedAt.current = Date.now();
+      lastFetchedKey.current = cacheKey;
     } finally {
       setLoading(false);
     }
@@ -1137,12 +1156,14 @@ export default function InsightsScreen() {
       hasMountedRef.current = true;
       return;
     }
-    fetchStats();
+    // Month changed — force past the freshness gate since it's a different dataset.
+    fetchStats(true);
   }, [selectedYear, selectedMonth]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useFocusEffect(
     useCallback(() => {
       if (!hasAnimated.current) {
+        // Full entrance on first mount
         hasAnimated.current = true;
         headerOpacity.value = 0;
         headerTransY.value = -8;
@@ -1157,6 +1178,18 @@ export default function InsightsScreen() {
         heroScale.value = withDelay(60, withSpring(1, { damping: 18, stiffness: 160 }));
         contentOpacity.value = withDelay(140, withTiming(1, { duration: 320 }));
         contentTransY.value = withDelay(140, withSpring(0, { damping: 18, stiffness: 180 }));
+      } else {
+        // Lightweight re-entry: subtle fade+lift, ~180ms. Keeps the screen feeling alive
+        // on tab switch without the flash of a full entrance.
+        heroOpacity.value = 0.6;
+        heroScale.value = 0.99;
+        contentOpacity.value = 0.55;
+        contentTransY.value = 6;
+
+        heroOpacity.value = withTiming(1, { duration: 180 });
+        heroScale.value = withTiming(1, { duration: 180 });
+        contentOpacity.value = withTiming(1, { duration: 200 });
+        contentTransY.value = withSpring(0, { damping: 20, stiffness: 220 });
       }
 
       const task = InteractionManager.runAfterInteractions(() => {

@@ -1,17 +1,6 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import type { GenerativeModel } from '@google/generative-ai';
 
-const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? '';
-if (!apiKey) {
-  console.warn(
-    '[Fino AI] EXPO_PUBLIC_GEMINI_API_KEY is not set. ' +
-      'Add it to your .env file and restart Expo with --clear.'
-  );
-}
-const genAI = new GoogleGenerativeAI(apiKey);
-
-const model = genAI.getGenerativeModel({
-  model: 'gemini-2.5-flash',
-  systemInstruction: `You are Fino Intelligence, a personal
+const SYSTEM_INSTRUCTION = `You are Fino Intelligence, a personal
 finance assistant built into the Fino budgeting app for
 Filipino users.
 
@@ -37,8 +26,33 @@ Language rules:
 - If the user mixes English and Tagalog (Taglish), match
   that same mix.
 - You can understand Filipino, Tagalog, and Taglish input
-  regardless of what language you reply in.`,
-});
+  regardless of what language you reply in.`;
+
+// Lazily instantiate the Gemini client on first use so cold start
+// doesn't pay for SDK initialization the user may never trigger.
+let cachedModel: GenerativeModel | null = null;
+let apiKeyWarned = false;
+
+const getModel = async (): Promise<GenerativeModel> => {
+  if (cachedModel) return cachedModel;
+
+  const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? '';
+  if (!apiKey && !apiKeyWarned) {
+    apiKeyWarned = true;
+    console.warn(
+      '[Fino AI] EXPO_PUBLIC_GEMINI_API_KEY is not set. ' +
+        'Add it to your .env file and restart Expo with --clear.'
+    );
+  }
+
+  const { GoogleGenerativeAI } = await import('@google/generative-ai');
+  const genAI = new GoogleGenerativeAI(apiKey);
+  cachedModel = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    systemInstruction: SYSTEM_INSTRUCTION,
+  });
+  return cachedModel;
+};
 
 export interface ChatMessage {
   role: 'user' | 'model';
@@ -93,6 +107,7 @@ ${financialContext.recentTransactions
   .join('\n')}
   `.trim();
 
+  const model = await getModel();
   const chat = model.startChat({
     history: history.map((msg) => ({
       role: msg.role,
@@ -113,6 +128,7 @@ export const generateBulletInsights = async (
   prompt: string
 ): Promise<string[]> => {
   try {
+    const model = await getModel();
     const result = await model.generateContent(prompt);
     const raw = result.response.text().trim();
     const match = raw.match(/\[[\s\S]*\]/);
