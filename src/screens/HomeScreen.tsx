@@ -12,6 +12,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
+  RefreshControl,
 } from 'react-native';
 import RAnim, {
   useSharedValue,
@@ -276,6 +277,13 @@ export default function HomeScreen() {
   const isFirstLoad = accountsLoading && accounts.length === 0;
   const isTotalsLoading = totalsLoading && totalIncome === 0 && monthlyExpense === 0;
 
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refetchAccounts(), refetchCategories(), refetchTotals()]);
+    setRefreshing(false);
+  }, [refetchAccounts, refetchCategories, refetchTotals]);
+
   // ── Entrance animation shared values ────────────────────────────────────────
   const greetingOpacity = useSharedValue(0);
   const greetingTransY = useSharedValue(12);
@@ -452,6 +460,14 @@ export default function HomeScreen() {
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         <RAnim.View style={[styles.greeting, greetingAnim]}>
           <View style={styles.greetingTop}>

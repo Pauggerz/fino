@@ -98,8 +98,9 @@ export default function SavingsGoalScreen() {
   const navigation = useNavigation();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
-  const [goals, setGoals]     = useState<Goal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [goals, setGoals]       = useState<Goal[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
   // ── Add/Edit modal
   const [showForm, setShowForm]   = useState(false);
@@ -122,11 +123,16 @@ export default function SavingsGoalScreen() {
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchGoals = useCallback(async () => {
     setLoading(true);
+    setFetchError(false);
     const { data, error } = await supabase
       .from('savings_goals')
       .select('*')
       .order('created_at', { ascending: false });
-    if (!error && data) setGoals(data as Goal[]);
+    if (error) {
+      setFetchError(true);
+    } else if (data) {
+      setGoals(data as Goal[]);
+    }
     setLoading(false);
   }, []);
 
@@ -182,8 +188,9 @@ export default function SavingsGoalScreen() {
       if (error) { Alert.alert('Error', error.message); setFormLoading(false); return; }
     } else {
       const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { Alert.alert('Error', 'Not signed in.'); setFormLoading(false); return; }
       const { error } = await supabase.from('savings_goals').insert({
-        user_id:       user!.id,
+        user_id:       user.id,
         name,
         description:   form.description.trim() || null,
         target_amount: amount,
@@ -257,6 +264,14 @@ export default function SavingsGoalScreen() {
       {loading ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : fetchError ? (
+        <View style={styles.loadingBox}>
+          <Ionicons name="cloud-offline-outline" size={48} color={colors.textSecondary} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary, marginTop: 12 }]}>Could not load goals</Text>
+          <TouchableOpacity onPress={fetchGoals} style={[styles.retryBtn, { backgroundColor: colors.primary }]}>
+            <Text style={styles.retryBtnText}>Try Again</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
@@ -739,6 +754,11 @@ const createStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   statValue:  { fontFamily: 'DMMono_400Regular', fontSize: 15 },
   statLabel:  { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
   statDivider: { width: 1, height: 28 },
+
+  // Error / retry
+  emptyText: { fontFamily: 'Inter_400Regular', fontSize: 14, textAlign: 'center' },
+  retryBtn:  { marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20 },
+  retryBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#fff' },
 
   // Empty state
   emptyState: { alignItems: 'center', paddingVertical: 56 },

@@ -54,6 +54,7 @@ export default function UtangTrackerScreen() {
 
   const [debts, setDebts]       = useState<Debt[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [filter, setFilter]     = useState<FilterTab>('all');
 
   // ── Add debt modal state
@@ -74,11 +75,16 @@ export default function UtangTrackerScreen() {
   // ── Fetch ────────────────────────────────────────────────────────────────────
   const fetchDebts = useCallback(async () => {
     setLoading(true);
+    setFetchError(false);
     const { data, error } = await supabase
       .from('debts')
       .select('*')
       .order('created_at', { ascending: false });
-    if (!error && data) setDebts(data as Debt[]);
+    if (error) {
+      setFetchError(true);
+    } else if (data) {
+      setDebts(data as Debt[]);
+    }
     setLoading(false);
   }, []);
 
@@ -107,8 +113,9 @@ export default function UtangTrackerScreen() {
 
     setAddLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { Alert.alert('Error', 'Not signed in.'); setAddLoading(false); return; }
     const { error } = await supabase.from('debts').insert({
-      user_id:      user!.id,
+      user_id:      user.id,
       debtor_name:  name,
       description:  addForm.description.trim() || null,
       total_amount: amount,
@@ -192,6 +199,14 @@ export default function UtangTrackerScreen() {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : fetchError ? (
+        <View style={styles.loadingContainer}>
+          <Ionicons name="cloud-offline-outline" size={48} color={colors.textSecondary} />
+          <Text style={[styles.emptyText, { marginTop: 12 }]}>Could not load debts</Text>
+          <TouchableOpacity onPress={fetchDebts} style={[styles.retryBtn, { backgroundColor: colors.primary }]}>
+            <Text style={styles.retryBtnText}>Try Again</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
@@ -643,6 +658,17 @@ const createStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   },
   filterTabText: {
     fontFamily: 'Inter_600SemiBold', fontSize: 12,
+  },
+
+  // Error / retry
+  emptyText: {
+    fontFamily: 'Inter_400Regular', fontSize: 14, textAlign: 'center',
+  },
+  retryBtn: {
+    marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20,
+  },
+  retryBtnText: {
+    fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#fff',
   },
 
   // Empty state

@@ -13,6 +13,8 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import {
   useNavigation,
@@ -338,6 +340,15 @@ export default function FeedScreen() {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastTitle, setToastTitle] = useState('');
   const [toastSubtitle, setToastSubtitle] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // ── Pull-to-refresh ──
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
 
   // ── Search & Advanced Filters ──
   const [searchQuery, setSearchQuery] = useState('');
@@ -453,33 +464,44 @@ export default function FeedScreen() {
 
   // ── Delete handler ──
   const handleDelete = async (tx: FeedTransaction) => {
-    await supabase.from('transactions').delete().eq('id', tx.id);
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase.from('transactions').delete().eq('id', tx.id);
+      if (error) throw error;
 
-    if (!tx.account_deleted) {
-      const { data: acct } = await supabase
-        .from('accounts')
-        .select('balance')
-        .eq('id', tx.account_id)
-        .single();
-
-      if (acct) {
-        const restored =
-          tx.type === 'expense'
-            ? acct.balance + tx.amount
-            : acct.balance - tx.amount;
-        await supabase
+      if (!tx.account_deleted) {
+        const { data: acct } = await supabase
           .from('accounts')
-          .update({ balance: restored })
-          .eq('id', tx.account_id);
-      }
-    }
+          .select('balance')
+          .eq('id', tx.account_id)
+          .single();
 
-    refetch();
-    setToastTitle('Deleted');
-    setToastSubtitle(
-      `${tx.display_name ?? tx.category ?? 'Transaction'} has been removed`
-    );
-    setToastVisible(true);
+        if (acct) {
+          const restored =
+            tx.type === 'expense'
+              ? acct.balance + tx.amount
+              : acct.balance - tx.amount;
+          await supabase
+            .from('accounts')
+            .update({ balance: restored })
+            .eq('id', tx.account_id);
+        }
+      }
+
+      refetch();
+      setToastTitle('Deleted');
+      setToastSubtitle(
+        `${tx.display_name ?? tx.category ?? 'Transaction'} has been removed`
+      );
+      setToastVisible(true);
+    } catch {
+      setToastTitle('Error');
+      setToastSubtitle('Could not delete transaction. Please try again.');
+      setToastVisible(true);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const isAtMaxMonth =
@@ -926,7 +948,17 @@ export default function FeedScreen() {
     });
 
     return (
-      <SwipeableRow onDelete={() => { setSwipeHintVisible(false); handleDelete(tx); }}>
+      <SwipeableRow onDelete={() => {
+        setSwipeHintVisible(false);
+        Alert.alert(
+          'Delete Transaction',
+          `Remove "${tx.display_name ?? tx.category ?? 'Transaction'}"? This cannot be undone.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: () => handleDelete(tx) },
+          ]
+        );
+      }}>
         <Pressable
           onPress={() =>
             navigation.navigate('TransactionDetail', { id: tx.id })
@@ -1014,6 +1046,14 @@ export default function FeedScreen() {
         }}
         stickyHeaderIndices={[1]}
         contentContainerStyle={{ paddingBottom: listBottomPadding }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
         ListEmptyComponent={null}
         ListFooterComponent={() =>
           !loading && listData.length > 3 && hasMore ? (

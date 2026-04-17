@@ -62,7 +62,7 @@ function evaluateExpr(a: string, op: string, b: string): string {
     case '÷': result = B !== 0 ? A / B : A; break;
     default: result = A;
   }
-  const rounded = Math.round(result * 100) / 100;
+  const rounded = Math.max(0, Math.round(result * 100) / 100);
   return String(rounded);
 }
 
@@ -425,6 +425,7 @@ export default function AddTransactionSheet({ route }: Props) {
       AsyncStorage.setItem('@fino/recent_categories', JSON.stringify(newRecentCategories));
 
       allowCloseRef.current = true;
+      Keyboard.dismiss();
       bottomSheetRef.current?.close();
     } catch (error) {
       console.error('Save error:', error);
