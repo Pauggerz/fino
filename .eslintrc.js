@@ -26,5 +26,6 @@ module.exports = {
     'react/no-unstable-nested-components': ['error', { allowAsProps: true }],
     'no-unused-vars': 'off', // Let TypeScript handle this instead
     '@typescript-eslint/no-unused-vars': ['warn'],
+    'no-console': ['warn', { allow: ['warn', 'error'] }],
   },
 };

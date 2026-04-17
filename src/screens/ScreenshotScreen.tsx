@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   TouchableWithoutFeedback,
-  Image,
   ActivityIndicator,
   TextInput,
   ScrollView,
@@ -14,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
@@ -670,7 +670,8 @@ export default function ScreenshotScreen() {
             <Image
               source={{ uri: selectedImage }}
               style={{ width: '100%', height: '100%' }}
-              resizeMode="cover"
+              contentFit="cover"
+              transition={150}
             />
           ) : (
             <TouchableOpacity
@@ -929,7 +930,8 @@ export default function ScreenshotScreen() {
                             <Image
                               source={logo}
                               style={{ width: 20, height: 20 }}
-                              resizeMode="contain"
+                              contentFit="contain"
+                              transition={150}
                             />
                           </View>
                         ) : (
@@ -1453,7 +1455,8 @@ export default function ScreenshotScreen() {
                           <Image
                             source={logo}
                             style={{ width: 36, height: 36 }}
-                            resizeMode="contain"
+                            contentFit="contain"
+                            transition={150}
                           />
                         ) : (
                           <Text
@@ -1569,7 +1572,8 @@ export default function ScreenshotScreen() {
                     <Image
                       source={logo}
                       style={{ width: 26, height: 26 }}
-                      resizeMode="contain"
+                      contentFit="contain"
+                      transition={150}
                     />
                   </View>
                 ) : (

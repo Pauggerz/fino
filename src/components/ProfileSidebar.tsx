@@ -9,9 +9,10 @@ import React, {
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated, Modal,
-  ScrollView, Image, Dimensions, KeyboardAvoidingView,
+  ScrollView, Dimensions, KeyboardAvoidingView,
   Platform, TextInput, Alert,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,7 +22,7 @@ import { useAccounts } from '../hooks/useAccounts';
 import { supabase } from '../services/supabase';
 import { ACCOUNT_LOGOS, ACCOUNT_AVATAR_OVERRIDE } from '../constants/accountLogos';
 import { Skeleton } from './Skeleton';
-import { spacing, ACCENT_THEMES } from '../constants/theme';
+import { spacing, ACCENT_THEMES, ThemeColors } from '../constants/theme';
 import { AddAccountModal } from '../screens/MoreScreen';
 import { CategoryIcon } from './CategoryIcon';
 
@@ -38,7 +39,7 @@ function GridItem({
   icon, label, color, bg, onPress, colors, isDark, styles,
 }: {
   icon: string; label: string; color: string; bg: string;
-  onPress: () => void; colors: any; isDark: boolean; styles: any;
+  onPress: () => void; colors: ThemeColors; isDark: boolean; styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <TouchableOpacity
@@ -61,7 +62,7 @@ function ListRow({
   icon, label, onPress, colors, isDark, chevron = true, styles,
 }: {
   icon: string; label: string; onPress: () => void;
-  colors: any; isDark: boolean; chevron?: boolean; styles: any;
+  colors: ThemeColors; isDark: boolean; chevron?: boolean; styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <TouchableOpacity
@@ -155,6 +156,8 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
 
   // ── Animation lifecycle ───────────────────────────────────────────────────
   useEffect(() => {
+    let closeFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
     if (visible) {
       slideAnim.setValue(PANEL_W);
       backdropAnim.setValue(0);
@@ -170,7 +173,15 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
         Animated.timing(slideAnim, { toValue: PANEL_W, duration: 240, useNativeDriver: true }),
         Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
       ]).start(() => setModalMounted(false));
+
+      // Fallback in case animation callback does not fire (interrupted animation,
+      // fast navigation). Prevents an invisible global Modal from blocking taps.
+      closeFallbackTimer = setTimeout(() => setModalMounted(false), 320);
     }
+
+    return () => {
+      if (closeFallbackTimer) clearTimeout(closeFallbackTimer);
+    };
   }, [visible]);
 
   const handleAccountPress = useCallback((id: string) => {
@@ -216,12 +227,18 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
       <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
 
         {/* Dimmed peek area on the left */}
-        <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
+        <Animated.View
+          pointerEvents={visible ? 'auto' : 'none'}
+          style={[styles.backdrop, { opacity: backdropAnim }]}
+        >
           <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={onClose} />
         </Animated.View>
 
         {/* Sliding panel */}
-        <Animated.View style={[styles.panel, { paddingTop: insets.top, transform: [{ translateX: slideAnim }] }]}>
+        <Animated.View
+          pointerEvents={visible ? 'auto' : 'none'}
+          style={[styles.panel, { paddingTop: insets.top, transform: [{ translateX: slideAnim }] }]}
+        >
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 16 }} bounces={false}>
 
             {/* ── Profile row ── */}
@@ -283,7 +300,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                         <TouchableOpacity key={acct.id} style={[styles.acctRow, i === accounts.length - 1 && { borderBottomWidth: 0 }]} onPress={() => handleAccountPress(acct.id)} activeOpacity={0.65}>
                           <View style={styles.acctLeft}>
                             {logo
-                              ? <View style={[styles.acctAvatar, { backgroundColor: colors.white }]}><Image source={logo} style={{ width: 16, height: 16 }} resizeMode="contain" /></View>
+                              ? <View style={[styles.acctAvatar, { backgroundColor: colors.white }]}><Image source={logo} style={{ width: 16, height: 16 }} contentFit="contain" transition={150} /></View>
                               : <View style={[styles.acctAvatar, { backgroundColor: acct.brand_colour ?? colors.catTileEmptyBg }]}><Text style={styles.acctAvatarText}>{letter}</Text></View>
                             }
                             <Text style={[styles.acctName, { color: colors.textPrimary }]} numberOfLines={1}>{acct.name}</Text>
@@ -593,7 +610,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const createStyles = (colors: any, isDark: boolean) =>
+const createStyles = (colors: ThemeColors, isDark: boolean) =>
   StyleSheet.create({
     backdrop: {
       ...StyleSheet.absoluteFillObject,

@@ -110,6 +110,8 @@ export default function FABActionSheet() {
               activeOpacity={0.7}
               onPress={() => handleAction(action.key)}
               style={[styles.row, idx < ACTIONS.length - 1 && styles.rowBorder]}
+              accessibilityRole="button"
+              accessibilityLabel={action.title}
             >
               <View
                 style={[styles.iconWrap, { backgroundColor: action.iconBg }]}

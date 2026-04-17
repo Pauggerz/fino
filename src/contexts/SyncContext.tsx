@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { processQueue, addToQueue, getPendingQueue } from '@/services/syncService';
+import type { OfflineTransaction } from '@/types';
 
 export type SyncStatus = 'synced' | 'syncing' | 'offline';
 
 interface SyncContextProps {
   status: SyncStatus;
-  addOfflineTransaction: (tx: any) => Promise<void>;
+  addOfflineTransaction: (tx: OfflineTransaction) => Promise<void>;
   forceSync: () => Promise<void>;
   syncVersion: number;
   lastSyncedAt: Date | null; 
@@ -96,7 +97,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [triggerSync]);
 
-  const addOfflineTransaction = async (tx: any) => {
+  const addOfflineTransaction = async (tx: OfflineTransaction) => {
     await addToQueue(tx);
     // Small delay before sync so the AsyncStorage write has fully committed on
     // slower devices. Without this, processQueue may read a stale queue and

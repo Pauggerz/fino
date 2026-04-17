@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import Svg, { Path as SvgPath } from 'react-native-svg';
 import {
@@ -873,6 +874,8 @@ const FeedListItem = React.memo(function FeedListItem({
     >
       <Pressable
         onPress={() => ctx.navigation.navigate('TransactionDetail', { id: tx.id })}
+        accessibilityRole="button"
+        accessibilityLabel={`${tx.type === 'income' ? 'Income' : 'Expense'} ${tx.display_name ?? tx.category ?? ''}`}
         style={({ pressed }) => [
           ctx.styles.transactionItem,
           pressed && {
@@ -1039,6 +1042,20 @@ export default function FeedScreen() {
     refetch();
     refetchCategories(true);
     refetchAccounts();
+  }, [refetch, refetchCategories, refetchAccounts]);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetch(),
+        refetchCategories(true),
+        refetchAccounts(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [refetch, refetchCategories, refetchAccounts]);
 
   const hasAnimated = useRef(false);
@@ -1347,6 +1364,14 @@ export default function FeedScreen() {
             renderItem={renderItem}
             getItemType={getItemType}
             drawDistance={250}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
             keyExtractor={(item, index) => {
               if (item.type === 'hero') return 'hero';
               if (item.type === 'sticky') return 'sticky';

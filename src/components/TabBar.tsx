@@ -69,6 +69,9 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
           startTransition(() => { onTabPress(id); });
         }}
         activeOpacity={0.7}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: isActive }}
+        accessibilityLabel={`${TAB_LABELS[id]} tab`}
       >
         <Ionicons
           name={(isActive ? filled : outline) as any}
@@ -123,6 +126,8 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
           activeOpacity={0.85}
           onPress={handleFabPress}
           style={[styles.fab, { backgroundColor: fabBg }]}
+          accessibilityRole="button"
+          accessibilityLabel="Add transaction"
         >
           <Ionicons name="add" size={28} color={fabColor} />
         </TouchableOpacity>
