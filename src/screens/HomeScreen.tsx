@@ -47,6 +47,7 @@ import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { supabase } from '@/services/supabase';
 import { removeFromQueue } from '@/services/syncService';
 import ProfileSidebar from '@/components/ProfileSidebar';
+import { ErrorBanner } from '@/components/ErrorBanner';
 
 // ─── Animated primitives (module-level) ──────────────────────────────────────
 
@@ -345,15 +346,23 @@ export default function HomeScreen() {
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(false);
 
-  const { accounts, totalBalance, loading: accountsLoading, refetch: refetchAccounts } = useAccounts();
-  const { categories, loading: categoriesLoading, refetch: refetchCategories } = useCategories();
+  const { accounts, totalBalance, loading: accountsLoading, error: accountsError, refetch: refetchAccounts } = useAccounts();
+  const { categories, loading: categoriesLoading, error: categoriesError, refetch: refetchCategories } = useCategories();
   const {
     totalIncome,
     totalExpense: monthlyExpense,
     sparklineData,
     loading: totalsLoading,
+    error: totalsError,
     refetch: refetchTotals,
   } = useMonthlyTotals();
+
+  const fetchError = accountsError ?? categoriesError ?? totalsError;
+  const retryAll = useCallback(() => {
+    refetchAccounts();
+    refetchCategories(true);
+    refetchTotals();
+  }, [refetchAccounts, refetchCategories, refetchTotals]);
 
   // True only on cold first load (no cached data yet) — avoids skeleton flash on background refetches
   const isFirstLoad = accountsLoading && accounts.length === 0;
@@ -575,6 +584,12 @@ export default function HomeScreen() {
         scrollEventThrottle={16}
         removeClippedSubviews
       >
+        {fetchError ? (
+          <ErrorBanner
+            message="Can't reach server — showing cached data."
+            onRetry={retryAll}
+          />
+        ) : null}
         <RAnim.View style={[styles.greeting, greetingAnim]}>
           <View style={styles.greetingTop}>
             <View style={styles.greetingLeft}>

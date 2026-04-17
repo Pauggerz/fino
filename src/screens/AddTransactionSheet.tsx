@@ -397,7 +397,9 @@ export default function AddTransactionSheet({ route }: Props) {
         account_deleted: false,
       };
 
-      addOfflineTransaction(txPayload).catch(() => {});
+      addOfflineTransaction(txPayload).catch((err) => {
+        console.error('[AddTransaction] failed to enqueue offline tx:', err);
+      });
 
       const delta = txType === 'expense' ? -parsedAmount : parsedAmount;
       supabase

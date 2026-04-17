@@ -241,8 +241,8 @@ export const useTransactions = (
             setItems(JSON.parse(raw));
             setLoading(false);
           }
-        } catch (_) {
-          // ignore cache read errors
+        } catch (err) {
+          if (__DEV__) console.warn('[useTransactions] cache read failed:', err);
         }
       }
 
@@ -268,7 +268,9 @@ export const useTransactions = (
   itemsRef.current = items;
   useEffect(() => {
     if (!isCacheable || items.length === 0) return;
-    AsyncStorage.setItem(cacheKey, JSON.stringify(items)).catch(() => {});
+    AsyncStorage.setItem(cacheKey, JSON.stringify(items)).catch((err) => {
+      if (__DEV__) console.warn('[useTransactions] cache write failed:', err);
+    });
   }, [items, cacheKey, isCacheable]);
 
   const loadMore = useCallback(() => {

@@ -42,6 +42,7 @@ import { supabase } from '@/services/supabase';
 import Toast from '../components/Toast';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
 import { Skeleton } from '@/components/Skeleton';
+import { ErrorBanner } from '@/components/ErrorBanner';
 import { useDeferredRender } from '@/hooks/useDeferredRender';
 import RAnim, {
   useSharedValue,
@@ -1031,8 +1032,14 @@ export default function FeedScreen() {
       transactionType
     );
 
-  const { categories } = useCategories();
-  const { accounts } = useAccounts();
+  const { categories, error: categoriesError, refetch: refetchCategories } = useCategories();
+  const { accounts, error: accountsError, refetch: refetchAccounts } = useAccounts();
+  const fetchError = categoriesError ?? accountsError;
+  const retryAll = useCallback(() => {
+    refetch();
+    refetchCategories(true);
+    refetchAccounts();
+  }, [refetch, refetchCategories, refetchAccounts]);
 
   const hasAnimated = useRef(false);
 
@@ -1324,6 +1331,13 @@ export default function FeedScreen() {
           <Ionicons name="search-outline" size={18} color={colors.textPrimary} />
         </TouchableOpacity>
       </RAnim.View>
+
+      {fetchError ? (
+        <ErrorBanner
+          message="Can't reach server — showing cached data."
+          onRetry={retryAll}
+        />
+      ) : null}
 
       {/* ─── SINGLE FLASHLIST — hero scrolls away, search bar sticks ─── */}
       <RAnim.View style={[{ flex: 1 }, listAnim]}>

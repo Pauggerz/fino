@@ -28,10 +28,12 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isSyncing = useRef(false);
   const lastTriggerAt = useRef(0);
 
-  const triggerSync = useCallback(async (isConnected: boolean) => {
-    // Debounce rapid re-entries (NetInfo listener + 8s polling can fire near-simultaneously).
+  const triggerSync = useCallback(async (isConnected: boolean, force = false) => {
+    // Debounce rapid re-entries from NetInfo listener + 8s polling.
+    // `force=true` bypasses the debounce — used when we know there's fresh
+    // work to flush (e.g. a just-added offline transaction).
     const now = Date.now();
-    if (now - lastTriggerAt.current < 500) return;
+    if (!force && now - lastTriggerAt.current < 500) return;
     lastTriggerAt.current = now;
 
     if (!isConnected) {
@@ -96,10 +98,15 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addOfflineTransaction = async (tx: any) => {
     await addToQueue(tx);
+    // Small delay before sync so the AsyncStorage write has fully committed on
+    // slower devices. Without this, processQueue may read a stale queue and
+    // the tx gets picked up on the next 8s poll instead of immediately.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     const state = await NetInfo.fetch();
-    
+
     if (state.isConnected === true && state.isInternetReachable !== false) {
-      await triggerSync(true);
+      await triggerSync(true, true);
     } else {
       setStatus('offline');
     }

@@ -11,6 +11,7 @@ const CACHE_KEY = 'FINO_ACCOUNTS_CACHE';
 export const useAccounts = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const isFetchingRef = useRef(false);
 
   const fetchAccounts = useCallback(async () => {
@@ -62,7 +63,12 @@ export const useAccounts = () => {
     // 3. If successful, update base variables and cache
     if (!error && data) {
       fetchedAccounts = data;
-      AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data)).catch(() => {});
+      setError(null);
+      AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data)).catch((e) => {
+        if (__DEV__) console.warn('[useAccounts] cache write failed:', e);
+      });
+    } else if (error) {
+      setError(error.message ?? 'Failed to load accounts');
     }
 
     // 4. OFFLINE CALCULATION: Apply pending transactions to balances
@@ -92,5 +98,5 @@ export const useAccounts = () => {
 
   const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
 
-  return { accounts, totalBalance, loading, refetch: fetchAccounts };
+  return { accounts, totalBalance, loading, error, refetch: fetchAccounts };
 };

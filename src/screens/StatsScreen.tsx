@@ -44,6 +44,7 @@ import {
   CATEGORY_COLOR,
 } from '@/constants/categoryMappings';
 import { Skeleton } from '@/components/Skeleton';
+import { ErrorBanner } from '@/components/ErrorBanner';
 import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
 import { useAccounts } from '@/hooks/useAccounts';
 import { generateBulletInsights } from '@/services/gemini';
@@ -896,7 +897,7 @@ export default function InsightsScreen() {
   const [aiInsightsLoading, setAiInsightsLoading] = useState(false);
   const lastAiMonthRef = useRef<string>('');
 
-  const { accounts } = useAccounts();
+  const { accounts, error: accountsError, refetch: refetchAccounts } = useAccounts();
   const isChartReady = useDeferredRender();
 
   const monthRange = useMemo(() => {
@@ -951,8 +952,8 @@ export default function InsightsScreen() {
           applyStatsBundle(JSON.parse(cached));
           setLoading(false);
         }
-      } catch (_) {
-        // ignore cache errors
+      } catch (err) {
+        if (__DEV__) console.warn('[StatsScreen] stats cache read failed:', err);
       }
     }
 
@@ -1141,7 +1142,9 @@ export default function InsightsScreen() {
         totalTxCount:        dailyTxData?.length ?? 0,
         prevMonthTxCount:    prevTxData?.length ?? 0,
       };
-      AsyncStorage.setItem(cacheKey, JSON.stringify(bundle)).catch(() => {});
+      AsyncStorage.setItem(cacheKey, JSON.stringify(bundle)).catch((err) => {
+        if (__DEV__) console.warn('[StatsScreen] stats cache write failed:', err);
+      });
       lastFetchedAt.current = Date.now();
       lastFetchedKey.current = cacheKey;
     } finally {
@@ -1569,7 +1572,8 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
         setAiInsights(results);
         lastAiMonthRef.current = monthKey;
       }
-    } catch (_) {
+    } catch (err) {
+      if (__DEV__) console.warn('[StatsScreen] AI insights generation failed:', err);
     } finally {
       setAiInsightsLoading(false);
     }
@@ -1963,6 +1967,12 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
           />
         </TouchableOpacity>
       </RAnim.View>
+      {accountsError ? (
+        <ErrorBanner
+          message="Can't reach server — showing cached data."
+          onRetry={refetchAccounts}
+        />
+      ) : null}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={styles.content}

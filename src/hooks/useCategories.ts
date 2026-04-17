@@ -27,6 +27,7 @@ const STALE_WINDOW_MS = 15_000;
 export const useCategories = () => {
   const [categories, setCategories] = useState<CategoryWithSpend[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const isFetchingRef = useRef(false);
   const lastFetchedAt = useRef(0);
 
@@ -71,6 +72,9 @@ export const useCategories = () => {
 
     if (!catError && catData) {
       baseCategories = catData;
+      setError(null);
+    } else if (catError) {
+      setError(catError.message ?? 'Failed to load categories');
     }
 
     // 3. Fetch expenses for the current month
@@ -125,7 +129,9 @@ export const useCategories = () => {
       setLoading(false);
     });
     if (!catError && catData) {
-      AsyncStorage.setItem(CACHE_KEY, JSON.stringify(baseCategories)).catch(() => {});
+      AsyncStorage.setItem(CACHE_KEY, JSON.stringify(baseCategories)).catch((e) => {
+        if (__DEV__) console.warn('[useCategories] cache write failed:', e);
+      });
     }
     lastFetchedAt.current = Date.now();
     } finally {
@@ -137,5 +143,5 @@ export const useCategories = () => {
     fetchCategoriesAndSpend();
   }, [fetchCategoriesAndSpend]);
 
-  return { categories, loading, refetch: fetchCategoriesAndSpend };
+  return { categories, loading, error, refetch: fetchCategoriesAndSpend };
 };

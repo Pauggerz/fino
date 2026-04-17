@@ -31,8 +31,11 @@ app.get('/api/protected-test', requireAuth, (req, res) => {
   });
 });
 
-// Temporary test route (no auth) — local testing only
-app.post('/api/parse-receipt-test', parseReceipt);
+// Temporary test route (no auth) — dev environments only.
+// Must never be reachable in production since it would let anyone burn our Gemini quota.
+if (process.env.NODE_ENV !== 'production') {
+  app.post('/api/parse-receipt-test', parseReceipt);
+}
 
 // Register grouped routes
 app.use('/api', receiptRoutes);
