@@ -1,4 +1,4 @@
-import React, { useRef, startTransition } from 'react';
+import React, { useRef, useState, useEffect, startTransition } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,10 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
   const insets = useSafeAreaInsets();
   const fabScale = useRef(new Animated.Value(1)).current;
 
+  // Optimistic active tab: updates instantly on press, reconciles with navigation after
+  const [visualActiveTab, setVisualActiveTab] = useState<TabRoute>(activeTab);
+  useEffect(() => { setVisualActiveTab(activeTab); }, [activeTab]);
+
   const handleFabPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     Animated.sequence([
@@ -53,7 +57,7 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
   const fabColor = isDark ? '#1C1C1E' : '#FFFFFF';
 
   const renderTab = (id: TabRoute) => {
-    const isActive = activeTab === id;
+    const isActive = visualActiveTab === id;
     const [outline, filled] = TAB_ICONS[id];
     return (
       <TouchableOpacity
@@ -61,6 +65,7 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
         style={styles.tabItem}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          setVisualActiveTab(id);
           startTransition(() => { onTabPress(id); });
         }}
         activeOpacity={0.7}

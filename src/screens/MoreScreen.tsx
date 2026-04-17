@@ -654,8 +654,8 @@ function BillRemindersModal({
         setBills(JSON.parse(cached) as BillReminder[]);
         setLoading(false);
       }
-    } catch (_) {
-      // ignore cache errors
+    } catch (err) {
+      if (__DEV__) console.warn('[MoreScreen] bills cache read failed:', err);
     }
 
     // 2. Background revalidation from Supabase
@@ -667,7 +667,9 @@ function BillRemindersModal({
 
     const fresh = (data as BillReminder[]) ?? [];
     setBills(fresh);
-    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(fresh)).catch(() => {});
+    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(fresh)).catch((err) => {
+      if (__DEV__) console.warn('[MoreScreen] bills cache write failed:', err);
+    });
     setLoading(false);
   }, []);
 
@@ -736,7 +738,9 @@ function BillRemindersModal({
 
   const updateBillsCache = (updated: BillReminder[]) => {
     setBills(updated);
-    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(updated)).catch(() => {});
+    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(updated)).catch((err) => {
+      if (__DEV__) console.warn('[MoreScreen] bills cache write failed:', err);
+    });
   };
 
   const handleMarkPaid = async (id: string) => {
@@ -1890,3 +1894,7 @@ const createBillStyles = (colors: any, isDark: boolean) =>
       color: colors.primary,
     },
   });
+function setShowAppSettings(arg0: boolean) {
+  throw new Error('Function not implemented.');
+}
+

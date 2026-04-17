@@ -112,8 +112,6 @@ function TabNavigator() {
       )}
       screenOptions={{
         headerShown: false,
-        freezeOnBlur: true,
-        sceneStyle: { backgroundColor: 'transparent' },
       }}
     >
       <Tab.Screen name="home" component={HomeScreen} />

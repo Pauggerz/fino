@@ -44,10 +44,12 @@ import {
   CATEGORY_COLOR,
 } from '@/constants/categoryMappings';
 import { Skeleton } from '@/components/Skeleton';
+import { ErrorBanner } from '@/components/ErrorBanner';
 import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
 import { useAccounts } from '@/hooks/useAccounts';
 import { generateBulletInsights } from '@/services/gemini';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useDeferredRender } from '@/hooks/useDeferredRender';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -811,6 +813,13 @@ export default function InsightsScreen() {
   const styles = useMemo(() => createStyles(colors, isDark, insets.top), [colors, isDark, insets.top]);
   const [, startTransition] = useTransition();
 
+  const isInitialLoadRef = useRef(true);
+  const hasAnimated = useRef(false);
+  const hasMountedRef = useRef(false);
+  const lastFetchedAt = useRef(0);
+  const lastFetchedKey = useRef('');
+  const STATS_STALE_MS = 30_000;
+
   // ── Date state ──
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -888,7 +897,8 @@ export default function InsightsScreen() {
   const [aiInsightsLoading, setAiInsightsLoading] = useState(false);
   const lastAiMonthRef = useRef<string>('');
 
-  const { accounts } = useAccounts();
+  const { accounts, error: accountsError, refetch: refetchAccounts } = useAccounts();
+  const isChartReady = useDeferredRender();
 
   const monthRange = useMemo(() => {
     const from = new Date(selectedYear, selectedMonth, 1).toISOString();
@@ -921,26 +931,38 @@ export default function InsightsScreen() {
     });
   }, []);
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (force = false) => {
     const cacheKey = `FINO_STATS_CACHE_${selectedYear}_${selectedMonth}`;
 
-    // 1. Serve stale cache immediately — no spinner for returning users
-    try {
-      const cached = await AsyncStorage.getItem(cacheKey);
-      if (cached) {
-        applyStatsBundle(JSON.parse(cached));
-        setLoading(false);
+    // Skip entirely if we just fetched the same month within the stale window.
+    if (
+      !force &&
+      lastFetchedKey.current === cacheKey &&
+      Date.now() - lastFetchedAt.current < STATS_STALE_MS
+    ) {
+      return;
+    }
+
+    // 1. Serve stale cache immediately — no spinner for returning users.
+    // Only reapply if we haven't just rendered from it (avoids setState storm on fast tab-switch).
+    if (lastFetchedKey.current !== cacheKey) {
+      try {
+        const cached = await AsyncStorage.getItem(cacheKey);
+        if (cached) {
+          applyStatsBundle(JSON.parse(cached));
+          setLoading(false);
+        }
+      } catch (err) {
+        if (__DEV__) console.warn('[StatsScreen] stats cache read failed:', err);
       }
-    } catch (_) {
-      // ignore cache errors
     }
 
     try {
-      if (!loading) {
-        // Already rendered from cache; keep loading false during background refresh
-      } else {
+      if (isInitialLoadRef.current) {
         setLoading(true);
+        isInitialLoadRef.current = false;
       }
+      // Subsequent focuses: keep loading false so skeletons don't flash
 
       // Compute prev month range for delta badges
       const prevMonthNum = selectedMonth === 0 ? 11 : selectedMonth - 1;
@@ -1040,11 +1062,6 @@ export default function InsightsScreen() {
         nextTotals[key] += Number(tx.amount) || 0;
       });
 
-      setExpenseCategoryKeys(nextKeys);
-      setExpenseCategoryMeta(nextMeta);
-      setExpenseTotals(nextTotals);
-      setExpenseBudgets(nextBudgets);
-
       const nextIncomeTotals: Record<string, number> = {};
       INCOME_CATEGORIES.forEach((c) => {
         nextIncomeTotals[c.key] = 0;
@@ -1056,8 +1073,6 @@ export default function InsightsScreen() {
         );
         if (incDef) nextIncomeTotals[incDef.key] += Number(tx.amount) || 0;
       });
-
-      setIncomeTotals(nextIncomeTotals);
 
       // ── Daily spend + day-of-week aggregation ──
       const dailyMap: Record<string, number> = {};
@@ -1074,12 +1089,6 @@ export default function InsightsScreen() {
       const dowAvg = dowTotals.map((total, i) =>
         dowCounts[i] > 0 ? total / dowCounts[i] : 0
       );
-      setDailySpend(dailyMap);
-      setDowAvgSpend(dowAvg);
-      setTotalTxCount(dailyTxData?.length ?? 0);
-
-      // ── Top transactions ──
-      setTopTransactions((topTxData ?? []) as TopTx[]);
 
       // ── Account-level activity ──
       const acctExpense: Record<string, number> = {};
@@ -1092,7 +1101,6 @@ export default function InsightsScreen() {
           acctIncome[id] = (acctIncome[id] ?? 0) + Number(tx.amount);
         }
       });
-      setAccountActivity({ expense: acctExpense, income: acctIncome });
 
       // ── Previous month totals for delta badges ──
       const prevTotals: Record<string, number> = {};
@@ -1100,8 +1108,24 @@ export default function InsightsScreen() {
         const key = normalizeCategoryKey(tx.category);
         prevTotals[key] = (prevTotals[key] ?? 0) + Number(tx.amount);
       });
-      setPrevMonthExpenseTotals(prevTotals);
-      setPrevMonthTxCount(prevTxData?.length ?? 0);
+
+      // Batch all fresh state through applyStatsBundle so every setState is
+      // wrapped in startTransition — async post-await setStates would otherwise
+      // run urgently and block the JS thread during tab-switch.
+      applyStatsBundle({
+        expenseCategoryKeys: nextKeys,
+        expenseCategoryMeta: nextMeta,
+        expenseTotals: nextTotals,
+        expenseBudgets: nextBudgets,
+        incomeTotals: nextIncomeTotals,
+        dailySpend: dailyMap,
+        dowAvgSpend: dowAvg,
+        topTransactions: (topTxData ?? []) as TopTx[],
+        accountActivity: { expense: acctExpense, income: acctIncome },
+        prevMonthExpenseTotals: prevTotals,
+        totalTxCount: dailyTxData?.length ?? 0,
+        prevMonthTxCount: prevTxData?.length ?? 0,
+      });
 
       // 3. Persist the computed bundle to cache for next open
       const bundle = {
@@ -1118,36 +1142,58 @@ export default function InsightsScreen() {
         totalTxCount:        dailyTxData?.length ?? 0,
         prevMonthTxCount:    prevTxData?.length ?? 0,
       };
-      AsyncStorage.setItem(cacheKey, JSON.stringify(bundle)).catch(() => {});
+      AsyncStorage.setItem(cacheKey, JSON.stringify(bundle)).catch((err) => {
+        if (__DEV__) console.warn('[StatsScreen] stats cache write failed:', err);
+      });
+      lastFetchedAt.current = Date.now();
+      lastFetchedKey.current = cacheKey;
     } finally {
       setLoading(false);
     }
   }, [applyStatsBundle, monthRange, selectedMonth, selectedYear]);
 
+  // Re-fetch when month/year changes while screen is already mounted;
+  // useFocusEffect handles the initial fetch on first focus.
   useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    // Month changed — force past the freshness gate since it's a different dataset.
+    fetchStats(true);
+  }, [selectedYear, selectedMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useFocusEffect(
     useCallback(() => {
-      headerOpacity.value = 0;
-      headerTransY.value = -8;
-      heroOpacity.value = 0;
-      heroScale.value = 0.97;
-      contentOpacity.value = 0;
-      contentTransY.value = 16;
+      if (!hasAnimated.current) {
+        // Full entrance on first mount
+        hasAnimated.current = true;
+        headerOpacity.value = 0;
+        headerTransY.value = -8;
+        heroOpacity.value = 0;
+        heroScale.value = 0.97;
+        contentOpacity.value = 0;
+        contentTransY.value = 16;
 
-      headerOpacity.value = withTiming(1, { duration: 260 });
-      headerTransY.value = withTiming(0, { duration: 260 });
-      heroOpacity.value = withDelay(60, withTiming(1, { duration: 320 }));
-      heroScale.value = withDelay(
-        60,
-        withSpring(1, { damping: 18, stiffness: 160 })
-      );
-      contentOpacity.value = withDelay(140, withTiming(1, { duration: 320 }));
-      contentTransY.value = withDelay(
-        140,
-        withSpring(0, { damping: 18, stiffness: 180 })
-      );
+        headerOpacity.value = withTiming(1, { duration: 260 });
+        headerTransY.value = withTiming(0, { duration: 260 });
+        heroOpacity.value = withDelay(60, withTiming(1, { duration: 320 }));
+        heroScale.value = withDelay(60, withSpring(1, { damping: 18, stiffness: 160 }));
+        contentOpacity.value = withDelay(140, withTiming(1, { duration: 320 }));
+        contentTransY.value = withDelay(140, withSpring(0, { damping: 18, stiffness: 180 }));
+      } else {
+        // Lightweight re-entry: subtle fade+lift, ~180ms. Keeps the screen feeling alive
+        // on tab switch without the flash of a full entrance.
+        heroOpacity.value = 0.6;
+        heroScale.value = 0.99;
+        contentOpacity.value = 0.55;
+        contentTransY.value = 6;
+
+        heroOpacity.value = withTiming(1, { duration: 180 });
+        heroScale.value = withTiming(1, { duration: 180 });
+        contentOpacity.value = withTiming(1, { duration: 200 });
+        contentTransY.value = withSpring(0, { damping: 20, stiffness: 220 });
+      }
 
       const task = InteractionManager.runAfterInteractions(() => {
         startTransition(() => { fetchStats(); });
@@ -1526,7 +1572,8 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
         setAiInsights(results);
         lastAiMonthRef.current = monthKey;
       }
-    } catch (_) {
+    } catch (err) {
+      if (__DEV__) console.warn('[StatsScreen] AI insights generation failed:', err);
     } finally {
       setAiInsightsLoading(false);
     }
@@ -1920,6 +1967,12 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
           />
         </TouchableOpacity>
       </RAnim.View>
+      {accountsError ? (
+        <ErrorBanner
+          message="Can't reach server — showing cached data."
+          onRetry={refetchAccounts}
+        />
+      ) : null}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={styles.content}
@@ -2039,6 +2092,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
           }}
         >
           <View {...panResponder.panHandlers} style={styles.donutContainer}>
+            {isChartReady ? (
             <Svg width={168} height={168} viewBox="0 0 160 160">
               <G transform="rotate(-90, 80, 80)">
                 {/* Background track — red tint when over budget */}
@@ -2094,6 +2148,9 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                 )}
               </G>
             </Svg>
+            ) : (
+              <Skeleton width={168} height={168} borderRadius={84} />
+            )}
             <View style={styles.donutCenterText} pointerEvents="none">
               <Text style={[styles.donutCenterPct, { color: centerTextColor }]}>
                 {centerPctText}

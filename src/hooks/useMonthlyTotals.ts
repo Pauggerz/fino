@@ -15,6 +15,7 @@ export interface MonthlyTotals {
   totalExpense: number;
   sparklineData: SparklinePoint[];
   loading: boolean;
+  error: string | null;
   refetch: () => Promise<void>;
 }
 
@@ -25,6 +26,7 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     Array.from({ length: 7 }, (_, i) => ({ id: `day${i}`, val: 0 }))
   );
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchTotals = useCallback(async () => {
     setLoading(true);
@@ -55,6 +57,7 @@ export const useMonthlyTotals = (): MonthlyTotals => {
       .lte('date', endOfMonth);
 
     if (!error && data) {
+      setError(null);
       baseIncome = data
         .filter((t) => t.type === 'income')
         .reduce((s, t) => s + t.amount, 0);
@@ -63,7 +66,9 @@ export const useMonthlyTotals = (): MonthlyTotals => {
         .reduce((s, t) => s + t.amount, 0);
 
       // Save to cache
-      AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ totalIncome: baseIncome, totalExpense: baseExpense })).catch(() => {});
+      AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ totalIncome: baseIncome, totalExpense: baseExpense })).catch((e) => {
+        if (__DEV__) console.warn('[useMonthlyTotals] cache write failed:', e);
+      });
 
       // Compute 7-day trailing sparkline from expense data
       const buckets: number[] = new Array(7).fill(0);
@@ -83,6 +88,8 @@ export const useMonthlyTotals = (): MonthlyTotals => {
           buckets.map((val, i) => ({ id: `day${i}`, val: val / maxBucket }))
         );
       });
+    } else if (error) {
+      setError(error.message ?? 'Failed to load monthly totals');
     }
 
     // 2. OFFLINE CALCULATION: Apply pending offline transactions
@@ -103,5 +110,5 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     fetchTotals();
   }, [fetchTotals]);
 
-  return { totalIncome, totalExpense, sparklineData, loading, refetch: fetchTotals };
+  return { totalIncome, totalExpense, sparklineData, loading, error, refetch: fetchTotals };
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, startTransition } from 'react';
+import { useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import { supabase } from '@/services/supabase';
 import { Category } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,11 +22,20 @@ export interface CategoryWithSpend extends Category {
   state: 'under' | 'nearing' | 'over';
 }
 
+const STALE_WINDOW_MS = 15_000;
+
 export const useCategories = () => {
   const [categories, setCategories] = useState<CategoryWithSpend[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const isFetchingRef = useRef(false);
+  const lastFetchedAt = useRef(0);
 
-  const fetchCategoriesAndSpend = useCallback(async () => {
+  const fetchCategoriesAndSpend = useCallback(async (force = false) => {
+    if (isFetchingRef.current) return;
+    if (!force && Date.now() - lastFetchedAt.current < STALE_WINDOW_MS) return;
+    isFetchingRef.current = true;
+    try {
     let baseCategories: Category[] = [];
     let hasCachedData = false;
 
@@ -63,6 +72,9 @@ export const useCategories = () => {
 
     if (!catError && catData) {
       baseCategories = catData;
+      setError(null);
+    } else if (catError) {
+      setError(catError.message ?? 'Failed to load categories');
     }
 
     // 3. Fetch expenses for the current month
@@ -117,7 +129,13 @@ export const useCategories = () => {
       setLoading(false);
     });
     if (!catError && catData) {
-      AsyncStorage.setItem(CACHE_KEY, JSON.stringify(baseCategories)).catch(() => {});
+      AsyncStorage.setItem(CACHE_KEY, JSON.stringify(baseCategories)).catch((e) => {
+        if (__DEV__) console.warn('[useCategories] cache write failed:', e);
+      });
+    }
+    lastFetchedAt.current = Date.now();
+    } finally {
+      isFetchingRef.current = false;
     }
   }, []);
 
@@ -125,5 +143,5 @@ export const useCategories = () => {
     fetchCategoriesAndSpend();
   }, [fetchCategoriesAndSpend]);
 
-  return { categories, loading, refetch: fetchCategoriesAndSpend };
+  return { categories, loading, error, refetch: fetchCategoriesAndSpend };
 };

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { lightColors, darkColors, ACCENT_THEMES, AccentKey } from '../constants/theme';
@@ -34,26 +34,34 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     });
   }, []);
 
-  const setMode = (m: ThemeMode) => {
+  const setMode = useCallback((m: ThemeMode) => {
     setModeState(m);
     AsyncStorage.setItem(STORAGE_MODE_KEY, m);
-  };
+  }, []);
 
-  const setAccent = (a: AccentKey) => {
+  const setAccent = useCallback((a: AccentKey) => {
     setAccentState(a);
     AsyncStorage.setItem(STORAGE_ACCENT_KEY, a);
-  };
+  }, []);
 
   const isDark = mode === 'system' ? systemColorScheme === 'dark' : mode === 'dark';
 
-  // Merge accent overrides on top of the base palette
-  const accentTheme = ACCENT_THEMES.find(t => t.key === accent);
-  const baseColors  = isDark ? darkColors : lightColors;
-  const overrides   = accentTheme ? (isDark ? accentTheme.dark : accentTheme.light) : {};
-  const colors      = { ...baseColors, ...overrides };
+  // Merge accent overrides on top of the base palette — memoized so consumers
+  // don't re-render on unrelated provider updates.
+  const colors = useMemo(() => {
+    const accentTheme = ACCENT_THEMES.find(t => t.key === accent);
+    const baseColors  = isDark ? darkColors : lightColors;
+    const overrides   = accentTheme ? (isDark ? accentTheme.dark : accentTheme.light) : {};
+    return { ...baseColors, ...overrides };
+  }, [isDark, accent]);
+
+  const value = useMemo(
+    () => ({ mode, setMode, accent, setAccent, isDark, colors }),
+    [mode, setMode, accent, setAccent, isDark, colors],
+  );
 
   return (
-    <ThemeContext.Provider value={{ mode, setMode, accent, setAccent, isDark, colors }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );
