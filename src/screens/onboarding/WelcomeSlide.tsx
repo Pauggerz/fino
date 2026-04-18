@@ -2,12 +2,6 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, Dimensions, Easing, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import {
-  Canvas, Rect, Circle, Group,
-  RadialGradient as SkiaRadialGradient,
-  LinearGradient as SkiaLinearGradient,
-  vec,
-} from '@shopify/react-native-skia';
 
 interface Props { isActive: boolean }
 
@@ -126,78 +120,45 @@ export default function WelcomeSlide({ isActive }: Props) {
   return (
     <View style={s.root}>
 
-      {/* ── Skia aurora background ── */}
-      <Canvas style={StyleSheet.absoluteFillObject} pointerEvents="none">
-        {/* Base fill */}
-        <Rect x={0} y={0} width={W} height={H} color="#030b06" />
+      {/* ── Background ── */}
+      <LinearGradient
+        colors={['#030b06', '#091c0e', '#1a5c35', '#0a1f10', '#2d8a50', '#0a1a0d', '#030b06']}
+        start={{ x: 0.25, y: 0 }}
+        end={{ x: 0.75, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
 
-        {/* Diagonal aurora bands — rotated large rect with banded gradient */}
-        <Group transform={[{ rotate: -0.52 }, { translateX: -W * 0.3 }, { translateY: -H * 0.25 }]}>
-          <Rect x={0} y={0} width={W * 2.2} height={H * 1.5}>
-            <SkiaLinearGradient
-              start={vec(0, 0)}
-              end={vec(0, H * 1.5)}
-              colors={[
-                '#030b06', '#091c0e', '#1a5c35', '#0a1f10',
-                '#2d8a50', '#0a1a0d', '#5B8C6E', '#0c2014', '#030b06',
-              ]}
-              positions={[0, 0.08, 0.22, 0.38, 0.52, 0.66, 0.78, 0.90, 1]}
-            />
-          </Rect>
-        </Group>
+      {/* Radial glow approximations */}
+      <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+        <View style={[s.radial, {
+          width: W * 1.16, height: W * 1.16, borderRadius: W * 0.58,
+          left: W * 0.22 - W * 0.58, top: H * 0.20 - W * 0.58,
+          backgroundColor: 'rgba(25,100,52,0.40)',
+        }]} />
+        <View style={[s.radial, {
+          width: W * 1.04, height: W * 1.04, borderRadius: W * 0.52,
+          left: W * 0.82 - W * 0.52, top: H * 0.76 - W * 0.52,
+          backgroundColor: 'rgba(55,145,85,0.30)',
+        }]} />
+        <View style={[s.radial, {
+          width: W * 0.70, height: W * 0.70, borderRadius: W * 0.35,
+          left: W * 0.52 - W * 0.35, top: H * 0.46 - W * 0.35,
+          backgroundColor: 'rgba(168,213,181,0.08)',
+        }]} />
+        <View style={[s.radial, {
+          width: W * 0.84, height: W * 0.84, borderRadius: W * 0.42,
+          left: W * 0.10 - W * 0.42, top: H * 0.80 - W * 0.42,
+          backgroundColor: 'rgba(30,90,50,0.22)',
+        }]} />
+        <View style={[s.radial, {
+          width: W * 0.64, height: W * 0.64, borderRadius: W * 0.32,
+          left: W * 0.90 - W * 0.32, top: H * 0.12 - W * 0.32,
+          backgroundColor: 'rgba(232,133,106,0.05)',
+        }]} />
+      </View>
 
-        {/* Radial glow — top-left forest green */}
-        <Circle cx={W * 0.22} cy={H * 0.20} r={W * 0.58}>
-          <SkiaRadialGradient
-            c={vec(W * 0.22, H * 0.20)}
-            r={W * 0.58}
-            colors={['rgba(25,100,52,0.88)', 'rgba(12,50,25,0.42)', 'rgba(3,11,6,0)']}
-            positions={[0, 0.55, 1]}
-          />
-        </Circle>
-
-        {/* Radial glow — bottom-right sage */}
-        <Circle cx={W * 0.82} cy={H * 0.76} r={W * 0.52}>
-          <SkiaRadialGradient
-            c={vec(W * 0.82, H * 0.76)}
-            r={W * 0.52}
-            colors={['rgba(55,145,85,0.72)', 'rgba(22,78,42,0.35)', 'rgba(3,11,6,0)']}
-            positions={[0, 0.50, 1]}
-          />
-        </Circle>
-
-        {/* Radial glow — center mint highlight */}
-        <Circle cx={W * 0.52} cy={H * 0.46} r={W * 0.35}>
-          <SkiaRadialGradient
-            c={vec(W * 0.52, H * 0.46)}
-            r={W * 0.35}
-            colors={['rgba(168,213,181,0.18)', 'rgba(3,11,6,0)']}
-            positions={[0, 1]}
-          />
-        </Circle>
-
-        {/* Radial glow — lower-left */}
-        <Circle cx={W * 0.10} cy={H * 0.80} r={W * 0.42}>
-          <SkiaRadialGradient
-            c={vec(W * 0.10, H * 0.80)}
-            r={W * 0.42}
-            colors={['rgba(30,90,50,0.55)', 'rgba(3,11,6,0)']}
-            positions={[0, 1]}
-          />
-        </Circle>
-
-        {/* Warm coral accent — upper-right (gives depth like the poster) */}
-        <Circle cx={W * 0.90} cy={H * 0.12} r={W * 0.32}>
-          <SkiaRadialGradient
-            c={vec(W * 0.90, H * 0.12)}
-            r={W * 0.32}
-            colors={['rgba(232,133,106,0.12)', 'rgba(3,11,6,0)']}
-            positions={[0, 1]}
-          />
-        </Circle>
-      </Canvas>
-
-      {/* Animated center glow — slow breathing on top of Skia */}
+      {/* Animated center glow */}
       <Animated.View
         style={[s.centerGlow, { opacity: glowOp, transform: [{ scale: glowScale }] }]}
         pointerEvents="none"
@@ -287,7 +248,8 @@ export default function WelcomeSlide({ isActive }: Props) {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, overflow: 'hidden' },
+  root: { flex: 1, overflow: 'hidden', backgroundColor: '#030b06' },
+  radial: { position: 'absolute' },
   centerGlow: {
     position: 'absolute',
     width: W * 1.2, height: W * 1.2, borderRadius: W * 0.6,
