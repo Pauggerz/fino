@@ -1,11 +1,10 @@
-import React, { startTransition, useEffect, useState } from 'react';
+import React, { startTransition, useState } from 'react';
 import {
   NavigationContainer,
   NavigatorScreenParams,
 } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import FABActionSheet from '../components/FABActionSheet';
 import HomeScreen from '../screens/HomeScreen';
@@ -134,13 +133,15 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
   const { session, isLoading } = useAuth();
-  const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
+  // DEV: always show onboarding for critiquing. To restore normal behaviour,
+  // replace the line below with the commented-out block.
+  const [hasOnboarded, setHasOnboarded] = useState(false);
+  // const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
+  // useEffect(() => {
+  //   AsyncStorage.getItem('hasOnboarded').then(val => setHasOnboarded(val === 'true'));
+  // }, []);
 
-  useEffect(() => {
-    AsyncStorage.getItem('hasOnboarded').then(val => setHasOnboarded(val === 'true'));
-  }, []);
-
-  if (isLoading || hasOnboarded === null) return null;
+  if (isLoading) return null;
 
   return (
     <NavigationContainer>
