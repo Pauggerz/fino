@@ -1,10 +1,11 @@
-import React, { startTransition } from 'react';
+import React, { startTransition, useEffect, useState } from 'react';
 import {
   NavigationContainer,
   NavigatorScreenParams,
 } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import FABActionSheet from '../components/FABActionSheet';
 import HomeScreen from '../screens/HomeScreen';
@@ -21,6 +22,7 @@ import BillSplitterScreen from '../screens/BillSplitterScreen';
 import UtangTrackerScreen from '../screens/UtangTrackerScreen';
 import SavingsGoalScreen from '../screens/SavingsGoalScreen';
 import LoginScreen from '../screens/LoginScreen';
+import OnboardingScreen from '../screens/OnboardingScreen';
 import { useAuth } from '../contexts/AuthContext';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -43,6 +45,7 @@ export type TabStackParamList = {
 };
 
 export type RootStackParamList = {
+  Onboarding: undefined;
   Tabs: NavigatorScreenParams<TabStackParamList>;
   FABActionSheet: undefined;
   AddTransaction: {
@@ -131,14 +134,22 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
   const { session, isLoading } = useAuth();
+  const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
 
-  // Keep splash screen up while auth resolves (handled in App.tsx)
-  if (isLoading) return null;
+  useEffect(() => {
+    AsyncStorage.getItem('hasOnboarded').then(val => setHasOnboarded(val === 'true'));
+  }, []);
+
+  if (isLoading || hasOnboarded === null) return null;
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!session ? (
+        {!hasOnboarded ? (
+          <Stack.Screen name="Onboarding">
+            {(props) => <OnboardingScreen {...props} onComplete={() => setHasOnboarded(true)} />}
+          </Stack.Screen>
+        ) : !session ? (
           // ── Unauthenticated ───────────────────────────────────────────────
           <Stack.Screen
             name={'Login' as any}
