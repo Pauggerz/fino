@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,17 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import Constants from 'expo-constants';
 import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
+
+// Apple Sign In is incompatible with Expo Go (wrong bundle ID in id_token audience).
+// It only works in a development build or production build.
+const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
+
+WebBrowser.maybeCompleteAuthSession();
 
 type Mode = 'login' | 'signup';
 
@@ -31,12 +40,110 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
   const passwordRef = useRef<TextInput>(null);
   const nameRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'ios' && !IS_EXPO_GO) {
+      AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
+    }
+  }, []);
 
   const resetForm = () => {
     setError(null);
     setSuccess(null);
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setSuccess(null);
+    setGoogleLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: 'fino://', skipBrowserRedirect: true },
+      });
+      if (error || !data.url) throw error ?? new Error('Google sign-in unavailable');
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, 'fino://');
+      if (result.type === 'success') {
+        const fragment = result.url.split('#')[1] ?? result.url.split('?')[1] ?? '';
+        const params = Object.fromEntries(new URLSearchParams(fragment));
+        if (params.access_token && params.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: params.access_token,
+            refresh_token: params.refresh_token,
+          });
+        }
+      }
+    } catch (err: any) {
+      const msg: string = err?.message ?? '';
+      if (msg.includes('provider is not enabled') || msg.includes('validation_failed')) {
+        setError('Google sign-in is not configured yet. Enable the Google provider in your Supabase Dashboard → Authentication → Providers.');
+      } else {
+        setError(msg || 'Google sign-in failed. Please try again.');
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    setError(null);
+    setSuccess(null);
+    setAppleLoading(true);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) throw new Error('Apple did not return an identity token.');
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      if (err.code !== 'ERR_REQUEST_CANCELED') {
+        setError(err.message ?? 'Apple sign-in failed. Please try again.');
+      }
+    } finally {
+      setAppleLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    Keyboard.dismiss();
+    setError(null);
+    setSuccess(null);
+    const trimmed = forgotEmail.trim().toLowerCase();
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+        redirectTo: 'fino://reset-password',
+      });
+      if (error) throw error;
+      setSuccess('Password reset email sent. Check your inbox.');
+      setForgotMode(false);
+      setForgotEmail('');
+    } catch (err: any) {
+      setError(err.message ?? 'Something went wrong. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -243,6 +350,105 @@ export default function LoginScreen() {
               </Text>
             )}
           </TouchableOpacity>
+
+          {/* Forgot password */}
+          {mode === 'login' && !forgotMode && (
+            <TouchableOpacity
+              onPress={() => { setForgotMode(true); setError(null); setSuccess(null); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.forgotLink}
+            >
+              <Text style={[styles.forgotText, { color: colors.primary }]}>
+                Forgot password?
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {mode === 'login' && forgotMode && (
+            <View style={[styles.forgotBox, { backgroundColor: isDark ? '#2C2C2E' : '#F7F5F2', borderColor }]}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>
+                Enter your email to receive a reset link
+              </Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: inputBg, borderColor, color: colors.textPrimary }]}
+                placeholder="you@example.com"
+                placeholderTextColor={colors.textSecondary}
+                value={forgotEmail}
+                onChangeText={setForgotEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="send"
+                textContentType="emailAddress"
+                onSubmitEditing={handleForgotPassword}
+              />
+              <View style={styles.forgotActions}>
+                <TouchableOpacity
+                  onPress={() => { setForgotMode(false); setForgotEmail(''); setError(null); }}
+                  style={[styles.forgotCancelBtn, { borderColor }]}
+                >
+                  <Text style={[styles.forgotCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.forgotSendBtn, { backgroundColor: colors.primary }, forgotLoading && { opacity: 0.7 }]}
+                  onPress={handleForgotPassword}
+                  disabled={forgotLoading}
+                  activeOpacity={0.85}
+                >
+                  {forgotLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.submitText}>Send Link</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Social sign-in */}
+        <View style={styles.dividerRow}>
+          <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]} />
+          <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or continue with</Text>
+          <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]} />
+        </View>
+
+        <View style={styles.socialRow}>
+          <TouchableOpacity
+            style={[styles.socialBtn, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
+            onPress={handleGoogleSignIn}
+            disabled={googleLoading || appleLoading}
+            activeOpacity={0.8}
+            accessibilityLabel="Sign in with Google"
+          >
+            {googleLoading ? (
+              <ActivityIndicator size="small" color={colors.textSecondary} />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={20} color="#EA4335" />
+                <Text style={[styles.socialBtnText, { color: colors.textPrimary }]}>Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {appleAvailable && (
+            <TouchableOpacity
+              style={[styles.socialBtn, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
+              onPress={handleAppleSignIn}
+              disabled={googleLoading || appleLoading}
+              activeOpacity={0.8}
+              accessibilityLabel="Sign in with Apple"
+            >
+              {appleLoading ? (
+                <ActivityIndicator size="small" color={colors.textSecondary} />
+              ) : (
+                <>
+                  <Ionicons name="logo-apple" size={22} color={isDark ? '#fff' : '#000'} />
+                  <Text style={[styles.socialBtnText, { color: colors.textPrimary }]}>Apple</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         <Text style={[styles.footer, { color: colors.textSecondary }]}>
@@ -380,5 +586,78 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
     marginTop: 20,
+  },
+  forgotLink: {
+    alignItems: 'center',
+    marginTop: -4,
+  },
+  forgotText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+  },
+  forgotBox: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
+    marginTop: -4,
+  },
+  forgotActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  forgotCancelBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  forgotCancelText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 15,
+  },
+  forgotSendBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  socialBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  socialBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
   },
 });

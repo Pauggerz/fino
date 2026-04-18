@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import { useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Linking } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -61,15 +61,35 @@ export default function App() {
       try {
         await supabase.auth.getSession();
       } catch (error) {
-        console.warn('Session check failed, signing out:', error);
+        if (__DEV__) console.warn('Session check failed, signing out:', error);
         await supabase.auth.signOut();
       } finally {
-        // Always mark auth as ready, whether session exists, is empty, or failed
         setIsAuthReady(true);
       }
     }
-
     prepareSession();
+  }, []);
+
+  // Handle deep links — email confirmation + password reset.
+  // Supabase redirects to fino://#access_token=...&refresh_token=...&type=signup|recovery
+  useEffect(() => {
+    const handleUrl = async (url: string) => {
+      // Tokens can be in the hash fragment (#) or query string (?) depending on
+      // Supabase version / platform.
+      const fragment = url.split('#')[1] ?? url.split('?')[1] ?? '';
+      const params = Object.fromEntries(new URLSearchParams(fragment));
+      const { access_token, refresh_token } = params;
+      if (access_token && refresh_token) {
+        await supabase.auth.setSession({ access_token, refresh_token });
+      }
+    };
+
+    // App opened via deep link (cold start)
+    Linking.getInitialURL().then((url) => { if (url) handleUrl(url); });
+
+    // App brought to foreground via deep link (warm start)
+    const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => sub.remove();
   }, []);
 
   // Pre-load local image assets
