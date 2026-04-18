@@ -21,10 +21,17 @@ export const getPendingQueue = async (): Promise<OfflineTransaction[]> => {
   }
 };
 
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export const addToQueue = async (transaction: OfflineTransaction) => {
   try {
     const queue = await getPendingQueue();
-    const newTx = { ...transaction, id: `temp_${Date.now()}`, isPending: true };
+    const newTx = { ...transaction, id: generateUUID(), isPending: true };
     queue.push(newTx);
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
     return newTx;
@@ -122,13 +129,24 @@ async function insertTxFallback(
 }
 
 export const processQueue = async (): Promise<boolean> => {
-  const queue = await getPendingQueue();
+  let queue = await getPendingQueue();
+  if (queue.length === 0) return true;
+
+  // Purge legacy entries that were queued with temp_ IDs (no valid UUID) —
+  // these can never be inserted and would loop forever.
+  const stale = queue.filter((tx) => tx.id.startsWith('temp_'));
+  if (stale.length > 0) {
+    if (__DEV__) console.warn(`[sync] purging ${stale.length} stale temp_ transaction(s) from queue`);
+    for (const tx of stale) await removeFromQueue(tx.id);
+    queue = queue.filter((tx) => !tx.id.startsWith('temp_'));
+  }
+
   if (queue.length === 0) return true;
 
   let allSuccess = true;
 
   for (const tx of queue) {
-    const { id, isPending, ...dbPayload } = tx;
+    const { isPending, ...dbPayload } = tx;
 
     try {
       // Try the atomic RPC first (handles both insert + balance update in one
@@ -139,7 +157,7 @@ export const processQueue = async (): Promise<boolean> => {
       }
 
       if (ok) {
-        await removeFromQueue(id);
+        await removeFromQueue(tx.id);
       } else {
         allSuccess = false;
       }
