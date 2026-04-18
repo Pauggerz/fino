@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,9 @@ import { CategoryIcon } from '@/components/CategoryIcon';
 import { CATEGORY_COLOR, INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import type { MoreStackParamList } from '../navigation/RootNavigator';
 import WalletCard, { getCfg } from '../components/WalletCard';
+import TransferModal from '@/components/account/TransferModal';
+import AdjustBalanceSheet from '@/components/account/AdjustBalanceSheet';
+import { saveEditAccount } from '@/services/transactionMutations';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -88,15 +91,6 @@ export default function AccountDetailScreen() {
 
   // ── Adjust Balance ──
   const [adjustSheetVisible, setAdjustSheetVisible] = useState(false);
-  const [newBalance, setNewBalance] = useState('');
-  const [adjustNote, setAdjustNote] = useState('');
-  const [adjustSaving, setAdjustSaving] = useState(false);
-
-  // ── Transfer ──
-  const [transferDestId, setTransferDestId] = useState<string>('');
-  const [transferAmount, setTransferAmount] = useState('');
-  const [transferSaving, setTransferSaving] = useState(false);
-  const transferInputRef = useRef<TextInput>(null);
 
   const selectedAccount = useMemo<Account | null>(() => {
     if (!accounts.length) return null;
@@ -247,107 +241,19 @@ export default function AccountDetailScreen() {
     [categories, colors]
   );
 
-  // ── Save Adjust Balance ──
-  const handleSaveAdjustment = useCallback(async () => {
-    const parsed = parseFloat(newBalance);
-    if (!selectedAccount?.id || isNaN(parsed)) return;
-
-    const diff = parsed - balance;
-    if (diff === 0) {
-      setAdjustSheetVisible(false);
-      return;
-    }
-
-    setAdjustSaving(true);
-    const today = new Date().toISOString().split('T')[0];
-
-    await supabase.from('transactions').insert({
-      account_id: selectedAccount.id,
-      user_id: selectedAccount.user_id,
-      amount: Math.abs(diff),
-      type: diff > 0 ? 'income' : 'expense',
-      category: 'adjustment',
-      merchant_name: null,
-      display_name: adjustNote || 'Balance Reconciliation',
-      transaction_note: adjustNote || null,
-      date: today,
-      receipt_url: null,
-      account_deleted: false,
-    });
-
-    await supabase
-      .from('accounts')
-      .update({ last_reconciled_at: new Date().toISOString() })
-      .eq('id', selectedAccount.id);
-
-    setAdjustSaving(false);
-    setAdjustSheetVisible(false);
-    setNewBalance('');
-    setAdjustNote('');
-    fetchAccountTransactions();
-  }, [selectedAccount, balance, newBalance, adjustNote, fetchAccountTransactions]);
-
   // ── Save Edit Account ──
   const handleSaveEdit = useCallback(async () => {
     const trimmedName = editName.trim();
-    const trimmedType = editType.trim();
     if (!selectedAccount?.id || !trimmedName) return;
     setEditSaving(true);
-    await supabase
-      .from('accounts')
-      .update({ name: trimmedName, type: trimmedType })
-      .eq('id', selectedAccount.id);
-    setEditSaving(false);
-    setEditSheetVisible(false);
-    refetchAccounts();
+    try {
+      await saveEditAccount({ accountId: selectedAccount.id, name: trimmedName, type: editType.trim() });
+      setEditSheetVisible(false);
+      refetchAccounts();
+    } finally {
+      setEditSaving(false);
+    }
   }, [selectedAccount, editName, editType, refetchAccounts]);
-
-  // ── Save Transfer ──
-  const handleSaveTransfer = useCallback(async () => {
-    const parsed = parseFloat(transferAmount);
-    if (!selectedAccount?.id || !transferDestId || isNaN(parsed) || parsed <= 0) return;
-
-    const destAccount = accounts.find((a) => a.id === transferDestId);
-    if (!destAccount) return;
-
-    setTransferSaving(true);
-    const today = new Date().toISOString().split('T')[0];
-
-    await supabase.from('transactions').insert([
-      {
-        account_id: selectedAccount.id,
-        user_id: selectedAccount.user_id,
-        amount: parsed,
-        type: 'expense',
-        category: 'transfer',
-        merchant_name: null,
-        display_name: `Transfer to ${destAccount.name}`,
-        transaction_note: null,
-        date: today,
-        receipt_url: null,
-        account_deleted: false,
-      },
-      {
-        account_id: transferDestId,
-        user_id: selectedAccount.user_id,
-        amount: parsed,
-        type: 'income',
-        category: 'transfer',
-        merchant_name: null,
-        display_name: `Transfer from ${config.label}`,
-        transaction_note: null,
-        date: today,
-        receipt_url: null,
-        account_deleted: false,
-      },
-    ]);
-
-    setTransferSaving(false);
-    setShowTransferModal(false);
-    setTransferAmount('');
-    setTransferDestId('');
-    fetchAccountTransactions();
-  }, [selectedAccount, transferDestId, transferAmount, accounts, config.label, fetchAccountTransactions]);
 
   // ─── Render transaction item ──────────────────────────────────────────────
   const renderTxn: ListRenderItem<Transaction> = ({ item }) => {
@@ -508,10 +414,7 @@ export default function AccountDetailScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.qaBtn}
-                    onPress={() => {
-                      if (otherAccounts.length > 0) setTransferDestId(otherAccounts[0].id);
-                      setShowTransferModal(true);
-                    }}
+                    onPress={() => setShowTransferModal(true)}
                   >
                     <Text style={styles.qaBtnText}>↗ Transfer</Text>
                   </TouchableOpacity>
@@ -565,11 +468,7 @@ export default function AccountDetailScreen() {
               </View>
               <TouchableOpacity
                 style={[styles.adjustBadge, { backgroundColor: `${config.color}22` }]}
-                onPress={() => {
-                  setNewBalance('');
-                  setAdjustNote('');
-                  setAdjustSheetVisible(true);
-                }}
+                onPress={() => setAdjustSheetVisible(true)}
               >
                 <Text style={[styles.adjustBadgeText, { color: config.color }]}>⚖️ Adjust Balance</Text>
               </TouchableOpacity>
@@ -693,211 +592,24 @@ export default function AccountDetailScreen() {
         </View>
       </Modal>
 
-      <Modal
+      <TransferModal
         visible={showTransferModal}
-        transparent
-        animationType="slide"
-        onShow={() => { setTimeout(() => transferInputRef.current?.focus(), 150); }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>Transfer Money</Text>
-            <Text style={styles.modalSub}>
-              Move funds from{' '}
-              <Text style={{ fontFamily: 'Inter_700Bold' }}>{config.label}</Text>
-              {' '}to another account.
-            </Text>
+        onClose={() => setShowTransferModal(false)}
+        onSuccess={fetchAccountTransactions}
+        sourceAccount={selectedAccount}
+        otherAccounts={otherAccounts}
+        colors={colors}
+        isDark={isDark}
+      />
 
-            {otherAccounts.length === 0 ? (
-              <Text style={styles.emptyText}>No other accounts available.</Text>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.transferAccountsContent}
-                style={styles.transferAccountsWrap}
-              >
-                {otherAccounts.map((acct) => {
-                  const isSelected = transferDestId === acct.id;
-                  return (
-                    <TouchableOpacity
-                      key={acct.id}
-                      style={[styles.transferAcctChip, isSelected && { borderColor: acct.brand_colour, borderWidth: 2 }]}
-                      onPress={() => setTransferDestId(acct.id)}
-                    >
-                      <View style={[styles.transferAcctAvatar, { backgroundColor: acct.brand_colour }]}>
-                        <Text style={styles.transferAcctLetter}>{acct.letter_avatar}</Text>
-                      </View>
-                      <Text style={styles.transferAcctName} numberOfLines={1}>{acct.name}</Text>
-                      <Text style={styles.transferAcctBal}>{fmtPeso(acct.balance)}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-
-            <TextInput
-              ref={transferInputRef}
-              style={[styles.adjustInput, { marginTop: 16 }]}
-              placeholder="Amount to transfer"
-              placeholderTextColor={colors.textSecondary}
-              keyboardType="decimal-pad"
-              value={transferAmount}
-              onChangeText={setTransferAmount}
-            />
-
-            <TouchableOpacity
-              style={[styles.confirmBtn, { marginTop: 20, opacity: transferSaving || !transferDestId ? 0.6 : 1 }]}
-              onPress={handleSaveTransfer}
-              disabled={transferSaving || !transferDestId}
-            >
-              <Text style={styles.confirmBtnText}>
-                {transferSaving ? 'Transferring…' : 'Confirm Transfer'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => { setShowTransferModal(false); setTransferAmount(''); setTransferDestId(''); }}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ════ ADJUST BALANCE — only mounted when open, so no gesture blocker at rest ════ */}
-      {adjustSheetVisible && (
-      <BottomSheet
-        index={0}
-        snapPoints={['60%']}
-        enablePanDownToClose
-        keyboardBehavior={Platform.OS === 'ios' ? 'interactive' : 'fillParent'}
-        keyboardBlurBehavior="restore"
-        enableBlurKeyboardOnGesture
-        android_keyboardInputMode="adjustPan"
-        backdropComponent={(props) => (
-          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} pressBehavior="close" />
-        )}
-        backgroundStyle={{ backgroundColor: colors.white }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? '#555' : '#ccc' }}
-        onClose={() => { setAdjustSheetVisible(false); setNewBalance(''); setAdjustNote(''); }}
-      >
-        <BottomSheetScrollView
-          contentContainerStyle={styles.bsContent}
-          keyboardShouldPersistTaps="always"
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
-        >
-          {/* Header */}
-          <Text style={styles.adjustTitle}>Reconcile Balance</Text>
-          <Text style={styles.adjustSub}>
-            Enter your actual wallet amount. We'll log the difference automatically.
-          </Text>
-
-          {/* Current → New compare */}
-          <View style={styles.balanceCompareRow}>
-            <View style={styles.balanceCompareBox}>
-              <Text style={styles.balanceCompareLabel}>Current</Text>
-              <Text style={styles.balanceCompareValue}>{fmtPeso(balance)}</Text>
-            </View>
-            <Text style={styles.balanceArrow}>→</Text>
-            <View style={[styles.balanceCompareBox, styles.balanceCompareBoxNew]}>
-              <Text style={styles.balanceCompareLabel}>New</Text>
-              <Text
-                style={[
-                  styles.balanceCompareValue,
-                  {
-                    color: (() => {
-                      const p = parseFloat(newBalance);
-                      if (isNaN(p) || newBalance === '') return colors.textSecondary;
-                      return p >= balance ? colors.incomeGreen : colors.expenseRed;
-                    })(),
-                  },
-                ]}
-              >
-                {(() => {
-                  const p = parseFloat(newBalance);
-                  return isNaN(p) || newBalance === '' ? '₱ —' : fmtPeso(p);
-                })()}
-              </Text>
-            </View>
-          </View>
-
-          {/* Amount input using BottomSheetTextInput — fixes Android keyboard */}
-          <View style={styles.adjustInputWrap}>
-            <Text style={styles.adjustInputPrefix}>₱</Text>
-            <BottomSheetTextInput
-              style={styles.adjustInputField}
-              placeholder="0.00"
-              placeholderTextColor={colors.textSecondary}
-              keyboardType="decimal-pad"
-              value={newBalance}
-              onChangeText={setNewBalance}
-              returnKeyType="done"
-            />
-          </View>
-
-          {/* Diff card */}
-          {(() => {
-            const parsed = parseFloat(newBalance);
-            if (isNaN(parsed) || newBalance === '' || parsed === balance) return null;
-            const diff = parsed - balance;
-            const isAdd = diff > 0;
-            return (
-              <View
-                style={[
-                  styles.diffCard,
-                  {
-                    backgroundColor: isAdd
-                      ? isDark ? 'rgba(106,158,127,0.15)' : 'rgba(91,140,110,0.08)'
-                      : isDark ? 'rgba(255,107,107,0.15)' : 'rgba(192,80,58,0.08)',
-                    borderColor: isAdd ? colors.incomeGreen : colors.expenseRed,
-                  },
-                ]}
-              >
-                <Text style={[styles.diffCardText, { color: isAdd ? colors.incomeGreen : colors.expenseRed }]}>
-                  {isAdd ? '▲' : '▼'} {fmtPeso(Math.abs(diff))} will be recorded as{' '}
-                  <Text style={{ fontFamily: 'Inter_700Bold' }}>{isAdd ? 'income' : 'expense'}</Text>
-                </Text>
-              </View>
-            );
-          })()}
-
-          {/* Note */}
-          <BottomSheetTextInput
-            style={styles.adjustNoteInput}
-            placeholder="Add a note (optional)"
-            placeholderTextColor={colors.textSecondary}
-            value={adjustNote}
-            onChangeText={setAdjustNote}
-            returnKeyType="done"
-          />
-
-          {/* Save */}
-          <TouchableOpacity
-            style={[
-              styles.adjustSaveBtn,
-              {
-                opacity:
-                  adjustSaving || !newBalance || isNaN(parseFloat(newBalance)) || parseFloat(newBalance) === balance
-                    ? 0.45
-                    : 1,
-              },
-            ]}
-            onPress={handleSaveAdjustment}
-            disabled={adjustSaving || !newBalance || isNaN(parseFloat(newBalance)) || parseFloat(newBalance) === balance}
-          >
-            <Text style={styles.adjustSaveBtnText}>{adjustSaving ? 'Saving…' : 'Save Adjustment'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.cancelBtn}
-            onPress={() => setAdjustSheetVisible(false)}
-          >
-            <Text style={styles.cancelBtnText}>Cancel</Text>
-          </TouchableOpacity>
-        </BottomSheetScrollView>
-      </BottomSheet>
-      )}
+      <AdjustBalanceSheet
+        visible={adjustSheetVisible}
+        onClose={() => setAdjustSheetVisible(false)}
+        onSuccess={fetchAccountTransactions}
+        account={selectedAccount}
+        colors={colors}
+        isDark={isDark}
+      />
 
       {/* ════ EDIT ACCOUNT ════ */}
       {editSheetVisible && (

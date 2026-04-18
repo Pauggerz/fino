@@ -7,7 +7,6 @@ import React, {
   useTransition,
 } from 'react';
 import {
-  Animated,
   View,
   Text,
   StyleSheet,
@@ -18,7 +17,6 @@ import {
   PanResponder,
   Vibration,
   Modal,
-  Dimensions,
   TouchableWithoutFeedback,
   InteractionManager,
   RefreshControl,
@@ -35,7 +33,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, G, Path as SvgPath, Rect, Line, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G } from 'react-native-svg';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Dynamic Theme Hook
 import { supabase } from '@/services/supabase';
@@ -51,6 +49,9 @@ import { useAccounts } from '@/hooks/useAccounts';
 import { generateBulletInsights } from '@/services/gemini';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDeferredRender } from '@/hooks/useDeferredRender';
+import { WaveFill } from '@/components/home/WaveFill';
+import DailySpendChart from '@/components/stats/DailySpendChart';
+import DowPatternChart from '@/components/stats/DowPatternChart';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -69,8 +70,6 @@ type TopTx = {
   date: string;
   account_id: string;
 };
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
 
 // ─── Theme maps ──────────────────────────────────────────────────────────────
 
@@ -284,78 +283,8 @@ const withAlpha = (hex: string, alpha: number): string => {
   return `rgba(${r},${g},${b},${alpha})`;
 };
 
-// ─── WaveFill (shared with HomeScreen style) ───────────────────────────────
-
-const TILE_W = 160;
+// ─── Tile height for category wave fills ─────────────────────────────────────
 const TILE_H = 122;
-const WAVE_SVG_W = TILE_W * 4;
-
-function makeWavePath(yBase: number, amp: number): string {
-  const halfWl = TILE_W / 2;
-  const numArcs = (WAVE_SVG_W / halfWl) + 2;
-  let d = `M 0 ${yBase}`;
-  for (let i = 0; i < numArcs; i++) {
-    const x0 = i * halfWl;
-    const xMid = x0 + halfWl / 2;
-    const x1 = x0 + halfWl;
-    const yPeak = i % 2 === 0 ? yBase - amp : yBase + amp;
-    d += ` Q ${xMid} ${yPeak} ${x1} ${yBase}`;
-  }
-  d += ` L ${WAVE_SVG_W + halfWl} ${TILE_H} L 0 ${TILE_H} Z`;
-  return d;
-}
-
-function WaveFill({ pct, color }: { pct: number; color: string }) {
-  const anim1 = useRef(new Animated.Value(0)).current;
-  const anim2 = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const loop1 = Animated.loop(
-      Animated.timing(anim1, { toValue: 1, duration: 3000, useNativeDriver: true })
-    );
-    const loop2 = Animated.loop(
-      Animated.timing(anim2, { toValue: 1, duration: 4600, useNativeDriver: true })
-    );
-    loop1.start();
-    loop2.start();
-
-    return () => {
-      loop1.stop();
-      loop2.stop();
-      anim1.stopAnimation();
-      anim2.stopAnimation();
-    };
-  }, [anim1, anim2]);
-
-  const clampedPct = Math.min(Math.max(pct, 0), 1);
-  const yBase = TILE_H - TILE_H * clampedPct;
-
-  const tx1 = anim1.interpolate({ inputRange: [0, 1], outputRange: [0, -TILE_W] });
-  const tx2 = anim2.interpolate({ inputRange: [0, 1], outputRange: [0, -TILE_W] });
-
-  const waveStyle = {
-    position: 'absolute' as const,
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: WAVE_SVG_W,
-  };
-
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Animated.View style={[waveStyle, { transform: [{ translateX: tx2 }] }]}>
-        <Svg width={WAVE_SVG_W} height={TILE_H}>
-          <SvgPath d={makeWavePath(yBase + 6, 8)} fill={color} opacity={0.18} />
-        </Svg>
-      </Animated.View>
-      <Animated.View style={[waveStyle, { transform: [{ translateX: tx1 }] }]}>
-        <Svg width={WAVE_SVG_W} height={TILE_H}>
-          <SvgPath d={makeWavePath(yBase, 10)} fill={color} opacity={0.42} />
-        </Svg>
-      </Animated.View>
-    </View>
-  );
-}
 
 // ─── Month picker modal ───────────────────────────────────────────────────────
 
@@ -472,269 +401,10 @@ function MonthPickerModal({
   );
 }
 
-// ─── DailySpendChart ─────────────────────────────────────────────────────────
+// ─── DailySpendChart and DowPatternChart are imported from their own files ───
+// They use Reanimated (UI-thread animations) instead of Animated with useNativeDriver: false.
 
-const PEAK_AMBER = '#E07B2E';
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
-
-function DailySpendChart({
-  data,
-  maxAmount,
-  colors,
-}: {
-  data: { day: number; amount: number }[];
-  maxAmount: number;
-  colors: any;
-}) {
-  const Y_LABEL_W = 34;
-  const PADDING = 16;
-  const CHART_W = SCREEN_WIDTH - 32 - PADDING * 2 - Y_LABEL_W;
-  const CHART_H = 80;
-  const BAR_GAP = 2;
-  const barCount = data.length;
-  const BAR_W = Math.max(2, (CHART_W - BAR_GAP * (barCount - 1)) / barCount);
-  const chartProgress = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    chartProgress.setValue(0);
-    Animated.timing(chartProgress, {
-      toValue: 1,
-      duration: 560,
-      useNativeDriver: false,
-    }).start();
-  }, [chartProgress, data, maxAmount]);
-
-  const peakIndex = data.reduce(
-    (best, d, i) => (d.amount > data[best].amount ? i : best),
-    0
-  );
-
-  const formatYLabel = (value: number): string => {
-    if (value === 0) return '₱0';
-    if (value >= 1000) return `₱${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
-    return `₱${Math.round(value)}`;
-  };
-
-  const ySteps = [
-    { label: formatYLabel(maxAmount), y: 4 },
-    { label: formatYLabel(maxAmount / 2), y: CHART_H / 2 + 4 },
-    { label: '₱0', y: CHART_H },
-  ];
-
-  return (
-    <Svg width={Y_LABEL_W + CHART_W} height={CHART_H + 14}>
-      {/* Y-axis labels */}
-      {ySteps.map((step, idx) => (
-        <SvgText
-          key={idx}
-          x={Y_LABEL_W - 4}
-          y={step.y}
-          fontSize={8}
-          fill={withAlpha(colors.textSecondary, 0.5)}
-          textAnchor="end"
-          fontWeight="500"
-        >
-          {step.label}
-        </SvgText>
-      ))}
-      {/* Gridlines */}
-      {[0.25, 0.5, 0.75, 1].map((pct) => {
-        const y = CHART_H - CHART_H * pct;
-        return (
-          <Line
-            key={pct}
-            x1={Y_LABEL_W}
-            y1={y}
-            x2={Y_LABEL_W + CHART_W}
-            y2={y}
-            stroke={withAlpha(colors.textSecondary, 0.1)}
-            strokeWidth={1}
-          />
-        );
-      })}
-      {/* Bars */}
-      {data.map((d, i) => {
-        const barH = maxAmount > 0 ? (d.amount / maxAmount) * CHART_H : 0;
-        const minBarHeight = d.amount > 0 ? 2 : 1;
-        const targetBarHeight = Math.max(barH, minBarHeight);
-        const x = Y_LABEL_W + i * (BAR_W + BAR_GAP);
-        const y = CHART_H - targetBarHeight;
-        const isPeak = i === peakIndex && d.amount > 0;
-        const barColor = isPeak ? PEAK_AMBER : colors.primary;
-        const opacity = d.amount === 0 ? 0.15 : isPeak ? 1 : 0.6;
-        const showLabel = d.day % 2 === 1 || isPeak;
-
-        const animatedHeight = chartProgress.interpolate({
-          inputRange: [0, 1],
-          outputRange: [minBarHeight, targetBarHeight],
-        });
-        const animatedY = chartProgress.interpolate({
-          inputRange: [0, 1],
-          outputRange: [CHART_H - minBarHeight, y],
-        });
-        const animatedOpacity = chartProgress.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0.16, opacity],
-        });
-
-        return (
-          <React.Fragment key={d.day}>
-            <AnimatedRect
-              x={x}
-              y={animatedY}
-              width={BAR_W}
-              height={animatedHeight}
-              fill={barColor}
-              opacity={animatedOpacity}
-              rx={1.5}
-            />
-            {showLabel && (
-              <SvgText
-                x={x + BAR_W / 2}
-                y={CHART_H + 12}
-                fontSize={8}
-                fill={isPeak ? PEAK_AMBER : colors.textSecondary}
-                textAnchor="middle"
-                fontWeight="600"
-              >
-                {d.day}
-              </SvgText>
-            )}
-          </React.Fragment>
-        );
-      })}
-    </Svg>
-  );
-}
-
-// ─── DowPatternChart ─────────────────────────────────────────────────────────
-
-function DowPatternChart({
-  dowAvg,
-  colors,
-}: {
-  dowAvg: number[];
-  colors: any;
-}) {
-  const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const maxDow = Math.max(...dowAvg, 1);
-  const BAR_H_MAX = 48;
-  const dowProgress = useRef(new Animated.Value(0)).current;
-  const dowAnimKey = useMemo(
-    () => dowAvg.map((value) => Math.round(value)).join('|'),
-    [dowAvg]
-  );
-
-  useEffect(() => {
-    dowProgress.setValue(0);
-    Animated.timing(dowProgress, {
-      toValue: 1,
-      duration: 520,
-      useNativeDriver: false,
-    }).start();
-  }, [dowProgress, dowAnimKey]);
-
-  const peakDow = dowAvg.indexOf(Math.max(...dowAvg));
-
-  const formatAvg = (v: number): string => {
-    if (v === 0) return '';
-    if (v >= 1000) return `₱${(v / 1000).toFixed(1)}k`;
-    return `₱${Math.round(v)}`;
-  };
-
-  return (
-    <View>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-end',
-          height: BAR_H_MAX + 32,
-        }}
-      >
-        {DOW_LABELS.map((label, i) => {
-          const pct = dowAvg[i] / maxDow;
-          const barH = Math.max(pct * BAR_H_MAX, dowAvg[i] > 0 ? 3 : 2);
-          const isWeekend = i >= 5;
-          const isPeak = i === peakDow && dowAvg[i] > 0;
-          const barColor = isPeak
-            ? PEAK_AMBER
-            : isWeekend
-              ? colors.lavender
-              : colors.primary;
-
-          const minBarHeight = dowAvg[i] > 0 ? 3 : 2;
-          const animatedBarHeight = dowProgress.interpolate({
-            inputRange: [0, 1],
-            outputRange: [minBarHeight, barH],
-          });
-          const animatedBarOpacity = dowProgress.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0.15, dowAvg[i] === 0 ? 0.2 : 0.82],
-          });
-
-          return (
-            <View key={i} style={{ alignItems: 'center', flex: 1 }}>
-              {isPeak && dowAvg[i] > 0 && (
-                <Animated.Text
-                  style={{
-                    fontFamily: 'DMMono_500Medium',
-                    fontSize: 8,
-                    color: PEAK_AMBER,
-                    marginBottom: 3,
-                    opacity: dowProgress,
-                  }}
-                >
-                  {formatAvg(dowAvg[i])}
-                </Animated.Text>
-              )}
-              <Animated.View
-                style={{
-                  width: 22,
-                  height: animatedBarHeight,
-                  backgroundColor: barColor,
-                  borderRadius: 5,
-                  opacity: animatedBarOpacity,
-                }}
-              />
-              <Text
-                style={{
-                  fontFamily: 'Inter_700Bold',
-                  fontSize: 9,
-                  color: isPeak ? PEAK_AMBER : colors.textSecondary,
-                  marginTop: 5,
-                }}
-              >
-                {label}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-      {/* Legend */}
-      <View style={{ flexDirection: 'row', gap: 14, marginTop: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: colors.primary }} />
-          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: colors.textSecondary }}>
-            Weekday
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: colors.lavender }} />
-          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: colors.textSecondary }}>
-            Weekend
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: PEAK_AMBER }} />
-          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: colors.textSecondary }}>
-            Peak day
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
-}
+const PEAK_AMBER = '#E07B2E'; // kept for AccountActivityCard colour reference
 
 // ─── AccountActivityCard ─────────────────────────────────────────────────────
 
@@ -1744,7 +1414,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
             { backgroundColor: isDark ? colors.surfaceSubdued : tile.tileBg },
           ]}
         >
-          <WaveFill pct={waveHeight / TILE_H} color={tile.color} />
+          <WaveFill pct={waveHeight / TILE_H} color={tile.color} tileHeight={TILE_H} />
 
           <View style={styles.catBadgeWrap}>
             {tile.isOver ? (
@@ -1847,7 +1517,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
             { backgroundColor: isDark ? colors.surfaceSubdued : tile.tileBg },
           ]}
         >
-          <WaveFill pct={waveHeight / TILE_H} color={tile.color} />
+          <WaveFill pct={waveHeight / TILE_H} color={tile.color} tileHeight={TILE_H} />
 
           <View
             style={[

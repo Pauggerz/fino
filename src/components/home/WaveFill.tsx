@@ -15,7 +15,7 @@ export const TILE_H = 120;
 // SVG must be wide enough that translating by -TILE_W never exposes a gap.
 const WAVE_SVG_W = TILE_W * 4;
 
-function makeWavePath(yBase: number, amp: number): string {
+function makeWavePath(yBase: number, amp: number, tileH: number): string {
   const halfWl = TILE_W / 2;
   const numArcs = WAVE_SVG_W / halfWl + 2;
   let d = `M 0 ${yBase}`;
@@ -26,11 +26,19 @@ function makeWavePath(yBase: number, amp: number): string {
     const yPeak = i % 2 === 0 ? yBase - amp : yBase + amp;
     d += ` Q ${xMid} ${yPeak} ${x1} ${yBase}`;
   }
-  d += ` L ${WAVE_SVG_W + halfWl} ${TILE_H} L 0 ${TILE_H} Z`;
+  d += ` L ${WAVE_SVG_W + halfWl} ${tileH} L 0 ${tileH} Z`;
   return d;
 }
 
-export function WaveFill({ pct, color }: { pct: number; color: string }) {
+export function WaveFill({
+  pct,
+  color,
+  tileHeight = TILE_H,
+}: {
+  pct: number;
+  color: string;
+  tileHeight?: number;
+}) {
   const wave1X = useSharedValue(0);
   const wave2X = useSharedValue(0);
 
@@ -62,7 +70,7 @@ export function WaveFill({ pct, color }: { pct: number; color: string }) {
   }, [wave1X, wave2X]);
 
   const clampedPct = Math.min(Math.max(pct, 0), 1);
-  const yBase = TILE_H - TILE_H * clampedPct;
+  const yBase = tileHeight - tileHeight * clampedPct;
 
   const waveStyle = {
     position: 'absolute' as const,
@@ -78,13 +86,13 @@ export function WaveFill({ pct, color }: { pct: number; color: string }) {
       pointerEvents="none"
     >
       <RAnim.View style={[waveStyle, wave2Style]}>
-        <Svg width={WAVE_SVG_W} height={TILE_H}>
-          <SvgPath d={makeWavePath(yBase + 6, 8)} fill={color} opacity={0.18} />
+        <Svg width={WAVE_SVG_W} height={tileHeight}>
+          <SvgPath d={makeWavePath(yBase + 6, 8, tileHeight)} fill={color} opacity={0.18} />
         </Svg>
       </RAnim.View>
       <RAnim.View style={[waveStyle, wave1Style]}>
-        <Svg width={WAVE_SVG_W} height={TILE_H}>
-          <SvgPath d={makeWavePath(yBase, 10)} fill={color} opacity={0.42} />
+        <Svg width={WAVE_SVG_W} height={tileHeight}>
+          <SvgPath d={makeWavePath(yBase, 10, tileHeight)} fill={color} opacity={0.42} />
         </Svg>
       </RAnim.View>
     </View>
