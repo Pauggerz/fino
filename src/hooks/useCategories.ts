@@ -50,7 +50,7 @@ export const useCategories = () => {
         setLoading(true);
       }
     } catch (e) {
-      console.error('Failed to load categories cache', e);
+      if (__DEV__) console.error('Failed to load categories cache', e);
       setLoading(true);
     }
 

@@ -43,7 +43,7 @@ export const useMonthlyTotals = (): MonthlyTotals => {
         baseExpense = parsed.totalExpense || 0;
       }
     } catch (e) {
-      console.error('Failed to load totals cache', e);
+      if (__DEV__) console.error('Failed to load totals cache', e);
     }
 
     const now = new Date();

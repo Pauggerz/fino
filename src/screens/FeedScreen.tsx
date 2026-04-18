@@ -544,6 +544,8 @@ const FeedListItem = React.memo(function FeedListItem({
               <TouchableOpacity
                 onPress={() => ctx.setSearchQuery('')}
                 activeOpacity={0.7}
+                accessibilityLabel="Clear search"
+                accessibilityRole="button"
               >
                 <Ionicons
                   name="close-circle"

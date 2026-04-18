@@ -1,16 +1,17 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { Alert } from 'react-native';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { processQueue, addToQueue, getPendingQueue } from '@/services/syncService';
 import type { OfflineTransaction } from '@/types';
 
-export type SyncStatus = 'synced' | 'syncing' | 'offline';
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
 
 interface SyncContextProps {
   status: SyncStatus;
   addOfflineTransaction: (tx: OfflineTransaction) => Promise<void>;
   forceSync: () => Promise<void>;
   syncVersion: number;
-  lastSyncedAt: Date | null; 
+  lastSyncedAt: Date | null;
 }
 
 const SyncContext = createContext<SyncContextProps>({
@@ -24,8 +25,9 @@ const SyncContext = createContext<SyncContextProps>({
 export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [status, setStatus] = useState<SyncStatus>('synced');
   const [syncVersion, setSyncVersion] = useState(0);
-  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date()); 
-  
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(new Date());
+  const syncFailStreak = useRef(0);
+
   const isSyncing = useRef(false);
   const lastTriggerAt = useRef(0);
 
@@ -57,11 +59,21 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     isSyncing.current = false;
     if (success) {
-      setStatus('synced'); // Success -> Green
-      setLastSyncedAt(new Date()); 
-      setSyncVersion((v) => v + 1); // Trigger the UI to auto-refresh
+      syncFailStreak.current = 0;
+      setStatus('synced');
+      setLastSyncedAt(new Date());
+      setSyncVersion((v) => v + 1);
     } else {
-      setStatus('offline'); // Failed (e.g. server down) -> Red
+      syncFailStreak.current += 1;
+      setStatus('error');
+      // Alert the user after 2 consecutive failures so a single blip isn't noisy
+      if (syncFailStreak.current === 2) {
+        Alert.alert(
+          'Sync failed',
+          'Some transactions could not be saved to the server. They are stored locally and will retry automatically.',
+          [{ text: 'OK' }],
+        );
+      }
     }
   }, []);
 
@@ -98,7 +110,17 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [triggerSync]);
 
   const addOfflineTransaction = async (tx: OfflineTransaction) => {
-    await addToQueue(tx);
+    try {
+      await addToQueue(tx);
+    } catch {
+      Alert.alert(
+        'Transaction not saved',
+        'Could not save your transaction to local storage. Please try again.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
     // Small delay before sync so the AsyncStorage write has fully committed on
     // slower devices. Without this, processQueue may read a stale queue and
     // the tx gets picked up on the next 8s poll instead of immediately.
