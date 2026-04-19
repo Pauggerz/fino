@@ -304,12 +304,10 @@ export default function HomeScreen() {
 
   const handleUndo = useCallback(async () => {
     if (!undoTxId) return;
-    if (undoTxId.startsWith('temp_')) {
-      // Offline transaction — remove from the local pending queue only
-      await removeFromQueue(undoTxId);
-    } else {
-      await supabase.from('transactions').delete().eq('id', undoTxId);
-    }
+    // Remove from queue (no-op if already synced) AND delete from Supabase
+    // (no-op if still pending). One of the two will always be the real action.
+    await removeFromQueue(undoTxId);
+    await supabase.from('transactions').delete().eq('id', undoTxId);
     if (undoAccountId !== null && undoPreviousBalance !== null) {
       await supabase
         .from('accounts')

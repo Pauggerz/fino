@@ -21,7 +21,23 @@ export const getPendingQueue = async (): Promise<OfflineTransaction[]> => {
   }
 };
 
-function generateUUID(): string {
+/**
+ * Returns only the pending transactions that have NOT yet been synced to Supabase.
+ * Prevents double-counting during the race window where the local queue hasn't
+ * cleared yet but the server already has the row.
+ */
+export const getUnsyncedPendingQueue = async (): Promise<OfflineTransaction[]> => {
+  const queue = await getPendingQueue();
+  if (queue.length === 0) return queue;
+
+  const pendingIds = queue.map((tx) => tx.id!).filter(Boolean);
+  const { data } = await supabase.from('transactions').select('id').in('id', pendingIds);
+
+  const syncedIds = new Set((data ?? []).map((row: { id: string }) => row.id));
+  return queue.filter((tx) => !syncedIds.has(tx.id ?? ''));
+};
+
+export function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
@@ -31,7 +47,9 @@ function generateUUID(): string {
 export const addToQueue = async (transaction: OfflineTransaction) => {
   try {
     const queue = await getPendingQueue();
-    const newTx = { ...transaction, id: generateUUID(), isPending: true };
+    // Preserve a caller-supplied UUID so the caller can reference the entry later
+    // (e.g. for undo). Fall back to a fresh UUID when none is provided.
+    const newTx = { ...transaction, id: transaction.id || generateUUID(), isPending: true };
     queue.push(newTx);
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
     return newTx;
@@ -134,11 +152,11 @@ export const processQueue = async (): Promise<boolean> => {
 
   // Purge legacy entries that were queued with temp_ IDs (no valid UUID) —
   // these can never be inserted and would loop forever.
-  const stale = queue.filter((tx) => tx.id.startsWith('temp_'));
+  const stale = queue.filter((tx) => (tx.id ?? '').startsWith('temp_'));
   if (stale.length > 0) {
     if (__DEV__) console.warn(`[sync] purging ${stale.length} stale temp_ transaction(s) from queue`);
-    for (const tx of stale) await removeFromQueue(tx.id);
-    queue = queue.filter((tx) => !tx.id.startsWith('temp_'));
+    for (const tx of stale) await removeFromQueue(tx.id!);
+    queue = queue.filter((tx) => !(tx.id ?? '').startsWith('temp_'));
   }
 
   if (queue.length === 0) return true;
@@ -157,7 +175,7 @@ export const processQueue = async (): Promise<boolean> => {
       }
 
       if (ok) {
-        await removeFromQueue(tx.id);
+        await removeFromQueue(tx.id!);
       } else {
         allSuccess = false;
       }

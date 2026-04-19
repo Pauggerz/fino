@@ -46,6 +46,7 @@ import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { setLastSaved } from '@/services/lastSavedStore';
 import { useSync } from '@/contexts/SyncContext';
+import { generateUUID } from '@/services/syncService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { OfflineTransaction } from '@/types';
 
@@ -407,7 +408,9 @@ export default function AddTransactionSheet({ route }: Props) {
     const txType: OfflineTransaction['type'] = type === 'exp' ? 'expense' : 'income';
 
     try {
+      const txId = generateUUID();
       const txPayload: OfflineTransaction = {
+        id: txId,
         user_id: acc.user_id,
         account_id: accountId,
         amount: parsedAmount,
@@ -424,15 +427,8 @@ export default function AddTransactionSheet({ route }: Props) {
         console.error('[AddTransaction] failed to enqueue offline tx:', err);
       });
 
-      const delta = txType === 'expense' ? -parsedAmount : parsedAmount;
-      supabase
-        .from('accounts')
-        .update({ balance: acc.balance + delta })
-        .eq('id', accountId)
-        .then();
-
       setLastSaved({
-        id: `temp_${Date.now()}`,
+        id: txId,
         accountId,
         previousBalance: acc.balance,
         amount: parsedAmount,

@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/services/supabase';
 import { Transaction } from '@/types';
 import { formatSectionTitle } from '@/utils/groupByDate';
-import { getPendingQueue } from '@/services/syncService';
+import { getUnsyncedPendingQueue } from '@/services/syncService';
 
 const PAGE_SIZE = 20;
 
@@ -142,7 +142,7 @@ export const useTransactions = (
       const { data, error } = await q;
 
       // ── Fetch local pending items ─────────────────────────────────────────
-      const pendingQueue = await getPendingQueue();
+      const pendingQueue = await getUnsyncedPendingQueue();
       const searchTerm = searchQuery?.trim().toLowerCase() ?? '';
       const fromTs = dateRange ? new Date(dateRange.from).getTime() : undefined;
       const toTs = dateRange ? new Date(dateRange.to).getTime() : undefined;
@@ -184,6 +184,11 @@ export const useTransactions = (
       if (!error && data) {
         const mappedDb = data.map(mapRow);
 
+        // Guard against TOCTOU: if getUnsyncedPendingQueue's Supabase check
+        // failed or raced, a pending item might duplicate one already in mappedDb.
+        const syncedIds = new Set<string>(mappedDb.map((tx) => tx.id as string));
+        const dedupedPending = mappedPending.filter((tx) => !syncedIds.has(tx.id ?? '')) as FeedTransaction[];
+
         // Advance cursor to last fetched row (for date-ordered queries)
         if (!isAmountDesc && data.length > 0) {
           const last = data[data.length - 1];
@@ -196,12 +201,12 @@ export const useTransactions = (
 
         startTransition(() => {
           if (reset) {
-            setItems([...mappedPending, ...mappedDb]);
+            setItems([...dedupedPending, ...mappedDb]);
           } else {
             setItems((prev) => {
               // Strip pending items from prev on non-reset appends to avoid duplication
               const withoutPending = prev.filter((tx) => !tx.isPending);
-              return [...mappedPending, ...withoutPending, ...mappedDb];
+              return [...dedupedPending, ...withoutPending, ...mappedDb];
             });
           }
           setHasMore(data.length === PAGE_SIZE);
@@ -211,7 +216,7 @@ export const useTransactions = (
         startTransition(() => {
           setItems((prev) => {
             const withoutPending = prev.filter((tx) => !tx.isPending);
-            return [...mappedPending, ...withoutPending];
+            return [...(mappedPending as FeedTransaction[]), ...withoutPending];
           });
           setHasMore(false);
         });

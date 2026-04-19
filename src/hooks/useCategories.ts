@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, startTransition } from 'react
 import { supabase } from '@/services/supabase';
 import { Category } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getPendingQueue } from '@/services/syncService';
+import { getUnsyncedPendingQueue } from '@/services/syncService';
 
 // Keys used for income categories — exclude them from expense/budget views
 const INCOME_EMOJI_KEYS = new Set([
@@ -96,8 +96,9 @@ export const useCategories = () => {
     });
 
     // 4. OFFLINE CALCULATION: Add offline pending expenses
-    const pendingQueue = await getPendingQueue();
+    const pendingQueue = await getUnsyncedPendingQueue();
     pendingQueue.forEach((tx) => {
+      if (!tx.date || tx.date < startOfMonth || tx.date > endOfMonth) return;
       if (tx.type === 'expense' && tx.category) {
         const catKey = tx.category.toLowerCase();
         spendMap[catKey] = (spendMap[catKey] || 0) + tx.amount;
