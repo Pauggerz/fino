@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, startTransition } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/services/supabase';
-import { getPendingQueue } from '@/services/syncService';
+import { getUnsyncedPendingQueue } from '@/services/syncService';
 
 const CACHE_KEY = 'FINO_TOTALS_CACHE';
 
@@ -93,8 +93,9 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     }
 
     // 2. OFFLINE CALCULATION: Apply pending offline transactions
-    const pendingQueue = await getPendingQueue();
+    const pendingQueue = await getUnsyncedPendingQueue();
     pendingQueue.forEach((tx) => {
+      if (!tx.date || tx.date < startOfMonth || tx.date > endOfMonth) return;
       if (tx.type === 'income') baseIncome += tx.amount;
       if (tx.type === 'expense') baseExpense += tx.amount;
     });

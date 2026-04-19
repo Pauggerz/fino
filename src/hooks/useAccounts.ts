@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, startTransition } from 'react
 import { supabase } from '@/services/supabase';
 import { Account } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getPendingQueue } from '@/services/syncService';
+import { getUnsyncedPendingQueue } from '@/services/syncService';
 
 /* eslint-disable import/prefer-default-export */
 
@@ -65,7 +65,7 @@ export const useAccounts = () => {
 
     // 4. OFFLINE CALCULATION: Apply pending transactions to balances.
     // Read the queue exactly once here so we never apply it twice.
-    const pendingQueue = await getPendingQueue();
+    const pendingQueue = await getUnsyncedPendingQueue();
     const adjustedAccounts = fetchedAccounts.map((acc) => {
       let pendingDelta = 0;
       pendingQueue.forEach((tx) => {
