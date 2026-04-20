@@ -16,11 +16,11 @@ interface SkeletonProps {
   borderRadius?: number;
 }
 
-export const Skeleton: React.FC<SkeletonProps> = ({ 
-  width, 
-  height, 
-  style, 
-  borderRadius = 8 
+export const Skeleton: React.FC<SkeletonProps> = ({
+  width,
+  height,
+  style,
+  borderRadius = 8,
 }) => {
   const opacity = useSharedValue(0.3);
 

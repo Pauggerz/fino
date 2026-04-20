@@ -142,158 +142,158 @@ const WalletCard = React.memo(
     account: Account;
     isPrivacyMode?: boolean;
   }) => {
-  const cfg = getCfg(account);
-  const token = pseudo4(account.id);
-  const isNeg = account.balance < 0;
-  const balColor = isNeg
-    ? 'rgba(255,175,155,0.95)'
-    : (cfg.accentColor ?? 'white');
+    const cfg = getCfg(account);
+    const token = pseudo4(account.id);
+    const isNeg = account.balance < 0;
+    const balColor = isNeg
+      ? 'rgba(255,175,155,0.95)'
+      : (cfg.accentColor ?? 'white');
 
-  return (
-    // Shadow wrapper — overflow: visible so iOS drop-shadow renders
-    <View style={s.shadow}>
-      <LinearGradient
-        colors={cfg.grad}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={s.card}
-      >
-        {/* Base gloss sheen */}
+    return (
+      // Shadow wrapper — overflow: visible so iOS drop-shadow renders
+      <View style={s.shadow}>
         <LinearGradient
-          colors={['rgba(255,255,255,0.14)', 'transparent']}
-          start={{ x: 0, y: 0 }}
+          colors={cfg.grad}
+          start={{ x: 0.1, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-
-        {/* Maya — neon right-edge strip */}
-        {cfg.isMaya && (
+          style={s.card}
+        >
+          {/* Base gloss sheen */}
           <LinearGradient
-            colors={[
-              'transparent',
-              'rgba(61,214,140,0.95)',
-              'rgba(61,214,140,0.95)',
-              'transparent',
-            ]}
-            locations={[0, 0.35, 0.65, 1]}
+            colors={['rgba(255,255,255,0.14)', 'transparent']}
             start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={s.mayaStrip}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
           />
-        )}
 
-        {/* BDO — translucent geometric frames */}
-        {cfg.isBDO && (
-          <>
-            <View
-              style={[
-                s.bdoBlock,
-                { width: 100, height: 100, top: 14, right: -22 },
+          {/* Maya — neon right-edge strip */}
+          {cfg.isMaya && (
+            <LinearGradient
+              colors={[
+                'transparent',
+                'rgba(61,214,140,0.95)',
+                'rgba(61,214,140,0.95)',
+                'transparent',
               ]}
+              locations={[0, 0.35, 0.65, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={s.mayaStrip}
             />
-            <View
-              style={[
-                s.bdoBlock,
-                { width: 74, height: 74, top: 70, right: 12 },
-              ]}
-            />
-            <View
-              style={[
-                s.bdoBlock,
-                { width: 52, height: 52, top: 116, right: 2 },
-              ]}
-            />
-            <View
-              style={[
-                s.bdoBlock,
-                { width: 40, height: 40, top: 62, right: 74 },
-              ]}
-            />
-            <Text style={s.bdoWm}>BDO</Text>
-          </>
-        )}
+          )}
 
-        {/* BPI — radial glow + heraldic crest */}
-        {cfg.isBPI && (
-          <>
-            <View style={s.bpiGlow} />
-            <View style={s.bpiGlow2} />
-            <View style={s.bpiCrest}>
-              <Text style={s.bpiCrown}>♛</Text>
-              <View style={{ flexDirection: 'row', gap: 3, marginTop: 2 }}>
-                <Text style={s.bpiIcon}>🦁</Text>
-                <Text style={s.bpiIcon}>🌻</Text>
+          {/* BDO — translucent geometric frames */}
+          {cfg.isBDO && (
+            <>
+              <View
+                style={[
+                  s.bdoBlock,
+                  { width: 100, height: 100, top: 14, right: -22 },
+                ]}
+              />
+              <View
+                style={[
+                  s.bdoBlock,
+                  { width: 74, height: 74, top: 70, right: 12 },
+                ]}
+              />
+              <View
+                style={[
+                  s.bdoBlock,
+                  { width: 52, height: 52, top: 116, right: 2 },
+                ]}
+              />
+              <View
+                style={[
+                  s.bdoBlock,
+                  { width: 40, height: 40, top: 62, right: 74 },
+                ]}
+              />
+              <Text style={s.bdoWm}>BDO</Text>
+            </>
+          )}
+
+          {/* BPI — radial glow + heraldic crest */}
+          {cfg.isBPI && (
+            <>
+              <View style={s.bpiGlow} />
+              <View style={s.bpiGlow2} />
+              <View style={s.bpiCrest}>
+                <Text style={s.bpiCrown}>♛</Text>
+                <View style={{ flexDirection: 'row', gap: 3, marginTop: 2 }}>
+                  <Text style={s.bpiIcon}>🦁</Text>
+                  <Text style={s.bpiIcon}>🌻</Text>
+                </View>
               </View>
-            </View>
-          </>
-        )}
+            </>
+          )}
 
-        {/* Letter watermark (GCash → G, Cash → ₱ …) */}
-        {cfg.watermark && <Text style={s.watermark}>{cfg.watermark}</Text>}
+          {/* Letter watermark (GCash → G, Cash → ₱ …) */}
+          {cfg.watermark && <Text style={s.watermark}>{cfg.watermark}</Text>}
 
-        {/* Top-right: gold EMV chip + NFC arcs */}
-        <View style={s.hardware}>
-          <LinearGradient
-            colors={
-              cfg.silverChip
-                ? ['#dce0e8', '#a8b0bc', '#cdd2da', '#8c96a2']
-                : ['#f0d060', '#c8961e', '#e8c040', '#b07818']
-            }
-            style={s.chip}
-          >
-            <View style={s.chipH} />
-            <View style={[s.chipH, { top: '50%' as any }]} />
-            <View style={s.chipV} />
-            <View style={[s.chipV, { left: '50%' as any }]} />
-          </LinearGradient>
-          <NfcIcon
-            color={
-              cfg.silverChip
-                ? 'rgba(255,255,255,0.55)'
-                : 'rgba(255,255,255,0.5)'
-            }
-          />
-        </View>
-
-        {/* Card content */}
-        <View style={s.body}>
-          {/* Brand name + type */}
-          <View>
-            <Text
-              style={[
-                s.brandName,
-                cfg.accentColor ? { color: cfg.accentColor } : {},
-              ]}
-              numberOfLines={1}
+          {/* Top-right: gold EMV chip + NFC arcs */}
+          <View style={s.hardware}>
+            <LinearGradient
+              colors={
+                cfg.silverChip
+                  ? ['#dce0e8', '#a8b0bc', '#cdd2da', '#8c96a2']
+                  : ['#f0d060', '#c8961e', '#e8c040', '#b07818']
+              }
+              style={s.chip}
             >
-              {account.name}
-            </Text>
-            <Text style={s.typeLabel}>{cfg.typeLabel}</Text>
+              <View style={s.chipH} />
+              <View style={[s.chipH, { top: '50%' as any }]} />
+              <View style={s.chipV} />
+              <View style={[s.chipV, { left: '50%' as any }]} />
+            </LinearGradient>
+            <NfcIcon
+              color={
+                cfg.silverChip
+                  ? 'rgba(255,255,255,0.55)'
+                  : 'rgba(255,255,255,0.5)'
+              }
+            />
           </View>
 
-          {/* Masked PAN */}
-          <View style={s.panRow}>
-            {(['g0', 'g1', 'g2'] as const).map((g) => (
-              <View key={g} style={s.dotGroup}>
-                {(['d0', 'd1', 'd2', 'd3'] as const).map((d) => (
-                  <View key={d} style={s.dot} />
-                ))}
-              </View>
-            ))}
-            <Text style={s.last4}>{token}</Text>
-          </View>
+          {/* Card content */}
+          <View style={s.body}>
+            {/* Brand name + type */}
+            <View>
+              <Text
+                style={[
+                  s.brandName,
+                  cfg.accentColor ? { color: cfg.accentColor } : {},
+                ]}
+                numberOfLines={1}
+              >
+                {account.name}
+              </Text>
+              <Text style={s.typeLabel}>{cfg.typeLabel}</Text>
+            </View>
 
-          {/* Balance */}
-          <View style={s.balanceBlock}>
-            <Text style={s.balLabel}>TOTAL BALANCE</Text>
-            <Text style={[s.balanceAmt, { color: balColor }]}>
-              {isPrivacyMode ? '₱ ••••••' : fmtBalance(account.balance)}
-            </Text>
+            {/* Masked PAN */}
+            <View style={s.panRow}>
+              {(['g0', 'g1', 'g2'] as const).map((g) => (
+                <View key={g} style={s.dotGroup}>
+                  {(['d0', 'd1', 'd2', 'd3'] as const).map((d) => (
+                    <View key={d} style={s.dot} />
+                  ))}
+                </View>
+              ))}
+              <Text style={s.last4}>{token}</Text>
+            </View>
+
+            {/* Balance */}
+            <View style={s.balanceBlock}>
+              <Text style={s.balLabel}>TOTAL BALANCE</Text>
+              <Text style={[s.balanceAmt, { color: balColor }]}>
+                {isPrivacyMode ? '₱ ••••••' : fmtBalance(account.balance)}
+              </Text>
+            </View>
           </View>
-        </View>
-      </LinearGradient>
-    </View>
-  );
+        </LinearGradient>
+      </View>
+    );
   }
 );
 

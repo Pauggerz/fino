@@ -34,6 +34,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Dynamic Theme Hook
 import { supabase } from '@/services/supabase';
@@ -47,7 +48,6 @@ import { ErrorBanner } from '@/components/ErrorBanner';
 import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
 import { useAccounts } from '@/hooks/useAccounts';
 import { generateBulletInsights } from '@/services/gemini';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDeferredRender } from '@/hooks/useDeferredRender';
 import { WaveFill } from '@/components/home/WaveFill';
 import DailySpendChart from '@/components/stats/DailySpendChart';
@@ -223,8 +223,13 @@ const fmtUiNumber = (value: number): string => {
 
 const fmtUiPeso = (value: number): string => `₱${fmtUiNumber(value)}`;
 
-function buildSpendInsight(totalSpent: number, totalBudget: number, monthLabel: string): string {
-  if (!totalBudget) return 'Set category budgets to track spending against limits.';
+function buildSpendInsight(
+  totalSpent: number,
+  totalBudget: number,
+  monthLabel: string
+): string {
+  if (!totalBudget)
+    return 'Set category budgets to track spending against limits.';
   const pct = Math.round((totalSpent / totalBudget) * 100);
   if (pct >= 100) {
     return `You've used 100% of your budget ${monthLabel.toLowerCase()}. Consider reviewing your spending.`;
@@ -235,7 +240,10 @@ function buildSpendInsight(totalSpent: number, totalBudget: number, monthLabel: 
   return `You've used ${pct}% of your ${monthLabel.toLowerCase()} budget - on track!`;
 }
 
-function buildDailyInsight(dailySpend: Record<string, number>, monthLabel: string): string {
+function buildDailyInsight(
+  dailySpend: Record<string, number>,
+  monthLabel: string
+): string {
   const vals = Object.values(dailySpend);
   if (!vals.length) return 'No spending data yet for this period.';
   const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -252,10 +260,14 @@ function buildPatternsInsight(dowAvgSpend: number[]): string {
   return `You tend to spend most on ${days[peak]}s. Consider planning ahead for that day.`;
 }
 
-function buildTopExpenseInsight(topTransactions: TopTx[], monthLabel: string): string {
+function buildTopExpenseInsight(
+  topTransactions: TopTx[],
+  monthLabel: string
+): string {
   const top = topTransactions[0];
   if (!top) return 'No top expense yet for this period.';
-  const name = top.display_name ?? top.merchant_name ?? top.category ?? 'This transaction';
+  const name =
+    top.display_name ?? top.merchant_name ?? top.category ?? 'This transaction';
   return `${name} is your largest expense at ₱${fmt(top.amount)} ${monthLabel.toLowerCase()}.`;
 }
 
@@ -271,9 +283,10 @@ function buildMomInsight(momDelta: number, txDelta: number): string {
 
 const withAlpha = (hex: string, alpha: number): string => {
   if (!hex.startsWith('#')) return hex;
-  const normalized = hex.length === 4
-    ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
-    : hex;
+  const normalized =
+    hex.length === 4
+      ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+      : hex;
   const value = normalized.replace('#', '');
   const bigint = Number.parseInt(value, 16);
   if (Number.isNaN(bigint)) return hex;
@@ -427,7 +440,12 @@ function AccountActivityCard({
   return (
     <View style={styles.acctCardWrap}>
       {logo ? (
-        <Image source={logo} style={styles.acctLogo} contentFit="contain" transition={150} />
+        <Image
+          source={logo}
+          style={styles.acctLogo}
+          contentFit="contain"
+          transition={150}
+        />
       ) : (
         <View
           style={[
@@ -445,11 +463,15 @@ function AccountActivityCard({
       </Text>
       <View style={styles.acctAmtRow}>
         <Text style={styles.acctAmtLabel}>EXP</Text>
-        <Text style={styles.acctExpAmt} numberOfLines={1}>-₱{expense.toLocaleString()}</Text>
+        <Text style={styles.acctExpAmt} numberOfLines={1}>
+          -₱{expense.toLocaleString()}
+        </Text>
       </View>
       <View style={styles.acctAmtRow}>
         <Text style={styles.acctAmtLabel}>INC</Text>
-        <Text style={styles.acctIncAmt} numberOfLines={1}>+₱{income.toLocaleString()}</Text>
+        <Text style={styles.acctIncAmt} numberOfLines={1}>
+          +₱{income.toLocaleString()}
+        </Text>
       </View>
       <View
         style={[
@@ -481,7 +503,10 @@ export default function InsightsScreen() {
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => createStyles(colors, isDark, insets.top), [colors, isDark, insets.top]);
+  const styles = useMemo(
+    () => createStyles(colors, isDark, insets.top),
+    [colors, isDark, insets.top]
+  );
   const [, startTransition] = useTransition();
 
   const isInitialLoadRef = useRef(true);
@@ -501,13 +526,18 @@ export default function InsightsScreen() {
   const [viewType, setViewType] = useState<'expense' | 'income'>('expense');
 
   // ── Tab navigation ──
-  const [activeTab, setActiveTab] = useState<'spend' | 'patterns' | 'categories'>('spend');
+  const [activeTab, setActiveTab] = useState<
+    'spend' | 'patterns' | 'categories'
+  >('spend');
 
   // ── UI state ──
   const [activeDonutIndex, setActiveDonutIndex] = useState<number>(-1);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [insightTarget, setInsightTarget] = useState<{ title: string; message: string } | null>(null);
+  const [insightTarget, setInsightTarget] = useState<{
+    title: string;
+    message: string;
+  } | null>(null);
 
   const isCurrentMonth =
     selectedMonth === now.getMonth() && selectedYear === now.getFullYear();
@@ -553,7 +583,9 @@ export default function InsightsScreen() {
 
   // ── Enhanced insight data ──
   const [dailySpend, setDailySpend] = useState<Record<string, number>>({});
-  const [dowAvgSpend, setDowAvgSpend] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+  const [dowAvgSpend, setDowAvgSpend] = useState<number[]>([
+    0, 0, 0, 0, 0, 0, 0,
+  ]);
   const [topTransactions, setTopTransactions] = useState<TopTx[]>([]);
   const [accountActivity, setAccountActivity] = useState<{
     expense: Record<string, number>;
@@ -568,7 +600,11 @@ export default function InsightsScreen() {
   const [aiInsightsLoading, setAiInsightsLoading] = useState(false);
   const lastAiMonthRef = useRef<string>('');
 
-  const { accounts, error: accountsError, refetch: refetchAccounts } = useAccounts();
+  const {
+    accounts,
+    error: accountsError,
+    refetch: refetchAccounts,
+  } = useAccounts();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isChartReady = useDeferredRender();
 
@@ -588,241 +624,269 @@ export default function InsightsScreen() {
 
   const applyStatsBundle = useCallback((bundle: Record<string, unknown>) => {
     startTransition(() => {
-      if (bundle.expenseCategoryKeys) setExpenseCategoryKeys(bundle.expenseCategoryKeys as string[]);
-      if (bundle.expenseCategoryMeta) setExpenseCategoryMeta(bundle.expenseCategoryMeta as Record<string, DbCategoryMeta>);
-      if (bundle.expenseTotals) setExpenseTotals(bundle.expenseTotals as Record<string, number>);
-      if (bundle.expenseBudgets) setExpenseBudgets(bundle.expenseBudgets as Record<string, number>);
-      if (bundle.incomeTotals) setIncomeTotals(bundle.incomeTotals as Record<string, number>);
-      if (bundle.dailySpend) setDailySpend(bundle.dailySpend as Record<string, number>);
+      if (bundle.expenseCategoryKeys)
+        setExpenseCategoryKeys(bundle.expenseCategoryKeys as string[]);
+      if (bundle.expenseCategoryMeta)
+        setExpenseCategoryMeta(
+          bundle.expenseCategoryMeta as Record<string, DbCategoryMeta>
+        );
+      if (bundle.expenseTotals)
+        setExpenseTotals(bundle.expenseTotals as Record<string, number>);
+      if (bundle.expenseBudgets)
+        setExpenseBudgets(bundle.expenseBudgets as Record<string, number>);
+      if (bundle.incomeTotals)
+        setIncomeTotals(bundle.incomeTotals as Record<string, number>);
+      if (bundle.dailySpend)
+        setDailySpend(bundle.dailySpend as Record<string, number>);
       if (bundle.dowAvgSpend) setDowAvgSpend(bundle.dowAvgSpend as number[]);
-      if (bundle.topTransactions) setTopTransactions(bundle.topTransactions as TopTx[]);
-      if (bundle.accountActivity) setAccountActivity(bundle.accountActivity as { expense: Record<string, number>; income: Record<string, number> });
-      if (bundle.prevMonthExpenseTotals) setPrevMonthExpenseTotals(bundle.prevMonthExpenseTotals as Record<string, number>);
-      if (typeof bundle.totalTxCount === 'number') setTotalTxCount(bundle.totalTxCount);
-      if (typeof bundle.prevMonthTxCount === 'number') setPrevMonthTxCount(bundle.prevMonthTxCount);
+      if (bundle.topTransactions)
+        setTopTransactions(bundle.topTransactions as TopTx[]);
+      if (bundle.accountActivity)
+        setAccountActivity(
+          bundle.accountActivity as {
+            expense: Record<string, number>;
+            income: Record<string, number>;
+          }
+        );
+      if (bundle.prevMonthExpenseTotals)
+        setPrevMonthExpenseTotals(
+          bundle.prevMonthExpenseTotals as Record<string, number>
+        );
+      if (typeof bundle.totalTxCount === 'number')
+        setTotalTxCount(bundle.totalTxCount);
+      if (typeof bundle.prevMonthTxCount === 'number')
+        setPrevMonthTxCount(bundle.prevMonthTxCount);
     });
   }, []);
 
-  const fetchStats = useCallback(async (force = false) => {
-    const cacheKey = `FINO_STATS_CACHE_${selectedYear}_${selectedMonth}`;
+  const fetchStats = useCallback(
+    async (force = false) => {
+      const cacheKey = `FINO_STATS_CACHE_${selectedYear}_${selectedMonth}`;
 
-    // Skip entirely if we just fetched the same month within the stale window.
-    if (
-      !force &&
-      lastFetchedKey.current === cacheKey &&
-      Date.now() - lastFetchedAt.current < STATS_STALE_MS
-    ) {
-      return;
-    }
+      // Skip entirely if we just fetched the same month within the stale window.
+      if (
+        !force &&
+        lastFetchedKey.current === cacheKey &&
+        Date.now() - lastFetchedAt.current < STATS_STALE_MS
+      ) {
+        return;
+      }
 
-    // 1. Serve stale cache immediately — no spinner for returning users.
-    // Only reapply if we haven't just rendered from it (avoids setState storm on fast tab-switch).
-    if (lastFetchedKey.current !== cacheKey) {
+      // 1. Serve stale cache immediately — no spinner for returning users.
+      // Only reapply if we haven't just rendered from it (avoids setState storm on fast tab-switch).
+      if (lastFetchedKey.current !== cacheKey) {
+        try {
+          const cached = await AsyncStorage.getItem(cacheKey);
+          if (cached) {
+            applyStatsBundle(JSON.parse(cached));
+            setLoading(false);
+          }
+        } catch (err) {
+          if (__DEV__)
+            console.warn('[StatsScreen] stats cache read failed:', err);
+        }
+      }
+
       try {
-        const cached = await AsyncStorage.getItem(cacheKey);
-        if (cached) {
-          applyStatsBundle(JSON.parse(cached));
-          setLoading(false);
+        if (isInitialLoadRef.current) {
+          setLoading(true);
+          isInitialLoadRef.current = false;
         }
-      } catch (err) {
-        if (__DEV__) console.warn('[StatsScreen] stats cache read failed:', err);
-      }
-    }
+        // Subsequent focuses: keep loading false so skeletons don't flash
 
-    try {
-      if (isInitialLoadRef.current) {
-        setLoading(true);
-        isInitialLoadRef.current = false;
-      }
-      // Subsequent focuses: keep loading false so skeletons don't flash
+        // Compute prev month range for delta badges
+        const prevMonthNum = selectedMonth === 0 ? 11 : selectedMonth - 1;
+        const prevYearNum =
+          selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+        const prevFrom = new Date(prevYearNum, prevMonthNum, 1).toISOString();
+        const prevTo = new Date(
+          prevYearNum,
+          prevMonthNum + 1,
+          0,
+          23,
+          59,
+          59,
+          999
+        ).toISOString();
 
-      // Compute prev month range for delta badges
-      const prevMonthNum = selectedMonth === 0 ? 11 : selectedMonth - 1;
-      const prevYearNum = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
-      const prevFrom = new Date(prevYearNum, prevMonthNum, 1).toISOString();
-      const prevTo = new Date(
-        prevYearNum,
-        prevMonthNum + 1,
-        0,
-        23,
-        59,
-        59,
-        999
-      ).toISOString();
+        const [
+          { data: catData },
+          { data: txData },
+          { data: incomeTxData },
+          { data: dailyTxData },
+          { data: topTxData },
+          { data: acctTxData },
+          { data: prevTxData },
+        ] = await Promise.all([
+          supabase
+            .from('categories')
+            .select(
+              'name, budget_limit, emoji, text_colour, tile_bg_colour, sort_order'
+            )
+            .eq('is_active', true),
+          supabase
+            .from('transactions')
+            .select('category, amount, type')
+            .eq('type', 'expense')
+            .gte('date', monthRange.from)
+            .lte('date', monthRange.to),
+          supabase
+            .from('transactions')
+            .select('category, amount')
+            .eq('type', 'income')
+            .gte('date', monthRange.from)
+            .lte('date', monthRange.to),
+          supabase
+            .from('transactions')
+            .select('date, amount')
+            .eq('type', 'expense')
+            .gte('date', monthRange.from)
+            .lte('date', monthRange.to),
+          supabase
+            .from('transactions')
+            .select(
+              'display_name, merchant_name, amount, category, date, account_id'
+            )
+            .eq('type', 'expense')
+            .gte('date', monthRange.from)
+            .lte('date', monthRange.to)
+            .order('amount', { ascending: false })
+            .limit(5),
+          supabase
+            .from('transactions')
+            .select('account_id, amount, type')
+            .gte('date', monthRange.from)
+            .lte('date', monthRange.to),
+          supabase
+            .from('transactions')
+            .select('category, amount')
+            .eq('type', 'expense')
+            .gte('date', prevFrom)
+            .lte('date', prevTo),
+        ]);
 
-      const [
-        { data: catData },
-        { data: txData },
-        { data: incomeTxData },
-        { data: dailyTxData },
-        { data: topTxData },
-        { data: acctTxData },
-        { data: prevTxData },
-      ] = await Promise.all([
-        supabase
-          .from('categories')
-          .select(
-            'name, budget_limit, emoji, text_colour, tile_bg_colour, sort_order'
-          )
-          .eq('is_active', true),
-        supabase
-          .from('transactions')
-          .select('category, amount, type')
-          .eq('type', 'expense')
-          .gte('date', monthRange.from)
-          .lte('date', monthRange.to),
-        supabase
-          .from('transactions')
-          .select('category, amount')
-          .eq('type', 'income')
-          .gte('date', monthRange.from)
-          .lte('date', monthRange.to),
-        supabase
-          .from('transactions')
-          .select('date, amount')
-          .eq('type', 'expense')
-          .gte('date', monthRange.from)
-          .lte('date', monthRange.to),
-        supabase
-          .from('transactions')
-          .select('display_name, merchant_name, amount, category, date, account_id')
-          .eq('type', 'expense')
-          .gte('date', monthRange.from)
-          .lte('date', monthRange.to)
-          .order('amount', { ascending: false })
-          .limit(5),
-        supabase
-          .from('transactions')
-          .select('account_id, amount, type')
-          .gte('date', monthRange.from)
-          .lte('date', monthRange.to),
-        supabase
-          .from('transactions')
-          .select('category, amount')
-          .eq('type', 'expense')
-          .gte('date', prevFrom)
-          .lte('date', prevTo),
-      ]);
+        const nextTotals: Record<string, number> = {};
+        const nextBudgets: Record<string, number> = {};
+        const nextKeys: string[] = [];
+        const nextMeta: Record<string, DbCategoryMeta> = {};
 
-      const nextTotals: Record<string, number> = {};
-      const nextBudgets: Record<string, number> = {};
-      const nextKeys: string[] = [];
-      const nextMeta: Record<string, DbCategoryMeta> = {};
+        (catData ?? []).forEach((cat) => {
+          const key = normalizeCategoryKey(cat.name);
+          const emojiKey = normalizeCategoryKey(cat.emoji);
+          if (!key || INCOME_KEYS.has(emojiKey)) return;
+          nextKeys.push(key);
+          nextTotals[key] = 0;
+          nextBudgets[key] =
+            cat.budget_limit && cat.budget_limit > 0
+              ? cat.budget_limit
+              : (DEFAULT_CATEGORY_BUDGETS[key] ??
+                DEFAULT_CATEGORY_BUDGETS.default);
+          nextMeta[key] = {
+            label: cat.name,
+            emoji: cat.emoji,
+            textColor: cat.text_colour,
+            tileBg: cat.tile_bg_colour,
+          };
+        });
 
-      (catData ?? []).forEach((cat) => {
-        const key = normalizeCategoryKey(cat.name);
-        const emojiKey = normalizeCategoryKey(cat.emoji);
-        if (!key || INCOME_KEYS.has(emojiKey)) return;
-        nextKeys.push(key);
-        nextTotals[key] = 0;
-        nextBudgets[key] =
-          cat.budget_limit && cat.budget_limit > 0
-            ? cat.budget_limit
-            : (DEFAULT_CATEGORY_BUDGETS[key] ??
-              DEFAULT_CATEGORY_BUDGETS.default);
-        nextMeta[key] = {
-          label: cat.name,
-          emoji: cat.emoji,
-          textColor: cat.text_colour,
-          tileBg: cat.tile_bg_colour,
-        };
-      });
+        (txData ?? []).forEach((tx) => {
+          const key = normalizeCategoryKey(tx.category);
+          if (!key || !(key in nextTotals)) return;
+          nextTotals[key] += Number(tx.amount) || 0;
+        });
 
-      (txData ?? []).forEach((tx) => {
-        const key = normalizeCategoryKey(tx.category);
-        if (!key || !(key in nextTotals)) return;
-        nextTotals[key] += Number(tx.amount) || 0;
-      });
+        const nextIncomeTotals: Record<string, number> = {};
+        INCOME_CATEGORIES.forEach((c) => {
+          nextIncomeTotals[c.key] = 0;
+        });
+        (incomeTxData ?? []).forEach((tx) => {
+          const nameKey = normalizeCategoryKey(tx.category);
+          const incDef = INCOME_CATEGORIES.find(
+            (c) => c.name.toLowerCase() === nameKey || c.key === nameKey
+          );
+          if (incDef) nextIncomeTotals[incDef.key] += Number(tx.amount) || 0;
+        });
 
-      const nextIncomeTotals: Record<string, number> = {};
-      INCOME_CATEGORIES.forEach((c) => {
-        nextIncomeTotals[c.key] = 0;
-      });
-      (incomeTxData ?? []).forEach((tx) => {
-        const nameKey = normalizeCategoryKey(tx.category);
-        const incDef = INCOME_CATEGORIES.find(
-          (c) => c.name.toLowerCase() === nameKey || c.key === nameKey
+        // ── Daily spend + day-of-week aggregation ──
+        const dailyMap: Record<string, number> = {};
+        const dowTotals = [0, 0, 0, 0, 0, 0, 0];
+        const dowCounts = [0, 0, 0, 0, 0, 0, 0];
+        (dailyTxData ?? []).forEach((tx) => {
+          const day = tx.date.slice(0, 10);
+          dailyMap[day] = (dailyMap[day] ?? 0) + Number(tx.amount);
+          const d = new Date(tx.date);
+          const dow = (d.getDay() + 6) % 7; // Mon=0 … Sun=6
+          dowTotals[dow] += Number(tx.amount);
+          dowCounts[dow]++;
+        });
+        const dowAvg = dowTotals.map((total, i) =>
+          dowCounts[i] > 0 ? total / dowCounts[i] : 0
         );
-        if (incDef) nextIncomeTotals[incDef.key] += Number(tx.amount) || 0;
-      });
 
-      // ── Daily spend + day-of-week aggregation ──
-      const dailyMap: Record<string, number> = {};
-      const dowTotals = [0, 0, 0, 0, 0, 0, 0];
-      const dowCounts = [0, 0, 0, 0, 0, 0, 0];
-      (dailyTxData ?? []).forEach((tx) => {
-        const day = tx.date.slice(0, 10);
-        dailyMap[day] = (dailyMap[day] ?? 0) + Number(tx.amount);
-        const d = new Date(tx.date);
-        const dow = (d.getDay() + 6) % 7; // Mon=0 … Sun=6
-        dowTotals[dow] += Number(tx.amount);
-        dowCounts[dow]++;
-      });
-      const dowAvg = dowTotals.map((total, i) =>
-        dowCounts[i] > 0 ? total / dowCounts[i] : 0
-      );
+        // ── Account-level activity ──
+        const acctExpense: Record<string, number> = {};
+        const acctIncome: Record<string, number> = {};
+        (acctTxData ?? []).forEach((tx) => {
+          const id = tx.account_id as string;
+          if (tx.type === 'expense') {
+            acctExpense[id] = (acctExpense[id] ?? 0) + Number(tx.amount);
+          } else {
+            acctIncome[id] = (acctIncome[id] ?? 0) + Number(tx.amount);
+          }
+        });
 
-      // ── Account-level activity ──
-      const acctExpense: Record<string, number> = {};
-      const acctIncome: Record<string, number> = {};
-      (acctTxData ?? []).forEach((tx) => {
-        const id = tx.account_id as string;
-        if (tx.type === 'expense') {
-          acctExpense[id] = (acctExpense[id] ?? 0) + Number(tx.amount);
-        } else {
-          acctIncome[id] = (acctIncome[id] ?? 0) + Number(tx.amount);
-        }
-      });
+        // ── Previous month totals for delta badges ──
+        const prevTotals: Record<string, number> = {};
+        (prevTxData ?? []).forEach((tx) => {
+          const key = normalizeCategoryKey(tx.category);
+          prevTotals[key] = (prevTotals[key] ?? 0) + Number(tx.amount);
+        });
 
-      // ── Previous month totals for delta badges ──
-      const prevTotals: Record<string, number> = {};
-      (prevTxData ?? []).forEach((tx) => {
-        const key = normalizeCategoryKey(tx.category);
-        prevTotals[key] = (prevTotals[key] ?? 0) + Number(tx.amount);
-      });
+        // Batch all fresh state through applyStatsBundle so every setState is
+        // wrapped in startTransition — async post-await setStates would otherwise
+        // run urgently and block the JS thread during tab-switch.
+        applyStatsBundle({
+          expenseCategoryKeys: nextKeys,
+          expenseCategoryMeta: nextMeta,
+          expenseTotals: nextTotals,
+          expenseBudgets: nextBudgets,
+          incomeTotals: nextIncomeTotals,
+          dailySpend: dailyMap,
+          dowAvgSpend: dowAvg,
+          topTransactions: (topTxData ?? []) as TopTx[],
+          accountActivity: { expense: acctExpense, income: acctIncome },
+          prevMonthExpenseTotals: prevTotals,
+          totalTxCount: dailyTxData?.length ?? 0,
+          prevMonthTxCount: prevTxData?.length ?? 0,
+        });
 
-      // Batch all fresh state through applyStatsBundle so every setState is
-      // wrapped in startTransition — async post-await setStates would otherwise
-      // run urgently and block the JS thread during tab-switch.
-      applyStatsBundle({
-        expenseCategoryKeys: nextKeys,
-        expenseCategoryMeta: nextMeta,
-        expenseTotals: nextTotals,
-        expenseBudgets: nextBudgets,
-        incomeTotals: nextIncomeTotals,
-        dailySpend: dailyMap,
-        dowAvgSpend: dowAvg,
-        topTransactions: (topTxData ?? []) as TopTx[],
-        accountActivity: { expense: acctExpense, income: acctIncome },
-        prevMonthExpenseTotals: prevTotals,
-        totalTxCount: dailyTxData?.length ?? 0,
-        prevMonthTxCount: prevTxData?.length ?? 0,
-      });
-
-      // 3. Persist the computed bundle to cache for next open
-      const bundle = {
-        expenseCategoryKeys: nextKeys,
-        expenseCategoryMeta: nextMeta,
-        expenseTotals:       nextTotals,
-        expenseBudgets:      nextBudgets,
-        incomeTotals:        nextIncomeTotals,
-        dailySpend:          dailyMap,
-        dowAvgSpend:         dowAvg,
-        topTransactions:     topTxData ?? [],
-        accountActivity:     { expense: acctExpense, income: acctIncome },
-        prevMonthExpenseTotals: prevTotals,
-        totalTxCount:        dailyTxData?.length ?? 0,
-        prevMonthTxCount:    prevTxData?.length ?? 0,
-      };
-      AsyncStorage.setItem(cacheKey, JSON.stringify(bundle)).catch((err) => {
-        if (__DEV__) console.warn('[StatsScreen] stats cache write failed:', err);
-      });
-      lastFetchedAt.current = Date.now();
-      lastFetchedKey.current = cacheKey;
-    } finally {
-      setLoading(false);
-    }
-  }, [applyStatsBundle, monthRange, selectedMonth, selectedYear]);
+        // 3. Persist the computed bundle to cache for next open
+        const bundle = {
+          expenseCategoryKeys: nextKeys,
+          expenseCategoryMeta: nextMeta,
+          expenseTotals: nextTotals,
+          expenseBudgets: nextBudgets,
+          incomeTotals: nextIncomeTotals,
+          dailySpend: dailyMap,
+          dowAvgSpend: dowAvg,
+          topTransactions: topTxData ?? [],
+          accountActivity: { expense: acctExpense, income: acctIncome },
+          prevMonthExpenseTotals: prevTotals,
+          totalTxCount: dailyTxData?.length ?? 0,
+          prevMonthTxCount: prevTxData?.length ?? 0,
+        };
+        AsyncStorage.setItem(cacheKey, JSON.stringify(bundle)).catch((err) => {
+          if (__DEV__)
+            console.warn('[StatsScreen] stats cache write failed:', err);
+        });
+        lastFetchedAt.current = Date.now();
+        lastFetchedKey.current = cacheKey;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [applyStatsBundle, monthRange, selectedMonth, selectedYear]
+  );
 
   // Re-fetch when month/year changes while screen is already mounted;
   // useFocusEffect handles the initial fetch on first focus.
@@ -850,9 +914,15 @@ export default function InsightsScreen() {
         headerOpacity.value = withTiming(1, { duration: 260 });
         headerTransY.value = withTiming(0, { duration: 260 });
         heroOpacity.value = withDelay(60, withTiming(1, { duration: 320 }));
-        heroScale.value = withDelay(60, withSpring(1, { damping: 18, stiffness: 160 }));
+        heroScale.value = withDelay(
+          60,
+          withSpring(1, { damping: 18, stiffness: 160 })
+        );
         contentOpacity.value = withDelay(140, withTiming(1, { duration: 320 }));
-        contentTransY.value = withDelay(140, withSpring(0, { damping: 18, stiffness: 180 }));
+        contentTransY.value = withDelay(
+          140,
+          withSpring(0, { damping: 18, stiffness: 180 })
+        );
       } else {
         // Lightweight re-entry: subtle fade+lift, ~180ms. Keeps the screen feeling alive
         // on tab switch without the flash of a full entrance.
@@ -868,7 +938,9 @@ export default function InsightsScreen() {
       }
 
       const task = InteractionManager.runAfterInteractions(() => {
-        startTransition(() => { fetchStats(); });
+        startTransition(() => {
+          fetchStats();
+        });
       });
       return () => task.cancel();
     }, [
@@ -900,7 +972,7 @@ export default function InsightsScreen() {
     totalBudget > 0 ? (totalExpenseSpent / totalBudget) * 100 : 0;
   const isOverBudget = totalBudget > 0 && totalExpenseSpent > totalBudget;
   const remaining = Math.max(totalBudget - totalExpenseSpent, 0);
-  const overage   = Math.max(totalExpenseSpent - totalBudget, 0);
+  const overage = Math.max(totalExpenseSpent - totalBudget, 0);
   const totalIncome = Object.values(incomeTotals).reduce((s, v) => s + v, 0);
   const incomeActiveKeys = INCOME_CATEGORIES.filter(
     (c) => (incomeTotals[c.key] ?? 0) > 0
@@ -919,15 +991,22 @@ export default function InsightsScreen() {
       // When under budget: scale to total budget so empty space = remaining budget.
       const denom = isOverBudget
         ? totalExpenseSpent
-        : totalBudget > 0 ? totalBudget : (totalExpenseSpent > 0 ? totalExpenseSpent : 1);
+        : totalBudget > 0
+          ? totalBudget
+          : totalExpenseSpent > 0
+            ? totalExpenseSpent
+            : 1;
 
       return expenseCategoryKeys
         .filter((k) => expenseTotals[k] > 0)
         .map((cat, index) => {
-          const catSpent  = expenseTotals[cat]; // no cap — actual spending
+          const catSpent = expenseTotals[cat]; // no cap — actual spending
           const catBudget = expenseBudgets[cat] ?? 0;
           const isCatOver = catBudget > 0 && catSpent > catBudget;
-          const strokeLength = Math.max(0, (catSpent / denom) * donutCircumference - donutGap);
+          const strokeLength = Math.max(
+            0,
+            (catSpent / denom) * donutCircumference - donutGap
+          );
           const gapLength = donutCircumference - strokeLength;
           const meta = expenseCategoryMeta[cat];
           const fallbackColor =
@@ -952,7 +1031,10 @@ export default function InsightsScreen() {
     const denom = totalIncome > 0 ? totalIncome : 1;
     return incomeActiveKeys.map((incCat) => {
       const amount = incomeTotals[incCat.key] ?? 0;
-      const strokeLength = Math.max(0, (amount / denom) * donutCircumference - donutGap);
+      const strokeLength = Math.max(
+        0,
+        (amount / denom) * donutCircumference - donutGap
+      );
       const gapLength = donutCircumference - strokeLength;
       const color = CATEGORY_COLOR[incCat.key] ?? colors.textSecondary;
       const segment = {
@@ -1115,33 +1197,35 @@ export default function InsightsScreen() {
     setSelectedMonth((month) => month + 1);
   }, [isAtMaxMonth, selectedMonth]);
 
-  const expenseTiles = useMemo(() => {
-    return expenseCategoryKeys
-      .map((catKey, index) => {
-        const meta = expenseCategoryMeta[catKey];
-        const theme = CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other;
-        const amount = expenseTotals[catKey] ?? 0;
-        const budget =
-          expenseBudgets[catKey] ?? DEFAULT_CATEGORY_BUDGETS.default;
-        const pct = budget > 0 ? (amount / budget) * 100 : 0;
-        const color = meta?.textColor ?? theme.nameColor;
-        const tileBg = meta?.tileBg ?? theme.badgeBg;
+  const expenseTiles = useMemo(
+    () =>
+      expenseCategoryKeys
+        .map((catKey, index) => {
+          const meta = expenseCategoryMeta[catKey];
+          const theme = CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other;
+          const amount = expenseTotals[catKey] ?? 0;
+          const budget =
+            expenseBudgets[catKey] ?? DEFAULT_CATEGORY_BUDGETS.default;
+          const pct = budget > 0 ? (amount / budget) * 100 : 0;
+          const color = meta?.textColor ?? theme.nameColor;
+          const tileBg = meta?.tileBg ?? theme.badgeBg;
 
-        return {
-          key: catKey,
-          index,
-          title: meta?.label ?? catKey,
-          amount,
-          budget,
-          pct,
-          isOver: pct >= 100,
-          color,
-          tileBg,
-          iconKey: catKey,
-        };
-      })
-      .sort((a, b) => b.amount - a.amount);
-  }, [expenseCategoryKeys, expenseCategoryMeta, expenseTotals, expenseBudgets]);
+          return {
+            key: catKey,
+            index,
+            title: meta?.label ?? catKey,
+            amount,
+            budget,
+            pct,
+            isOver: pct >= 100,
+            color,
+            tileBg,
+            iconKey: catKey,
+          };
+        })
+        .sort((a, b) => b.amount - a.amount),
+    [expenseCategoryKeys, expenseCategoryMeta, expenseTotals, expenseBudgets]
+  );
 
   const incomeTiles = useMemo(() => {
     const denom = totalIncome > 0 ? totalIncome : 1;
@@ -1161,14 +1245,19 @@ export default function InsightsScreen() {
       .sort((a, b) => b.amount - a.amount);
   }, [incomeTotals, totalIncome]);
 
-  const mostOverBudgetTile = useMemo(() => {
-    return expenseTiles
-      .filter((tile) => tile.isOver)
-      .sort((a, b) => b.pct - a.pct)[0] ?? null;
-  }, [expenseTiles]);
+  const mostOverBudgetTile = useMemo(
+    () =>
+      expenseTiles
+        .filter((tile) => tile.isOver)
+        .sort((a, b) => b.pct - a.pct)[0] ?? null,
+    [expenseTiles]
+  );
 
   // ── New derived values ──
-  const biggestExpense = useMemo(() => topTransactions[0] ?? null, [topTransactions]);
+  const biggestExpense = useMemo(
+    () => topTransactions[0] ?? null,
+    [topTransactions]
+  );
 
   const avgDailySpend = useMemo(() => {
     const vals = Object.values(dailySpend);
@@ -1191,7 +1280,11 @@ export default function InsightsScreen() {
   );
 
   const peakDayData = useMemo(
-    () => dailyBarsData.reduce((best, d) => (d.amount > best.amount ? d : best), { day: 0, amount: 0 }),
+    () =>
+      dailyBarsData.reduce((best, d) => (d.amount > best.amount ? d : best), {
+        day: 0,
+        amount: 0,
+      }),
     [dailyBarsData]
   );
 
@@ -1245,7 +1338,8 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
         lastAiMonthRef.current = monthKey;
       }
     } catch (err) {
-      if (__DEV__) console.warn('[StatsScreen] AI insights generation failed:', err);
+      if (__DEV__)
+        console.warn('[StatsScreen] AI insights generation failed:', err);
     } finally {
       setAiInsightsLoading(false);
     }
@@ -1270,7 +1364,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
     if (!loading && viewType === 'expense' && expenseCategoryKeys.length > 0) {
       generateInsights();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, viewType, selectedYear, selectedMonth]);
 
   const selectedExpenseBudget =
@@ -1304,8 +1398,8 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
         : 'Income';
   const heroMetricOneValue =
     viewType === 'expense'
-      ? selectedExpenseSpent ?? totalExpenseSpent
-      : selectedIncomeAmount ?? totalIncome;
+      ? (selectedExpenseSpent ?? totalExpenseSpent)
+      : (selectedIncomeAmount ?? totalIncome);
 
   const heroMetricTwoLabel =
     viewType === 'expense'
@@ -1414,7 +1508,11 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
             { backgroundColor: isDark ? colors.surfaceSubdued : tile.tileBg },
           ]}
         >
-          <WaveFill pct={waveHeight / TILE_H} color={tile.color} tileHeight={TILE_H} />
+          <WaveFill
+            pct={waveHeight / TILE_H}
+            color={tile.color}
+            tileHeight={TILE_H}
+          />
 
           <View style={styles.catBadgeWrap}>
             {tile.isOver ? (
@@ -1491,7 +1589,9 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
           </View>
 
           <View style={styles.catProgressMetaRow}>
-            <Text style={[styles.catProgressPctLabel, { color: progressColor }]}>
+            <Text
+              style={[styles.catProgressPctLabel, { color: progressColor }]}
+            >
               {pctDisplay}
             </Text>
             <Text style={styles.catProgressBudgetLabel}>
@@ -1517,7 +1617,11 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
             { backgroundColor: isDark ? colors.surfaceSubdued : tile.tileBg },
           ]}
         >
-          <WaveFill pct={waveHeight / TILE_H} color={tile.color} tileHeight={TILE_H} />
+          <WaveFill
+            pct={waveHeight / TILE_H}
+            color={tile.color}
+            tileHeight={TILE_H}
+          />
 
           <View
             style={[
@@ -1546,7 +1650,10 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
             </View>
           </View>
 
-          <Text style={[styles.catName, { color: tile.color }]} numberOfLines={1}>
+          <Text
+            style={[styles.catName, { color: tile.color }]}
+            numberOfLines={1}
+          >
             {tile.title}
           </Text>
           <Text style={[styles.catAmt, { color: tile.color }]}>
@@ -1573,32 +1680,82 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
         {/* Hero card skeleton */}
         <View style={styles.loadingHeroCard}>
           <View style={styles.loadingHeroTopRow}>
-            <Skeleton width={120} height={28} borderRadius={999} style={{ opacity: 0.35 }} />
-            <Skeleton width={100} height={28} borderRadius={999} style={{ opacity: 0.35 }} />
+            <Skeleton
+              width={120}
+              height={28}
+              borderRadius={999}
+              style={{ opacity: 0.35 }}
+            />
+            <Skeleton
+              width={100}
+              height={28}
+              borderRadius={999}
+              style={{ opacity: 0.35 }}
+            />
           </View>
           <View style={{ alignItems: 'center', marginVertical: 16 }}>
-            <Skeleton width={160} height={160} borderRadius={80} style={{ opacity: 0.3 }} />
+            <Skeleton
+              width={160}
+              height={160}
+              borderRadius={80}
+              style={{ opacity: 0.3 }}
+            />
           </View>
           <View style={styles.loadingHeroMetrics}>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Skeleton width={52} height={10} borderRadius={4} style={{ opacity: 0.3, marginBottom: 8 }} />
-              <Skeleton width={72} height={18} borderRadius={4} style={{ opacity: 0.35 }} />
+              <Skeleton
+                width={52}
+                height={10}
+                borderRadius={4}
+                style={{ opacity: 0.3, marginBottom: 8 }}
+              />
+              <Skeleton
+                width={72}
+                height={18}
+                borderRadius={4}
+                style={{ opacity: 0.35 }}
+              />
             </View>
             <View style={styles.metricDivider} />
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Skeleton width={64} height={10} borderRadius={4} style={{ opacity: 0.3, marginBottom: 8 }} />
-              <Skeleton width={72} height={18} borderRadius={4} style={{ opacity: 0.35 }} />
+              <Skeleton
+                width={64}
+                height={10}
+                borderRadius={4}
+                style={{ opacity: 0.3, marginBottom: 8 }}
+              />
+              <Skeleton
+                width={72}
+                height={18}
+                borderRadius={4}
+                style={{ opacity: 0.35 }}
+              />
             </View>
             <View style={styles.metricDivider} />
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Skeleton width={48} height={10} borderRadius={4} style={{ opacity: 0.3, marginBottom: 8 }} />
-              <Skeleton width={72} height={18} borderRadius={4} style={{ opacity: 0.35 }} />
+              <Skeleton
+                width={48}
+                height={10}
+                borderRadius={4}
+                style={{ opacity: 0.3, marginBottom: 8 }}
+              />
+              <Skeleton
+                width={72}
+                height={18}
+                borderRadius={4}
+                style={{ opacity: 0.35 }}
+              />
             </View>
           </View>
         </View>
 
         {/* Tab bar skeleton */}
-        <Skeleton width="100%" height={40} borderRadius={14} style={{ marginBottom: 16 }} />
+        <Skeleton
+          width="100%"
+          height={40}
+          borderRadius={14}
+          style={{ marginBottom: 16 }}
+        />
 
         {/* Quick Stats skeletons */}
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
@@ -1608,10 +1765,20 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
         </View>
 
         {/* Daily Spend chart skeleton */}
-        <Skeleton width="100%" height={128} borderRadius={20} style={{ marginBottom: 20 }} />
+        <Skeleton
+          width="100%"
+          height={128}
+          borderRadius={20}
+          style={{ marginBottom: 20 }}
+        />
 
         {/* Top Expenses skeleton */}
-        <Skeleton width="100%" height={136} borderRadius={20} style={{ marginBottom: 20 }} />
+        <Skeleton
+          width="100%"
+          height={136}
+          borderRadius={20}
+          style={{ marginBottom: 20 }}
+        />
 
         {/* Account Activity skeleton */}
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
@@ -1667,289 +1834,338 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
           />
         }
       >
-
         <RAnim.View style={heroAnim}>
           <LinearGradient
             colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
             style={styles.heroCard}
           >
-        <LinearGradient
-          colors={[colors.primaryLight60 ?? 'rgba(91,140,110,0.35)', 'transparent']}
-          style={[styles.heroBlob, { top: -30, right: -20, width: 160, height: 160 }]}
-        />
-        <LinearGradient
-          colors={[colors.primaryTransparent50 ?? 'rgba(91,140,110,0.2)', 'transparent']}
-          style={[
-            styles.heroBlob,
-            { bottom: 44, left: -20, width: 110, height: 110, opacity: 0.6 },
-          ]}
-        />
+            <LinearGradient
+              colors={[
+                colors.primaryLight60 ?? 'rgba(91,140,110,0.35)',
+                'transparent',
+              ]}
+              style={[
+                styles.heroBlob,
+                { top: -30, right: -20, width: 160, height: 160 },
+              ]}
+            />
+            <LinearGradient
+              colors={[
+                colors.primaryTransparent50 ?? 'rgba(91,140,110,0.2)',
+                'transparent',
+              ]}
+              style={[
+                styles.heroBlob,
+                {
+                  bottom: 44,
+                  left: -20,
+                  width: 110,
+                  height: 110,
+                  opacity: 0.6,
+                },
+              ]}
+            />
 
-        <View style={styles.heroTopRow}>
-          <View style={styles.monthNavPill}>
-            <TouchableOpacity
-              style={styles.monthArrow}
-              activeOpacity={0.75}
-              onPress={handlePrevMonth}
-            >
-              <Ionicons
-                name="chevron-back"
-                size={14}
-                color={colors.whiteTransparent80}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.monthNavTextBtn}
-              activeOpacity={0.75}
-              onPress={() => setMonthPickerVisible(true)}
-            >
-              <View style={styles.monthNavTextWrap}>
-                <Text
-                  style={styles.monthNavLabel}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                  allowFontScaling={false}
+            <View style={styles.heroTopRow}>
+              <View style={styles.monthNavPill}>
+                <TouchableOpacity
+                  style={styles.monthArrow}
+                  activeOpacity={0.75}
+                  onPress={handlePrevMonth}
                 >
-                  {monthNavLabel}
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.monthArrow, isAtMaxMonth && { opacity: 0.35 }]}
-              activeOpacity={0.75}
-              onPress={handleNextMonth}
-              disabled={isAtMaxMonth}
-            >
-              <Ionicons
-                name="chevron-forward"
-                size={14}
-                color={colors.whiteTransparent80}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.heroToggleWrap}>
-            <TouchableOpacity
-              style={[
-                styles.heroToggleBtn,
-                viewType === 'expense' && styles.heroToggleBtnActive,
-              ]}
-              activeOpacity={0.8}
-              onPress={() => handleViewTypeSwitch('expense')}
-            >
-              <Text
-                style={[
-                  styles.heroToggleText,
-                  viewType === 'expense' && styles.heroToggleTextActive,
-                ]}
-              >
-                Expenses
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.heroToggleBtn,
-                viewType === 'income' && styles.heroToggleBtnActive,
-              ]}
-              activeOpacity={0.8}
-              onPress={() => handleViewTypeSwitch('income')}
-            >
-              <Text
-                style={[
-                  styles.heroToggleText,
-                  viewType === 'income' && styles.heroToggleTextActive,
-                ]}
-              >
-                Income
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <Pressable
-          style={styles.donutSection}
-          onPress={() => {
-            if (isInteractingWithDonutRef.current) return;
-            if (activeDonutIndex !== -1) {
-              setActiveDonutIndex(-1);
-              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            }
-          }}
-        >
-          <View {...panResponder.panHandlers} style={styles.donutContainer}>
-            {isChartReady ? (
-            <Svg width={168} height={168} viewBox="0 0 160 160">
-              <G transform="rotate(-90, 80, 80)">
-                {/* Background track — red tint when over budget */}
-                <Circle
-                  cx="80"
-                  cy="80"
-                  r={donutRadius}
-                  stroke={
-                    viewType === 'expense' && isOverBudget
-                      ? 'rgba(239,68,68,0.22)'
-                      : colors.whiteTransparent15
-                  }
-                  strokeWidth={donutStrokeWidth}
-                  fill="transparent"
-                />
-
-                {/* Segments */}
-                {donutSegments.map((segment, index) => {
-                  const isFocused = activeDonutIndex === index;
-                  const isDimmed = activeDonutIndex >= 0 && !isFocused;
-                  return (
-                    <Circle
-                      key={segment.key}
-                      cx="80"
-                      cy="80"
-                      r={donutRadius}
-                      stroke={segment.color}
-                      strokeWidth={isFocused ? donutStrokeWidth + 4 : donutStrokeWidth}
-                      opacity={isDimmed ? 0.18 : 1}
-                      fill="transparent"
-                      strokeDasharray={segment.strokeDasharray}
-                      strokeDashoffset={segment.strokeDashoffset}
-                      strokeLinecap="round"
-                    />
-                  );
-                })}
-
-                {/* Budget-limit tick mark — white notch at the 100% budget position */}
-                {viewType === 'expense' && isOverBudget && totalBudget > 0 && (
-                  <Circle
-                    cx="80"
-                    cy="80"
-                    r={donutRadius}
-                    stroke="white"
-                    strokeWidth={donutStrokeWidth + 6}
-                    fill="transparent"
-                    strokeDasharray={`3 ${donutCircumference - 3}`}
-                    strokeDashoffset={
-                      -(totalBudget / totalExpenseSpent) * donutCircumference
-                    }
-                    opacity={0.9}
+                  <Ionicons
+                    name="chevron-back"
+                    size={14}
+                    color={colors.whiteTransparent80}
                   />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.monthNavTextBtn}
+                  activeOpacity={0.75}
+                  onPress={() => setMonthPickerVisible(true)}
+                >
+                  <View style={styles.monthNavTextWrap}>
+                    <Text
+                      style={styles.monthNavLabel}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                      allowFontScaling={false}
+                    >
+                      {monthNavLabel}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.monthArrow, isAtMaxMonth && { opacity: 0.35 }]}
+                  activeOpacity={0.75}
+                  onPress={handleNextMonth}
+                  disabled={isAtMaxMonth}
+                >
+                  <Ionicons
+                    name="chevron-forward"
+                    size={14}
+                    color={colors.whiteTransparent80}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.heroToggleWrap}>
+                <TouchableOpacity
+                  style={[
+                    styles.heroToggleBtn,
+                    viewType === 'expense' && styles.heroToggleBtnActive,
+                  ]}
+                  activeOpacity={0.8}
+                  onPress={() => handleViewTypeSwitch('expense')}
+                >
+                  <Text
+                    style={[
+                      styles.heroToggleText,
+                      viewType === 'expense' && styles.heroToggleTextActive,
+                    ]}
+                  >
+                    Expenses
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.heroToggleBtn,
+                    viewType === 'income' && styles.heroToggleBtnActive,
+                  ]}
+                  activeOpacity={0.8}
+                  onPress={() => handleViewTypeSwitch('income')}
+                >
+                  <Text
+                    style={[
+                      styles.heroToggleText,
+                      viewType === 'income' && styles.heroToggleTextActive,
+                    ]}
+                  >
+                    Income
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <Pressable
+              style={styles.donutSection}
+              onPress={() => {
+                if (isInteractingWithDonutRef.current) return;
+                if (activeDonutIndex !== -1) {
+                  setActiveDonutIndex(-1);
+                  LayoutAnimation.configureNext(
+                    LayoutAnimation.Presets.easeInEaseOut
+                  );
+                }
+              }}
+            >
+              <View {...panResponder.panHandlers} style={styles.donutContainer}>
+                {isChartReady ? (
+                  <Svg width={168} height={168} viewBox="0 0 160 160">
+                    <G transform="rotate(-90, 80, 80)">
+                      {/* Background track — red tint when over budget */}
+                      <Circle
+                        cx="80"
+                        cy="80"
+                        r={donutRadius}
+                        stroke={
+                          viewType === 'expense' && isOverBudget
+                            ? 'rgba(239,68,68,0.22)'
+                            : colors.whiteTransparent15
+                        }
+                        strokeWidth={donutStrokeWidth}
+                        fill="transparent"
+                      />
+
+                      {/* Segments */}
+                      {donutSegments.map((segment, index) => {
+                        const isFocused = activeDonutIndex === index;
+                        const isDimmed = activeDonutIndex >= 0 && !isFocused;
+                        return (
+                          <Circle
+                            key={segment.key}
+                            cx="80"
+                            cy="80"
+                            r={donutRadius}
+                            stroke={segment.color}
+                            strokeWidth={
+                              isFocused
+                                ? donutStrokeWidth + 4
+                                : donutStrokeWidth
+                            }
+                            opacity={isDimmed ? 0.18 : 1}
+                            fill="transparent"
+                            strokeDasharray={segment.strokeDasharray}
+                            strokeDashoffset={segment.strokeDashoffset}
+                            strokeLinecap="round"
+                          />
+                        );
+                      })}
+
+                      {/* Budget-limit tick mark — white notch at the 100% budget position */}
+                      {viewType === 'expense' &&
+                        isOverBudget &&
+                        totalBudget > 0 && (
+                          <Circle
+                            cx="80"
+                            cy="80"
+                            r={donutRadius}
+                            stroke="white"
+                            strokeWidth={donutStrokeWidth + 6}
+                            fill="transparent"
+                            strokeDasharray={`3 ${donutCircumference - 3}`}
+                            strokeDashoffset={
+                              -(totalBudget / totalExpenseSpent) *
+                              donutCircumference
+                            }
+                            opacity={0.9}
+                          />
+                        )}
+                    </G>
+                  </Svg>
+                ) : (
+                  <Skeleton width={168} height={168} borderRadius={84} />
                 )}
-              </G>
-            </Svg>
-            ) : (
-              <Skeleton width={168} height={168} borderRadius={84} />
-            )}
-            <View style={styles.donutCenterText} pointerEvents="none">
-              <Text style={[styles.donutCenterPct, { color: centerTextColor }]}>
-                {centerPctText}
-              </Text>
-              <Text
-                style={[
-                  styles.donutCenterSub,
-                  {
-                    color:
-                      activeDonutIndex >= 0
-                        ? centerTextColor
-                        : colors.whiteTransparent65,
-                  },
-                ]}
-              >
-                {centerSubText.charAt(0).toUpperCase() + centerSubText.slice(1)}
-              </Text>
-            </View>
-          </View>
-        </Pressable>
-
-        <View style={styles.heroMetricsBar} pointerEvents="none">
-          <View style={styles.budgetMetricsRow}>
-            <View style={styles.metricCol}>
-              <Text style={styles.metricLabel}>{heroMetricOneLabel}</Text>
-              <Text
-                style={[
-                  styles.metricVal,
-                  viewType === 'expense'
-                    ? styles.metricValCoral
-                    : styles.metricValAccent,
-                  selectedThemeColor && { color: selectedThemeColor },
-                ]}
-              >
-                {heroMetricOneDisplay}
-              </Text>
-            </View>
-
-            <View style={styles.metricDivider} />
-
-            <View style={styles.metricCol}>
-              <Text style={styles.metricLabel}>{heroMetricTwoLabel}</Text>
-              <Text
-                style={[
-                  styles.metricVal,
-                  viewType === 'expense'
-                    ? styles.metricValAccent
-                    : undefined,
-                ]}
-              >
-                {heroMetricTwoDisplay}
-              </Text>
-            </View>
-
-            {showBudgetMetric && (
-              <>
-                <View style={styles.metricDivider} />
-                <View style={styles.metricCol}>
-                  <Text style={styles.metricLabel}>Budget</Text>
-                  <Text style={styles.metricVal}>{budgetMetricDisplay}</Text>
+                <View style={styles.donutCenterText} pointerEvents="none">
+                  <Text
+                    style={[styles.donutCenterPct, { color: centerTextColor }]}
+                  >
+                    {centerPctText}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.donutCenterSub,
+                      {
+                        color:
+                          activeDonutIndex >= 0
+                            ? centerTextColor
+                            : colors.whiteTransparent65,
+                      },
+                    ]}
+                  >
+                    {centerSubText.charAt(0).toUpperCase() +
+                      centerSubText.slice(1)}
+                  </Text>
                 </View>
-              </>
-            )}
-          </View>
-        </View>
+              </View>
+            </Pressable>
+
+            <View style={styles.heroMetricsBar} pointerEvents="none">
+              <View style={styles.budgetMetricsRow}>
+                <View style={styles.metricCol}>
+                  <Text style={styles.metricLabel}>{heroMetricOneLabel}</Text>
+                  <Text
+                    style={[
+                      styles.metricVal,
+                      viewType === 'expense'
+                        ? styles.metricValCoral
+                        : styles.metricValAccent,
+                      selectedThemeColor && { color: selectedThemeColor },
+                    ]}
+                  >
+                    {heroMetricOneDisplay}
+                  </Text>
+                </View>
+
+                <View style={styles.metricDivider} />
+
+                <View style={styles.metricCol}>
+                  <Text style={styles.metricLabel}>{heroMetricTwoLabel}</Text>
+                  <Text
+                    style={[
+                      styles.metricVal,
+                      viewType === 'expense'
+                        ? styles.metricValAccent
+                        : undefined,
+                    ]}
+                  >
+                    {heroMetricTwoDisplay}
+                  </Text>
+                </View>
+
+                {showBudgetMetric && (
+                  <>
+                    <View style={styles.metricDivider} />
+                    <View style={styles.metricCol}>
+                      <Text style={styles.metricLabel}>Budget</Text>
+                      <Text style={styles.metricVal}>
+                        {budgetMetricDisplay}
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            </View>
           </LinearGradient>
         </RAnim.View>
 
-      {viewType === 'expense' && (
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={[
-            styles.aiAlertStrip,
-            {
-              borderColor: withAlpha(aiAlertColor, 0.35),
-              backgroundColor: withAlpha(aiAlertColor, isDark ? 0.2 : 0.12),
-            },
-          ]}
-          onPress={() => navigation.navigate('ChatScreen')}
-        >
-          <View style={[styles.aiAlertIconWrap, { backgroundColor: aiAlertColor }]}>
-            <Ionicons name={aiAlertIcon} size={14} color={colors.white} />
-          </View>
-          <View style={styles.aiAlertBody}>
-            <Text
-              style={[styles.aiAlertTitle, { color: aiAlertColor }]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {aiAlertText}
-            </Text>
-            <Text style={styles.aiAlertSub} numberOfLines={1} ellipsizeMode="tail">
-              {aiAlertSubText}
-            </Text>
-          </View>
-          <View
+        {viewType === 'expense' && (
+          <TouchableOpacity
+            activeOpacity={0.9}
             style={[
-              styles.aiAlertCtaWrap,
-              { backgroundColor: withAlpha(aiAlertColor, isDark ? 0.35 : 0.12) },
+              styles.aiAlertStrip,
+              {
+                borderColor: withAlpha(aiAlertColor, 0.35),
+                backgroundColor: withAlpha(aiAlertColor, isDark ? 0.2 : 0.12),
+              },
             ]}
+            onPress={() => navigation.navigate('ChatScreen')}
           >
-            <Text style={[styles.aiAlertCtaText, { color: aiAlertColor }]}>Ask Fino</Text>
-          </View>
-        </TouchableOpacity>
-      )}
+            <View
+              style={[
+                styles.aiAlertIconWrap,
+                { backgroundColor: aiAlertColor },
+              ]}
+            >
+              <Ionicons name={aiAlertIcon} size={14} color={colors.white} />
+            </View>
+            <View style={styles.aiAlertBody}>
+              <Text
+                style={[styles.aiAlertTitle, { color: aiAlertColor }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {aiAlertText}
+              </Text>
+              <Text
+                style={styles.aiAlertSub}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {aiAlertSubText}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.aiAlertCtaWrap,
+                {
+                  backgroundColor: withAlpha(
+                    aiAlertColor,
+                    isDark ? 0.35 : 0.12
+                  ),
+                },
+              ]}
+            >
+              <Text style={[styles.aiAlertCtaText, { color: aiAlertColor }]}>
+                Ask Fino
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {viewType === 'expense' && (
           <View style={styles.stickyTabShell}>
             <View style={styles.tabChipRow}>
               {(['spend', 'patterns', 'categories'] as const).map((tab) => {
                 const isActive = activeTab === tab;
-                const label = tab === 'spend' ? 'Spend' : tab === 'patterns' ? 'Patterns' : 'Categories';
+                const label =
+                  tab === 'spend'
+                    ? 'Spend'
+                    : tab === 'patterns'
+                      ? 'Patterns'
+                      : 'Categories';
                 return (
                   <TouchableOpacity
                     key={tab}
@@ -1957,7 +2173,13 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                     style={[styles.tabChip, isActive && styles.tabChipActive]}
                     onPress={() => setActiveTab(tab)}
                   >
-                    <Text numberOfLines={1} style={[styles.tabChipText, isActive && styles.tabChipTextActive]}>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.tabChipText,
+                        isActive && styles.tabChipTextActive,
+                      ]}
+                    >
                       {label}
                     </Text>
                   </TouchableOpacity>
@@ -1968,79 +2190,23 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
         )}
 
         <RAnim.View style={contentAnim}>
-
-      <View style={styles.belowCard}>
-        {viewType === 'expense' && activeTab === 'spend' && (
-          <View style={styles.tabPanel}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionDot} />
-              <Text style={styles.sectionLabel}>Spend Overview</Text>
-              <TouchableOpacity
-                style={styles.sectionInsightBtn}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                onPress={() =>
-                  setInsightTarget({
-                    title: 'Spend Overview',
-                    message: buildSpendInsight(totalExpenseSpent, totalBudget, monthLabel),
-                  })
-                }
-              >
-                <Ionicons
-                  name="bulb-outline"
-                  size={15}
-                  color={colors.textSecondary}
-                  style={{ opacity: 0.7 }}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.quickStatsRow}>
-              <View style={styles.quickStatsPill}>
-                <Text style={styles.quickStatsTitle}>Transactions</Text>
-                <Text style={styles.quickStatsValue} numberOfLines={1}>
-                  {fmtUiNumber(totalTxCount)}
-                </Text>
-              </View>
-              <View style={styles.quickStatsPill}>
-                <Text style={styles.quickStatsTitle}>Largest expense</Text>
-                <Text style={styles.quickStatsValue} numberOfLines={1}>
-                  {biggestExpenseDisplay}
-                </Text>
-                <Text
-                  style={[styles.quickStatsSub, !biggestExpense && styles.quickStatsSubMuted]}
-                  numberOfLines={1}
-                >
-                  {biggestExpense
-                    ? biggestExpense.display_name ??
-                      biggestExpense.merchant_name ??
-                      biggestExpense.category ??
-                      ''
-                    : 'No expense yet'}
-                </Text>
-              </View>
-              <View style={styles.quickStatsPill}>
-                <Text style={styles.quickStatsTitle}>Daily average</Text>
-                <Text style={styles.quickStatsValue} numberOfLines={1}>
-                  {avgDailySpendDisplay}
-                </Text>
-              </View>
-            </View>
-
-            {totalTxCount > 0 && (
-              <View style={styles.chartCard}>
+          <View style={styles.belowCard}>
+            {viewType === 'expense' && activeTab === 'spend' && (
+              <View style={styles.tabPanel}>
                 <View style={styles.sectionHeaderRow}>
                   <View style={styles.sectionDot} />
-                  <Text style={styles.sectionLabel}>Daily Spend</Text>
-                  <Text style={styles.sectionMetaText} numberOfLines={1}>
-                    {monthLabel}
-                  </Text>
+                  <Text style={styles.sectionLabel}>Spend Overview</Text>
                   <TouchableOpacity
                     style={styles.sectionInsightBtn}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     onPress={() =>
                       setInsightTarget({
-                        title: 'Daily Spend',
-                        message: buildDailyInsight(dailySpend, monthLabel),
+                        title: 'Spend Overview',
+                        message: buildSpendInsight(
+                          totalExpenseSpent,
+                          totalBudget,
+                          monthLabel
+                        ),
                       })
                     }
                   >
@@ -2052,371 +2218,514 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                     />
                   </TouchableOpacity>
                 </View>
-                <DailySpendChart
-                  data={dailyBarsData}
-                  maxAmount={maxDailyAmount}
-                  colors={colors}
-                />
-                {peakDayData.amount > 0 && (
-                  <View style={styles.peakNoteRow}>
-                    <View style={styles.peakNoteDot} />
-                    <Text style={styles.peakNote}>
-                      Peak spend: {MONTH_NAMES[selectedMonth].slice(0, 3)} {peakDayData.day} · ₱{peakDayData.amount.toLocaleString()}
+
+                <View style={styles.quickStatsRow}>
+                  <View style={styles.quickStatsPill}>
+                    <Text style={styles.quickStatsTitle}>Transactions</Text>
+                    <Text style={styles.quickStatsValue} numberOfLines={1}>
+                      {fmtUiNumber(totalTxCount)}
                     </Text>
+                  </View>
+                  <View style={styles.quickStatsPill}>
+                    <Text style={styles.quickStatsTitle}>Largest expense</Text>
+                    <Text style={styles.quickStatsValue} numberOfLines={1}>
+                      {biggestExpenseDisplay}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.quickStatsSub,
+                        !biggestExpense && styles.quickStatsSubMuted,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {biggestExpense
+                        ? (biggestExpense.display_name ??
+                          biggestExpense.merchant_name ??
+                          biggestExpense.category ??
+                          '')
+                        : 'No expense yet'}
+                    </Text>
+                  </View>
+                  <View style={styles.quickStatsPill}>
+                    <Text style={styles.quickStatsTitle}>Daily average</Text>
+                    <Text style={styles.quickStatsValue} numberOfLines={1}>
+                      {avgDailySpendDisplay}
+                    </Text>
+                  </View>
+                </View>
+
+                {totalTxCount > 0 && (
+                  <View style={styles.chartCard}>
+                    <View style={styles.sectionHeaderRow}>
+                      <View style={styles.sectionDot} />
+                      <Text style={styles.sectionLabel}>Daily Spend</Text>
+                      <Text style={styles.sectionMetaText} numberOfLines={1}>
+                        {monthLabel}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.sectionInsightBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        onPress={() =>
+                          setInsightTarget({
+                            title: 'Daily Spend',
+                            message: buildDailyInsight(dailySpend, monthLabel),
+                          })
+                        }
+                      >
+                        <Ionicons
+                          name="bulb-outline"
+                          size={15}
+                          color={colors.textSecondary}
+                          style={{ opacity: 0.7 }}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    <DailySpendChart
+                      data={dailyBarsData}
+                      maxAmount={maxDailyAmount}
+                      colors={colors}
+                    />
+                    {peakDayData.amount > 0 && (
+                      <View style={styles.peakNoteRow}>
+                        <View style={styles.peakNoteDot} />
+                        <Text style={styles.peakNote}>
+                          Peak spend: {MONTH_NAMES[selectedMonth].slice(0, 3)}{' '}
+                          {peakDayData.day} · ₱
+                          {peakDayData.amount.toLocaleString()}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {topTransactions.length > 0 && (
+                  <View style={styles.topTxCard}>
+                    <View style={styles.sectionHeaderRow}>
+                      <View style={styles.sectionDot} />
+                      <Text style={styles.sectionLabel}>Top Expenses</Text>
+                      <Text style={styles.sectionMetaText} numberOfLines={1}>
+                        {monthLabel}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.sectionInsightBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        onPress={() =>
+                          setInsightTarget({
+                            title: 'Top Expenses',
+                            message: topExpenseInsight,
+                          })
+                        }
+                      >
+                        <Ionicons
+                          name="bulb-outline"
+                          size={15}
+                          color={colors.textSecondary}
+                          style={{ opacity: 0.7 }}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    {topTransactions.slice(0, 3).map((tx, i) => {
+                      const catKey = normalizeCategoryKey(tx.category);
+                      const color = (
+                        CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other
+                      ).barColor;
+                      const name =
+                        tx.display_name ??
+                        tx.merchant_name ??
+                        tx.category ??
+                        'Transaction';
+                      const dateStr = new Date(tx.date).toLocaleDateString(
+                        'en-PH',
+                        {
+                          month: 'short',
+                          day: 'numeric',
+                        }
+                      );
+                      return (
+                        <TouchableOpacity
+                          key={i}
+                          activeOpacity={0.75}
+                          style={[
+                            styles.topTxRow,
+                            i === Math.min(topTransactions.length, 3) - 1 && {
+                              borderBottomWidth: 0,
+                            },
+                          ]}
+                          onPress={() =>
+                            navigation.navigate('feed', {
+                              screen: 'FeedMain',
+                              params: { filterSortOrder: 'amount_desc' },
+                            })
+                          }
+                        >
+                          <View
+                            style={[
+                              styles.topTxRank,
+                              i === 0 && styles.topTxRankGold,
+                              i === 1 && styles.topTxRankSilver,
+                              i === 2 && styles.topTxRankBronze,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.topTxRankText,
+                                i === 0 && styles.topTxRankTextGold,
+                                i === 1 && styles.topTxRankTextSilver,
+                                i === 2 && styles.topTxRankTextBronze,
+                              ]}
+                            >
+                              {i + 1}
+                            </Text>
+                          </View>
+                          <View style={styles.topTxInfo}>
+                            <Text style={styles.topTxName} numberOfLines={1}>
+                              {name}
+                            </Text>
+                            <View style={styles.topTxMetaRow}>
+                              <View
+                                style={[
+                                  styles.topTxDot,
+                                  { backgroundColor: color },
+                                ]}
+                              />
+                              <Text style={styles.topTxDate}>
+                                {tx.category ?? 'Uncategorized'} · {dateStr}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={styles.topTxAmt} numberOfLines={1}>
+                            ₱{tx.amount.toLocaleString()}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+
+                {accounts.some(
+                  (a) =>
+                    accountActivity.expense[a.id] ||
+                    accountActivity.income[a.id]
+                ) && (
+                  <View style={[styles.chartCard, { paddingBottom: 20 }]}>
+                    <View style={styles.sectionHeaderRow}>
+                      <View style={styles.sectionDot} />
+                      <Text style={styles.sectionLabel}>By Account</Text>
+                    </View>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={[
+                        styles.acctScrollContent,
+                        { paddingVertical: 4 },
+                      ]}
+                    >
+                      {accounts
+                        .filter(
+                          (a) =>
+                            accountActivity.expense[a.id] ||
+                            accountActivity.income[a.id]
+                        )
+                        .map((account) => (
+                          <AccountActivityCard
+                            key={account.id}
+                            account={account}
+                            expense={accountActivity.expense[account.id] ?? 0}
+                            income={accountActivity.income[account.id] ?? 0}
+                            colors={colors}
+                            styles={styles}
+                          />
+                        ))}
+                    </ScrollView>
                   </View>
                 )}
               </View>
             )}
 
-            {topTransactions.length > 0 && (
-              <View style={styles.topTxCard}>
-                <View style={styles.sectionHeaderRow}>
-                  <View style={styles.sectionDot} />
-                  <Text style={styles.sectionLabel}>Top Expenses</Text>
-                  <Text style={styles.sectionMetaText} numberOfLines={1}>
-                    {monthLabel}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.sectionInsightBtn}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    onPress={() =>
-                      setInsightTarget({
-                        title: 'Top Expenses',
-                        message: topExpenseInsight,
-                      })
-                    }
-                  >
-                    <Ionicons
-                      name="bulb-outline"
-                      size={15}
-                      color={colors.textSecondary}
-                      style={{ opacity: 0.7 }}
-                    />
-                  </TouchableOpacity>
-                </View>
-                {topTransactions.slice(0, 3).map((tx, i) => {
-                  const catKey = normalizeCategoryKey(tx.category);
-                  const color =
-                    (CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other).barColor;
-                  const name =
-                    tx.display_name ??
-                    tx.merchant_name ??
-                    tx.category ??
-                    'Transaction';
-                  const dateStr = new Date(tx.date).toLocaleDateString('en-PH', {
-                    month: 'short',
-                    day: 'numeric',
-                  });
-                  return (
+            {viewType === 'expense' && activeTab === 'patterns' && (
+              <View style={styles.tabPanel}>
+                <View style={styles.chartCard}>
+                  <View style={styles.sectionHeaderRow}>
+                    <View style={styles.sectionDot} />
+                    <Text style={styles.sectionLabel}>vs Last Month</Text>
+                    <Text style={styles.sectionMetaText} numberOfLines={1}>
+                      {MONTH_NAMES[(selectedMonth + 11) % 12].slice(0, 3)} →{' '}
+                      {MONTH_NAMES[selectedMonth].slice(0, 3)}
+                    </Text>
                     <TouchableOpacity
-                      key={i}
-                      activeOpacity={0.75}
-                      style={[
-                        styles.topTxRow,
-                        i === Math.min(topTransactions.length, 3) - 1 && {
-                          borderBottomWidth: 0,
-                        },
-                      ]}
+                      style={styles.sectionInsightBtn}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       onPress={() =>
-                        navigation.navigate('feed', {
-                          screen: 'FeedMain',
-                          params: { filterSortOrder: 'amount_desc' },
+                        setInsightTarget({
+                          title: 'Monthly Trend',
+                          message: momInsight,
                         })
                       }
                     >
-                      <View style={[
-                        styles.topTxRank,
-                        i === 0 && styles.topTxRankGold,
-                        i === 1 && styles.topTxRankSilver,
-                        i === 2 && styles.topTxRankBronze,
-                      ]}>
-                        <Text style={[
-                          styles.topTxRankText,
-                          i === 0 && styles.topTxRankTextGold,
-                          i === 1 && styles.topTxRankTextSilver,
-                          i === 2 && styles.topTxRankTextBronze,
-                        ]}>{i + 1}</Text>
-                      </View>
-                      <View style={styles.topTxInfo}>
-                        <Text style={styles.topTxName} numberOfLines={1}>
-                          {name}
-                        </Text>
-                        <View style={styles.topTxMetaRow}>
-                          <View style={[styles.topTxDot, { backgroundColor: color }]} />
-                          <Text style={styles.topTxDate}>
-                            {tx.category ?? 'Uncategorized'} · {dateStr}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={styles.topTxAmt} numberOfLines={1}>
-                        ₱{tx.amount.toLocaleString()}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            {accounts.some(
-              (a) => accountActivity.expense[a.id] || accountActivity.income[a.id]
-            ) && (
-              <View style={[styles.chartCard, { paddingBottom: 20 }]}>
-                <View style={styles.sectionHeaderRow}>
-                  <View style={styles.sectionDot} />
-                  <Text style={styles.sectionLabel}>By Account</Text>
-                </View>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={[styles.acctScrollContent, { paddingVertical: 4 }]}
-                >
-                  {accounts
-                    .filter(
-                      (a) =>
-                        accountActivity.expense[a.id] ||
-                        accountActivity.income[a.id]
-                    )
-                    .map((account) => (
-                      <AccountActivityCard
-                        key={account.id}
-                        account={account}
-                        expense={accountActivity.expense[account.id] ?? 0}
-                        income={accountActivity.income[account.id] ?? 0}
-                        colors={colors}
-                        styles={styles}
+                      <Ionicons
+                        name="bulb-outline"
+                        size={15}
+                        color={colors.textSecondary}
+                        style={{ opacity: 0.7 }}
                       />
-                    ))}
-                </ScrollView>
-              </View>
-            )}
-          </View>
-        )}
+                    </TouchableOpacity>
+                  </View>
 
-        {viewType === 'expense' && activeTab === 'patterns' && (
-          <View style={styles.tabPanel}>
-            <View style={styles.chartCard}>
-              <View style={styles.sectionHeaderRow}>
-                <View style={styles.sectionDot} />
-                <Text style={styles.sectionLabel}>vs Last Month</Text>
-                <Text style={styles.sectionMetaText} numberOfLines={1}>
-                  {MONTH_NAMES[(selectedMonth + 11) % 12].slice(0, 3)} → {MONTH_NAMES[selectedMonth].slice(0, 3)}
-                </Text>
+                  <View style={styles.trendCompareRow}>
+                    <View
+                      style={[
+                        styles.trendPill,
+                        momDelta >= 0
+                          ? styles.trendPillUp
+                          : styles.trendPillDown,
+                      ]}
+                    >
+                      <Text style={styles.trendLabel}>Total Spent</Text>
+                      <Text
+                        style={[
+                          styles.trendValue,
+                          {
+                            color:
+                              momDelta >= 0
+                                ? colors.expenseRed
+                                : colors.incomeGreen,
+                          },
+                        ]}
+                      >
+                        {trendTotalSpentDisplay}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.trendDelta,
+                          {
+                            color:
+                              momDelta >= 0
+                                ? colors.expenseRed
+                                : colors.incomeGreen,
+                          },
+                        ]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {momDelta >= 0 ? '↑' : '↓'} {trendDeltaAmountDisplay}{' '}
+                        {momDelta >= 0 ? 'more' : 'less'}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.trendPill,
+                        txDelta >= 0
+                          ? styles.trendPillUp
+                          : styles.trendPillDown,
+                      ]}
+                    >
+                      <Text style={styles.trendLabel}>Transactions</Text>
+                      <Text
+                        style={[
+                          styles.trendValue,
+                          {
+                            color:
+                              txDelta >= 0
+                                ? colors.expenseRed
+                                : colors.incomeGreen,
+                          },
+                        ]}
+                      >
+                        {totalTxCount}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.trendDelta,
+                          {
+                            color:
+                              txDelta >= 0
+                                ? colors.expenseRed
+                                : colors.incomeGreen,
+                          },
+                        ]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {txDelta >= 0 ? '↑' : '↓'} {Math.abs(txDelta)}{' '}
+                        {txDelta >= 0 ? 'more' : 'fewer'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {totalTxCount > 0 && (
+                  <View style={styles.chartCard}>
+                    <View style={styles.sectionHeaderRow}>
+                      <View style={styles.sectionDot} />
+                      <Text style={styles.sectionLabel}>By Day of Week</Text>
+                      <Text style={styles.sectionMetaText} numberOfLines={1}>
+                        {monthLabel}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.sectionInsightBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        onPress={() =>
+                          setInsightTarget({
+                            title: 'Weekly Pattern',
+                            message: buildPatternsInsight(dowAvgSpend),
+                          })
+                        }
+                      >
+                        <Ionicons
+                          name="bulb-outline"
+                          size={15}
+                          color={colors.textSecondary}
+                          style={{ opacity: 0.7 }}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    <DowPatternChart dowAvg={dowAvgSpend} colors={colors} />
+                    {(() => {
+                      const peakDow = dowAvgSpend.indexOf(
+                        Math.max(...dowAvgSpend)
+                      );
+                      const labels = [
+                        'Monday',
+                        'Tuesday',
+                        'Wednesday',
+                        'Thursday',
+                        'Friday',
+                        'Saturday',
+                        'Sunday',
+                      ];
+                      return dowAvgSpend[peakDow] > 0 ? (
+                        <Text style={styles.chartSubNote}>
+                          {labels[peakDow]} is your highest-spend day
+                        </Text>
+                      ) : null;
+                    })()}
+                  </View>
+                )}
+
                 <TouchableOpacity
-                  style={styles.sectionInsightBtn}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  onPress={() =>
-                    setInsightTarget({
-                      title: 'Monthly Trend',
-                      message: momInsight,
-                    })
-                  }
+                  activeOpacity={0.9}
+                  style={styles.aiFullCard}
+                  onPress={() => navigation.navigate('ChatScreen')}
                 >
-                  <Ionicons
-                    name="bulb-outline"
-                    size={15}
-                    color={colors.textSecondary}
-                    style={{ opacity: 0.7 }}
-                  />
+                  <View style={styles.aiFullHeader}>
+                    <View style={styles.aiFullAvatar}>
+                      <Ionicons
+                        name="sparkles"
+                        size={16}
+                        color={colors.white}
+                      />
+                    </View>
+                    <View style={styles.aiFullHeaderBody}>
+                      <Text style={styles.aiFullTitle}>Fino Intelligence</Text>
+                      <Text style={styles.aiFullSubtitle}>
+                        Insights for {monthLabel}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {aiInsightsLoading ? (
+                    <>
+                      <Skeleton
+                        width="94%"
+                        height={12}
+                        style={{ marginBottom: 10 }}
+                      />
+                      <Skeleton
+                        width="90%"
+                        height={12}
+                        style={{ marginBottom: 10 }}
+                      />
+                      <Skeleton
+                        width="88%"
+                        height={12}
+                        style={{ marginBottom: 10 }}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      {(
+                        aiInsights?.slice(0, 3) ?? [insightHeadline, insightSub]
+                      ).map((insight, i) => (
+                        <View key={i} style={styles.aiFullBulletRow}>
+                          <View style={styles.aiFullBulletIcon}>
+                            <Ionicons
+                              name={
+                                i === 0
+                                  ? 'bag-handle-outline'
+                                  : i === 1
+                                    ? 'calendar-outline'
+                                    : 'card-outline'
+                              }
+                              size={12}
+                              color={colors.lavenderDark}
+                            />
+                          </View>
+                          <Text style={styles.aiFullBulletText}>{insight}</Text>
+                        </View>
+                      ))}
+                    </>
+                  )}
+
+                  <View style={styles.aiFullCtaRow}>
+                    <Text style={styles.aiFullCtaText}>Chat with Fino →</Text>
+                  </View>
                 </TouchableOpacity>
               </View>
+            )}
 
-              <View style={styles.trendCompareRow}>
-                <View
-                  style={[
-                    styles.trendPill,
-                    momDelta >= 0 ? styles.trendPillUp : styles.trendPillDown,
-                  ]}
-                >
-                  <Text style={styles.trendLabel}>Total Spent</Text>
-                  <Text
-                    style={[
-                      styles.trendValue,
-                      { color: momDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
-                    ]}
-                  >
-                    {trendTotalSpentDisplay}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.trendDelta,
-                      { color: momDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
-                    ]}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {momDelta >= 0 ? '↑' : '↓'} {trendDeltaAmountDisplay} {momDelta >= 0 ? 'more' : 'less'}
-                  </Text>
-                </View>
-
-                <View
-                  style={[
-                    styles.trendPill,
-                    txDelta >= 0 ? styles.trendPillUp : styles.trendPillDown,
-                  ]}
-                >
-                  <Text style={styles.trendLabel}>Transactions</Text>
-                  <Text
-                    style={[
-                      styles.trendValue,
-                      { color: txDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
-                    ]}
-                  >
-                    {totalTxCount}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.trendDelta,
-                      { color: txDelta >= 0 ? colors.expenseRed : colors.incomeGreen },
-                    ]}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {txDelta >= 0 ? '↑' : '↓'} {Math.abs(txDelta)} {txDelta >= 0 ? 'more' : 'fewer'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {totalTxCount > 0 && (
-              <View style={styles.chartCard}>
+            {viewType === 'expense' && activeTab === 'categories' && (
+              <View style={styles.tabPanel}>
                 <View style={styles.sectionHeaderRow}>
                   <View style={styles.sectionDot} />
-                  <Text style={styles.sectionLabel}>By Day of Week</Text>
-                  <Text style={styles.sectionMetaText} numberOfLines={1}>
-                    {monthLabel}
+                  <Text style={styles.sectionLabel}>By Category</Text>
+                </View>
+
+                {expenseTiles.length > 0 ? (
+                  <View style={styles.catGrid}>
+                    {expenseTiles.map((tile) => renderExpenseTile(tile.key))}
+                  </View>
+                ) : (
+                  <Text style={styles.emptyText}>
+                    No expense data for this period.
                   </Text>
-                  <TouchableOpacity
-                    style={styles.sectionInsightBtn}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    onPress={() =>
-                      setInsightTarget({
-                        title: 'Weekly Pattern',
-                        message: buildPatternsInsight(dowAvgSpend),
-                      })
-                    }
-                  >
-                    <Ionicons
-                      name="bulb-outline"
-                      size={15}
-                      color={colors.textSecondary}
-                      style={{ opacity: 0.7 }}
-                    />
-                  </TouchableOpacity>
-                </View>
-                <DowPatternChart dowAvg={dowAvgSpend} colors={colors} />
-                {(() => {
-                  const peakDow = dowAvgSpend.indexOf(Math.max(...dowAvgSpend));
-                  const labels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                  return dowAvgSpend[peakDow] > 0 ? (
-                    <Text style={styles.chartSubNote}>
-                      {labels[peakDow]} is your highest-spend day
-                    </Text>
-                  ) : null;
-                })()}
+                )}
               </View>
             )}
 
-            <TouchableOpacity
-              activeOpacity={0.9}
-              style={styles.aiFullCard}
-              onPress={() => navigation.navigate('ChatScreen')}
-            >
-              <View style={styles.aiFullHeader}>
-                <View style={styles.aiFullAvatar}>
-                  <Ionicons name="sparkles" size={16} color={colors.white} />
+            {viewType === 'income' && (
+              <View style={styles.tabPanel}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.sectionDot} />
+                  <Text style={styles.sectionLabel}>Income Sources</Text>
                 </View>
-                <View style={styles.aiFullHeaderBody}>
-                  <Text style={styles.aiFullTitle}>Fino Intelligence</Text>
-                  <Text style={styles.aiFullSubtitle}>Insights for {monthLabel}</Text>
-                </View>
+
+                {incomeTiles.length > 0 ? (
+                  <View style={styles.catGrid}>
+                    {incomeTiles.map((tile) => renderIncomeTile(tile.key))}
+                  </View>
+                ) : (
+                  <Text style={styles.emptyText}>
+                    No income data for this period.
+                  </Text>
+                )}
               </View>
-
-              {aiInsightsLoading ? (
-                <>
-                  <Skeleton width="94%" height={12} style={{ marginBottom: 10 }} />
-                  <Skeleton width="90%" height={12} style={{ marginBottom: 10 }} />
-                  <Skeleton width="88%" height={12} style={{ marginBottom: 10 }} />
-                </>
-              ) : (
-                <>
-                  {(aiInsights?.slice(0, 3) ?? [insightHeadline, insightSub]).map(
-                    (insight, i) => (
-                      <View key={i} style={styles.aiFullBulletRow}>
-                        <View style={styles.aiFullBulletIcon}>
-                          <Ionicons
-                            name={
-                              i === 0
-                                ? 'bag-handle-outline'
-                                : i === 1
-                                  ? 'calendar-outline'
-                                  : 'card-outline'
-                            }
-                            size={12}
-                            color={colors.lavenderDark}
-                          />
-                        </View>
-                        <Text style={styles.aiFullBulletText}>{insight}</Text>
-                      </View>
-                    )
-                  )}
-                </>
-              )}
-
-              <View style={styles.aiFullCtaRow}>
-                <Text style={styles.aiFullCtaText}>Chat with Fino →</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {viewType === 'expense' && activeTab === 'categories' && (
-          <View style={styles.tabPanel}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionDot} />
-              <Text style={styles.sectionLabel}>By Category</Text>
-            </View>
-
-            {expenseTiles.length > 0 ? (
-              <View style={styles.catGrid}>
-                {expenseTiles.map((tile) => renderExpenseTile(tile.key))}
-              </View>
-            ) : (
-              <Text style={styles.emptyText}>No expense data for this period.</Text>
             )}
           </View>
-        )}
+        </RAnim.View>
 
-        {viewType === 'income' && (
-          <View style={styles.tabPanel}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionDot} />
-              <Text style={styles.sectionLabel}>Income Sources</Text>
-            </View>
-
-            {incomeTiles.length > 0 ? (
-              <View style={styles.catGrid}>
-                {incomeTiles.map((tile) => renderIncomeTile(tile.key))}
-              </View>
-            ) : (
-              <Text style={styles.emptyText}>No income data for this period.</Text>
-            )}
-          </View>
-        )}
-      </View>
-      </RAnim.View>
-
-      <MonthPickerModal
-        visible={monthPickerVisible}
-        year={selectedYear}
-        month={selectedMonth}
-        onConfirm={(y, m) => {
-          setSelectedYear(y);
-          setSelectedMonth(m);
-          setMonthPickerVisible(false);
-          setActiveDonutIndex(-1);
-        }}
-        onClose={() => setMonthPickerVisible(false)}
-      />
+        <MonthPickerModal
+          visible={monthPickerVisible}
+          year={selectedYear}
+          month={selectedMonth}
+          onConfirm={(y, m) => {
+            setSelectedYear(y);
+            setSelectedMonth(m);
+            setMonthPickerVisible(false);
+            setActiveDonutIndex(-1);
+          }}
+          onClose={() => setMonthPickerVisible(false)}
+        />
       </ScrollView>
 
       <Modal
@@ -2558,7 +2867,9 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       width: 36,
       height: 36,
       borderRadius: 12,
-      backgroundColor: isDark ? colors.blackTransparent15 : 'rgba(30,30,46,0.06)',
+      backgroundColor: isDark
+        ? colors.blackTransparent15
+        : 'rgba(30,30,46,0.06)',
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
@@ -2796,7 +3107,9 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       paddingTop: 4,
       zIndex: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(30,30,46,0.07)',
+      borderBottomColor: isDark
+        ? 'rgba(255,255,255,0.07)'
+        : 'rgba(30,30,46,0.07)',
     },
     tabChipRow: {
       flexDirection: 'row',
@@ -3136,7 +3449,9 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       width: 36,
       height: 4,
       borderRadius: 2,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(30,30,46,0.12)',
+      backgroundColor: isDark
+        ? 'rgba(255,255,255,0.18)'
+        : 'rgba(30,30,46,0.12)',
       alignSelf: 'center',
       marginBottom: 12,
     },
@@ -3512,12 +3827,16 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       borderColor: isDark ? 'rgba(255,196,0,0.35)' : 'rgba(255,196,0,0.4)',
     },
     topTxRankSilver: {
-      backgroundColor: isDark ? 'rgba(180,180,195,0.18)' : 'rgba(160,160,175,0.13)',
+      backgroundColor: isDark
+        ? 'rgba(180,180,195,0.18)'
+        : 'rgba(160,160,175,0.13)',
       borderWidth: 1,
       borderColor: isDark ? 'rgba(180,180,195,0.35)' : 'rgba(150,150,170,0.35)',
     },
     topTxRankBronze: {
-      backgroundColor: isDark ? 'rgba(205,127,50,0.18)' : 'rgba(205,127,50,0.13)',
+      backgroundColor: isDark
+        ? 'rgba(205,127,50,0.18)'
+        : 'rgba(205,127,50,0.13)',
       borderWidth: 1,
       borderColor: isDark ? 'rgba(205,127,50,0.35)' : 'rgba(205,127,50,0.4)',
     },

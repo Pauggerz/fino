@@ -51,5 +51,5 @@ export const ScaledWalletCard = React.memo(
     prev.account.balance === next.account.balance &&
     prev.account.name === next.account.name &&
     prev.account.type === next.account.type &&
-    prev.isPrivacyMode === next.isPrivacyMode,
+    prev.isPrivacyMode === next.isPrivacyMode
 );

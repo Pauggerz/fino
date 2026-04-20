@@ -1,4 +1,11 @@
-import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  startTransition,
+} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/services/supabase';
 import { Transaction } from '@/types';
@@ -12,7 +19,7 @@ function makeCacheKey(
   category?: string,
   sortOrder?: SortOrder,
   transactionType?: string,
-  accountId?: string,
+  accountId?: string
 ): string {
   return `FINO_TX_CACHE_${category ?? ''}_${sortOrder ?? 'date_desc'}_${transactionType ?? ''}_${accountId ?? ''}`;
 }
@@ -153,20 +160,24 @@ export const useTransactions = (
         if (category && category !== 'All') {
           if (category === 'Income') {
             if (row.type !== 'income') return false;
-          } else if ((row.category ?? '').toLowerCase() !== category.toLowerCase()) {
+          } else if (
+            (row.category ?? '').toLowerCase() !== category.toLowerCase()
+          ) {
             return false;
           }
         }
 
         if (typeof fromTs === 'number' && typeof toTs === 'number') {
           const rowTs = new Date(row.date).getTime();
-          if (Number.isNaN(rowTs) || rowTs < fromTs || rowTs > toTs) return false;
+          if (Number.isNaN(rowTs) || rowTs < fromTs || rowTs > toTs)
+            return false;
         }
 
         if (accountId && row.account_id !== accountId) return false;
 
         if (searchTerm.length > 0) {
-          const haystack = `${row.display_name ?? ''} ${row.merchant_name ?? ''} ${row.category ?? ''} ${row.amount ?? ''}`.toLowerCase();
+          const haystack =
+            `${row.display_name ?? ''} ${row.merchant_name ?? ''} ${row.category ?? ''} ${row.amount ?? ''}`.toLowerCase();
           if (!haystack.includes(searchTerm)) return false;
         }
 
@@ -186,8 +197,12 @@ export const useTransactions = (
 
         // Guard against TOCTOU: if getUnsyncedPendingQueue's Supabase check
         // failed or raced, a pending item might duplicate one already in mappedDb.
-        const syncedIds = new Set<string>(mappedDb.map((tx) => tx.id as string));
-        const dedupedPending = mappedPending.filter((tx) => !syncedIds.has(tx.id ?? '')) as FeedTransaction[];
+        const syncedIds = new Set<string>(
+          mappedDb.map((tx) => tx.id as string)
+        );
+        const dedupedPending = mappedPending.filter(
+          (tx) => !syncedIds.has(tx.id ?? '')
+        ) as FeedTransaction[];
 
         // Advance cursor to last fetched row (for date-ordered queries)
         if (!isAmountDesc && data.length > 0) {
@@ -227,7 +242,7 @@ export const useTransactions = (
 
   const cacheKey = useMemo(
     () => makeCacheKey(category, sortOrder, transactionType, accountId),
-    [category, sortOrder, transactionType, accountId],
+    [category, sortOrder, transactionType, accountId]
   );
 
   // Date-range and search are intentionally excluded from caching: they are
@@ -247,7 +262,8 @@ export const useTransactions = (
             setLoading(false);
           }
         } catch (err) {
-          if (__DEV__) console.warn('[useTransactions] cache read failed:', err);
+          if (__DEV__)
+            console.warn('[useTransactions] cache read failed:', err);
         }
       }
 
@@ -265,7 +281,9 @@ export const useTransactions = (
     };
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [fetch, cacheKey, isCacheable]);
 
   // After a successful first-page fetch, persist to cache

@@ -26,7 +26,10 @@ import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { Skeleton } from '@/components/Skeleton';
 import { CategoryIcon } from '@/components/CategoryIcon';
-import { CATEGORY_COLOR, INCOME_CATEGORIES } from '@/constants/categoryMappings';
+import {
+  CATEGORY_COLOR,
+  INCOME_CATEGORIES,
+} from '@/constants/categoryMappings';
 import type { MoreStackParamList } from '../navigation/RootNavigator';
 import WalletCard, { getCfg } from '../components/WalletCard';
 import TransferModal from '@/components/account/TransferModal';
@@ -128,42 +131,61 @@ export default function AccountDetailScreen() {
     color: selectedAccount?.brand_colour ?? colors.primary,
     label: selectedAccount?.name ?? id,
   };
-  const cardGrad = selectedAccount ? getCfg(selectedAccount).grad : ([config.color, config.color, config.color] as [string, string, string]);
+  const cardGrad = selectedAccount
+    ? getCfg(selectedAccount).grad
+    : ([config.color, config.color, config.color] as [string, string, string]);
   const balance = selectedAccount?.balance ?? 0;
 
   // ── Monthly stats + trends ──
-  const { monthIn, monthOut, prevMonthIn, prevMonthOut, prevMonthCount, curMonthCount } =
-    useMemo(() => {
-      const now = new Date();
-      const curMonth = now.getMonth();
-      const curYear = now.getFullYear();
-      const prevDate = new Date(curYear, curMonth - 1, 1);
-      const prevMonth = prevDate.getMonth();
-      const prevYear = prevDate.getFullYear();
+  const {
+    monthIn,
+    monthOut,
+    prevMonthIn,
+    prevMonthOut,
+    prevMonthCount,
+    curMonthCount,
+  } = useMemo(() => {
+    const now = new Date();
+    const curMonth = now.getMonth();
+    const curYear = now.getFullYear();
+    const prevDate = new Date(curYear, curMonth - 1, 1);
+    const prevMonth = prevDate.getMonth();
+    const prevYear = prevDate.getFullYear();
 
-      return transactions.reduce(
-        (acc, tx) => {
-          const d = new Date(tx.date);
-          const m = d.getMonth();
-          const y = d.getFullYear();
-          if (m === curMonth && y === curYear) {
-            acc.curMonthCount += 1;
-            if (tx.type === 'income') acc.monthIn += tx.amount;
-            else acc.monthOut += tx.amount;
-          } else if (m === prevMonth && y === prevYear) {
-            acc.prevMonthCount += 1;
-            if (tx.type === 'income') acc.prevMonthIn += tx.amount;
-            else acc.prevMonthOut += tx.amount;
-          }
-          return acc;
-        },
-        { monthIn: 0, monthOut: 0, prevMonthIn: 0, prevMonthOut: 0, prevMonthCount: 0, curMonthCount: 0 }
-      );
-    }, [transactions]);
+    return transactions.reduce(
+      (acc, tx) => {
+        const d = new Date(tx.date);
+        const m = d.getMonth();
+        const y = d.getFullYear();
+        if (m === curMonth && y === curYear) {
+          acc.curMonthCount += 1;
+          if (tx.type === 'income') acc.monthIn += tx.amount;
+          else acc.monthOut += tx.amount;
+        } else if (m === prevMonth && y === prevYear) {
+          acc.prevMonthCount += 1;
+          if (tx.type === 'income') acc.prevMonthIn += tx.amount;
+          else acc.prevMonthOut += tx.amount;
+        }
+        return acc;
+      },
+      {
+        monthIn: 0,
+        monthOut: 0,
+        prevMonthIn: 0,
+        prevMonthOut: 0,
+        prevMonthCount: 0,
+        curMonthCount: 0,
+      }
+    );
+  }, [transactions]);
 
   // ── Unique categories for filter pills ──
   const uniqueCategories = useMemo(
-    () => [...new Set(transactions.map((t) => (t.category ?? 'other').toLowerCase()))],
+    () => [
+      ...new Set(
+        transactions.map((t) => (t.category ?? 'other').toLowerCase())
+      ),
+    ],
     [transactions]
   );
 
@@ -171,7 +193,11 @@ export default function AccountDetailScreen() {
   const filteredTxns = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return transactions
-      .filter((t) => !activeCategory || (t.category ?? 'other').toLowerCase() === activeCategory)
+      .filter(
+        (t) =>
+          !activeCategory ||
+          (t.category ?? 'other').toLowerCase() === activeCategory
+      )
       .filter(
         (t) =>
           !q ||
@@ -185,7 +211,9 @@ export default function AccountDetailScreen() {
   // ── Progress bar widths ──
   const outBarPct = monthIn > 0 ? Math.min((monthOut / monthIn) * 100, 100) : 0;
   const countBarPct =
-    prevMonthCount > 0 ? Math.min((curMonthCount / prevMonthCount) * 100, 100) : 50;
+    prevMonthCount > 0
+      ? Math.min((curMonthCount / prevMonthCount) * 100, 100)
+      : 50;
 
   // ── Last reconciled ──
   const lastReconciledLabel = selectedAccount?.last_reconciled_at
@@ -216,7 +244,11 @@ export default function AccountDetailScreen() {
         (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
       );
       const key = catData?.emoji ?? 'default';
-      return { key, color: catData?.text_colour ?? CATEGORY_COLOR[key] ?? colors.textSecondary };
+      return {
+        key,
+        color:
+          catData?.text_colour ?? CATEGORY_COLOR[key] ?? colors.textSecondary,
+      };
     },
     [categories, colors]
   );
@@ -228,13 +260,20 @@ export default function AccountDetailScreen() {
       );
       if (catData) {
         const key = catData.emoji ?? 'default';
-        return { key, color: catData.text_colour ?? CATEGORY_COLOR[key] ?? colors.textSecondary };
+        return {
+          key,
+          color:
+            catData.text_colour ?? CATEGORY_COLOR[key] ?? colors.textSecondary,
+        };
       }
       const incCat = INCOME_CATEGORIES.find(
         (c) => c.name.toLowerCase() === categoryName.toLowerCase()
       );
       if (incCat) {
-        return { key: incCat.key, color: CATEGORY_COLOR[incCat.key] ?? colors.incomeGreen };
+        return {
+          key: incCat.key,
+          color: CATEGORY_COLOR[incCat.key] ?? colors.incomeGreen,
+        };
       }
       return { key: 'default', color: colors.textSecondary };
     },
@@ -247,7 +286,11 @@ export default function AccountDetailScreen() {
     if (!selectedAccount?.id || !trimmedName) return;
     setEditSaving(true);
     try {
-      await saveEditAccount({ accountId: selectedAccount.id, name: trimmedName, type: editType.trim() });
+      await saveEditAccount({
+        accountId: selectedAccount.id,
+        name: trimmedName,
+        type: editType.trim(),
+      });
       setEditSheetVisible(false);
       refetchAccounts();
     } finally {
@@ -264,17 +307,30 @@ export default function AccountDetailScreen() {
       <View style={styles.txRowPad}>
         <View style={styles.txItem}>
           <View style={styles.txLeft}>
-            <CategoryIcon categoryKey={key} color={color} wrapperSize={36} size={18} />
+            <CategoryIcon
+              categoryKey={key}
+              color={color}
+              wrapperSize={36}
+              size={18}
+            />
             <View>
               <Text style={styles.txCategory}>
                 {categoryLabel.charAt(0).toUpperCase() + categoryLabel.slice(1)}
               </Text>
               <Text style={styles.txDate}>
-                {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {new Date(item.date).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                })}
               </Text>
             </View>
           </View>
-          <Text style={[styles.txAmount, { color: isInc ? colors.incomeGreen : colors.expenseRed }]}>
+          <Text
+            style={[
+              styles.txAmount,
+              { color: isInc ? colors.incomeGreen : colors.expenseRed },
+            ]}
+          >
             {isInc ? '+' : '−'}
             {fmtPeso(item.amount)}
           </Text>
@@ -288,14 +344,25 @@ export default function AccountDetailScreen() {
     return (
       <View style={styles.container}>
         <View
-          style={[styles.hero, { backgroundColor: colors.catTileEmptyBg, paddingTop: Math.max(insets.top, 16) + 10 }]}
+          style={[
+            styles.hero,
+            {
+              backgroundColor: colors.catTileEmptyBg,
+              paddingTop: Math.max(insets.top, 16) + 10,
+            },
+          ]}
         >
           <View style={styles.heroTopBar}>
             <Skeleton width={72} height={32} borderRadius={999} />
             <Skeleton width={64} height={32} borderRadius={999} />
           </View>
           <View style={styles.loadingHeroInner}>
-            <Skeleton width={48} height={48} borderRadius={24} style={{ marginBottom: 12 }} />
+            <Skeleton
+              width={48}
+              height={48}
+              borderRadius={24}
+              style={{ marginBottom: 12 }}
+            />
             <Skeleton width={120} height={16} style={{ marginBottom: 8 }} />
             <Skeleton width={160} height={38} style={{ marginBottom: 16 }} />
             <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -309,7 +376,12 @@ export default function AccountDetailScreen() {
             <View key={i} style={styles.statChip}>
               <Skeleton width={64} height={10} style={{ marginBottom: 6 }} />
               <Skeleton width={56} height={14} style={{ marginBottom: 8 }} />
-              <Skeleton width="100%" height={4} borderRadius={999} style={{ marginBottom: 4 }} />
+              <Skeleton
+                width="100%"
+                height={4}
+                borderRadius={999}
+                style={{ marginBottom: 4 }}
+              />
               <Skeleton width={72} height={9} />
             </View>
           ))}
@@ -328,7 +400,14 @@ export default function AccountDetailScreen() {
             <Skeleton width={56} height={14} />
           </View>
         </View>
-        <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: spacing.screenPadding, marginBottom: 10 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            gap: 6,
+            paddingHorizontal: spacing.screenPadding,
+            marginBottom: 10,
+          }}
+        >
           {[40, 72, 72, 72].map((w, i) => (
             <Skeleton key={i} width={w} height={30} borderRadius={999} />
           ))}
@@ -337,9 +416,18 @@ export default function AccountDetailScreen() {
           {Array.from({ length: 3 }).map((_, i) => (
             <View key={i} style={styles.txItem}>
               <View style={styles.txLeft}>
-                <Skeleton width={36} height={36} borderRadius={18} style={{ marginRight: 2 }} />
+                <Skeleton
+                  width={36}
+                  height={36}
+                  borderRadius={18}
+                  style={{ marginRight: 2 }}
+                />
                 <View>
-                  <Skeleton width={110} height={14} style={{ marginBottom: 6 }} />
+                  <Skeleton
+                    width={110}
+                    height={14}
+                    style={{ marginBottom: 6 }}
+                  />
                   <Skeleton width={64} height={11} />
                 </View>
               </View>
@@ -355,7 +443,10 @@ export default function AccountDetailScreen() {
     return (
       <View style={styles.containerCenter}>
         <Text style={styles.emptyText}>Account not found.</Text>
-        <TouchableOpacity style={styles.backGhostBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          style={styles.backGhostBtn}
+          onPress={() => navigation.goBack()}
+        >
           <Text style={styles.backGhostBtnText}>Go back</Text>
         </TouchableOpacity>
       </View>
@@ -377,10 +468,16 @@ export default function AccountDetailScreen() {
               colors={cardGrad}
               start={{ x: 0.1, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[styles.hero, { paddingTop: Math.max(insets.top, 16) + 10 }]}
+              style={[
+                styles.hero,
+                { paddingTop: Math.max(insets.top, 16) + 10 },
+              ]}
             >
               <View style={styles.heroTopBar}>
-                <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+                <TouchableOpacity
+                  style={styles.backBtn}
+                  onPress={() => navigation.goBack()}
+                >
                   <Text style={styles.backBtnText}>← Back</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -406,7 +503,12 @@ export default function AccountDetailScreen() {
                     onPress={() =>
                       navigation.navigate('AddTransaction', {
                         mode: 'income',
-                        prefill: { account: selectedAccount.id, merchant: '', amount: '', category: '' },
+                        prefill: {
+                          account: selectedAccount.id,
+                          merchant: '',
+                          amount: '',
+                          category: '',
+                        },
                       })
                     }
                   >
@@ -425,12 +527,29 @@ export default function AccountDetailScreen() {
             <View style={styles.statsRow}>
               <View style={styles.statChip}>
                 <Text style={styles.statLabel}>In (This Month)</Text>
-                <Text style={[styles.statValue, { color: colors.incomeGreen }]}>+{fmtPeso(monthIn)}</Text>
+                <Text style={[styles.statValue, { color: colors.incomeGreen }]}>
+                  +{fmtPeso(monthIn)}
+                </Text>
                 <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: '100%', backgroundColor: colors.incomeGreen }]} />
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { width: '100%', backgroundColor: colors.incomeGreen },
+                    ]}
+                  />
                 </View>
                 {!!fmtTrend(monthIn, prevMonthIn) && (
-                  <Text style={[styles.trendText, { color: monthIn >= prevMonthIn ? colors.incomeGreen : colors.expenseRed }]}>
+                  <Text
+                    style={[
+                      styles.trendText,
+                      {
+                        color:
+                          monthIn >= prevMonthIn
+                            ? colors.incomeGreen
+                            : colors.expenseRed,
+                      },
+                    ]}
+                  >
                     {fmtTrend(monthIn, prevMonthIn)}
                   </Text>
                 )}
@@ -438,12 +557,32 @@ export default function AccountDetailScreen() {
 
               <View style={styles.statChip}>
                 <Text style={styles.statLabel}>Out (This Month)</Text>
-                <Text style={[styles.statValue, { color: colors.expenseRed }]}>−{fmtPeso(monthOut)}</Text>
+                <Text style={[styles.statValue, { color: colors.expenseRed }]}>
+                  −{fmtPeso(monthOut)}
+                </Text>
                 <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${outBarPct}%`, backgroundColor: colors.expenseRed }]} />
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${outBarPct}%`,
+                        backgroundColor: colors.expenseRed,
+                      },
+                    ]}
+                  />
                 </View>
                 {!!fmtTrend(monthOut, prevMonthOut) && (
-                  <Text style={[styles.trendText, { color: monthOut <= prevMonthOut ? colors.incomeGreen : colors.expenseRed }]}>
+                  <Text
+                    style={[
+                      styles.trendText,
+                      {
+                        color:
+                          monthOut <= prevMonthOut
+                            ? colors.incomeGreen
+                            : colors.expenseRed,
+                      },
+                    ]}
+                  >
                     {fmtTrend(monthOut, prevMonthOut)}
                   </Text>
                 )}
@@ -453,10 +592,20 @@ export default function AccountDetailScreen() {
                 <Text style={styles.statLabel}>Transactions</Text>
                 <Text style={styles.statValue}>{curMonthCount}</Text>
                 <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${countBarPct}%`, backgroundColor: colors.textSecondary }]} />
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${countBarPct}%`,
+                        backgroundColor: colors.textSecondary,
+                      },
+                    ]}
+                  />
                 </View>
                 {!!fmtTrendCount(curMonthCount, prevMonthCount) && (
-                  <Text style={styles.trendText}>{fmtTrendCount(curMonthCount, prevMonthCount)}</Text>
+                  <Text style={styles.trendText}>
+                    {fmtTrendCount(curMonthCount, prevMonthCount)}
+                  </Text>
                 )}
               </View>
             </View>
@@ -467,10 +616,15 @@ export default function AccountDetailScreen() {
                 <Text style={styles.metaValue}>{lastReconciledLabel}</Text>
               </View>
               <TouchableOpacity
-                style={[styles.adjustBadge, { backgroundColor: `${config.color}22` }]}
+                style={[
+                  styles.adjustBadge,
+                  { backgroundColor: `${config.color}22` },
+                ]}
                 onPress={() => setAdjustSheetVisible(true)}
               >
-                <Text style={[styles.adjustBadgeText, { color: config.color }]}>⚖️ Adjust Balance</Text>
+                <Text style={[styles.adjustBadgeText, { color: config.color }]}>
+                  ⚖️ Adjust Balance
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -491,12 +645,17 @@ export default function AccountDetailScreen() {
                       screen: 'feed',
                       params: {
                         screen: 'FeedMain',
-                        params: { filterAccount: id, filterCategory: activeCategory ?? undefined },
+                        params: {
+                          filterAccount: id,
+                          filterCategory: activeCategory ?? undefined,
+                        },
                       },
                     })
                   }
                 >
-                  <Text style={[styles.seeAll, { color: config.color }]}>See all →</Text>
+                  <Text style={[styles.seeAll, { color: config.color }]}>
+                    See all →
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -525,11 +684,22 @@ export default function AccountDetailScreen() {
                 <TouchableOpacity
                   style={[
                     styles.filterPill,
-                    activeCategory === null && [styles.filterPillActive, { backgroundColor: config.color, borderColor: config.color }],
+                    activeCategory === null && [
+                      styles.filterPillActive,
+                      {
+                        backgroundColor: config.color,
+                        borderColor: config.color,
+                      },
+                    ],
                   ]}
                   onPress={() => setActiveCategory(null)}
                 >
-                  <Text style={[styles.filterPillText, activeCategory === null && styles.filterPillTextActive]}>
+                  <Text
+                    style={[
+                      styles.filterPillText,
+                      activeCategory === null && styles.filterPillTextActive,
+                    ]}
+                  >
                     All
                   </Text>
                 </TouchableOpacity>
@@ -541,13 +711,29 @@ export default function AccountDetailScreen() {
                       key={cat}
                       style={[
                         styles.filterPill,
-                        isActive && [styles.filterPillActive, { backgroundColor: config.color, borderColor: config.color }],
+                        isActive && [
+                          styles.filterPillActive,
+                          {
+                            backgroundColor: config.color,
+                            borderColor: config.color,
+                          },
+                        ],
                       ]}
                       onPress={() => setActiveCategory(isActive ? null : cat)}
                     >
                       <View style={styles.pillInner}>
-                        <CategoryIcon categoryKey={key} color={isActive ? '#FFFFFF' : color} wrapperSize={18} size={10} />
-                        <Text style={[styles.filterPillText, isActive && styles.filterPillTextActive]}>
+                        <CategoryIcon
+                          categoryKey={key}
+                          color={isActive ? '#FFFFFF' : color}
+                          wrapperSize={18}
+                          size={10}
+                        />
+                        <Text
+                          style={[
+                            styles.filterPillText,
+                            isActive && styles.filterPillTextActive,
+                          ]}
+                        >
                           {cat.charAt(0).toUpperCase() + cat.slice(1)}
                         </Text>
                       </View>
@@ -560,7 +746,9 @@ export default function AccountDetailScreen() {
         }
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            {searchQuery || activeCategory ? 'No matching transactions' : 'No recent transactions'}
+            {searchQuery || activeCategory
+              ? 'No matching transactions'
+              : 'No recent transactions'}
           </Text>
         }
         ListFooterComponent={
@@ -577,15 +765,22 @@ export default function AccountDetailScreen() {
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Delete {config.label}?</Text>
             <Text style={styles.modalSub}>
-              This will remove the account and all its transaction history. This action cannot be undone.
+              This will remove the account and all its transaction history. This
+              action cannot be undone.
             </Text>
             <TouchableOpacity
               style={styles.confirmBtn}
-              onPress={() => { setShowDeleteModal(false); navigation.goBack(); }}
+              onPress={() => {
+                setShowDeleteModal(false);
+                navigation.goBack();
+              }}
             >
               <Text style={styles.confirmBtnText}>Yes, Delete Account</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowDeleteModal(false)}>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setShowDeleteModal(false)}
+            >
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -617,12 +812,19 @@ export default function AccountDetailScreen() {
           index={0}
           snapPoints={['45%']}
           enablePanDownToClose
-          keyboardBehavior={Platform.OS === 'ios' ? 'interactive' : 'fillParent'}
+          keyboardBehavior={
+            Platform.OS === 'ios' ? 'interactive' : 'fillParent'
+          }
           keyboardBlurBehavior="restore"
           enableBlurKeyboardOnGesture
           android_keyboardInputMode="adjustPan"
           backdropComponent={(props) => (
-            <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} pressBehavior="close" />
+            <BottomSheetBackdrop
+              {...props}
+              disappearsOnIndex={-1}
+              appearsOnIndex={0}
+              pressBehavior="close"
+            />
           )}
           backgroundStyle={{ backgroundColor: colors.white }}
           handleIndicatorStyle={{ backgroundColor: isDark ? '#555' : '#ccc' }}
@@ -634,9 +836,13 @@ export default function AccountDetailScreen() {
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
           >
             <Text style={styles.adjustTitle}>Edit Account</Text>
-            <Text style={styles.adjustSub}>Update the name or type for this account.</Text>
+            <Text style={styles.adjustSub}>
+              Update the name or type for this account.
+            </Text>
 
-            <Text style={[styles.metaLabel, { marginBottom: 6, marginTop: 8 }]}>Account Name</Text>
+            <Text style={[styles.metaLabel, { marginBottom: 6, marginTop: 8 }]}>
+              Account Name
+            </Text>
             <BottomSheetTextInput
               style={styles.adjustInputField}
               placeholder="e.g. GCash"
@@ -647,40 +853,73 @@ export default function AccountDetailScreen() {
               autoCapitalize="words"
             />
 
-            <Text style={[styles.metaLabel, { marginBottom: 6, marginTop: 16 }]}>Account Type</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-              {['E-WALLET', 'BANK ACCOUNT', 'CASH WALLET', 'CREDIT CARD'].map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  onPress={() => setEditType(t)}
-                  style={[
-                    styles.filterPill,
-                    editType === t && [styles.filterPillActive, { backgroundColor: config.color, borderColor: config.color }],
-                  ]}
-                >
-                  <Text style={[styles.filterPillText, editType === t && styles.filterPillTextActive]}>{t}</Text>
-                </TouchableOpacity>
-              ))}
+            <Text
+              style={[styles.metaLabel, { marginBottom: 6, marginTop: 16 }]}
+            >
+              Account Type
+            </Text>
+            <View
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                gap: 8,
+                marginBottom: 8,
+              }}
+            >
+              {['E-WALLET', 'BANK ACCOUNT', 'CASH WALLET', 'CREDIT CARD'].map(
+                (t) => (
+                  <TouchableOpacity
+                    key={t}
+                    onPress={() => setEditType(t)}
+                    style={[
+                      styles.filterPill,
+                      editType === t && [
+                        styles.filterPillActive,
+                        {
+                          backgroundColor: config.color,
+                          borderColor: config.color,
+                        },
+                      ],
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.filterPillText,
+                        editType === t && styles.filterPillTextActive,
+                      ]}
+                    >
+                      {t}
+                    </Text>
+                  </TouchableOpacity>
+                )
+              )}
             </View>
 
             <TouchableOpacity
               style={[
                 styles.adjustSaveBtn,
-                { marginTop: 20, opacity: editSaving || !editName.trim() ? 0.45 : 1 },
+                {
+                  marginTop: 20,
+                  opacity: editSaving || !editName.trim() ? 0.45 : 1,
+                },
               ]}
               onPress={handleSaveEdit}
               disabled={editSaving || !editName.trim()}
             >
-              <Text style={styles.adjustSaveBtnText}>{editSaving ? 'Saving…' : 'Save Changes'}</Text>
+              <Text style={styles.adjustSaveBtnText}>
+                {editSaving ? 'Saving…' : 'Save Changes'}
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditSheetVisible(false)}>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setEditSheetVisible(false)}
+            >
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </BottomSheetScrollView>
         </BottomSheet>
       )}
-
     </View>
   );
 }
@@ -707,7 +946,11 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderWidth: 1,
       borderColor: isDark ? '#333333' : 'rgba(30,30,46,0.15)',
     },
-    backGhostBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.textPrimary },
+    backGhostBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.textPrimary,
+    },
     loadingHeroInner: { alignItems: 'center', paddingBottom: 16 },
     // Hero
     hero: {
@@ -738,7 +981,11 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingHorizontal: 12,
       borderRadius: radius.pill,
     },
-    backBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#FFFFFF' },
+    backBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: '#FFFFFF',
+    },
     heroBody: { alignItems: 'center', paddingBottom: 16 },
     cardWrapper: {
       alignItems: 'center',
@@ -763,12 +1010,31 @@ const createStyles = (colors: any, isDark: boolean) =>
       textTransform: 'uppercase',
       letterSpacing: 1,
     },
-    accountBalance: { fontFamily: 'DMMono_500Medium', fontSize: 40, color: '#FFFFFF', letterSpacing: -1.5 },
+    accountBalance: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 40,
+      color: '#FFFFFF',
+      letterSpacing: -1.5,
+    },
     quickActionsRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
-    qaBtn: { backgroundColor: 'rgba(255,255,255,0.2)', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 12 },
-    qaBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#FFFFFF' },
+    qaBtn: {
+      backgroundColor: 'rgba(255,255,255,0.2)',
+      paddingVertical: 10,
+      paddingHorizontal: 20,
+      borderRadius: 12,
+    },
+    qaBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: '#FFFFFF',
+    },
     // Stats
-    statsRow: { flexDirection: 'row', paddingHorizontal: spacing.screenPadding, marginTop: 24, gap: 8 },
+    statsRow: {
+      flexDirection: 'row',
+      paddingHorizontal: spacing.screenPadding,
+      marginTop: 24,
+      gap: 8,
+    },
     statChip: {
       flex: 1,
       backgroundColor: colors.white,
@@ -780,18 +1046,36 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderColor: isDark ? '#333333' : 'transparent',
       minHeight: 90,
     },
-    statLabel: { fontFamily: 'Inter_500Medium', fontSize: 10, color: colors.textSecondary, marginBottom: 4, textAlign: 'center' },
-    statValue: { fontFamily: 'DMMono_500Medium', fontSize: 13, color: colors.textPrimary },
+    statLabel: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 10,
+      color: colors.textSecondary,
+      marginBottom: 4,
+      textAlign: 'center',
+    },
+    statValue: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 13,
+      color: colors.textPrimary,
+    },
     progressTrack: {
       width: '100%',
       height: 4,
       borderRadius: 999,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(30,30,46,0.06)',
+      backgroundColor: isDark
+        ? 'rgba(255,255,255,0.08)'
+        : 'rgba(30,30,46,0.06)',
       marginTop: 8,
       overflow: 'hidden',
     },
     progressFill: { height: '100%', borderRadius: 999 },
-    trendText: { fontFamily: 'Inter_400Regular', fontSize: 9, color: colors.textSecondary, marginTop: 5, textAlign: 'center' },
+    trendText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 9,
+      color: colors.textSecondary,
+      marginTop: 5,
+      textAlign: 'center',
+    },
     // Meta card
     metaCard: {
       marginHorizontal: spacing.screenPadding,
@@ -805,15 +1089,30 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderWidth: 1,
       borderColor: isDark ? '#333333' : 'transparent',
     },
-    metaLabel: { fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary, marginBottom: 3 },
-    metaValue: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.textPrimary },
+    metaLabel: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 10,
+      color: colors.textSecondary,
+      marginBottom: 3,
+    },
+    metaValue: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.textPrimary,
+    },
     adjustBadge: {
-      backgroundColor: isDark ? 'rgba(106,158,127,0.15)' : 'rgba(91,140,110,0.1)',
+      backgroundColor: isDark
+        ? 'rgba(106,158,127,0.15)'
+        : 'rgba(91,140,110,0.1)',
       borderRadius: 10,
       paddingVertical: 8,
       paddingHorizontal: 12,
     },
-    adjustBadgeText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.primary },
+    adjustBadgeText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.primary,
+    },
     // Section header
     sectionHeader: {
       flexDirection: 'row',
@@ -823,10 +1122,18 @@ const createStyles = (colors: any, isDark: boolean) =>
       marginTop: 28,
       marginBottom: 12,
     },
-    sectionTitle: { fontFamily: 'Inter_700Bold', fontSize: 14, color: colors.textPrimary },
+    sectionTitle: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
     sectionActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     searchIconText: { fontSize: 16 },
-    seeAll: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.primary },
+    seeAll: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.primary,
+    },
     // Search
     searchWrap: { paddingHorizontal: spacing.screenPadding, marginBottom: 10 },
     searchInput: {
@@ -851,13 +1158,26 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderWidth: 1,
       borderColor: isDark ? '#333333' : 'transparent',
     },
-    filterPillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+    filterPillActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
     pillInner: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    filterPillText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.textSecondary },
+    filterPillText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
     filterPillTextActive: { color: '#FFFFFF' },
     // Transactions
     listWrap: { minHeight: 80, paddingHorizontal: spacing.screenPadding },
-    emptyText: { fontFamily: 'Inter_400Regular', fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: 24 },
+    emptyText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginTop: 24,
+    },
     txRowPad: { paddingHorizontal: spacing.screenPadding },
     txItem: {
       flexDirection: 'row',
@@ -871,13 +1191,35 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderColor: isDark ? '#333333' : 'transparent',
     },
     txLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    txCategory: { fontFamily: 'Nunito_700Bold', fontSize: 14, color: colors.textPrimary },
-    txDate: { fontFamily: 'Inter_400Regular', fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+    txCategory: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
+    txDate: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
     txAmount: { fontFamily: 'DMMono_500Medium', fontSize: 14 },
-    actionWrap: { paddingHorizontal: spacing.screenPadding, paddingTop: 24, alignItems: 'center' },
-    deleteLinkText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, color: colors.coralDark, paddingVertical: 8 },
+    actionWrap: {
+      paddingHorizontal: spacing.screenPadding,
+      paddingTop: 24,
+      alignItems: 'center',
+    },
+    deleteLinkText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.coralDark,
+      paddingVertical: 8,
+    },
     // Modals (delete + transfer)
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'flex-end',
+    },
     modalSheet: {
       backgroundColor: colors.white,
       borderTopLeftRadius: radius.sheet,
@@ -886,7 +1228,12 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingBottom: 40,
       alignItems: 'center',
     },
-    modalTitle: { fontFamily: 'Nunito_800ExtraBold', fontSize: 20, color: colors.textPrimary, marginBottom: 8 },
+    modalTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 20,
+      color: colors.textPrimary,
+      marginBottom: 8,
+    },
     modalSub: {
       fontFamily: 'Inter_400Regular',
       fontSize: 14,
@@ -903,9 +1250,17 @@ const createStyles = (colors: any, isDark: boolean) =>
       alignItems: 'center',
       marginBottom: 12,
     },
-    confirmBtnText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: '#FFFFFF' },
+    confirmBtnText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 15,
+      color: '#FFFFFF',
+    },
     cancelBtn: { width: '100%', paddingVertical: 16, alignItems: 'center' },
-    cancelBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: colors.textSecondary },
+    cancelBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 15,
+      color: colors.textSecondary,
+    },
     // Transfer
     transferAccountsWrap: { width: '100%', marginBottom: 4 },
     transferAccountsContent: { gap: 10, paddingVertical: 4 },
@@ -919,10 +1274,29 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderWidth: 1,
       borderColor: isDark ? '#333333' : 'rgba(30,30,46,0.08)',
     },
-    transferAcctAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-    transferAcctLetter: { fontFamily: 'Inter_700Bold', fontSize: 15, color: '#FFFFFF' },
-    transferAcctName: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: colors.textPrimary, textAlign: 'center' },
-    transferAcctBal: { fontFamily: 'DMMono_500Medium', fontSize: 10, color: colors.textSecondary },
+    transferAcctAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    transferAcctLetter: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 15,
+      color: '#FFFFFF',
+    },
+    transferAcctName: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: colors.textPrimary,
+      textAlign: 'center',
+    },
+    transferAcctBal: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 10,
+      color: colors.textSecondary,
+    },
     adjustInput: {
       width: '100%',
       backgroundColor: colors.background,
@@ -937,7 +1311,12 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     // Adjust Balance BottomSheet
     bsContent: { paddingHorizontal: 24, paddingBottom: 40, paddingTop: 8 },
-    adjustTitle: { fontFamily: 'Nunito_800ExtraBold', fontSize: 20, color: colors.textPrimary, marginBottom: 6 },
+    adjustTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 20,
+      color: colors.textPrimary,
+      marginBottom: 6,
+    },
     adjustSub: {
       fontFamily: 'Inter_400Regular',
       fontSize: 13,
@@ -946,7 +1325,13 @@ const createStyles = (colors: any, isDark: boolean) =>
       lineHeight: 19,
       marginBottom: 24,
     },
-    balanceCompareRow: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
+    balanceCompareRow: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginBottom: 20,
+    },
     balanceCompareBox: {
       flex: 1,
       backgroundColor: colors.background,
@@ -969,8 +1354,16 @@ const createStyles = (colors: any, isDark: boolean) =>
       textTransform: 'uppercase',
       letterSpacing: 0.8,
     },
-    balanceCompareValue: { fontFamily: 'DMMono_500Medium', fontSize: 15, color: colors.textPrimary },
-    balanceArrow: { fontFamily: 'Inter_600SemiBold', fontSize: 18, color: colors.textSecondary },
+    balanceCompareValue: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 15,
+      color: colors.textPrimary,
+    },
+    balanceArrow: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 18,
+      color: colors.textSecondary,
+    },
     adjustInputWrap: {
       width: '100%',
       flexDirection: 'row',
@@ -982,7 +1375,12 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingHorizontal: 14,
       marginBottom: 12,
     },
-    adjustInputPrefix: { fontFamily: 'DMMono_500Medium', fontSize: 20, color: colors.primary, marginRight: 6 },
+    adjustInputPrefix: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 20,
+      color: colors.primary,
+      marginRight: 6,
+    },
     adjustInputField: {
       flex: 1,
       fontFamily: 'DMMono_500Medium',
@@ -990,8 +1388,20 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.textPrimary,
       paddingVertical: 14,
     },
-    diffCard: { width: '100%', borderRadius: radius.card, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 14, marginBottom: 12 },
-    diffCardText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, textAlign: 'center', lineHeight: 18 },
+    diffCard: {
+      width: '100%',
+      borderRadius: radius.card,
+      borderWidth: 1,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      marginBottom: 12,
+    },
+    diffCardText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      textAlign: 'center',
+      lineHeight: 18,
+    },
     adjustNoteInput: {
       width: '100%',
       backgroundColor: colors.background,
@@ -1013,5 +1423,9 @@ const createStyles = (colors: any, isDark: boolean) =>
       alignItems: 'center',
       marginBottom: 4,
     },
-    adjustSaveBtnText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: '#FFFFFF' },
+    adjustSaveBtnText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 15,
+      color: '#FFFFFF',
+    },
   });

@@ -131,25 +131,25 @@ export const darkColors: typeof lightColors = {
   // ── Core ──────────────────────────────────────────────────────────────────
   // Warm near-black (slight brown undertone) avoids the cold "cave" feel of
   // pure #121212. Each surface step is +8–10 lightness above the previous.
-  primary: '#5DB87E',           // Brighter, more readable on dark surfaces
+  primary: '#5DB87E', // Brighter, more readable on dark surfaces
   primaryDark: '#3D8A5E',
-  primaryLight: '#172A1E',      // Deep tinted green surface
-  background: '#0E0E10',        // Base layer — warm near-black
-  white: '#18181C',             // Card surface — clear step above background
+  primaryLight: '#172A1E', // Deep tinted green surface
+  background: '#0E0E10', // Base layer — warm near-black
+  white: '#18181C', // Card surface — clear step above background
   // Accent
   coral: '#E8856A',
-  coralLight: '#2A1510',        // Deeper, less saturated red surface
+  coralLight: '#2A1510', // Deeper, less saturated red surface
   coralDark: '#E8856A',
   // Lavender (AI surfaces)
   lavender: '#9B85D4',
-  lavenderLight: '#1A1626',     // Deep purple surface
+  lavenderLight: '#1A1626', // Deep purple surface
   lavenderDark: '#C9B8F5',
   // Semantic
   peach: '#FFD6C2',
   mint: '#A8D5B5',
-  textPrimary: '#EEEAE4',       // Warm off-white — less harsh than pure white
-  textSecondary: '#88888F',     // Muted but WCAG-AA readable
-  expenseRed: '#E05C5C',        // Toned down from neon #FF6B6B
+  textPrimary: '#EEEAE4', // Warm off-white — less harsh than pure white
+  textSecondary: '#88888F', // Muted but WCAG-AA readable
+  expenseRed: '#E05C5C', // Toned down from neon #FF6B6B
   incomeGreen: '#5DB87E',
   insightPurple: '#B09AE0',
   greetingPurple: '#B09AE0',
@@ -210,16 +210,16 @@ export const darkColors: typeof lightColors = {
   tagMayaText: '#CFA050',
   // ── On-track status pill ──────────────────────────────────────────────────
   onTrackBg1: '#111A15',
-  onTrackBg2: '#18181C',        // Elevated above bg — no longer invisible
+  onTrackBg2: '#18181C', // Elevated above bg — no longer invisible
   onTrackTitle: '#5DB87E',
   onTrackSub: '#3D8A5E',
   // ── Stats hero card ───────────────────────────────────────────────────────
-  statsHeroBg1: '#1A2820',      // Rich deep forest green
+  statsHeroBg1: '#1A2820', // Rich deep forest green
   statsHeroBg2: '#101810',
   statsHeroBar: '#97C459',
   // ── Bill reminder ─────────────────────────────────────────────────────────
   billCardBg: '#201A0E',
-  billCardBorder: '#B87010',    // Dimmer amber — less glaring
+  billCardBorder: '#B87010', // Dimmer amber — less glaring
   billTagText: '#CFA050',
   // ── Sync status ───────────────────────────────────────────────────────────
   syncSynced: '#10B981',
@@ -252,8 +252,8 @@ export const darkColors: typeof lightColors = {
   onTrackBorder: 'rgba(93,184,126,0.16)',
   catOverBadgeBg: 'rgba(224,92,92,0.14)',
   insightCardBorder: 'rgba(176,154,224,0.16)',
-  surfaceSubdued: '#202024',    // Slightly elevated above white (card)
-  border: '#28282E',            // Warm-tinted subtle border
+  surfaceSubdued: '#202024', // Slightly elevated above white (card)
+  border: '#28282E', // Warm-tinted subtle border
   tabBarBg: 'rgba(14,14,16,0.97)',
 };
 
@@ -269,15 +269,15 @@ export const spacing = {
 };
 
 export const radius = {
-  heroCard: 28, 
-  card: 16, 
-  cardLg: 20, 
-  categoryTile: 28, 
-  button: 16, 
-  pill: 9999, 
-  input: 16, 
-  sheet: 24, 
-  pill20: 20, 
+  heroCard: 28,
+  card: 16,
+  cardLg: 20,
+  categoryTile: 28,
+  button: 16,
+  pill: 9999,
+  input: 16,
+  sheet: 24,
+  pill20: 20,
   chatBubbleAI: [4, 16, 16, 16],
   chatBubbleUser: [16, 4, 16, 16],
 };
@@ -289,7 +289,14 @@ export type ThemeColors = typeof lightColors;
 
 // ─── Accent themes ────────────────────────────────────────────────────────────
 
-export type AccentKey = 'forest' | 'ocean' | 'violet' | 'rose' | 'amber' | 'sunset' | 'slate';
+export type AccentKey =
+  | 'forest'
+  | 'ocean'
+  | 'violet'
+  | 'rose'
+  | 'amber'
+  | 'sunset'
+  | 'slate';
 
 export interface AccentTheme {
   key: AccentKey;
@@ -305,7 +312,7 @@ export const ACCENT_THEMES: AccentTheme[] = [
     name: 'Forest',
     swatch: '#5B8C6E',
     light: {}, // default — no overrides needed
-    dark:  {},
+    dark: {},
   },
   {
     key: 'ocean',

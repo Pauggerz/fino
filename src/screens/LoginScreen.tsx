@@ -70,11 +70,13 @@ export default function LoginScreen() {
         provider: 'google',
         options: { redirectTo: 'fino://', skipBrowserRedirect: true },
       });
-      if (error || !data.url) throw error ?? new Error('Google sign-in unavailable');
+      if (error || !data.url)
+        throw error ?? new Error('Google sign-in unavailable');
 
       const result = await WebBrowser.openAuthSessionAsync(data.url, 'fino://');
       if (result.type === 'success') {
-        const fragment = result.url.split('#')[1] ?? result.url.split('?')[1] ?? '';
+        const fragment =
+          result.url.split('#')[1] ?? result.url.split('?')[1] ?? '';
         const params = Object.fromEntries(new URLSearchParams(fragment));
         if (params.access_token && params.refresh_token) {
           await supabase.auth.setSession({
@@ -85,8 +87,13 @@ export default function LoginScreen() {
       }
     } catch (err: any) {
       const msg: string = err?.message ?? '';
-      if (msg.includes('provider is not enabled') || msg.includes('validation_failed')) {
-        setError('Google sign-in is not configured yet. Enable the Google provider in your Supabase Dashboard → Authentication → Providers.');
+      if (
+        msg.includes('provider is not enabled') ||
+        msg.includes('validation_failed')
+      ) {
+        setError(
+          'Google sign-in is not configured yet. Enable the Google provider in your Supabase Dashboard → Authentication → Providers.'
+        );
       } else {
         setError(msg || 'Google sign-in failed. Please try again.');
       }
@@ -106,7 +113,8 @@ export default function LoginScreen() {
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
-      if (!credential.identityToken) throw new Error('Apple did not return an identity token.');
+      if (!credential.identityToken)
+        throw new Error('Apple did not return an identity token.');
       const { error } = await supabase.auth.signInWithIdToken({
         provider: 'apple',
         token: credential.identityToken,
@@ -206,7 +214,10 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: isDark ? '#0A0A0F' : colors.background }}
+      style={{
+        flex: 1,
+        backgroundColor: isDark ? '#0A0A0F' : colors.background,
+      }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
@@ -219,19 +230,33 @@ export default function LoginScreen() {
       >
         {/* Logo / Brand */}
         <View style={styles.brand}>
-          <View style={[styles.logoCircle, { backgroundColor: colors.primary }]}>
+          <View
+            style={[styles.logoCircle, { backgroundColor: colors.primary }]}
+          >
             <Ionicons name="leaf" size={32} color="#fff" />
           </View>
-          <Text style={[styles.appName, { color: colors.textPrimary }]}>fino</Text>
+          <Text style={[styles.appName, { color: colors.textPrimary }]}>
+            fino
+          </Text>
           <Text style={[styles.tagline, { color: colors.textSecondary }]}>
             Your personal finance companion
           </Text>
         </View>
 
         {/* Card */}
-        <View style={[styles.card, { backgroundColor: isDark ? '#1C1C1E' : '#fff' }]}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: isDark ? '#1C1C1E' : '#fff' },
+          ]}
+        >
           {/* Mode toggle */}
-          <View style={[styles.modeToggle, { backgroundColor: isDark ? '#2C2C2E' : colors.primaryLight }]}>
+          <View
+            style={[
+              styles.modeToggle,
+              { backgroundColor: isDark ? '#2C2C2E' : colors.primaryLight },
+            ]}
+          >
             {(['login', 'signup'] as Mode[]).map((m) => (
               <TouchableOpacity
                 key={m}
@@ -239,13 +264,18 @@ export default function LoginScreen() {
                   styles.modeBtn,
                   mode === m && { backgroundColor: colors.primary },
                 ]}
-                onPress={() => { setMode(m); resetForm(); }}
+                onPress={() => {
+                  setMode(m);
+                  resetForm();
+                }}
                 activeOpacity={0.8}
               >
-                <Text style={[
-                  styles.modeBtnText,
-                  { color: mode === m ? '#fff' : colors.textSecondary },
-                ]}>
+                <Text
+                  style={[
+                    styles.modeBtnText,
+                    { color: mode === m ? '#fff' : colors.textSecondary },
+                  ]}
+                >
                   {m === 'login' ? 'Sign In' : 'Sign Up'}
                 </Text>
               </TouchableOpacity>
@@ -271,10 +301,19 @@ export default function LoginScreen() {
           {/* Name field (sign up only) */}
           {mode === 'signup' && (
             <View style={styles.fieldWrap}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Name</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>
+                Name
+              </Text>
               <TextInput
                 ref={nameRef}
-                style={[styles.input, { backgroundColor: inputBg, borderColor, color: colors.textPrimary }]}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: inputBg,
+                    borderColor,
+                    color: colors.textPrimary,
+                  },
+                ]}
                 placeholder="Your name"
                 placeholderTextColor={colors.textSecondary}
                 value={name}
@@ -289,9 +328,18 @@ export default function LoginScreen() {
 
           {/* Email field */}
           <View style={styles.fieldWrap}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Email</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Email
+            </Text>
             <TextInput
-              style={[styles.input, { backgroundColor: inputBg, borderColor, color: colors.textPrimary }]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: inputBg,
+                  borderColor,
+                  color: colors.textPrimary,
+                },
+              ]}
               placeholder="you@example.com"
               placeholderTextColor={colors.textSecondary}
               value={email}
@@ -307,8 +355,15 @@ export default function LoginScreen() {
 
           {/* Password field */}
           <View style={styles.fieldWrap}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Password</Text>
-            <View style={[styles.passwordWrap, { backgroundColor: inputBg, borderColor }]}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Password
+            </Text>
+            <View
+              style={[
+                styles.passwordWrap,
+                { backgroundColor: inputBg, borderColor },
+              ]}
+            >
               <TextInput
                 ref={passwordRef}
                 style={[styles.passwordInput, { color: colors.textPrimary }]}
@@ -324,7 +379,9 @@ export default function LoginScreen() {
               <TouchableOpacity
                 onPress={() => setShowPassword((v) => !v)}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                accessibilityLabel={
+                  showPassword ? 'Hide password' : 'Show password'
+                }
               >
                 <Ionicons
                   name={showPassword ? 'eye-off-outline' : 'eye-outline'}
@@ -337,7 +394,11 @@ export default function LoginScreen() {
 
           {/* Submit button */}
           <TouchableOpacity
-            style={[styles.submitBtn, { backgroundColor: colors.primary }, loading && { opacity: 0.7 }]}
+            style={[
+              styles.submitBtn,
+              { backgroundColor: colors.primary },
+              loading && { opacity: 0.7 },
+            ]}
             onPress={handleSubmit}
             disabled={loading}
             activeOpacity={0.85}
@@ -354,7 +415,11 @@ export default function LoginScreen() {
           {/* Forgot password */}
           {mode === 'login' && !forgotMode && (
             <TouchableOpacity
-              onPress={() => { setForgotMode(true); setError(null); setSuccess(null); }}
+              onPress={() => {
+                setForgotMode(true);
+                setError(null);
+                setSuccess(null);
+              }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={styles.forgotLink}
             >
@@ -365,12 +430,27 @@ export default function LoginScreen() {
           )}
 
           {mode === 'login' && forgotMode && (
-            <View style={[styles.forgotBox, { backgroundColor: isDark ? '#2C2C2E' : '#F7F5F2', borderColor }]}>
+            <View
+              style={[
+                styles.forgotBox,
+                {
+                  backgroundColor: isDark ? '#2C2C2E' : '#F7F5F2',
+                  borderColor,
+                },
+              ]}
+            >
               <Text style={[styles.label, { color: colors.textSecondary }]}>
                 Enter your email to receive a reset link
               </Text>
               <TextInput
-                style={[styles.input, { backgroundColor: inputBg, borderColor, color: colors.textPrimary }]}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: inputBg,
+                    borderColor,
+                    color: colors.textPrimary,
+                  },
+                ]}
                 placeholder="you@example.com"
                 placeholderTextColor={colors.textSecondary}
                 value={forgotEmail}
@@ -384,13 +464,28 @@ export default function LoginScreen() {
               />
               <View style={styles.forgotActions}>
                 <TouchableOpacity
-                  onPress={() => { setForgotMode(false); setForgotEmail(''); setError(null); }}
+                  onPress={() => {
+                    setForgotMode(false);
+                    setForgotEmail('');
+                    setError(null);
+                  }}
                   style={[styles.forgotCancelBtn, { borderColor }]}
                 >
-                  <Text style={[styles.forgotCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                  <Text
+                    style={[
+                      styles.forgotCancelText,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Cancel
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.forgotSendBtn, { backgroundColor: colors.primary }, forgotLoading && { opacity: 0.7 }]}
+                  style={[
+                    styles.forgotSendBtn,
+                    { backgroundColor: colors.primary },
+                    forgotLoading && { opacity: 0.7 },
+                  ]}
                   onPress={handleForgotPassword}
                   disabled={forgotLoading}
                   activeOpacity={0.85}
@@ -408,14 +503,42 @@ export default function LoginScreen() {
 
         {/* Social sign-in */}
         <View style={styles.dividerRow}>
-          <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]} />
-          <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or continue with</Text>
-          <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]} />
+          <View
+            style={[
+              styles.dividerLine,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255,255,255,0.1)'
+                  : 'rgba(0,0,0,0.1)',
+              },
+            ]}
+          />
+          <Text style={[styles.dividerText, { color: colors.textSecondary }]}>
+            or continue with
+          </Text>
+          <View
+            style={[
+              styles.dividerLine,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255,255,255,0.1)'
+                  : 'rgba(0,0,0,0.1)',
+              },
+            ]}
+          />
         </View>
 
         <View style={styles.socialRow}>
           <TouchableOpacity
-            style={[styles.socialBtn, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
+            style={[
+              styles.socialBtn,
+              {
+                backgroundColor: isDark ? '#1C1C1E' : '#fff',
+                borderColor: isDark
+                  ? 'rgba(255,255,255,0.1)'
+                  : 'rgba(0,0,0,0.1)',
+              },
+            ]}
             onPress={handleGoogleSignIn}
             disabled={googleLoading || appleLoading}
             activeOpacity={0.8}
@@ -426,14 +549,26 @@ export default function LoginScreen() {
             ) : (
               <>
                 <Ionicons name="logo-google" size={20} color="#EA4335" />
-                <Text style={[styles.socialBtnText, { color: colors.textPrimary }]}>Google</Text>
+                <Text
+                  style={[styles.socialBtnText, { color: colors.textPrimary }]}
+                >
+                  Google
+                </Text>
               </>
             )}
           </TouchableOpacity>
 
           {appleAvailable && (
             <TouchableOpacity
-              style={[styles.socialBtn, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
+              style={[
+                styles.socialBtn,
+                {
+                  backgroundColor: isDark ? '#1C1C1E' : '#fff',
+                  borderColor: isDark
+                    ? 'rgba(255,255,255,0.1)'
+                    : 'rgba(0,0,0,0.1)',
+                },
+              ]}
               onPress={handleAppleSignIn}
               disabled={googleLoading || appleLoading}
               activeOpacity={0.8}
@@ -443,8 +578,19 @@ export default function LoginScreen() {
                 <ActivityIndicator size="small" color={colors.textSecondary} />
               ) : (
                 <>
-                  <Ionicons name="logo-apple" size={22} color={isDark ? '#fff' : '#000'} />
-                  <Text style={[styles.socialBtnText, { color: colors.textPrimary }]}>Apple</Text>
+                  <Ionicons
+                    name="logo-apple"
+                    size={22}
+                    color={isDark ? '#fff' : '#000'}
+                  />
+                  <Text
+                    style={[
+                      styles.socialBtnText,
+                      { color: colors.textPrimary },
+                    ]}
+                  >
+                    Apple
+                  </Text>
                 </>
               )}
             </TouchableOpacity>

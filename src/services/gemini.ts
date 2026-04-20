@@ -32,6 +32,7 @@ Language rules:
 // doesn't pay for SDK initialization the user may never trigger.
 let cachedModel: GenerativeModel | null = null;
 let apiKeyWarned = false;
+const isDev = process.env.NODE_ENV !== 'production';
 
 const getModel = async (): Promise<GenerativeModel> => {
   if (cachedModel) return cachedModel;
@@ -156,7 +157,7 @@ export const generateBulletInsights = async (
       if (Array.isArray(parsed)) return parsed.slice(0, 3).map(String);
     }
   } catch (err) {
-    if (__DEV__) console.warn('[Fino AI] generateBulletInsights failed:', err);
+    if (isDev) console.warn('[Fino AI] generateBulletInsights failed:', err);
   }
   return [];
 };

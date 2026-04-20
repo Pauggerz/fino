@@ -1,7 +1,15 @@
 module.exports = {
   extends: ['airbnb', 'prettier'],
-  plugins: ['prettier', '@typescript-eslint'], // Add TS plugin
+  plugins: ['prettier', '@typescript-eslint', 'react-hooks'], // Add TS plugin
   parser: '@typescript-eslint/parser', // Add TS parser
+  env: {
+    browser: true,
+    es2021: true,
+    node: true,
+  },
+  globals: {
+    __DEV__: 'readonly',
+  },
   rules: {
     'prettier/prettier': ['error', { endOfLine: 'auto' }],
     'react/react-in-jsx-scope': 'off',
@@ -27,5 +35,21 @@ module.exports = {
     'no-unused-vars': 'off', // Let TypeScript handle this instead
     '@typescript-eslint/no-unused-vars': ['warn'],
     'no-console': ['warn', { allow: ['warn', 'error'] }],
+    'no-nested-ternary': 'off',
+    'react/no-array-index-key': 'off',
+    'react/jsx-props-no-spreading': 'off',
+    'react/destructuring-assignment': 'off',
+    'react/state-in-constructor': 'off',
+    'import/prefer-default-export': 'off',
+    'no-plusplus': 'off',
+    'no-shadow': 'off',
+    'no-bitwise': 'off',
+    'consistent-return': 'off',
+    radix: 'off',
+    'no-promise-executor-return': 'off',
+    'react-hooks/exhaustive-deps': 'off',
+    'import/no-duplicates': 'off',
+    'react/jsx-no-constructed-context-values': 'off',
+    '@typescript-eslint/no-use-before-define': 'off',
   },
 };

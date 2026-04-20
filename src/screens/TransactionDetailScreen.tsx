@@ -585,7 +585,12 @@ export default function TransactionDetailScreen() {
                 {displayAccountName || 'None'}
               </Text>
               {isEditing && (
-                <Ionicons name="pencil-outline" size={16} color={heroColor} style={{ opacity: 0.7 }} />
+                <Ionicons
+                  name="pencil-outline"
+                  size={16}
+                  color={heroColor}
+                  style={{ opacity: 0.7 }}
+                />
               )}
             </View>
           </TouchableOpacity>
@@ -599,7 +604,12 @@ export default function TransactionDetailScreen() {
             <View style={styles.detailValueWrap}>
               <Text style={styles.detailValue}>{formattedDate}</Text>
               {isEditing && (
-                <Ionicons name="pencil-outline" size={16} color={heroColor} style={{ opacity: 0.7 }} />
+                <Ionicons
+                  name="pencil-outline"
+                  size={16}
+                  color={heroColor}
+                  style={{ opacity: 0.7 }}
+                />
               )}
             </View>
           </TouchableOpacity>
@@ -631,7 +641,12 @@ export default function TransactionDetailScreen() {
                 </Text>
               </View>
               {isEditing && (
-                <Ionicons name="pencil-outline" size={16} color={heroColor} style={{ opacity: 0.7 }} />
+                <Ionicons
+                  name="pencil-outline"
+                  size={16}
+                  color={heroColor}
+                  style={{ opacity: 0.7 }}
+                />
               )}
             </View>
           </TouchableOpacity>
@@ -692,7 +707,11 @@ export default function TransactionDetailScreen() {
                 onPress={() => setIsReceiptVisible(true)}
                 style={styles.receiptBtn}
               >
-                <Ionicons name="image-outline" size={16} color={colors.textSecondary} />
+                <Ionicons
+                  name="image-outline"
+                  size={16}
+                  color={colors.textSecondary}
+                />
                 <Text style={styles.receiptBtnText}>View Receipt</Text>
               </TouchableOpacity>
             )}

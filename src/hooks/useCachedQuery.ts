@@ -19,7 +19,7 @@ const inFlightRequests = new Map<string, Promise<void>>();
  */
 export function useCachedQuery<T>(
   key: string,
-  fetcher: () => PromiseLike<{ data: T[] | null; error: unknown }>,
+  fetcher: () => PromiseLike<{ data: T[] | null; error: unknown }>
 ): {
   data: T[];
   loading: boolean;
@@ -49,10 +49,14 @@ export function useCachedQuery<T>(
       try {
         await AsyncStorage.setItem(key, JSON.stringify(newData));
       } catch (e) {
-        if (__DEV__) console.error(`[useCachedQuery] mutate cache write failed (${key})`, e);
+        if (__DEV__)
+          console.error(
+            `[useCachedQuery] mutate cache write failed (${key})`,
+            e
+          );
       }
     },
-    [key],
+    [key]
   );
 
   /**
@@ -66,18 +70,24 @@ export function useCachedQuery<T>(
 
     const request = (async () => {
       try {
-        const { data: remote, error } = await Promise.resolve(fetcherRef.current());
+        const { data: remote, error } = await Promise.resolve(
+          fetcherRef.current()
+        );
         if (error || !remote) return;
         if (!mountedRef.current) return;
 
         await AsyncStorage.setItem(key, JSON.stringify(remote)).catch(() => {});
         if (mountedRef.current) setData(remote);
       } catch (e) {
-        if (__DEV__) console.error(`[useCachedQuery] background fetch failed (${key})`, e);
+        if (__DEV__)
+          console.error(`[useCachedQuery] background fetch failed (${key})`, e);
       }
     })();
 
-    inFlightRequests.set(key, request.finally(() => inFlightRequests.delete(key)));
+    inFlightRequests.set(
+      key,
+      request.finally(() => inFlightRequests.delete(key))
+    );
     return inFlightRequests.get(key);
   }, [key]);
 
@@ -94,7 +104,8 @@ export function useCachedQuery<T>(
           setLoading(false);
         }
       } catch (e) {
-        if (__DEV__) console.error(`[useCachedQuery] cache read failed (${key})`, e);
+        if (__DEV__)
+          console.error(`[useCachedQuery] cache read failed (${key})`, e);
       }
 
       // 2. Revalidate in the background

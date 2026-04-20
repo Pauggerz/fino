@@ -18,10 +18,17 @@ export function ErrorBanner({ message, onRetry }: Props) {
     <View
       style={[
         styles.container,
-        { backgroundColor: `${colors.syncOffline}18`, borderColor: colors.syncOffline },
+        {
+          backgroundColor: `${colors.syncOffline}18`,
+          borderColor: colors.syncOffline,
+        },
       ]}
     >
-      <Ionicons name="cloud-offline-outline" size={14} color={colors.syncOffline} />
+      <Ionicons
+        name="cloud-offline-outline"
+        size={14}
+        color={colors.syncOffline}
+      />
       <Text
         style={[styles.text, { color: colors.textPrimary }]}
         numberOfLines={2}
@@ -35,7 +42,9 @@ export function ErrorBanner({ message, onRetry }: Props) {
           accessibilityLabel="Retry loading data"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={[styles.retry, { color: colors.syncOffline }]}>Retry</Text>
+          <Text style={[styles.retry, { color: colors.syncOffline }]}>
+            Retry
+          </Text>
         </TouchableOpacity>
       ) : null}
     </View>
