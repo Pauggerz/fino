@@ -53,12 +53,12 @@ export function WaveFill({
     wave1X.value = withRepeat(
       withTiming(-TILE_W, { duration: 3000, easing: Easing.linear }),
       -1,
-      false,
+      false
     );
     wave2X.value = withRepeat(
       withTiming(-TILE_W, { duration: 4600, easing: Easing.linear }),
       -1,
-      false,
+      false
     );
 
     return () => {
@@ -87,12 +87,20 @@ export function WaveFill({
     >
       <RAnim.View style={[waveStyle, wave2Style]}>
         <Svg width={WAVE_SVG_W} height={tileHeight}>
-          <SvgPath d={makeWavePath(yBase + 6, 8, tileHeight)} fill={color} opacity={0.18} />
+          <SvgPath
+            d={makeWavePath(yBase + 6, 8, tileHeight)}
+            fill={color}
+            opacity={0.18}
+          />
         </Svg>
       </RAnim.View>
       <RAnim.View style={[waveStyle, wave1Style]}>
         <Svg width={WAVE_SVG_W} height={tileHeight}>
-          <SvgPath d={makeWavePath(yBase, 10, tileHeight)} fill={color} opacity={0.42} />
+          <SvgPath
+            d={makeWavePath(yBase, 10, tileHeight)}
+            fill={color}
+            opacity={0.42}
+          />
         </Svg>
       </RAnim.View>
     </View>

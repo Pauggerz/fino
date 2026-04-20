@@ -35,7 +35,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Skeleton } from '@/components/Skeleton';
 import Toast from '../components/Toast';
-import { BudgetTile } from '@/components/home/BudgetTile';
+import BudgetTile from '@/components/home/BudgetTile';
 import {
   ScaledWalletCard,
   SCALED_CARD_W,
@@ -65,7 +65,9 @@ function formatBalanceWorklet(n: number): string {
   const abs = Math.abs(n);
   const rounded = Math.round(abs * 100) / 100;
   const int = Math.floor(rounded);
-  const frac = Math.round((rounded - int) * 100).toString().padStart(2, '0');
+  const frac = Math.round((rounded - int) * 100)
+    .toString()
+    .padStart(2, '0');
   const s = int.toString();
   let out = '';
   for (let i = 0; i < s.length; i += 1) {
@@ -92,7 +94,11 @@ function getDaysLeftInMonth(): number {
 
 function getMonthPace(): number {
   const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysInMonth = new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    0
+  ).getDate();
   return now.getDate() / daysInMonth;
 }
 
@@ -107,7 +113,6 @@ function onTrackLabel(pct: number): string {
   return 'Over budget';
 }
 
-
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -119,13 +124,27 @@ export default function HomeScreen() {
 
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => createStyles(colors, isDark, insets.top), [colors, isDark, insets.top]);
+  const styles = useMemo(
+    () => createStyles(colors, isDark, insets.top),
+    [colors, isDark, insets.top]
+  );
 
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(false);
 
-  const { accounts, totalBalance, loading: accountsLoading, error: accountsError, refetch: refetchAccounts } = useAccounts();
-  const { categories, loading: categoriesLoading, error: categoriesError, refetch: refetchCategories } = useCategories();
+  const {
+    accounts,
+    totalBalance,
+    loading: accountsLoading,
+    error: accountsError,
+    refetch: refetchAccounts,
+  } = useAccounts();
+  const {
+    categories,
+    loading: categoriesLoading,
+    error: categoriesError,
+    refetch: refetchCategories,
+  } = useCategories();
   const {
     totalIncome,
     totalExpense: monthlyExpense,
@@ -144,7 +163,8 @@ export default function HomeScreen() {
 
   // True only on cold first load (no cached data yet) — avoids skeleton flash on background refetches
   const isFirstLoad = accountsLoading && accounts.length === 0;
-  const isTotalsLoading = totalsLoading && totalIncome === 0 && monthlyExpense === 0;
+  const isTotalsLoading =
+    totalsLoading && totalIncome === 0 && monthlyExpense === 0;
 
   // ── Entrance animation shared values ────────────────────────────────────────
   const greetingOpacity = useSharedValue(0);
@@ -188,7 +208,13 @@ export default function HomeScreen() {
       return () => task.cancel();
     }
     return undefined;
-  }, [syncVersion, startTransition, refetchAccounts, refetchCategories, refetchTotals]);
+  }, [
+    syncVersion,
+    startTransition,
+    refetchAccounts,
+    refetchCategories,
+    refetchTotals,
+  ]);
 
   const getSyncColor = () => {
     switch (syncStatus) {
@@ -212,7 +238,9 @@ export default function HomeScreen() {
   }));
 
   useEffect(() => {
-    balanceSV.value = withTiming(totalBalance, { duration: BALANCE_ANIMATE_MS });
+    balanceSV.value = withTiming(totalBalance, {
+      duration: BALANCE_ANIMATE_MS,
+    });
   }, [totalBalance, balanceSV]);
 
   useEffect(() => {
@@ -242,26 +270,42 @@ export default function HomeScreen() {
       if (!hasAnimated.current) {
         // Full entrance on first mount
         hasAnimated.current = true;
-        greetingOpacity.value = 0; greetingTransY.value = 12;
-        cardOpacity.value = 0;    cardTransY.value = 16;
-        belowOpacity.value = 0;   belowTransY.value = 20;
+        greetingOpacity.value = 0;
+        greetingTransY.value = 12;
+        cardOpacity.value = 0;
+        cardTransY.value = 16;
+        belowOpacity.value = 0;
+        belowTransY.value = 20;
         greetingOpacity.value = withTiming(1, { duration: 280 });
-        greetingTransY.value  = withTiming(0, { duration: 280 });
-        cardOpacity.value     = withDelay(80,  withTiming(1, { duration: 320 }));
-        cardTransY.value      = withDelay(80,  withSpring(0, { damping: 18, stiffness: 180 }));
-        belowOpacity.value    = withDelay(180, withTiming(1, { duration: 360 }));
-        belowTransY.value     = withDelay(180, withSpring(0, { damping: 16, stiffness: 160 }));
+        greetingTransY.value = withTiming(0, { duration: 280 });
+        cardOpacity.value = withDelay(80, withTiming(1, { duration: 320 }));
+        cardTransY.value = withDelay(
+          80,
+          withSpring(0, { damping: 18, stiffness: 180 })
+        );
+        belowOpacity.value = withDelay(180, withTiming(1, { duration: 360 }));
+        belowTransY.value = withDelay(
+          180,
+          withSpring(0, { damping: 16, stiffness: 160 })
+        );
       } else {
         // Lightweight re-entry on tab switches — keeps the screen feeling alive without a flash.
-        cardOpacity.value = 0.6;   cardTransY.value = 8;
-        belowOpacity.value = 0.55; belowTransY.value = 10;
-        cardOpacity.value  = withTiming(1, { duration: 200 });
-        cardTransY.value   = withSpring(0, { damping: 20, stiffness: 220 });
+        cardOpacity.value = 0.6;
+        cardTransY.value = 8;
+        belowOpacity.value = 0.55;
+        belowTransY.value = 10;
+        cardOpacity.value = withTiming(1, { duration: 200 });
+        cardTransY.value = withSpring(0, { damping: 20, stiffness: 220 });
         belowOpacity.value = withDelay(40, withTiming(1, { duration: 220 }));
-        belowTransY.value  = withDelay(40, withSpring(0, { damping: 20, stiffness: 200 }));
+        belowTransY.value = withDelay(
+          40,
+          withSpring(0, { damping: 20, stiffness: 200 })
+        );
       }
 
-      let task: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+      let task: ReturnType<
+        typeof InteractionManager.runAfterInteractions
+      > | null = null;
       // Skip refetch on fast tab switches — syncVersion effect handles post-sync refresh separately.
       const now = Date.now();
       const isFresh = now - lastFocusRefetchAt.current < FOCUS_REFETCH_STALE_MS;
@@ -298,8 +342,19 @@ export default function HomeScreen() {
         // so it can never intercept touches on other screens.
         setSidebarVisible(false);
       };
-    }, [startTransition, refetchAccounts, refetchCategories, refetchTotals, isPrivacyMode,
-        greetingOpacity, greetingTransY, cardOpacity, cardTransY, belowOpacity, belowTransY])
+    }, [
+      startTransition,
+      refetchAccounts,
+      refetchCategories,
+      refetchTotals,
+      isPrivacyMode,
+      greetingOpacity,
+      greetingTransY,
+      cardOpacity,
+      cardTransY,
+      belowOpacity,
+      belowTransY,
+    ])
   );
 
   const handleUndo = useCallback(async () => {
@@ -357,7 +412,12 @@ export default function HomeScreen() {
   // and avoids burning API quota on every render.
   const insight = useMemo(() => {
     const spent = categories
-      .map((c) => ({ name: c.name, emoji: c.emoji, spend: c.spent ?? 0, limit: c.budget_limit ?? 0 }))
+      .map((c) => ({
+        name: c.name,
+        emoji: c.emoji,
+        spend: c.spent ?? 0,
+        limit: c.budget_limit ?? 0,
+      }))
       .filter((c) => c.spend > 0)
       .sort((a, b) => b.spend - a.spend);
 
@@ -434,7 +494,10 @@ export default function HomeScreen() {
                 </Text>
               </Text>
             </View>
-            <TouchableOpacity onPress={() => setSidebarVisible(true)} activeOpacity={0.8}>
+            <TouchableOpacity
+              onPress={() => setSidebarVisible(true)}
+              activeOpacity={0.8}
+            >
               <LinearGradient
                 colors={[colors.primary, colors.primaryDark]}
                 style={styles.avatar}
@@ -515,14 +578,25 @@ export default function HomeScreen() {
               <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                  eyeScale.value = withSpring(0.82, { damping: 6, stiffness: 300 }, () => {
-                    eyeScale.value = withSpring(1, { damping: 10, stiffness: 260 });
-                  });
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+                    () => {}
+                  );
+                  eyeScale.value = withSpring(
+                    0.82,
+                    { damping: 6, stiffness: 300 },
+                    () => {
+                      eyeScale.value = withSpring(1, {
+                        damping: 10,
+                        stiffness: 260,
+                      });
+                    }
+                  );
                   setIsPrivacyMode(!isPrivacyMode);
                 }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityLabel={isPrivacyMode ? 'Show balance' : 'Hide balance'}
+                accessibilityLabel={
+                  isPrivacyMode ? 'Show balance' : 'Hide balance'
+                }
                 accessibilityRole="button"
               >
                 <RAnim.View style={eyeAnim}>
@@ -543,7 +617,10 @@ export default function HomeScreen() {
                   width={180}
                   height={44}
                   borderRadius={8}
-                  style={{ backgroundColor: 'rgba(255,255,255,0.15)', marginTop: 4 }}
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.15)',
+                    marginTop: 4,
+                  }}
                 />
               ) : (
                 <>
@@ -624,13 +701,29 @@ export default function HomeScreen() {
                 {/* Branded wallet illustration */}
                 <Svg width={56} height={48} viewBox="0 0 56 48">
                   {/* Card body */}
-                  <SvgPath d="M4 10 Q4 4 10 4 L46 4 Q52 4 52 10 L52 38 Q52 44 46 44 L10 44 Q4 44 4 38 Z" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.22)" strokeWidth="1.5" />
+                  <SvgPath
+                    d="M4 10 Q4 4 10 4 L46 4 Q52 4 52 10 L52 38 Q52 44 46 44 L10 44 Q4 44 4 38 Z"
+                    fill="rgba(255,255,255,0.10)"
+                    stroke="rgba(255,255,255,0.22)"
+                    strokeWidth="1.5"
+                  />
                   {/* Chip */}
-                  <SvgPath d="M12 18 Q12 15 15 15 L22 15 Q25 15 25 18 L25 25 Q25 28 22 28 L15 28 Q12 28 12 25 Z" fill="rgba(255,255,255,0.18)" />
+                  <SvgPath
+                    d="M12 18 Q12 15 15 15 L22 15 Q25 15 25 18 L25 25 Q25 28 22 28 L15 28 Q12 28 12 25 Z"
+                    fill="rgba(255,255,255,0.18)"
+                  />
                   {/* Stripe */}
-                  <SvgPath d="M4 31 L52 31 L52 36 L4 36 Z" fill="rgba(255,255,255,0.08)" />
+                  <SvgPath
+                    d="M4 31 L52 31 L52 36 L4 36 Z"
+                    fill="rgba(255,255,255,0.08)"
+                  />
                   {/* Plus badge */}
-                  <SvgPath d="M42 30 m0-6 v12 M36 36 h12" stroke="rgba(255,255,255,0.55)" strokeWidth="2.5" strokeLinecap="round" />
+                  <SvgPath
+                    d="M42 30 m0-6 v12 M36 36 h12"
+                    stroke="rgba(255,255,255,0.55)"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  />
                 </Svg>
                 <Text style={styles.emptyCarouselText}>No accounts yet</Text>
                 <TouchableOpacity
@@ -679,33 +772,73 @@ export default function HomeScreen() {
                 {/* Branded pie/budget illustration */}
                 <Svg width={52} height={52} viewBox="0 0 52 52">
                   {/* Outer ring */}
-                  <SvgPath d="M26 4 A22 22 0 0 1 48 26" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.9" />
-                  <SvgPath d="M48 26 A22 22 0 0 1 26 48" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.45" />
-                  <SvgPath d="M26 48 A22 22 0 0 1 4 26" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.22" />
-                  <SvgPath d="M4 26 A22 22 0 0 1 26 4" stroke={colors.primary} strokeWidth="5" fill="none" strokeLinecap="round" opacity="0.12" />
+                  <SvgPath
+                    d="M26 4 A22 22 0 0 1 48 26"
+                    stroke={colors.primary}
+                    strokeWidth="5"
+                    fill="none"
+                    strokeLinecap="round"
+                    opacity="0.9"
+                  />
+                  <SvgPath
+                    d="M48 26 A22 22 0 0 1 26 48"
+                    stroke={colors.primary}
+                    strokeWidth="5"
+                    fill="none"
+                    strokeLinecap="round"
+                    opacity="0.45"
+                  />
+                  <SvgPath
+                    d="M26 48 A22 22 0 0 1 4 26"
+                    stroke={colors.primary}
+                    strokeWidth="5"
+                    fill="none"
+                    strokeLinecap="round"
+                    opacity="0.22"
+                  />
+                  <SvgPath
+                    d="M4 26 A22 22 0 0 1 26 4"
+                    stroke={colors.primary}
+                    strokeWidth="5"
+                    fill="none"
+                    strokeLinecap="round"
+                    opacity="0.12"
+                  />
                   {/* Center plus */}
-                  <SvgPath d="M26 18 v16 M18 26 h16" stroke={colors.primary} strokeWidth="2.5" strokeLinecap="round" opacity="0.7" />
+                  <SvgPath
+                    d="M26 18 v16 M18 26 h16"
+                    stroke={colors.primary}
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    opacity="0.7"
+                  />
                 </Svg>
-                <Text style={styles.emptyBudgetText}>No budgets set up yet</Text>
+                <Text style={styles.emptyBudgetText}>
+                  No budgets set up yet
+                </Text>
                 <TouchableOpacity
                   onPress={() => navigation.navigate('more')}
                   style={styles.emptyBudgetCta}
                 >
-                  <Text style={styles.emptyBudgetCtaText}>Set up budgets →</Text>
+                  <Text style={styles.emptyBudgetCtaText}>
+                    Set up budgets →
+                  </Text>
                 </TouchableOpacity>
               </View>
-            ) : categories.map((cat, index) => (
-              <BudgetTile
-                key={cat.id}
-                cat={cat}
-                index={index}
-                isPrivacyMode={isPrivacyMode}
-                isDark={isDark}
-                colors={colors}
-                styles={styles}
-                onPress={() => navigation.navigate('stats')}
-              />
-            ))}
+            ) : (
+              categories.map((cat, index) => (
+                <BudgetTile
+                  key={cat.id}
+                  cat={cat}
+                  index={index}
+                  isPrivacyMode={isPrivacyMode}
+                  isDark={isDark}
+                  colors={colors}
+                  styles={styles}
+                  onPress={() => navigation.navigate('stats')}
+                />
+              ))
+            )}
           </View>
 
           {insight && (
@@ -763,7 +896,11 @@ export default function HomeScreen() {
 
 const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
   StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background, paddingTop: Math.max(topInset + 8, 20) },
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+      paddingTop: Math.max(topInset + 8, 20),
+    },
     scroll: { flex: 1 },
     scrollContent: { paddingBottom: 120 }, // floating pill (64) + bottom inset (~34) + breathing room
     greeting: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8 },

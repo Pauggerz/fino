@@ -18,7 +18,10 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { TouchableOpacity, ScrollView as GHScrollView } from 'react-native-gesture-handler';
+import {
+  TouchableOpacity,
+  ScrollView as GHScrollView,
+} from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,6 +35,7 @@ import BottomSheet, {
   BottomSheetTextInput,
 } from '@gorhom/bottom-sheet';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
 import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
@@ -47,7 +51,6 @@ import { useCategories } from '@/hooks/useCategories';
 import { setLastSaved } from '@/services/lastSavedStore';
 import { useSync } from '@/contexts/SyncContext';
 import { generateUUID } from '@/services/syncService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { OfflineTransaction } from '@/types';
 
 type TxType = 'exp' | 'inc';
@@ -59,11 +62,20 @@ function evaluateExpr(a: string, op: string, b: string): string {
   const B = parseFloat(b) || 0;
   let result: number;
   switch (op) {
-    case '+': result = A + B; break;
-    case '-': result = A - B; break;
-    case '×': result = A * B; break;
-    case '÷': result = B !== 0 ? A / B : A; break;
-    default: result = A;
+    case '+':
+      result = A + B;
+      break;
+    case '-':
+      result = A - B;
+      break;
+    case '×':
+      result = A * B;
+      break;
+    case '÷':
+      result = B !== 0 ? A / B : A;
+      break;
+    default:
+      result = A;
   }
   const rounded = Math.max(0, Math.round(result * 100) / 100);
   return String(rounded);
@@ -87,7 +99,9 @@ export default function AddTransactionSheet({ route }: Props) {
   const bottomSheetRef = useRef<BottomSheet>(null);
   const allowCloseRef = useRef(false);
   const hasOpenedRef = useRef(false);
-  const amountLimitToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const amountLimitToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const discardShakeX = useRef(new Animated.Value(0)).current;
   const analyzer = useRef(createDebouncedAnalyzer()).current;
 
@@ -101,8 +115,16 @@ export default function AddTransactionSheet({ route }: Props) {
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(skeletonOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.timing(skeletonOpacity, { toValue: 0.4, duration: 600, useNativeDriver: true }),
+        Animated.timing(skeletonOpacity, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(skeletonOpacity, {
+          toValue: 0.4,
+          duration: 600,
+          useNativeDriver: true,
+        }),
       ])
     );
     anim.start();
@@ -111,10 +133,12 @@ export default function AddTransactionSheet({ route }: Props) {
 
   // ─── State ────────────────────────────────────────────────────────────────
   const initialMode = route.params?.mode ?? 'expense';
-  const [type, setType] = useState<TxType>(initialMode === 'income' ? 'inc' : 'exp');
+  const [type, setType] = useState<TxType>(
+    initialMode === 'income' ? 'inc' : 'exp'
+  );
 
   // Amount / calculator state
-  const [amount, setAmount] = useState<string>('');        // active input (2nd operand or result)
+  const [amount, setAmount] = useState<string>(''); // active input (2nd operand or result)
   const [firstOperand, setFirstOperand] = useState<string>(''); // saved 1st operand
   const [operator, setOperator] = useState<string | null>(null);
   const [justEvaled, setJustEvaled] = useState(false);
@@ -125,7 +149,9 @@ export default function AddTransactionSheet({ route }: Props) {
   const [aiText, setAiText] = useState<string>('');
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
   const [aiInputFocused, setAiInputFocused] = useState(false);
-  const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>('manual');
+  const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>(
+    'manual'
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardPrompt, setShowDiscardPrompt] = useState(false);
   const [showAmountLimitToast, setShowAmountLimitToast] = useState(false);
@@ -137,7 +163,10 @@ export default function AddTransactionSheet({ route }: Props) {
   const [recentAccountIds, setRecentAccountIds] = useState<string[]>([]);
   const [recentCategoryNames, setRecentCategoryNames] = useState<string[]>([]);
 
-  const hasUnsavedInput = amount.trim().length > 0 || firstOperand.trim().length > 0 || aiText.trim().length > 0;
+  const hasUnsavedInput =
+    amount.trim().length > 0 ||
+    firstOperand.trim().length > 0 ||
+    aiText.trim().length > 0;
 
   // ─── Derived ──────────────────────────────────────────────────────────────
   const selectedAccount = useMemo(
@@ -189,7 +218,12 @@ export default function AddTransactionSheet({ route }: Props) {
         salary: { bg: colors.catHealthBg, text: colors.catHealthText },
         investment: { bg: colors.tagCashBg, text: colors.tagCashText },
       };
-      return map[key.toLowerCase()] || { bg: colors.catTileEmptyBg, text: colors.textSecondary };
+      return (
+        map[key.toLowerCase()] || {
+          bg: colors.catTileEmptyBg,
+          text: colors.textSecondary,
+        }
+      );
     },
     [colors]
   );
@@ -204,12 +238,14 @@ export default function AddTransactionSheet({ route }: Props) {
     });
   }, []);
 
-  useEffect(() => {
-    return () => {
+  useEffect(
+    () => () => {
       analyzer.cancel();
-      if (amountLimitToastTimerRef.current) clearTimeout(amountLimitToastTimerRef.current);
-    };
-  }, [analyzer]);
+      if (amountLimitToastTimerRef.current)
+        clearTimeout(amountLimitToastTimerRef.current);
+    },
+    [analyzer]
+  );
 
   useEffect(() => {
     if (accounts.length > 0 && !accountId) {
@@ -232,13 +268,27 @@ export default function AddTransactionSheet({ route }: Props) {
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const triggerBlockedFeedback = useCallback(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(
+      () => {}
+    );
     Vibration.vibrate([0, 24, 36, 28]);
     discardShakeX.setValue(0);
     Animated.sequence([
-      Animated.timing(discardShakeX, { toValue: -8, duration: 32, useNativeDriver: true }),
-      Animated.timing(discardShakeX, { toValue: 8, duration: 42, useNativeDriver: true }),
-      Animated.timing(discardShakeX, { toValue: 0, duration: 28, useNativeDriver: true }),
+      Animated.timing(discardShakeX, {
+        toValue: -8,
+        duration: 32,
+        useNativeDriver: true,
+      }),
+      Animated.timing(discardShakeX, {
+        toValue: 8,
+        duration: 42,
+        useNativeDriver: true,
+      }),
+      Animated.timing(discardShakeX, {
+        toValue: 0,
+        duration: 28,
+        useNativeDriver: true,
+      }),
     ]).start();
   }, [discardShakeX]);
 
@@ -277,84 +327,91 @@ export default function AddTransactionSheet({ route }: Props) {
   const showLimitToast = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setShowAmountLimitToast(true);
-    if (amountLimitToastTimerRef.current) clearTimeout(amountLimitToastTimerRef.current);
-    amountLimitToastTimerRef.current = setTimeout(() => setShowAmountLimitToast(false), 1100);
+    if (amountLimitToastTimerRef.current)
+      clearTimeout(amountLimitToastTimerRef.current);
+    amountLimitToastTimerRef.current = setTimeout(
+      () => setShowAmountLimitToast(false),
+      1100
+    );
   }, []);
 
-  const handleNumTap = useCallback((key: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  const handleNumTap = useCallback(
+    (key: string) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
-    // ── Clear ──
-    if (key === 'C') {
-      setAmount('');
-      setFirstOperand('');
-      setOperator(null);
-      setJustEvaled(false);
-      return;
-    }
+      // ── Clear ──
+      if (key === 'C') {
+        setAmount('');
+        setFirstOperand('');
+        setOperator(null);
+        setJustEvaled(false);
+        return;
+      }
 
-    // ── Backspace ──
-    if (key === 'back') {
-      setAmount((prev) => prev.slice(0, -1));
-      return;
-    }
+      // ── Backspace ──
+      if (key === 'back') {
+        setAmount((prev) => prev.slice(0, -1));
+        return;
+      }
 
-    // ── Operators ──
-    if (['+', '-', '×', '÷'].includes(key)) {
-      const current = amount || firstOperand;
-      if (!current) return;
-      if (operator !== null && amount) {
-        // Chain: evaluate pending, then set new operator
+      // ── Operators ──
+      if (['+', '-', '×', '÷'].includes(key)) {
+        const current = amount || firstOperand;
+        if (!current) return;
+        if (operator !== null && amount) {
+          // Chain: evaluate pending, then set new operator
+          const res = evaluateExpr(firstOperand, operator, amount);
+          setFirstOperand(res);
+          setAmount('');
+        } else if (amount) {
+          setFirstOperand(amount);
+          setAmount('');
+        }
+        // else just replace the operator (nothing changes except operator key)
+        setOperator(key);
+        setJustEvaled(false);
+        return;
+      }
+
+      // ── Equals ──
+      if (key === '=') {
+        if (!operator || !firstOperand || !amount) return;
         const res = evaluateExpr(firstOperand, operator, amount);
-        setFirstOperand(res);
-        setAmount('');
-      } else if (amount) {
-        setFirstOperand(amount);
-        setAmount('');
+        setAmount(res);
+        setFirstOperand('');
+        setOperator(null);
+        setJustEvaled(true);
+        return;
       }
-      // else just replace the operator (nothing changes except operator key)
-      setOperator(key);
-      setJustEvaled(false);
-      return;
-    }
 
-    // ── Equals ──
-    if (key === '=') {
-      if (!operator || !firstOperand || !amount) return;
-      const res = evaluateExpr(firstOperand, operator, amount);
-      setAmount(res);
-      setFirstOperand('');
-      setOperator(null);
-      setJustEvaled(true);
-      return;
-    }
+      // ── Digits & dot ──
+      if (justEvaled && operator === null) {
+        // Start fresh after =
+        if (key === '.') {
+          setAmount('0.');
+        } else {
+          setAmount(key);
+        }
+        setJustEvaled(false);
+        return;
+      }
 
-    // ── Digits & dot ──
-    if (justEvaled && operator === null) {
-      // Start fresh after =
       if (key === '.') {
-        setAmount('0.');
-      } else {
-        setAmount(key);
+        if (amount.includes('.')) return;
+        setAmount((prev) => `${prev || '0'}.`);
+        return;
       }
-      setJustEvaled(false);
-      return;
-    }
 
-    if (key === '.') {
-      if (amount.includes('.')) return;
-      setAmount((prev) => (prev || '0') + '.');
-      return;
-    }
+      // 7-digit limit
+      if (amount.replace('.', '').length >= 10) {
+        showLimitToast();
+        return;
+      }
 
-    // 7-digit limit
-    if (amount.replace('.', '').length >= 10) {
-      showLimitToast();
-      return;
-    }
-
-    setAmount((prev) => prev + key);
-  }, [amount, firstOperand, operator, justEvaled, showLimitToast]);
+      setAmount((prev) => prev + key);
+    },
+    [amount, firstOperand, operator, justEvaled, showLimitToast]
+  );
 
   const handleAiTextChange = (text: string) => {
     setAiText(text);
@@ -382,30 +439,51 @@ export default function AddTransactionSheet({ route }: Props) {
     if (isSaving) return;
     const acc = accounts.find((a) => a.id === accountId);
     if (!acc) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-      Alert.alert('No account selected', 'Please select an account before saving.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
+        () => {}
+      );
+      Alert.alert(
+        'No account selected',
+        'Please select an account before saving.'
+      );
       return;
     }
     if (!amount || parseFloat(amount) <= 0) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-      Alert.alert('Invalid amount', 'Please enter an amount greater than zero.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
+        () => {}
+      );
+      Alert.alert(
+        'Invalid amount',
+        'Please enter an amount greater than zero.'
+      );
       return;
     }
     if (!category) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-      Alert.alert('No category selected', 'Please select a category before saving.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
+        () => {}
+      );
+      Alert.alert(
+        'No category selected',
+        'Please select a category before saving.'
+      );
       return;
     }
 
     const parsedAmount = parseFloat(amount);
     if (parsedAmount > 9_999_999) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-      Alert.alert('Amount too large', 'Please enter an amount under ₱9,999,999.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
+        () => {}
+      );
+      Alert.alert(
+        'Amount too large',
+        'Please enter an amount under ₱9,999,999.'
+      );
       return;
     }
 
     setIsSaving(true);
-    const txType: OfflineTransaction['type'] = type === 'exp' ? 'expense' : 'income';
+    const txType: OfflineTransaction['type'] =
+      type === 'exp' ? 'expense' : 'income';
 
     try {
       const txId = generateUUID();
@@ -418,7 +496,8 @@ export default function AddTransactionSheet({ route }: Props) {
         category: category || null,
         display_name: aiText || category || 'Other',
         transaction_note: aiText || null,
-        signal_source: signalSource === 'ai_description' ? 'description' : 'manual',
+        signal_source:
+          signalSource === 'ai_description' ? 'description' : 'manual',
         date: selectedDate.toISOString(),
         account_deleted: false,
       };
@@ -437,15 +516,29 @@ export default function AddTransactionSheet({ route }: Props) {
         categoryName: category || 'Other',
       });
 
-      const newRecentAccounts = [accountId, ...recentAccountIds.filter((id) => id !== accountId)].slice(0, 10);
+      const newRecentAccounts = [
+        accountId,
+        ...recentAccountIds.filter((id) => id !== accountId),
+      ].slice(0, 10);
       setRecentAccountIds(newRecentAccounts);
-      AsyncStorage.setItem('@fino/recent_accounts', JSON.stringify(newRecentAccounts));
+      AsyncStorage.setItem(
+        '@fino/recent_accounts',
+        JSON.stringify(newRecentAccounts)
+      );
 
-      const newRecentCategories = [category, ...recentCategoryNames.filter((n) => n !== category)].slice(0, 20);
+      const newRecentCategories = [
+        category,
+        ...recentCategoryNames.filter((n) => n !== category),
+      ].slice(0, 20);
       setRecentCategoryNames(newRecentCategories);
-      AsyncStorage.setItem('@fino/recent_categories', JSON.stringify(newRecentCategories));
+      AsyncStorage.setItem(
+        '@fino/recent_categories',
+        JSON.stringify(newRecentCategories)
+      );
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+        () => {}
+      );
       allowCloseRef.current = true;
       Keyboard.dismiss();
       bottomSheetRef.current?.close();
@@ -457,9 +550,11 @@ export default function AddTransactionSheet({ route }: Props) {
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────
-  const displayValue = amount || (firstOperand && !operator ? firstOperand : '') || '0';
+  const displayValue =
+    amount || (firstOperand && !operator ? firstOperand : '') || '0';
   const amountColor = type === 'exp' ? colors.expenseRed : colors.primary;
-  const amountBorderColor = type === 'exp' ? 'rgba(192,80,58,0.18)' : 'rgba(91,140,110,0.18)';
+  const amountBorderColor =
+    type === 'exp' ? 'rgba(192,80,58,0.18)' : 'rgba(91,140,110,0.18)';
 
   return (
     <View style={styles.container}>
@@ -482,7 +577,6 @@ export default function AddTransactionSheet({ route }: Props) {
         handleIndicatorStyle={styles.sheetHandle}
       >
         <BottomSheetScrollView contentContainerStyle={styles.sheetContent}>
-
           {/* ── Header ─────────────────────────────────────────────────── */}
           <View style={styles.newHeader}>
             <TouchableOpacity style={styles.dismissBtn} onPress={requestClose}>
@@ -493,9 +587,16 @@ export default function AddTransactionSheet({ route }: Props) {
               style={styles.newDatePill}
               onPress={() => setShowDatePickerModal(true)}
             >
-              <Ionicons name="calendar-outline" size={13} color={colors.primary} />
+              <Ionicons
+                name="calendar-outline"
+                size={13}
+                color={colors.primary}
+              />
               <Text style={styles.newDatePillText}>
-                {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {selectedDate.toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                })}
               </Text>
             </TouchableOpacity>
           </View>
@@ -508,10 +609,19 @@ export default function AddTransactionSheet({ route }: Props) {
                 onPress={() => setType(t)}
                 style={[
                   styles.segmentBtn,
-                  type === t && (t === 'exp' ? styles.segmentExpActive : styles.segmentIncActive),
+                  type === t &&
+                    (t === 'exp'
+                      ? styles.segmentExpActive
+                      : styles.segmentIncActive),
                 ]}
               >
-                <Text style={[styles.segmentText, type === t && (t === 'exp' ? styles.textExp : styles.textInc)]}>
+                <Text
+                  style={[
+                    styles.segmentText,
+                    type === t &&
+                      (t === 'exp' ? styles.textExp : styles.textInc),
+                  ]}
+                >
                   {t === 'exp' ? '↓ Expense' : '↑ Income'}
                 </Text>
               </Pressable>
@@ -523,7 +633,9 @@ export default function AddTransactionSheet({ route }: Props) {
             <View style={{ flex: 1 }}>
               <Text style={styles.amountBoxLabel}>AMOUNT</Text>
               <View style={styles.amountRow}>
-                <Text style={[styles.amountCurr, { color: amountColor }]}>₱</Text>
+                <Text style={[styles.amountCurr, { color: amountColor }]}>
+                  ₱
+                </Text>
                 <Text
                   style={[styles.amountResult, { color: amountColor }]}
                   numberOfLines={1}
@@ -546,16 +658,20 @@ export default function AddTransactionSheet({ route }: Props) {
 
           {showAmountLimitToast && (
             <View style={styles.amountLimitToast}>
-              <Text style={styles.amountLimitToastText}>Max 10 digits reached</Text>
+              <Text style={styles.amountLimitToastText}>
+                Max 10 digits reached
+              </Text>
             </View>
           )}
 
           {/* ── Numpad ──────────────────────────────────────────────────── */}
           <View style={styles.numpadWrap}>
-
             {/* Operator column — C / − / + / = aligned with 4 number rows */}
             <View style={styles.opCol}>
-              <TouchableOpacity style={styles.clearKey} onPress={() => handleNumTap('C')}>
+              <TouchableOpacity
+                style={styles.clearKey}
+                onPress={() => handleNumTap('C')}
+              >
                 <Text style={styles.clearKeyText}>C</Text>
               </TouchableOpacity>
               {(['-', '+'] as const).map((op) => (
@@ -564,13 +680,24 @@ export default function AddTransactionSheet({ route }: Props) {
                   style={[styles.opKey, operator === op && styles.opKeyActive]}
                   onPress={() => handleNumTap(op)}
                 >
-                  <Text style={[styles.opKeyText, operator === op && styles.opKeyTextActive]}>
+                  <Text
+                    style={[
+                      styles.opKeyText,
+                      operator === op && styles.opKeyTextActive,
+                    ]}
+                  >
                     {op}
                   </Text>
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity style={styles.equalsKey} onPress={() => handleNumTap('=')}>
-                <LinearGradient colors={['#4a7a5e', '#5B8C6E']} style={styles.equalsKeyGradient}>
+              <TouchableOpacity
+                style={styles.equalsKey}
+                onPress={() => handleNumTap('=')}
+              >
+                <LinearGradient
+                  colors={['#4a7a5e', '#5B8C6E']}
+                  style={styles.equalsKeyGradient}
+                >
                   <Text style={styles.equalsKeyText}>=</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -578,7 +705,22 @@ export default function AddTransactionSheet({ route }: Props) {
 
             {/* Number grid — calculator order: 7-8-9 / 4-5-6 / 1-2-3 / . 0 ⌫ */}
             <View style={styles.numGrid}>
-              {(['7','8','9','4','5','6','1','2','3','.','0','back'] as const).map((key) => (
+              {(
+                [
+                  '7',
+                  '8',
+                  '9',
+                  '4',
+                  '5',
+                  '6',
+                  '1',
+                  '2',
+                  '3',
+                  '.',
+                  '0',
+                  'back',
+                ] as const
+              ).map((key) => (
                 <TouchableOpacity
                   key={key}
                   style={[
@@ -588,7 +730,9 @@ export default function AddTransactionSheet({ route }: Props) {
                     key === '.' && styles.numKeyDot,
                   ]}
                   onPress={() => handleNumTap(key)}
-                  onLongPress={key === 'back' ? () => handleNumTap('C') : undefined}
+                  onLongPress={
+                    key === 'back' ? () => handleNumTap('C') : undefined
+                  }
                 >
                   <Text
                     style={[
@@ -604,14 +748,23 @@ export default function AddTransactionSheet({ route }: Props) {
             </View>
           </View>
 
-
           {/* ── Account Chips ────────────────────────────────────────────── */}
           <View style={styles.chipSection}>
             <Text style={styles.chipSectionLabel}>ACCOUNT</Text>
-            <GHScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipWrap}>
+            <GHScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipWrap}
+            >
               {accountsLoading && accounts.length === 0
                 ? [80, 100, 72, 90, 84].map((w, i) => (
-                    <Animated.View key={i} style={[styles.skeletonChip, { width: w, opacity: skeletonOpacity }]} />
+                    <Animated.View
+                      key={i}
+                      style={[
+                        styles.skeletonChip,
+                        { width: w, opacity: skeletonOpacity },
+                      ]}
+                    />
                   ))
                 : sortedAccounts.map((acc) => {
                     const isSel = accountId === acc.id;
@@ -619,17 +772,40 @@ export default function AddTransactionSheet({ route }: Props) {
                     return (
                       <TouchableOpacity
                         key={acc.id}
-                        style={[styles.acctChip, isSel && styles.acctChipActive]}
+                        style={[
+                          styles.acctChip,
+                          isSel && styles.acctChipActive,
+                        ]}
                         onPress={() => setAccountId(acc.id)}
                       >
-                        <View style={[styles.chipIconWrap, { backgroundColor: acc.brand_colour ?? colors.primaryLight }]}>
+                        <View
+                          style={[
+                            styles.chipIconWrap,
+                            {
+                              backgroundColor:
+                                acc.brand_colour ?? colors.primaryLight,
+                            },
+                          ]}
+                        >
                           {logo ? (
-                            <Image source={logo} style={styles.acctChipLogo} contentFit="contain" />
+                            <Image
+                              source={logo}
+                              style={styles.acctChipLogo}
+                              contentFit="contain"
+                            />
                           ) : (
-                            <Text style={styles.acctChipAvatar}>{acc.letter_avatar ?? '?'}</Text>
+                            <Text style={styles.acctChipAvatar}>
+                              {acc.letter_avatar ?? '?'}
+                            </Text>
                           )}
                         </View>
-                        <Text style={[styles.acctChipName, isSel && styles.acctChipNameActive]} numberOfLines={1}>
+                        <Text
+                          style={[
+                            styles.acctChipName,
+                            isSel && styles.acctChipNameActive,
+                          ]}
+                          numberOfLines={1}
+                        >
                           {acc.name}
                         </Text>
                       </TouchableOpacity>
@@ -641,28 +817,64 @@ export default function AddTransactionSheet({ route }: Props) {
           {/* ── Category Chips ───────────────────────────────────────────── */}
           <View style={styles.chipSection}>
             <Text style={styles.chipSectionLabel}>CATEGORY</Text>
-            <GHScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipWrap}>
+            <GHScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipWrap}
+            >
               {categoriesLoading && categories.length === 0
                 ? [88, 68, 96, 76, 104, 72].map((w, i) => (
-                    <Animated.View key={i} style={[styles.skeletonChip, { width: w, opacity: skeletonOpacity }]} />
+                    <Animated.View
+                      key={i}
+                      style={[
+                        styles.skeletonChip,
+                        { width: w, opacity: skeletonOpacity },
+                      ]}
+                    />
                   ))
                 : sortedCategories.map((cat: any) => {
-                    const catKey = type === 'inc' ? cat.key : (cat.emoji ?? '').toLowerCase();
+                    const catKey =
+                      type === 'inc'
+                        ? cat.key
+                        : (cat.emoji ?? '').toLowerCase();
                     const isSel = category === cat.name;
                     const cs = resolveCategoryStyle(catKey);
                     return (
                       <TouchableOpacity
                         key={cat.id || cat.key}
-                        style={[styles.catChip, isSel && { backgroundColor: cs.bg, borderColor: cs.text + '55' }]}
+                        style={[
+                          styles.catChip,
+                          isSel && {
+                            backgroundColor: cs.bg,
+                            borderColor: `${cs.text}55`,
+                          },
+                        ]}
                         onPress={() => {
                           setCategory(cat.name);
                           setSignalSource('manual');
                         }}
                       >
-                        <View style={[styles.chipIconWrap, { backgroundColor: cs.bg }]}>
-                          <CategoryIcon categoryKey={catKey} color={isSel ? cs.text : colors.textSecondary} size={12} />
+                        <View
+                          style={[
+                            styles.chipIconWrap,
+                            { backgroundColor: cs.bg },
+                          ]}
+                        >
+                          <CategoryIcon
+                            categoryKey={catKey}
+                            color={isSel ? cs.text : colors.textSecondary}
+                            size={12}
+                          />
                         </View>
-                        <Text style={[styles.catChipText, isSel && { color: cs.text, fontFamily: 'Inter_700Bold' }]}>
+                        <Text
+                          style={[
+                            styles.catChipText,
+                            isSel && {
+                              color: cs.text,
+                              fontFamily: 'Inter_700Bold',
+                            },
+                          ]}
+                        >
                           {cat.name}
                         </Text>
                       </TouchableOpacity>
@@ -672,7 +884,9 @@ export default function AddTransactionSheet({ route }: Props) {
           </View>
 
           {/* ── AI Description Field ────────────────────────────────────── */}
-          <View style={[styles.noteRow, aiInputFocused && styles.noteRowFocused]}>
+          <View
+            style={[styles.noteRow, aiInputFocused && styles.noteRowFocused]}
+          >
             <Text style={styles.noteSparkle}>✦</Text>
             <BottomSheetTextInput
               style={styles.noteInput}
@@ -686,7 +900,9 @@ export default function AddTransactionSheet({ route }: Props) {
             />
             {aiResult?.suggestedCategory ? (
               <View style={styles.noteAiBadge}>
-                <Text style={styles.noteAiBadgeText}>✦ {aiResult.suggestedCategory}</Text>
+                <Text style={styles.noteAiBadgeText}>
+                  ✦ {aiResult.suggestedCategory}
+                </Text>
               </View>
             ) : null}
           </View>
@@ -699,14 +915,20 @@ export default function AddTransactionSheet({ route }: Props) {
           >
             <LinearGradient
               colors={['#4a7a5e', '#5B8C6E']}
-              style={[styles.saveBtn, (!amount || isSaving) && { opacity: 0.45 }]}
+              style={[
+                styles.saveBtn,
+                (!amount || isSaving) && { opacity: 0.45 },
+              ]}
             >
               <Text style={styles.saveBtnText}>
-                {isSaving ? 'Saving…' : type === 'exp' ? 'Save Expense' : 'Save Income'}
+                {isSaving
+                  ? 'Saving…'
+                  : type === 'exp'
+                    ? 'Save Expense'
+                    : 'Save Income'}
               </Text>
             </LinearGradient>
           </TouchableOpacity>
-
         </BottomSheetScrollView>
       </BottomSheet>
 
@@ -718,7 +940,10 @@ export default function AddTransactionSheet({ route }: Props) {
             onPress={() => setShowDiscardPrompt(false)}
           />
           <Animated.View
-            style={[styles.discardCard, { transform: [{ translateX: discardShakeX }] }]}
+            style={[
+              styles.discardCard,
+              { transform: [{ translateX: discardShakeX }] },
+            ]}
           >
             <Text style={styles.discardTitle}>Discard transaction?</Text>
             <Text style={styles.discardBody}>Your progress will be lost.</Text>
@@ -963,8 +1188,8 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderWidth: 1,
       borderColor: isDark ? '#3A3A3A' : '#E8E6E0',
     },
-    opKeyClear: { /* unused — C moved to calcActionRow */
-      height: 46,
+    opKeyClear: {
+      /* unused — C moved to calcActionRow */ height: 46,
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
@@ -988,8 +1213,8 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.primary,
       fontFamily: 'Inter_700Bold',
     },
-    opKeyEq: { /* unused */
-      borderRadius: 12,
+    opKeyEq: {
+      /* unused */ borderRadius: 12,
       overflow: 'hidden',
     },
     opKeyEqGradient: {
@@ -1104,7 +1329,9 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderColor: isDark ? '#333' : '#E8E6E0',
     },
     acctChipActive: {
-      backgroundColor: isDark ? 'rgba(91,140,110,0.18)' : 'rgba(91,140,110,0.1)',
+      backgroundColor: isDark
+        ? 'rgba(91,140,110,0.18)'
+        : 'rgba(91,140,110,0.1)',
       borderColor: colors.primary,
     },
     acctChipLogo: { width: 16, height: 16 },
@@ -1186,7 +1413,12 @@ const createStyles = (colors: any, isDark: boolean) =>
 
     // ── Save Button
     saveBtnWrap: { marginHorizontal: 20 },
-    saveBtn: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+    saveBtn: {
+      height: 52,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     saveBtnText: { color: '#FFF', fontSize: 16, fontFamily: 'Nunito_700Bold' },
 
     // ── Discard Prompt
@@ -1204,8 +1436,16 @@ const createStyles = (colors: any, isDark: boolean) =>
       padding: 20,
       borderRadius: 20,
     },
-    discardTitle: { fontSize: 18, fontFamily: 'Nunito_800ExtraBold', color: colors.textPrimary },
-    discardBody: { fontSize: 14, color: colors.textSecondary, marginVertical: 12 },
+    discardTitle: {
+      fontSize: 18,
+      fontFamily: 'Nunito_800ExtraBold',
+      color: colors.textPrimary,
+    },
+    discardBody: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginVertical: 12,
+    },
     discardActions: { flexDirection: 'row', gap: 10 },
     discardKeepBtn: {
       flex: 1,
@@ -1247,5 +1487,4 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderRadius: 10,
       alignItems: 'center',
     },
-
   });

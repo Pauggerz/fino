@@ -94,7 +94,7 @@ export default function FABActionSheet() {
       <BottomSheet
         ref={bottomSheetRef}
         index={0}
-        enableDynamicSizing={true}
+        enableDynamicSizing
         enablePanDownToClose
         onChange={handleSheetChanges}
         backdropComponent={renderBackdrop}

@@ -85,7 +85,9 @@ export default function App() {
     };
 
     // App opened via deep link (cold start)
-    Linking.getInitialURL().then((url) => { if (url) handleUrl(url); });
+    Linking.getInitialURL().then((url) => {
+      if (url) handleUrl(url);
+    });
 
     // App brought to foreground via deep link (warm start)
     const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));

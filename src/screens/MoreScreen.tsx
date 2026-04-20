@@ -262,7 +262,11 @@ export function AddAccountModal({
             </View>
 
             <TouchableOpacity
-              style={[modalStyles.primaryBtn, { marginTop: 24 }, saving && { opacity: 0.6 }]}
+              style={[
+                modalStyles.primaryBtn,
+                { marginTop: 24 },
+                saving && { opacity: 0.6 },
+              ]}
               onPress={handleSave}
               disabled={saving}
               activeOpacity={0.8}
@@ -346,7 +350,11 @@ function BillQuickViewModal({
             />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Ionicons name="time-outline" size={11} color={colors.statWarnBar} />
+            <Ionicons
+              name="time-outline"
+              size={11}
+              color={colors.statWarnBar}
+            />
             <Text style={quickStyles.tagText}>BILL REMINDER</Text>
           </View>
           <Text style={quickStyles.title}>{bill.title}</Text>
@@ -374,7 +382,9 @@ function BillQuickViewModal({
             </Text>
           </View>
           {bill.is_recurring && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
               <Ionicons name="repeat" size={12} color={colors.textSecondary} />
               <Text style={quickStyles.recurringNote}>Recurring monthly</Text>
             </View>
@@ -476,7 +486,11 @@ function BudgetSettingsModal({
         <View style={modalStyles.handle} />
         <View style={modalStyles.sheetHeader}>
           <Text style={modalStyles.sheetTitle}>Budget Settings</Text>
-          <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={{ padding: 11 }}>
+          <TouchableOpacity
+            onPress={onClose}
+            activeOpacity={0.7}
+            style={{ padding: 11 }}
+          >
             <Ionicons name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
@@ -488,10 +502,17 @@ function BudgetSettingsModal({
             contentContainerStyle={{ paddingBottom: 40 }}
             keyboardShouldPersistTaps="handled"
           >
-            <View style={{ backgroundColor: colors.catTileEmptyBg, borderRadius: 12, padding: 12, marginBottom: 20 }}>
+            <View
+              style={{
+                backgroundColor: colors.catTileEmptyBg,
+                borderRadius: 12,
+                padding: 12,
+                marginBottom: 20,
+              }}
+            >
               <Text style={budgetStyles.hint}>
-                Set monthly spending limits for each category. Leave blank for no
-                limit.
+                Set monthly spending limits for each category. Leave blank for
+                no limit.
               </Text>
             </View>
             {categories.map((cat) => {
@@ -535,7 +556,11 @@ function BudgetSettingsModal({
               );
             })}
             <TouchableOpacity
-              style={[modalStyles.primaryBtn, { marginTop: 24 }, saving && { opacity: 0.6 }]}
+              style={[
+                modalStyles.primaryBtn,
+                { marginTop: 24 },
+                saving && { opacity: 0.6 },
+              ]}
               onPress={handleSave}
               disabled={saving}
               activeOpacity={0.8}
@@ -668,9 +693,12 @@ function BillRemindersModal({
 
     const fresh = (data as BillReminder[]) ?? [];
     setBills(fresh);
-    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(fresh)).catch((err) => {
-      if (__DEV__) console.warn('[MoreScreen] bills cache write failed:', err);
-    });
+    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(fresh)).catch(
+      (err) => {
+        if (__DEV__)
+          console.warn('[MoreScreen] bills cache write failed:', err);
+      }
+    );
     setLoading(false);
   }, []);
 
@@ -739,9 +767,12 @@ function BillRemindersModal({
 
   const updateBillsCache = (updated: BillReminder[]) => {
     setBills(updated);
-    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(updated)).catch((err) => {
-      if (__DEV__) console.warn('[MoreScreen] bills cache write failed:', err);
-    });
+    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(updated)).catch(
+      (err) => {
+        if (__DEV__)
+          console.warn('[MoreScreen] bills cache write failed:', err);
+      }
+    );
   };
 
   const handleMarkPaid = async (id: string) => {
@@ -766,7 +797,10 @@ function BillRemindersModal({
           const snapshot = bills;
           updateBillsCache(bills.filter((b) => b.id !== id));
 
-          const { error } = await supabase.from('bill_reminders').delete().eq('id', id);
+          const { error } = await supabase
+            .from('bill_reminders')
+            .delete()
+            .eq('id', id);
           if (error) updateBillsCache(snapshot);
         },
       },
@@ -786,7 +820,11 @@ function BillRemindersModal({
         <View style={modalStyles.handle} />
         <View style={modalStyles.sheetHeader}>
           <Text style={modalStyles.sheetTitle}>Bill Reminders</Text>
-          <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={{ padding: 11 }}>
+          <TouchableOpacity
+            onPress={onClose}
+            activeOpacity={0.7}
+            style={{ padding: 11 }}
+          >
             <Ionicons name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
@@ -912,8 +950,21 @@ function BillRemindersModal({
           )}
           {!loading && bills.length === 0 && !showAdd && (
             <View style={billStyles.emptyState}>
-              <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.catTileEmptyBg, alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="notifications-outline" size={30} color={colors.textSecondary} />
+              <View
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 32,
+                  backgroundColor: colors.catTileEmptyBg,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons
+                  name="notifications-outline"
+                  size={30}
+                  color={colors.textSecondary}
+                />
               </View>
               <Text style={billStyles.emptyTitle}>No upcoming bills</Text>
               <Text style={billStyles.emptySubtitle}>
@@ -1098,10 +1149,12 @@ export default function MoreScreen() {
     },
   ];
 
-  const otherTools = TOOLS.filter(t => t.id !== 'fino');
+  const otherTools = TOOLS.filter((t) => t.id !== 'fino');
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top + 8, 20) }]}>
+    <View
+      style={[styles.container, { paddingTop: Math.max(insets.top + 8, 20) }]}
+    >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Tools</Text>
       </View>
@@ -1126,7 +1179,12 @@ export default function MoreScreen() {
         >
           {/* gradient bg */}
           <View style={StyleSheet.absoluteFillObject}>
-            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: isDark ? '#1A1426' : colors.lavenderLight }]} />
+            <View
+              style={[
+                StyleSheet.absoluteFillObject,
+                { backgroundColor: isDark ? '#1A1426' : colors.lavenderLight },
+              ]}
+            />
             {/* decorative blobs */}
             <View style={styles.heroBlob1} />
             <View style={styles.heroBlob2} />
@@ -1135,26 +1193,79 @@ export default function MoreScreen() {
           {/* Left content */}
           <View style={{ flex: 1 }}>
             <View style={styles.finoBadge}>
-              <Ionicons name="sparkles" size={11} color={colors.insightPurple} />
-              <Text style={[styles.finoBadgeText, { color: colors.insightPurple }]}>AI POWERED</Text>
+              <Ionicons
+                name="sparkles"
+                size={11}
+                color={colors.insightPurple}
+              />
+              <Text
+                style={[styles.finoBadgeText, { color: colors.insightPurple }]}
+              >
+                AI POWERED
+              </Text>
             </View>
-            <Text style={[styles.finoTitle, { color: isDark ? '#E8E0FF' : colors.lavenderDark }]}>
+            <Text
+              style={[
+                styles.finoTitle,
+                { color: isDark ? '#E8E0FF' : colors.lavenderDark },
+              ]}
+            >
               Ask Fino
             </Text>
-            <Text style={[styles.finoSub, { color: isDark ? 'rgba(220,210,255,0.65)' : colors.insightPurple }]}>
+            <Text
+              style={[
+                styles.finoSub,
+                {
+                  color: isDark
+                    ? 'rgba(220,210,255,0.65)'
+                    : colors.insightPurple,
+                },
+              ]}
+            >
               Your personal AI money coach. Ask anything about your finances.
             </Text>
-            <View style={[styles.finoBtn, { backgroundColor: isDark ? 'rgba(176,154,224,0.18)' : 'rgba(75,45,163,0.1)' }]}>
-              <Text style={[styles.finoBtnText, { color: isDark ? '#C9B8F5' : colors.lavenderDark }]}>
+            <View
+              style={[
+                styles.finoBtn,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(176,154,224,0.18)'
+                    : 'rgba(75,45,163,0.1)',
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.finoBtnText,
+                  { color: isDark ? '#C9B8F5' : colors.lavenderDark },
+                ]}
+              >
                 Start chatting
               </Text>
-              <Ionicons name="arrow-forward" size={13} color={isDark ? '#C9B8F5' : colors.lavenderDark} />
+              <Ionicons
+                name="arrow-forward"
+                size={13}
+                color={isDark ? '#C9B8F5' : colors.lavenderDark}
+              />
             </View>
           </View>
 
           {/* Right icon */}
-          <View style={[styles.finoIconWrap, { backgroundColor: isDark ? 'rgba(176,154,224,0.15)' : 'rgba(75,45,163,0.08)' }]}>
-            <Ionicons name="sparkles" size={36} color={isDark ? '#C9B8F5' : colors.lavenderDark} />
+          <View
+            style={[
+              styles.finoIconWrap,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(176,154,224,0.15)'
+                  : 'rgba(75,45,163,0.08)',
+              },
+            ]}
+          >
+            <Ionicons
+              name="sparkles"
+              size={36}
+              color={isDark ? '#C9B8F5' : colors.lavenderDark}
+            />
           </View>
         </TouchableOpacity>
 
@@ -1169,13 +1280,22 @@ export default function MoreScreen() {
               activeOpacity={0.75}
             >
               <View style={[styles.toolIconBox, { backgroundColor: tool.bg }]}>
-                <Ionicons name={tool.icon as any} size={22} color={tool.color} />
+                <Ionicons
+                  name={tool.icon as any}
+                  size={22}
+                  color={tool.color}
+                />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.toolName}>{tool.label}</Text>
                 <Text style={styles.toolDesc}>{tool.desc}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={14} color={colors.textSecondary} style={{ opacity: 0.5 }} />
+              <Ionicons
+                name="chevron-forward"
+                size={14}
+                color={colors.textSecondary}
+                style={{ opacity: 0.5 }}
+              />
             </TouchableOpacity>
           ))}
         </View>
@@ -1388,7 +1508,9 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       width: 160,
       height: 160,
       borderRadius: 80,
-      backgroundColor: isDark ? 'rgba(176,154,224,0.12)' : 'rgba(201,184,245,0.4)',
+      backgroundColor: isDark
+        ? 'rgba(176,154,224,0.12)'
+        : 'rgba(201,184,245,0.4)',
       top: -40,
       right: -30,
     },
@@ -1397,7 +1519,9 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       width: 100,
       height: 100,
       borderRadius: 50,
-      backgroundColor: isDark ? 'rgba(176,154,224,0.07)' : 'rgba(201,184,245,0.25)',
+      backgroundColor: isDark
+        ? 'rgba(176,154,224,0.07)'
+        : 'rgba(201,184,245,0.25)',
       bottom: -20,
       left: 40,
     },
@@ -1405,7 +1529,9 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
-      backgroundColor: isDark ? 'rgba(176,154,224,0.15)' : 'rgba(75,45,163,0.08)',
+      backgroundColor: isDark
+        ? 'rgba(176,154,224,0.15)'
+        : 'rgba(75,45,163,0.08)',
       paddingHorizontal: 8,
       paddingVertical: 4,
       borderRadius: 20,
@@ -1916,4 +2042,3 @@ const createBillStyles = (colors: any, isDark: boolean) =>
 function setShowAppSettings(arg0: boolean) {
   throw new Error('Function not implemented.');
 }
-

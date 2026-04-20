@@ -27,7 +27,13 @@ import { useAuth } from '../contexts/AuthContext';
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type FeedStackParamList = {
-  FeedMain: { filterCategory?: string; filterAccount?: string; filterSortOrder?: string } | undefined;
+  FeedMain:
+    | {
+        filterCategory?: string;
+        filterAccount?: string;
+        filterSortOrder?: string;
+      }
+    | undefined;
   TransactionDetail: { id: string };
 };
 
@@ -69,7 +75,9 @@ export type RootStackParamList = {
 const FeedStack = createNativeStackNavigator<FeedStackParamList>();
 function FeedNavigator() {
   return (
-    <FeedStack.Navigator screenOptions={{ headerShown: false, freezeOnBlur: true }}>
+    <FeedStack.Navigator
+      screenOptions={{ headerShown: false, freezeOnBlur: true }}
+    >
       <FeedStack.Screen name="FeedMain" component={FeedScreen} />
       <FeedStack.Screen
         name="TransactionDetail"
@@ -82,7 +90,9 @@ function FeedNavigator() {
 const MoreStack = createNativeStackNavigator<MoreStackParamList>();
 function MoreNavigator() {
   return (
-    <MoreStack.Navigator screenOptions={{ headerShown: false, freezeOnBlur: true }}>
+    <MoreStack.Navigator
+      screenOptions={{ headerShown: false, freezeOnBlur: true }}
+    >
       <MoreStack.Screen name="MoreMain" component={MoreScreen} />
       <MoreStack.Screen name="AccountDetail" component={AccountDetailScreen} />
     </MoreStack.Navigator>
@@ -148,7 +158,12 @@ export default function RootNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!hasOnboarded ? (
           <Stack.Screen name="Onboarding">
-            {(props) => <OnboardingScreen {...props} onComplete={() => setHasOnboarded(true)} />}
+            {(props) => (
+              <OnboardingScreen
+                {...props}
+                onComplete={() => setHasOnboarded(true)}
+              />
+            )}
           </Stack.Screen>
         ) : !session ? (
           // ── Unauthenticated ───────────────────────────────────────────────

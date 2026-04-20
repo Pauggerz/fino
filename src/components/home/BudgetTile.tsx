@@ -10,7 +10,7 @@ import RAnim, {
 import { CategoryIcon } from '@/components/CategoryIcon';
 import type { CategoryWithSpend } from '@/hooks/useCategories';
 import type { ThemeColors } from '@/constants/theme';
-import { fmtPeso } from '@/utils/format';
+import fmtPeso from '@/utils/format';
 import { WaveFill } from './WaveFill';
 
 type BudgetTileProps = {
@@ -23,8 +23,16 @@ type BudgetTileProps = {
   onPress: () => void;
 };
 
-export const BudgetTile = React.memo(
-  ({ cat, index, isPrivacyMode, isDark, colors, styles, onPress }: BudgetTileProps) => {
+const BudgetTile = React.memo(
+  ({
+    cat,
+    index,
+    isPrivacyMode,
+    isDark,
+    colors,
+    styles,
+    onPress,
+  }: BudgetTileProps) => {
     const opacity = useSharedValue(0);
     const transY = useSharedValue(16);
     const animStyle = useAnimatedStyle(() => ({
@@ -34,9 +42,11 @@ export const BudgetTile = React.memo(
 
     useEffect(() => {
       opacity.value = withDelay(index * 60, withTiming(1, { duration: 280 }));
-      transY.value = withDelay(index * 60, withSpring(0, { damping: 18, stiffness: 200 }));
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+      transY.value = withDelay(
+        index * 60,
+        withSpring(0, { damping: 18, stiffness: 200 })
+      );
+    }, [index, opacity, transY]);
 
     const bgColor = cat.tile_bg_colour ?? colors.catTileEmptyBg;
     const solidColor = cat.text_colour ?? colors.primary;
@@ -64,7 +74,12 @@ export const BudgetTile = React.memo(
                   <Text style={styles.catOverBadgeText}>Over!</Text>
                 </View>
               ) : (
-                <View style={[styles.catPctPill, { backgroundColor: `${solidColor}18` }]}>
+                <View
+                  style={[
+                    styles.catPctPill,
+                    { backgroundColor: `${solidColor}18` },
+                  ]}
+                >
                   <Text style={[styles.catPctBadge, { color: solidColor }]}>
                     {Math.round(cat.pct * 100)}%
                   </Text>
@@ -72,11 +87,21 @@ export const BudgetTile = React.memo(
               )}
             </View>
 
-            <View style={[styles.catIconCircle, { backgroundColor: `${solidColor}22` }]}>
-              <CategoryIcon categoryKey={cat.name.toLowerCase()} color={solidColor} />
+            <View
+              style={[
+                styles.catIconCircle,
+                { backgroundColor: `${solidColor}22` },
+              ]}
+            >
+              <CategoryIcon
+                categoryKey={cat.name.toLowerCase()}
+                color={solidColor}
+              />
             </View>
 
-            <Text style={[styles.catName, { color: solidColor }]}>{cat.name}</Text>
+            <Text style={[styles.catName, { color: solidColor }]}>
+              {cat.name}
+            </Text>
             <Text style={[styles.catAmt, { color: solidColor }]}>
               {fmtPeso(cat.spent, isPrivacyMode)}
             </Text>
@@ -93,5 +118,7 @@ export const BudgetTile = React.memo(
     prev.isPrivacyMode === next.isPrivacyMode &&
     prev.isDark === next.isDark &&
     prev.colors === next.colors &&
-    prev.styles === next.styles,
+    prev.styles === next.styles
 );
+
+export default BudgetTile;

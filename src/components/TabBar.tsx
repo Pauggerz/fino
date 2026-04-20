@@ -21,39 +21,54 @@ interface TabBarProps {
 }
 
 const TAB_ICONS: Record<TabRoute, [string, string]> = {
-  home:  ['home-outline',      'home'],
-  feed:  ['receipt-outline',   'receipt'],
+  home: ['home-outline', 'home'],
+  feed: ['receipt-outline', 'receipt'],
   stats: ['bar-chart-outline', 'bar-chart'],
-  more:  ['grid-outline',      'grid'],
+  more: ['grid-outline', 'grid'],
 };
 
 const TAB_LABELS: Record<TabRoute, string> = {
-  home:  'Home',
-  feed:  'Txns',
+  home: 'Home',
+  feed: 'Txns',
   stats: 'Insights',
-  more:  'Tools',
+  more: 'Tools',
 };
 
-export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProps) {
+export default function TabBar({
+  activeTab,
+  onTabPress,
+  onFabPress,
+}: TabBarProps) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const fabScale = useRef(new Animated.Value(1)).current;
 
   // Optimistic active tab: updates instantly on press, reconciles with navigation after
   const [visualActiveTab, setVisualActiveTab] = useState<TabRoute>(activeTab);
-  useEffect(() => { setVisualActiveTab(activeTab); }, [activeTab]);
+  useEffect(() => {
+    setVisualActiveTab(activeTab);
+  }, [activeTab]);
 
   const handleFabPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     Animated.sequence([
-      Animated.timing(fabScale, { toValue: 0.86, duration: 70, useNativeDriver: true }),
-      Animated.spring(fabScale, { toValue: 1, friction: 4, tension: 240, useNativeDriver: true }),
+      Animated.timing(fabScale, {
+        toValue: 0.86,
+        duration: 70,
+        useNativeDriver: true,
+      }),
+      Animated.spring(fabScale, {
+        toValue: 1,
+        friction: 4,
+        tension: 240,
+        useNativeDriver: true,
+      }),
     ]).start();
     onFabPress();
   };
 
-  const pillBg   = isDark ? '#1C1C1E' : '#FFFFFF';
-  const fabBg    = isDark ? '#FFFFFF' : '#1C1C1E';
+  const pillBg = isDark ? '#1C1C1E' : '#FFFFFF';
+  const fabBg = isDark ? '#FFFFFF' : '#1C1C1E';
   const fabColor = isDark ? '#1C1C1E' : '#FFFFFF';
 
   const renderTab = (id: TabRoute) => {
@@ -64,9 +79,13 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
         key={id}
         style={styles.tabItem}
         onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+            () => {}
+          );
           setVisualActiveTab(id);
-          startTransition(() => { onTabPress(id); });
+          startTransition(() => {
+            onTabPress(id);
+          });
         }}
         activeOpacity={0.7}
         accessibilityRole="tab"
@@ -76,17 +95,27 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
         <Ionicons
           name={(isActive ? filled : outline) as any}
           size={22}
-          color={isActive ? colors.primary : (isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.35)')}
-        />
-        <Text style={[
-          styles.tabLabel,
-          {
-            color: isActive
+          color={
+            isActive
               ? colors.primary
-              : (isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.35)'),
-            fontFamily: isActive ? 'Inter_600SemiBold' : 'Inter_400Regular',
-          },
-        ]}>
+              : isDark
+                ? 'rgba(255,255,255,0.45)'
+                : 'rgba(0,0,0,0.35)'
+          }
+        />
+        <Text
+          style={[
+            styles.tabLabel,
+            {
+              color: isActive
+                ? colors.primary
+                : isDark
+                  ? 'rgba(255,255,255,0.45)'
+                  : 'rgba(0,0,0,0.35)',
+              fontFamily: isActive ? 'Inter_600SemiBold' : 'Inter_400Regular',
+            },
+          ]}
+        >
           {TAB_LABELS[id]}
         </Text>
       </TouchableOpacity>
@@ -101,13 +130,15 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
       pointerEvents="box-none"
     >
       {/* ── Floating pill ── */}
-      <View style={[
-        styles.pill,
-        {
-          backgroundColor: pillBg,
-          shadowColor: isDark ? '#000' : '#1C1C1E',
-        },
-      ]}>
+      <View
+        style={[
+          styles.pill,
+          {
+            backgroundColor: pillBg,
+            shadowColor: isDark ? '#000' : '#1C1C1E',
+          },
+        ]}
+      >
         {renderTab('home')}
         {renderTab('feed')}
         {renderTab('stats')}
@@ -115,13 +146,15 @@ export default function TabBar({ activeTab, onTabPress, onFabPress }: TabBarProp
       </View>
 
       {/* ── FAB circle ── */}
-      <Animated.View style={[
-        styles.fabWrap,
-        {
-          shadowColor: isDark ? '#fff' : '#000',
-          transform: [{ scale: fabScale }],
-        },
-      ]}>
+      <Animated.View
+        style={[
+          styles.fabWrap,
+          {
+            shadowColor: isDark ? '#fff' : '#000',
+            transform: [{ scale: fabScale }],
+          },
+        ]}
+      >
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={handleFabPress}

@@ -47,8 +47,20 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     }
 
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    ).toISOString();
+    const endOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    ).toISOString();
 
     const { data, error } = await supabase
       .from('transactions')
@@ -66,7 +78,10 @@ export const useMonthlyTotals = (): MonthlyTotals => {
         .reduce((s, t) => s + t.amount, 0);
 
       // Save to cache
-      AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ totalIncome: baseIncome, totalExpense: baseExpense })).catch((e) => {
+      AsyncStorage.setItem(
+        CACHE_KEY,
+        JSON.stringify({ totalIncome: baseIncome, totalExpense: baseExpense })
+      ).catch((e) => {
         if (__DEV__) console.warn('[useMonthlyTotals] cache write failed:', e);
       });
 
@@ -111,5 +126,12 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     fetchTotals();
   }, [fetchTotals]);
 
-  return { totalIncome, totalExpense, sparklineData, loading, error, refetch: fetchTotals };
+  return {
+    totalIncome,
+    totalExpense,
+    sparklineData,
+    loading,
+    error,
+    refetch: fetchTotals,
+  };
 };
