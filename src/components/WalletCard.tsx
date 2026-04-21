@@ -123,8 +123,18 @@ const BRAND_CFGS: Record<string, CardCfg> = {
   },
 };
 
+// Canonical brand name lookup (case-insensitive)
+const BRAND_KEY_MAP: Record<string, string> = Object.fromEntries(
+  Object.keys(BRAND_CFGS).map(k => [k.toLowerCase(), k])
+);
+
+export function getCanonicalBrandName(name: string): string | null {
+  return BRAND_KEY_MAP[name.trim().toLowerCase()] ?? null;
+}
+
 export function getCfg(acc: Account): CardCfg {
-  if (BRAND_CFGS[acc.name]) return BRAND_CFGS[acc.name];
+  const canonical = getCanonicalBrandName(acc.name);
+  if (canonical) return BRAND_CFGS[canonical];
   const c = acc.brand_colour || '#2a2a3e';
   return {
     grad: [c, c, c],

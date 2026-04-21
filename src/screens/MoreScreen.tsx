@@ -28,6 +28,7 @@ import {
 import { supabase } from '@/services/supabase';
 import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
+import { getCanonicalBrandName } from '@/components/WalletCard';
 import { Skeleton } from '@/components/Skeleton';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Global Theme Context
@@ -131,11 +132,13 @@ export function AddAccountModal({
     }
 
     const startBal = parseFloat(balance) || 0;
-    const letter = name.trim()[0].toUpperCase();
+    const canonical = getCanonicalBrandName(name.trim());
+    const savedName = canonical ?? name.trim();
+    const letter = savedName[0].toUpperCase();
 
     await supabase.from('accounts').insert({
       user_id: user.id,
-      name: name.trim(),
+      name: savedName,
       type: 'manual',
       brand_colour: selectedColor,
       letter_avatar: letter,
@@ -197,6 +200,12 @@ export function AddAccountModal({
               <Text style={addAccStyles.previewName}>
                 {name.trim() || 'Account Name'}
               </Text>
+              {getCanonicalBrandName(name.trim()) && (
+                <View style={addAccStyles.brandBadge}>
+                  <Ionicons name="checkmark-circle" size={13} color="#2d6a4f" />
+                  <Text style={addAccStyles.brandBadgeText}>Stylized card applied</Text>
+                </View>
+              )}
               <Text style={addAccStyles.previewBalance}>
                 ₱
                 {parseFloat(balance || '0').toLocaleString('en-PH', {
@@ -1760,6 +1769,20 @@ const createAddAccStyles = (colors: any, isDark: boolean) =>
       fontFamily: 'DMMono_500Medium',
       fontSize: 15,
       color: colors.textSecondary,
+    },
+    brandBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: '#EFF8F2',
+      borderRadius: 20,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    brandBadgeText: {
+      fontSize: 12,
+      color: '#2d6a4f',
+      fontFamily: 'Inter_500Medium',
     },
     colorRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
     colorDot: {
