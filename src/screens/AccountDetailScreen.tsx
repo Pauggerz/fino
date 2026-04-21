@@ -21,9 +21,12 @@ import { FlashList, ListRenderItem } from '@shopify/flash-list';
 import { radius, spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext';
 import type { Transaction, Account } from '@/types';
-import { supabase } from '@/services/supabase';
+import { Q } from '@nozbe/watermelondb';
+import { database } from '@/db';
+import type TransactionModel from '@/db/models/Transaction';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
+import { useAuth } from '../contexts/AuthContext';
 import { Skeleton } from '@/components/Skeleton';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import {
@@ -74,6 +77,8 @@ export default function AccountDetailScreen() {
 
   const { accounts, refetch: refetchAccounts } = useAccounts();
   const { categories } = useCategories();
+  const { user } = useAuth();
+  const userId = user?.id;
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -104,26 +109,46 @@ export default function AccountDetailScreen() {
     );
   }, [accounts, id]);
 
-  const fetchAccountTransactions = useCallback(async () => {
-    if (!selectedAccount?.id) {
+  useEffect(() => {
+    if (!selectedAccount?.id || !userId) {
       setTransactions([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('account_id', selectedAccount.id)
-      .order('date', { ascending: false });
-
-    if (!error && data) setTransactions(data as Transaction[]);
-    setLoading(false);
-  }, [selectedAccount?.id]);
-
-  useEffect(() => {
-    fetchAccountTransactions();
-  }, [fetchAccountTransactions]);
+    const query = database
+      .get<TransactionModel>('transactions')
+      .query(
+        Q.where('user_id', userId),
+        Q.where('account_id', selectedAccount.id),
+        Q.sortBy('date', Q.desc),
+      );
+    const sub = query.observe().subscribe((records) => {
+      setTransactions(
+        records.map((r) => ({
+          id: r.id,
+          user_id: r.userId,
+          account_id: r.accountId,
+          amount: r.amount,
+          type: r.type as Transaction['type'],
+          category: r.category ?? null,
+          merchant_name: r.merchantName ?? null,
+          display_name: r.displayName ?? null,
+          transaction_note: r.transactionNote ?? null,
+          signal_source: (r.signalSource ?? null) as Transaction['signal_source'],
+          date: r.date,
+          receipt_url: r.receiptUrl ?? null,
+          account_deleted: r.accountDeleted,
+          merchant_confidence: r.merchantConfidence ?? null,
+          amount_confidence: r.amountConfidence ?? null,
+          date_confidence: r.dateConfidence ?? null,
+          created_at: r.serverCreatedAt ?? new Date(r.updatedAt).toISOString(),
+        })),
+      );
+      setLoading(false);
+    });
+    return () => sub.unsubscribe();
+  }, [selectedAccount?.id, userId]);
 
   // ── Derived data ──
   const config = {
@@ -790,7 +815,7 @@ export default function AccountDetailScreen() {
       <TransferModal
         visible={showTransferModal}
         onClose={() => setShowTransferModal(false)}
-        onSuccess={fetchAccountTransactions}
+        onSuccess={() => {}}
         sourceAccount={selectedAccount}
         otherAccounts={otherAccounts}
         colors={colors}
@@ -800,7 +825,7 @@ export default function AccountDetailScreen() {
       <AdjustBalanceSheet
         visible={adjustSheetVisible}
         onClose={() => setAdjustSheetVisible(false)}
-        onSuccess={fetchAccountTransactions}
+        onSuccess={() => {}}
         account={selectedAccount}
         colors={colors}
         isDark={isDark}

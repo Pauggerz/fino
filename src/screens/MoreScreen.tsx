@@ -26,12 +26,24 @@ import {
   ACCOUNT_AVATAR_OVERRIDE,
 } from '@/constants/accountLogos';
 import { supabase } from '@/services/supabase';
+import { Q } from '@nozbe/watermelondb';
+import { database } from '@/db';
+import type BillReminderModel from '@/db/models/BillReminder';
+import type CategoryModel from '@/db/models/Category';
+import {
+  createAccount,
+  createBillReminder,
+  updateBillReminder,
+  deleteBillReminder,
+  updateCategory,
+} from '@/services/localMutations';
 import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Skeleton } from '@/components/Skeleton';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Global Theme Context
 import { useSync } from '@/contexts/SyncContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -133,17 +145,14 @@ export function AddAccountModal({
     const startBal = parseFloat(balance) || 0;
     const letter = name.trim()[0].toUpperCase();
 
-    await supabase.from('accounts').insert({
-      user_id: user.id,
+    await createAccount({
+      userId: user.id,
       name: name.trim(),
       type: 'manual',
-      brand_colour: selectedColor,
-      letter_avatar: letter,
-      balance: startBal,
-      starting_balance: startBal,
-      is_active: true,
-      is_deletable: true,
-      sort_order: 99,
+      brandColour: selectedColor,
+      letterAvatar: letter,
+      startingBalance: startBal,
+      sortOrder: 99,
     });
 
     setSaving(false);
@@ -325,10 +334,7 @@ function BillQuickViewModal({
   const isOverdue = diffDays < 0;
 
   const handleMarkPaid = async () => {
-    await supabase
-      .from('bill_reminders')
-      .update({ is_paid: true })
-      .eq('id', bill.id);
+    await updateBillReminder(bill.id, { isPaid: true });
     onPaid(bill.id);
     onClose();
   };
@@ -431,6 +437,8 @@ function BudgetSettingsModal({
     () => createBudgetStyles(colors, isDark),
     [colors, isDark]
   );
+  const { user } = useAuth();
+  const userId = user?.id;
 
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [edits, setEdits] = useState<Record<string, string>>({});
@@ -439,17 +447,32 @@ function BudgetSettingsModal({
 
   useEffect(() => {
     if (!visible) return;
-    const fetch = async () => {
+    const run = async () => {
+      if (!userId) {
+        setCategories([]);
+        setEdits({});
+        setLoading(false);
+        return;
+      }
       setLoading(true);
-      const { data } = await supabase
-        .from('categories')
-        .select('id, name, emoji, budget_limit, text_colour, tile_bg_colour')
-        .eq('is_active', true)
-        .order('sort_order');
-
-      const expenseOnly = (data ?? []).filter(
-        (cat) => !INCOME_KEYS.has((cat.emoji ?? '').toLowerCase())
-      );
+      const records = await database
+        .get<CategoryModel>('categories')
+        .query(
+          Q.where('user_id', userId),
+          Q.where('is_active', true),
+          Q.sortBy('sort_order', Q.asc),
+        )
+        .fetch();
+      const expenseOnly = records
+        .filter((cat) => !INCOME_KEYS.has((cat.emoji ?? '').toLowerCase()))
+        .map((cat) => ({
+          id: cat.id,
+          name: cat.name,
+          emoji: cat.emoji ?? null,
+          budget_limit: cat.budgetLimit ?? null,
+          text_colour: cat.textColour ?? null,
+          tile_bg_colour: cat.tileBgColour ?? null,
+        })) as BudgetCategory[];
       setCategories(expenseOnly);
       const initial: Record<string, string> = {};
       expenseOnly.forEach((c) => {
@@ -458,18 +481,17 @@ function BudgetSettingsModal({
       setEdits(initial);
       setLoading(false);
     };
-    fetch();
-  }, [visible]);
+    run();
+  }, [visible, userId]);
 
   const handleSave = async () => {
     setSaving(true);
     await Promise.all(
       categories.map((cat) =>
-        supabase
-          .from('categories')
-          .update({ budget_limit: parseFloat(edits[cat.id] || '0') || null })
-          .eq('id', cat.id)
-      )
+        updateCategory(cat.id, {
+          budgetLimit: parseFloat(edits[cat.id] || '0') || undefined,
+        }),
+      ),
     );
     setSaving(false);
     onClose();
@@ -658,6 +680,8 @@ function BillRemindersModal({
     () => createStepperStyles(colors, isDark),
     [colors, isDark]
   );
+  const { user } = useAuth();
+  const userId = user?.id;
 
   const [bills, setBills] = useState<BillReminder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -673,34 +697,36 @@ function BillRemindersModal({
   const BILLS_CACHE_KEY = 'FINO_BILLS_CACHE';
 
   const fetchBills = useCallback(async () => {
-    // 1. Serve from cache immediately — no spinner for returning users
-    try {
-      const cached = await AsyncStorage.getItem(BILLS_CACHE_KEY);
-      if (cached) {
-        setBills(JSON.parse(cached) as BillReminder[]);
-        setLoading(false);
-      }
-    } catch (err) {
-      if (__DEV__) console.warn('[MoreScreen] bills cache read failed:', err);
+    if (!userId) {
+      setBills([]);
+      setLoading(false);
+      return;
     }
-
-    // 2. Background revalidation from Supabase
-    const { data } = await supabase
-      .from('bill_reminders')
-      .select('*')
-      .eq('is_paid', false)
-      .order('due_date');
-
-    const fresh = (data as BillReminder[]) ?? [];
+    const records = await database
+      .get<BillReminderModel>('bill_reminders')
+      .query(
+        Q.where('user_id', userId),
+        Q.where('is_paid', false),
+        Q.sortBy('due_date', Q.asc),
+      )
+      .fetch();
+    const fresh: BillReminder[] = records.map((b) => ({
+      id: b.id,
+      user_id: b.userId,
+      title: b.title,
+      amount: b.amount ?? null,
+      merchant_name: b.merchantName ?? null,
+      due_date: b.dueDate,
+      is_recurring: b.isRecurring,
+      is_paid: b.isPaid,
+      created_at: b.serverCreatedAt ?? new Date(b.updatedAt).toISOString(),
+    }));
     setBills(fresh);
-    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(fresh)).catch(
-      (err) => {
-        if (__DEV__)
-          console.warn('[MoreScreen] bills cache write failed:', err);
-      }
-    );
+    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(fresh)).catch((err) => {
+      if (__DEV__) console.warn('[MoreScreen] bills cache write failed:', err);
+    });
     setLoading(false);
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (visible) fetchBills();
@@ -746,22 +772,18 @@ function BillRemindersModal({
     setSaving(false);
     setShowAdd(false);
 
-    // Background insert, then refetch to get the real row with correct ID/sort
-    const { error } = await supabase.from('bill_reminders').insert({
-      user_id: user.id,
-      title: optimisticBill.title,
-      amount: optimisticBill.amount,
-      due_date: dueDateISO,
-      is_recurring: newRecurring,
-      is_paid: false,
-    });
-
-    if (error) {
-      updateBillsCache(snapshot);
-      Alert.alert('Sync failed', error.message);
-    } else {
-      // Silent background refetch to get the canonical sorted list
+    try {
+      await createBillReminder({
+        userId: user.id,
+        title: optimisticBill.title,
+        amount: optimisticBill.amount ?? undefined,
+        dueDate: dueDateISO,
+        isRecurring: newRecurring,
+      });
       fetchBills();
+    } catch (err) {
+      updateBillsCache(snapshot);
+      Alert.alert('Save failed', err instanceof Error ? err.message : 'Please try again.');
     }
   };
 
@@ -776,15 +798,13 @@ function BillRemindersModal({
   };
 
   const handleMarkPaid = async (id: string) => {
-    // Optimistically remove from the unpaid list
     const snapshot = bills;
     updateBillsCache(bills.filter((b) => b.id !== id));
-
-    const { error } = await supabase
-      .from('bill_reminders')
-      .update({ is_paid: true })
-      .eq('id', id);
-    if (error) updateBillsCache(snapshot);
+    try {
+      await updateBillReminder(id, { isPaid: true });
+    } catch {
+      updateBillsCache(snapshot);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -796,12 +816,11 @@ function BillRemindersModal({
         onPress: async () => {
           const snapshot = bills;
           updateBillsCache(bills.filter((b) => b.id !== id));
-
-          const { error } = await supabase
-            .from('bill_reminders')
-            .delete()
-            .eq('id', id);
-          if (error) updateBillsCache(snapshot);
+          try {
+            await deleteBillReminder(id);
+          } catch {
+            updateBillsCache(snapshot);
+          }
         },
       },
     ]);

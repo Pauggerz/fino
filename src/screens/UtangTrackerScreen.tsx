@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Q } from '@nozbe/watermelondb';
 import {
   View,
   Text,
@@ -17,8 +18,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { useCachedQuery } from '@/hooks/useCachedQuery';
+import { database } from '@/db';
+import type DebtModel from '@/db/models/Debt';
+import {
+  createDebt,
+  updateDebt as localUpdateDebt,
+  deleteDebt as localDeleteDebt,
+} from '@/services/localMutations';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,18 +73,44 @@ const fmtDate = (iso: string) => {
 
 export default function UtangTrackerScreen() {
   const { colors, isDark } = useTheme();
+  const { user } = useAuth();
+  const userId = user?.id;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
-  const {
-    data: debts,
-    loading,
-    mutate,
-    refetch,
-  } = useCachedQuery<Debt>('FINO_DEBTS_CACHE', () =>
-    supabase.from('debts').select('*').order('created_at', { ascending: false })
-  );
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!userId) {
+      setDebts([]);
+      setLoading(false);
+      return;
+    }
+    const query = database
+      .get<DebtModel>('debts')
+      .query(Q.where('user_id', userId), Q.sortBy('updated_at', Q.desc));
+    const sub = query.observe().subscribe((records) => {
+      const raws = records.map((r) => {
+        const raw = r._raw as Record<string, unknown>;
+        return {
+          id: r.id,
+          debtor_name: r.debtorName,
+          description: r.description ?? null,
+          total_amount: r.totalAmount,
+          amount_paid: r.amountPaid,
+          due_date: r.dueDate ?? null,
+          created_at: (raw.server_created_at as string) ?? '',
+        } as Debt;
+      });
+      setDebts(raws);
+      setLoading(false);
+    });
+    return () => sub.unsubscribe();
+  }, [userId]);
+
+  const refetch = async () => {};
 
   const [filter, setFilter] = useState<FilterTab>('all');
 
@@ -126,20 +160,6 @@ export default function UtangTrackerScreen() {
       return;
     }
 
-    const optimisticId = `optimistic-${Date.now()}`;
-    const optimistic: Debt = {
-      id: optimisticId,
-      debtor_name: name,
-      description: addForm.description.trim() || null,
-      total_amount: amount,
-      amount_paid: 0,
-      due_date: addForm.due_date.trim() || null,
-      created_at: new Date().toISOString(),
-    };
-
-    // 1. Instantly show the new debt in the list
-    const snapshot = debts;
-    await mutate([optimistic, ...debts]);
     setShowAdd(false);
     setAddForm({
       debtor_name: '',
@@ -148,32 +168,21 @@ export default function UtangTrackerScreen() {
       due_date: '',
     });
 
-    // 2. Persist to Supabase in background
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const { data: inserted, error } = await supabase
-      .from('debts')
-      .insert({
-        user_id: user!.id,
-        debtor_name: name,
-        description: optimistic.description,
-        total_amount: amount,
-        amount_paid: 0,
-        due_date: optimistic.due_date,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      // Rollback optimistic entry
-      await mutate(snapshot);
-      Alert.alert('Sync failed', error.message);
-      return;
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not signed in');
+      await createDebt({
+        userId: user.id,
+        debtorName: name,
+        description: addForm.description.trim() || undefined,
+        totalAmount: amount,
+        dueDate: addForm.due_date.trim() || undefined,
+      });
+    } catch (err) {
+      Alert.alert('Save failed', err instanceof Error ? err.message : 'Please try again.');
     }
-
-    // 3. Swap optimistic placeholder with the real DB row
-    await mutate([inserted as Debt, ...snapshot]);
   };
 
   // ── Record payment (optimistic) ───────────────────────────────────────────────
@@ -192,33 +201,20 @@ export default function UtangTrackerScreen() {
     }
 
     const newPaid = payTarget.amount_paid + amount;
-    const snapshot = debts;
+    const targetId = payTarget.id;
 
-    // 1. Optimistically update list & close modal
-    const updatedDebts = debts.map((d) =>
-      d.id === payTarget.id ? { ...d, amount_paid: newPaid } : d
-    );
-    await mutate(updatedDebts);
     setPayTarget(null);
     setPayAmount('');
     if (detail)
       setDetail((prev) => (prev ? { ...prev, amount_paid: newPaid } : null));
 
-    // 2. Persist to Supabase in background
     setPayLoading(true);
-    const { error } = await supabase
-      .from('debts')
-      .update({
-        amount_paid: newPaid,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', payTarget.id);
-    setPayLoading(false);
-
-    if (error) {
-      // Rollback
-      await mutate(snapshot);
-      Alert.alert('Sync failed', error.message);
+    try {
+      await localUpdateDebt(targetId, { amountPaid: newPaid });
+    } catch (err) {
+      Alert.alert('Save failed', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setPayLoading(false);
     }
   };
 
@@ -230,19 +226,11 @@ export default function UtangTrackerScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          const snapshot = debts;
-          // 1. Remove from UI immediately
           setDetail(null);
-          await mutate(debts.filter((d) => d.id !== debt.id));
-
-          // 2. Delete from Supabase in background
-          const { error } = await supabase
-            .from('debts')
-            .delete()
-            .eq('id', debt.id);
-          if (error) {
-            await mutate(snapshot);
-            Alert.alert('Sync failed', error.message);
+          try {
+            await localDeleteDebt(debt.id);
+          } catch (err) {
+            Alert.alert('Delete failed', err instanceof Error ? err.message : 'Please try again.');
           }
         },
       },

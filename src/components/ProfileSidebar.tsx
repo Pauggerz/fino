@@ -31,8 +31,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useAccounts } from '../hooks/useAccounts';
 import { supabase } from '../services/supabase';
+import { Q } from '@nozbe/watermelondb';
+import { database } from '../db';
+import type CategoryModel from '../db/models/Category';
+import type BillReminderModel from '../db/models/BillReminder';
 import {
   ACCOUNT_LOGOS,
   ACCOUNT_AVATAR_OVERRIDE,
@@ -142,6 +147,8 @@ function ListRow({
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function ProfileSidebar({ visible, onClose }: Props) {
   const { colors, isDark, mode, setMode, accent, setAccent } = useTheme();
+  const { user } = useAuth();
+  const userId = user?.id;
   const { accounts, loading, refetch: refetchAccounts } = useAccounts();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
@@ -209,31 +216,49 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
 
   // ── Fetch budget categories ──────────────────────────────────────────────
   useEffect(() => {
-    if (!budgetExpanded) return;
+    if (!budgetExpanded || !userId) return;
     setLoadingBudget(true);
-    supabase
-      .from('categories')
-      .select('id, name, emoji, budget_limit, text_colour, tile_bg_colour')
-      .order('name')
-      .then(({ data }) => {
-        setBudgetCategories((data as any[]) ?? []);
+    database
+      .get<CategoryModel>('categories')
+      .query(Q.where('user_id', userId), Q.sortBy('name', Q.asc))
+      .fetch()
+      .then((records) => {
+        setBudgetCategories(
+          records.map((c) => ({
+            id: c.id,
+            name: c.name,
+            emoji: c.emoji ?? null,
+            budget_limit: c.budgetLimit ?? null,
+            text_colour: c.textColour ?? null,
+            tile_bg_colour: c.tileBgColour ?? null,
+          })),
+        );
         setLoadingBudget(false);
       });
-  }, [budgetExpanded]);
+  }, [budgetExpanded, userId]);
 
   // ── Fetch bills ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!billsExpanded) return;
+    if (!billsExpanded || !userId) return;
     setLoadingBills(true);
-    supabase
-      .from('bill_reminders')
-      .select('id, title, amount, due_date, is_paid, is_recurring')
-      .order('due_date')
-      .then(({ data }) => {
-        setBills((data as any[]) ?? []);
+    database
+      .get<BillReminderModel>('bill_reminders')
+      .query(Q.where('user_id', userId), Q.sortBy('due_date', Q.asc))
+      .fetch()
+      .then((records) => {
+        setBills(
+          records.map((b) => ({
+            id: b.id,
+            title: b.title,
+            amount: b.amount ?? null,
+            due_date: b.dueDate,
+            is_paid: b.isPaid,
+            is_recurring: b.isRecurring,
+          })),
+        );
         setLoadingBills(false);
       });
-  }, [billsExpanded]);
+  }, [billsExpanded, userId]);
 
   // ── Animation lifecycle ───────────────────────────────────────────────────
   useEffect(() => {

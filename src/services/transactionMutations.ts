@@ -1,91 +1,50 @@
-import { supabase } from '@/services/supabase';
 import type { Account } from '@/types';
+import {
+  saveAdjustment as localSaveAdjustment,
+  saveTransfer as localSaveTransfer,
+  updateAccount,
+} from './localMutations';
 
-export async function saveAdjustment({
-  account,
-  currentBalance,
-  newBalance,
-  note,
-}: {
+/**
+ * Thin compatibility layer — preserves the original API surface while routing
+ * writes through WatermelonDB. Delete once every caller imports from
+ * `@/services/localMutations` directly.
+ */
+
+export async function saveAdjustment(params: {
   account: Account;
   currentBalance: number;
   newBalance: number;
   note: string;
 }): Promise<void> {
-  const diff = newBalance - currentBalance;
-  if (diff === 0) return;
-
-  const today = new Date().toISOString().split('T')[0];
-
-  await supabase.from('transactions').insert({
-    account_id: account.id,
-    user_id: account.user_id,
-    amount: Math.abs(diff),
-    type: diff > 0 ? 'income' : 'expense',
-    category: 'adjustment',
-    merchant_name: null,
-    display_name: note || 'Balance Reconciliation',
-    transaction_note: note || null,
-    date: today,
-    receipt_url: null,
-    account_deleted: false,
+  await localSaveAdjustment({
+    userId: params.account.user_id,
+    accountId: params.account.id,
+    currentBalance: params.currentBalance,
+    newBalance: params.newBalance,
+    note: params.note,
   });
-
-  await supabase
-    .from('accounts')
-    .update({ last_reconciled_at: new Date().toISOString() })
-    .eq('id', account.id);
 }
 
-export async function saveTransfer({
-  sourceAccount,
-  destAccount,
-  amount,
-}: {
+export async function saveTransfer(params: {
   sourceAccount: Account;
   destAccount: Account;
   amount: number;
 }): Promise<void> {
-  const today = new Date().toISOString().split('T')[0];
-
-  await supabase.from('transactions').insert([
-    {
-      account_id: sourceAccount.id,
-      user_id: sourceAccount.user_id,
-      amount,
-      type: 'expense',
-      category: 'transfer',
-      merchant_name: null,
-      display_name: `Transfer to ${destAccount.name}`,
-      transaction_note: null,
-      date: today,
-      receipt_url: null,
-      account_deleted: false,
-    },
-    {
-      account_id: destAccount.id,
-      user_id: sourceAccount.user_id,
-      amount,
-      type: 'income',
-      category: 'transfer',
-      merchant_name: null,
-      display_name: `Transfer from ${sourceAccount.name}`,
-      transaction_note: null,
-      date: today,
-      receipt_url: null,
-      account_deleted: false,
-    },
-  ]);
+  await localSaveTransfer({
+    userId: params.sourceAccount.user_id,
+    sourceAccountId: params.sourceAccount.id,
+    sourceAccountName: params.sourceAccount.name,
+    destAccountId: params.destAccount.id,
+    destAccountName: params.destAccount.name,
+    amount: params.amount,
+  });
 }
 
-export async function saveEditAccount({
-  accountId,
-  name,
-  type,
-}: {
+export async function saveEditAccount(params: {
   accountId: string;
   name: string;
   type: string;
 }): Promise<void> {
-  await supabase.from('accounts').update({ name, type }).eq('id', accountId);
+  await updateAccount(params.accountId, { name: params.name, type: params.type });
 }

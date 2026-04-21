@@ -22,7 +22,10 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Skeleton } from '@/components/Skeleton';
-import { supabase } from '@/services/supabase';
+import { deleteTransaction, updateTransaction } from '@/services/localMutations';
+import { database } from '@/db';
+import type TransactionModel from '@/db/models/Transaction';
+import type AccountModel from '@/db/models/Account';
 import { useAccounts } from '@/hooks/useAccounts';
 import {
   ACCOUNT_LOGOS,
@@ -212,22 +215,44 @@ export default function TransactionDetailScreen() {
   const fetchTx = useCallback(async () => {
     if (!transactionId) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*, accounts(name, brand_colour)')
-      .eq('id', transactionId)
-      .single();
-
-    if (!error && data) {
+    try {
+      const record = await database.get<TransactionModel>('transactions').find(transactionId);
+      let accountName = '';
+      let accountColour = colors.textSecondary;
+      if (record.accountId) {
+        try {
+          const acc = await database.get<AccountModel>('accounts').find(record.accountId);
+          accountName = acc.name;
+          accountColour = acc.brandColour ?? colors.textSecondary;
+        } catch {
+          // account not found — leave defaults
+        }
+      }
       const row: TransactionWithAccount = {
-        ...data,
-        accounts: undefined,
-        account_name: (data.accounts as any)?.name ?? '',
-        account_brand_colour:
-          (data.accounts as any)?.brand_colour ?? colors.textSecondary,
+        id: record.id,
+        user_id: record.userId,
+        account_id: record.accountId,
+        amount: record.amount,
+        type: record.type as Transaction['type'],
+        category: record.category ?? null,
+        display_name: record.displayName ?? null,
+        merchant_name: record.merchantName ?? null,
+        transaction_note: record.transactionNote ?? null,
+        receipt_url: record.receiptUrl ?? null,
+        account_deleted: record.accountDeleted,
+        date: record.date,
+        merchant_confidence: record.merchantConfidence ?? null,
+        amount_confidence: record.amountConfidence ?? null,
+        date_confidence: record.dateConfidence ?? null,
+        signal_source: (record.signalSource ?? null) as Transaction['signal_source'],
+        created_at: record.serverCreatedAt ?? new Date(record.updatedAt).toISOString(),
+        account_name: accountName,
+        account_brand_colour: accountColour,
       };
       setTx(row);
       initEditState(row);
+    } catch (_err) {
+      // transaction not found
     }
     setLoading(false);
   }, [transactionId, colors]);
@@ -275,49 +300,13 @@ export default function TransactionDetailScreen() {
     if (!tx) return;
     setIsSaving(true);
 
-    await supabase
-      .from('transactions')
-      .update({
-        display_name: editedName || null,
-        transaction_note: editedNote || null,
-        account_id: editedAccountId,
-        category: editedCategory,
-        date: editedDate.toISOString(),
-      })
-      .eq('id', tx.id);
-
-    if (editedAccountId !== tx.account_id && !tx.account_deleted) {
-      const { data: oldAcct } = await supabase
-        .from('accounts')
-        .select('balance')
-        .eq('id', tx.account_id)
-        .single();
-      if (oldAcct) {
-        const restored =
-          tx.type === 'expense'
-            ? oldAcct.balance + tx.amount
-            : oldAcct.balance - tx.amount;
-        await supabase
-          .from('accounts')
-          .update({ balance: restored })
-          .eq('id', tx.account_id);
-      }
-      const { data: newAcct } = await supabase
-        .from('accounts')
-        .select('balance')
-        .eq('id', editedAccountId)
-        .single();
-      if (newAcct) {
-        const applied =
-          tx.type === 'expense'
-            ? newAcct.balance - tx.amount
-            : newAcct.balance + tx.amount;
-        await supabase
-          .from('accounts')
-          .update({ balance: applied })
-          .eq('id', editedAccountId);
-      }
-    }
+    await updateTransaction(tx.id, {
+      displayName: editedName || null,
+      transactionNote: editedNote || null,
+      accountId: editedAccountId,
+      category: editedCategory,
+      date: editedDate.toISOString().split('T')[0],
+    });
 
     const newAcctInfo = accounts.find((a) => a.id === editedAccountId);
     setTx({
@@ -344,26 +333,7 @@ export default function TransactionDetailScreen() {
   const handleDelete = async () => {
     if (!tx) return;
     setIsDeleting(true);
-    await supabase.from('transactions').delete().eq('id', tx.id);
-
-    if (!tx.account_deleted) {
-      const { data: acct } = await supabase
-        .from('accounts')
-        .select('balance')
-        .eq('id', tx.account_id)
-        .single();
-      if (acct) {
-        const restored =
-          tx.type === 'expense'
-            ? acct.balance + tx.amount
-            : acct.balance - tx.amount;
-        await supabase
-          .from('accounts')
-          .update({ balance: restored })
-          .eq('id', tx.account_id);
-      }
-    }
-
+    await deleteTransaction(tx.id);
     setIsDeleting(false);
     setIsDeleteConfirmVisible(false);
     navigation.goBack();

@@ -45,13 +45,11 @@ import {
   type AIAnalysisResult,
 } from '../services/aiCategoryMap';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { supabase } from '@/services/supabase';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { setLastSaved } from '@/services/lastSavedStore';
-import { useSync } from '@/contexts/SyncContext';
-import { generateUUID } from '@/services/syncService';
-import type { OfflineTransaction } from '@/types';
+import { createTransaction } from '@/services/localMutations';
+import type { Transaction } from '@/types';
 
 type TxType = 'exp' | 'inc';
 type Props = { route: RouteProp<RootStackParamList, 'AddTransaction'> };
@@ -106,7 +104,6 @@ export default function AddTransactionSheet({ route }: Props) {
   const analyzer = useRef(createDebouncedAnalyzer()).current;
 
   // Data Hooks
-  const { addOfflineTransaction } = useSync();
   const { accounts, loading: accountsLoading } = useAccounts();
   const { categories, loading: categoriesLoading } = useCategories();
 
@@ -482,28 +479,19 @@ export default function AddTransactionSheet({ route }: Props) {
     }
 
     setIsSaving(true);
-    const txType: OfflineTransaction['type'] =
-      type === 'exp' ? 'expense' : 'income';
+    const txType: Transaction['type'] = type === 'exp' ? 'expense' : 'income';
 
     try {
-      const txId = generateUUID();
-      const txPayload: OfflineTransaction = {
-        id: txId,
-        user_id: acc.user_id,
-        account_id: accountId,
+      const txId = await createTransaction({
+        userId: acc.user_id,
+        accountId,
         amount: parsedAmount,
         type: txType,
         category: category || null,
-        display_name: aiText || category || 'Other',
-        transaction_note: aiText || null,
-        signal_source:
-          signalSource === 'ai_description' ? 'description' : 'manual',
-        date: selectedDate.toISOString(),
-        account_deleted: false,
-      };
-
-      addOfflineTransaction(txPayload).catch((err) => {
-        console.error('[AddTransaction] failed to enqueue offline tx:', err);
+        displayName: aiText || category || 'Other',
+        transactionNote: aiText || null,
+        signalSource: signalSource === 'ai_description' ? 'description' : 'manual',
+        date: selectedDate.toISOString().split('T')[0],
       });
 
       setLastSaved({

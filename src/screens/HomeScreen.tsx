@@ -47,8 +47,7 @@ import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories, CategoryWithSpend } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
-import { supabase } from '@/services/supabase';
-import { removeFromQueue } from '@/services/syncService';
+import { deleteTransaction } from '@/services/localMutations';
 import ProfileSidebar from '@/components/ProfileSidebar';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import type { ThemeColors } from '@/constants/theme';
@@ -243,13 +242,6 @@ export default function HomeScreen() {
     });
   }, [totalBalance, balanceSV]);
 
-  useEffect(() => {
-    const getMyId = async () => {
-      await supabase.auth.getUser();
-    };
-    getMyId();
-  }, []);
-
   const [toastVisible, setToastVisible] = useState(false);
   const [toastTitle, setToastTitle] = useState('');
   const [toastSubtitle, setToastSubtitle] = useState('');
@@ -359,19 +351,11 @@ export default function HomeScreen() {
 
   const handleUndo = useCallback(async () => {
     if (!undoTxId) return;
-    // Remove from queue (no-op if already synced) AND delete from Supabase
-    // (no-op if still pending). One of the two will always be the real action.
-    await removeFromQueue(undoTxId);
-    await supabase.from('transactions').delete().eq('id', undoTxId);
-    if (undoAccountId !== null && undoPreviousBalance !== null) {
-      await supabase
-        .from('accounts')
-        .update({ balance: undoPreviousBalance })
-        .eq('id', undoAccountId);
+    try {
+      await deleteTransaction(undoTxId);
+    } catch (err) {
+      if (__DEV__) console.warn('[HomeScreen] undo failed:', err);
     }
-    refetchAccounts();
-    refetchCategories();
-    refetchTotals();
     setUndoTxId(null);
     setUndoAccountId(null);
     setUndoPreviousBalance(null);
@@ -379,14 +363,7 @@ export default function HomeScreen() {
     setToastSubtitle('Transaction undone');
     setToastIsUndo(true);
     setToastVisible(true);
-  }, [
-    undoTxId,
-    undoAccountId,
-    undoPreviousBalance,
-    refetchAccounts,
-    refetchCategories,
-    refetchTotals,
-  ]);
+  }, [undoTxId]);
 
   const { text: greetText, emoji: greetEmoji } = getGreeting();
   const daysLeft = getDaysLeftInMonth();

@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { Category } from './aiCategoryMap';
 import { transitions } from '../constants/transitions';
 
@@ -120,7 +119,8 @@ export function calculateCategorySpend(
     other: 0,
   };
   transactions.forEach((tx) => {
-    if (tx.type === 'exp') {
+    // Transfers are internal moves and should not count as category spending.
+    if (tx.type === 'exp' && String(tx.category).toLowerCase() !== 'transfer') {
       const cat = totals[tx.category] !== undefined ? tx.category : 'other';
       totals[cat] += tx.amount;
     }
@@ -133,104 +133,5 @@ export function isNegativeBalance(balance: number): boolean {
   return balance < 0;
 }
 
-// ─── Reactive transaction store ───────────────────────────────────────────────
-//
-// A lightweight in-memory store that notifies subscribers on every mutation
-// (add / remove), so components can recalculate balances reactively.
-//
-// Animation: the BALANCE_UPDATE duration (400 ms from transitions.ts) is
-// exported here so UI components know how long to run Animated.timing after
-// a balance change.
-//
+// Keep this exported for HomeScreen animation timing.
 export const BALANCE_ANIMATE_MS = transitions.BALANCE_UPDATE.duration; // 400
-
-type Listener = () => void;
-
-class TransactionStore {
-  private txns: Transaction[] = [];
-
-  private starting: Record<Account, number> = { ...DEFAULT_STARTING_BALANCES };
-
-  private listeners = new Set<Listener>();
-
-  /** Most recently added transaction — consumed once by the toast layer. */
-  private lastSaved: Transaction | null = null;
-
-  // ── Subscribe / notify ──
-  subscribe(fn: Listener): () => void {
-    this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
-  }
-
-  private emit(): void {
-    this.listeners.forEach((fn) => fn());
-  }
-
-  // ── Mutations — each triggers recalculation in all subscribers ──
-
-  /** Add a transaction. Triggers reactive recalculation. */
-  add(partial: Omit<Transaction, 'id' | 'date'>): Transaction {
-    const tx: Transaction = {
-      ...partial,
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      date: new Date(),
-    };
-    this.txns = [tx, ...this.txns];
-    this.lastSaved = tx;
-    this.emit();
-    return tx;
-  }
-
-  /** Returns the most recently saved transaction (once). Null if already consumed. */
-  getLastSaved(): Transaction | null {
-    return this.lastSaved;
-  }
-
-  /** Mark the pending toast as consumed so it isn't shown twice. */
-  clearLastSaved(): void {
-    this.lastSaved = null;
-  }
-
-  /** Remove a transaction by id (used on Undo). Triggers reactive recalculation. */
-  remove(id: string): void {
-    this.txns = this.txns.filter((t) => t.id !== id);
-    this.emit();
-  }
-
-  // ── Read ──
-
-  getAll(): Transaction[] {
-    return [...this.txns];
-  }
-
-  getBalanceSummary(): BalanceSummary {
-    return calculateBalanceSummary(this.txns, this.starting);
-  }
-
-  /** Per-account summaries with isNegative flag. */
-  getAccountSummaries(): AccountSummary[] {
-    return getAccountSummaries(this.txns, this.starting);
-  }
-
-  getCategorySpend(): Record<Category, number> {
-    return calculateCategorySpend(this.txns);
-  }
-}
-
-/** Singleton store — import this in components and services. */
-export const transactionStore = new TransactionStore();
-
-/**
- * React hook — re-renders the caller whenever the store changes (create/delete/undo).
- * Usage:
- *   const store = useTransactionStore();
- *   const { totalBalance } = store.getBalanceSummary();
- */
-export function useTransactionStore(): TransactionStore {
-  const [, forceUpdate] = useState(0);
-  useEffect(
-    () => transactionStore.subscribe(() => forceUpdate((n) => n + 1)),
-    []
-  );
-  return transactionStore;
-}

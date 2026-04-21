@@ -37,7 +37,11 @@ import Svg, { Circle, G } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Dynamic Theme Hook
-import { supabase } from '@/services/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { Q } from '@nozbe/watermelondb';
+import { database } from '@/db';
+import type TransactionModel from '@/db/models/Transaction';
+import type CategoryModel from '@/db/models/Category';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import {
   INCOME_CATEGORIES,
@@ -502,6 +506,8 @@ function AccountActivityCard({
 export default function InsightsScreen() {
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
+  const { user } = useAuth();
+  const userId = user?.id;
   const insets = useSafeAreaInsets();
   const styles = useMemo(
     () => createStyles(colors, isDark, insets.top),
@@ -661,6 +667,11 @@ export default function InsightsScreen() {
 
   const fetchStats = useCallback(
     async (force = false) => {
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
       const cacheKey = `FINO_STATS_CACHE_${selectedYear}_${selectedMonth}`;
 
       // Skip entirely if we just fetched the same month within the stale window.
@@ -694,76 +705,95 @@ export default function InsightsScreen() {
         }
         // Subsequent focuses: keep loading false so skeletons don't flash
 
-        // Compute prev month range for delta badges
+        // Compute prev month range for delta badges (date-only, matches tx.date format)
         const prevMonthNum = selectedMonth === 0 ? 11 : selectedMonth - 1;
         const prevYearNum =
           selectedMonth === 0 ? selectedYear - 1 : selectedYear;
-        const prevFrom = new Date(prevYearNum, prevMonthNum, 1).toISOString();
-        const prevTo = new Date(
-          prevYearNum,
-          prevMonthNum + 1,
-          0,
-          23,
-          59,
-          59,
-          999
-        ).toISOString();
+        const prevFrom = new Date(prevYearNum, prevMonthNum, 1)
+          .toISOString()
+          .split('T')[0];
+        const prevTo = new Date(prevYearNum, prevMonthNum + 1, 0)
+          .toISOString()
+          .split('T')[0];
+
+        const catCol = database.get<CategoryModel>('categories');
+        const txCol = database.get<TransactionModel>('transactions');
 
         const [
-          { data: catData },
-          { data: txData },
-          { data: incomeTxData },
-          { data: dailyTxData },
-          { data: topTxData },
-          { data: acctTxData },
-          { data: prevTxData },
+          catRecords,
+          monthTxRecords,
+          prevMonthTxRecords,
+          topExpenseRecords,
         ] = await Promise.all([
-          supabase
-            .from('categories')
-            .select(
-              'name, budget_limit, emoji, text_colour, tile_bg_colour, sort_order'
+          catCol
+            .query(Q.where('user_id', userId), Q.where('is_active', true))
+            .fetch(),
+          txCol
+            .query(
+              Q.where('user_id', userId),
+              Q.where('date', Q.gte(monthRange.from)),
+              Q.where('date', Q.lte(monthRange.to)),
             )
-            .eq('is_active', true),
-          supabase
-            .from('transactions')
-            .select('category, amount, type')
-            .eq('type', 'expense')
-            .gte('date', monthRange.from)
-            .lte('date', monthRange.to),
-          supabase
-            .from('transactions')
-            .select('category, amount')
-            .eq('type', 'income')
-            .gte('date', monthRange.from)
-            .lte('date', monthRange.to),
-          supabase
-            .from('transactions')
-            .select('date, amount')
-            .eq('type', 'expense')
-            .gte('date', monthRange.from)
-            .lte('date', monthRange.to),
-          supabase
-            .from('transactions')
-            .select(
-              'display_name, merchant_name, amount, category, date, account_id'
+            .fetch(),
+          txCol
+            .query(
+              Q.where('user_id', userId),
+              Q.where('type', 'expense'),
+              Q.where('date', Q.gte(prevFrom)),
+              Q.where('date', Q.lte(prevTo)),
             )
-            .eq('type', 'expense')
-            .gte('date', monthRange.from)
-            .lte('date', monthRange.to)
-            .order('amount', { ascending: false })
-            .limit(5),
-          supabase
-            .from('transactions')
-            .select('account_id, amount, type')
-            .gte('date', monthRange.from)
-            .lte('date', monthRange.to),
-          supabase
-            .from('transactions')
-            .select('category, amount')
-            .eq('type', 'expense')
-            .gte('date', prevFrom)
-            .lte('date', prevTo),
+            .fetch(),
+          txCol
+            .query(
+              Q.where('user_id', userId),
+              Q.where('type', 'expense'),
+              Q.where('date', Q.gte(monthRange.from)),
+              Q.where('date', Q.lte(monthRange.to)),
+              Q.sortBy('amount', Q.desc),
+            )
+            .fetch(),
         ]);
+
+        const catData = catRecords.map((c) => ({
+          name: c.name,
+          budget_limit: c.budgetLimit ?? null,
+          emoji: c.emoji ?? null,
+          text_colour: c.textColour ?? null,
+          tile_bg_colour: c.tileBgColour ?? null,
+          sort_order: c.sortOrder,
+        }));
+        const txData = monthTxRecords
+          // Transfers are balance moves between accounts, not expense spend.
+          .filter((t) => t.type === 'expense' && (t.category ?? '').toLowerCase() !== 'transfer')
+          .map((t) => ({ category: t.category ?? null, amount: t.amount, type: t.type }));
+        const incomeTxData = monthTxRecords
+          .filter((t) => t.type === 'income')
+          .map((t) => ({ category: t.category ?? null, amount: t.amount }));
+        const dailyTxData = monthTxRecords
+          .filter((t) => t.type === 'expense' && (t.category ?? '').toLowerCase() !== 'transfer')
+          .map((t) => ({ date: t.date, amount: t.amount }));
+        const topTxData = topExpenseRecords
+          .filter((t) => (t.category ?? '').toLowerCase() !== 'transfer')
+          .slice(0, 5)
+          .map((t) => ({
+            display_name: t.displayName ?? null,
+            merchant_name: t.merchantName ?? null,
+            amount: t.amount,
+            category: t.category ?? null,
+            date: t.date,
+            account_id: t.accountId,
+          }));
+        const acctTxData = monthTxRecords.map((t) => ({
+          account_id: t.accountId,
+          amount: t.amount,
+          type: t.type,
+        }));
+        const prevTxData = prevMonthTxRecords
+          .filter((t) => (t.category ?? '').toLowerCase() !== 'transfer')
+          .map((t) => ({
+            category: t.category ?? null,
+            amount: t.amount,
+          }));
 
         const nextTotals: Record<string, number> = {};
         const nextBudgets: Record<string, number> = {};
@@ -885,7 +915,7 @@ export default function InsightsScreen() {
         setLoading(false);
       }
     },
-    [applyStatsBundle, monthRange, selectedMonth, selectedYear]
+    [applyStatsBundle, monthRange, selectedMonth, selectedYear, userId]
   );
 
   // Re-fetch when month/year changes while screen is already mounted;

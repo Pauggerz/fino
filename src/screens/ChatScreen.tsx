@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import {
   sendMessage,
   ChatMessage,
@@ -23,7 +24,9 @@ import {
 import { useAccounts } from '@/hooks/useAccounts';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { useCategories } from '@/hooks/useCategories';
-import { supabase } from '@/services/supabase';
+import { Q } from '@nozbe/watermelondb';
+import { database } from '@/db';
+import type TransactionModel from '@/db/models/Transaction';
 
 const SUGGESTED_PROMPTS = [
   'How much did I spend on food?',
@@ -63,6 +66,8 @@ export default function ChatScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
 
   const { colors, isDark } = useTheme();
+  const { user } = useAuth();
+  const userId = user?.id;
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   const { totalBalance } = useAccounts();
@@ -102,13 +107,26 @@ export default function ChatScreen() {
   }, []);
 
   useEffect(() => {
-    supabase
-      .from('transactions')
-      .select('display_name, amount, type, category, date')
-      .order('date', { ascending: false })
-      .limit(10)
-      .then(({ data }) => setRecentTxns(data ?? []));
-  }, []);
+    if (!userId) {
+      setRecentTxns([]);
+      return;
+    }
+    const query = database
+      .get<TransactionModel>('transactions')
+      .query(Q.where('user_id', userId), Q.sortBy('date', Q.desc), Q.take(10));
+    const sub = query.observe().subscribe((records) => {
+      setRecentTxns(
+        records.map((r) => ({
+          display_name: r.displayName ?? null,
+          amount: r.amount,
+          type: r.type,
+          category: r.category ?? null,
+          date: r.date,
+        })),
+      );
+    });
+    return () => sub.unsubscribe();
+  }, [userId]);
 
   useEffect(() => {
     setMessages([
