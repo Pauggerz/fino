@@ -2,6 +2,7 @@ import { Database } from '@nozbe/watermelondb';
 import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite';
 
 import schema from './schema';
+import migrations from './migrations';
 import { modelClasses } from './models';
 
 /**
@@ -15,6 +16,7 @@ import { modelClasses } from './models';
  */
 const adapter = new SQLiteAdapter({
   schema,
+  migrations,
   dbName: 'fino',
   onSetUpError: (error) => {
     // eslint-disable-next-line no-console

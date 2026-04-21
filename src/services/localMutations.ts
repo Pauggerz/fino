@@ -26,6 +26,15 @@ function uuidv4(): string {
   });
 }
 
+/**
+ * Round to two decimal places. Server stores money as DECIMAL(12,2); JS uses
+ * binary floats, so cumulative balance adjustments (`balance + delta`) drift
+ * over time without rounding. Apply on every write.
+ */
+function toCents(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 /** Fire-and-forget sync — never blocks the caller's UI. */
 function syncInBackground(): void {
   triggerSync().catch((err) => {
@@ -59,15 +68,16 @@ export type NewTransactionInput = {
  */
 export async function createTransaction(input: NewTransactionInput): Promise<string> {
   const txId = input.id ?? uuidv4();
+  const amount = toCents(input.amount);
   await database.write(async () => {
     const account = await accounts().find(input.accountId);
-    const delta = input.type === 'expense' ? -input.amount : input.amount;
+    const delta = input.type === 'expense' ? -amount : amount;
 
     const txPrepared = transactions().prepareCreate((tx) => {
       tx._raw.id = txId;
       tx.userId = input.userId;
       tx.accountId = input.accountId;
-      tx.amount = input.amount;
+      tx.amount = amount;
       tx.type = input.type;
       tx.category = input.category ?? undefined;
       tx.merchantName = input.merchantName ?? undefined;
@@ -83,7 +93,7 @@ export async function createTransaction(input: NewTransactionInput): Promise<str
     });
 
     const accountPrepared = account.prepareUpdate((a) => {
-      a.balance = a.balance + delta;
+      a.balance = toCents(a.balance + delta);
     });
 
     await database.batch(txPrepared, accountPrepared);
@@ -119,7 +129,7 @@ export async function updateTransaction(
     const prevType = tx.type as 'expense' | 'income';
     const prevAccountId = tx.accountId;
 
-    const nextAmount = patch.amount ?? prevAmount;
+    const nextAmount = toCents(patch.amount ?? prevAmount);
     const nextType = patch.type ?? prevType;
     const nextAccountId = patch.accountId ?? prevAccountId;
 
@@ -134,7 +144,7 @@ export async function updateTransaction(
           const acc = await accounts().find(prevAccountId);
           balanceMutations.push(
             acc.prepareUpdate((a) => {
-              a.balance = a.balance + net;
+              a.balance = toCents(a.balance + net);
             }),
           );
         }
@@ -143,10 +153,10 @@ export async function updateTransaction(
         const newAcc = await accounts().find(nextAccountId);
         balanceMutations.push(
           oldAcc.prepareUpdate((a) => {
-            a.balance = a.balance + reverseDelta;
+            a.balance = toCents(a.balance + reverseDelta);
           }),
           newAcc.prepareUpdate((a) => {
-            a.balance = a.balance + forwardDelta;
+            a.balance = toCents(a.balance + forwardDelta);
           }),
         );
       }
@@ -159,7 +169,7 @@ export async function updateTransaction(
       if (patch.merchantName !== undefined) t.merchantName = patch.merchantName ?? undefined;
       if (patch.accountId !== undefined) t.accountId = patch.accountId;
       if (patch.date !== undefined) t.date = patch.date;
-      if (patch.amount !== undefined) t.amount = patch.amount;
+      if (patch.amount !== undefined) t.amount = nextAmount;
       if (patch.type !== undefined) t.type = patch.type;
     });
 
@@ -176,7 +186,7 @@ export async function deleteTransaction(transactionId: string): Promise<void> {
     const reverseDelta = tx.type === 'expense' ? tx.amount : -tx.amount;
 
     const accountPrepared = account.prepareUpdate((a) => {
-      a.balance = a.balance + reverseDelta;
+      a.balance = toCents(a.balance + reverseDelta);
     });
     const txPrepared = tx.prepareMarkAsDeleted();
 
@@ -193,9 +203,10 @@ export async function saveAdjustment(params: {
   newBalance: number;
   note: string;
 }): Promise<void> {
-  const diff = params.newBalance - params.currentBalance;
+  const diff = toCents(params.newBalance - params.currentBalance);
   if (diff === 0) return;
   const today = new Date().toISOString().split('T')[0];
+  const newBalance = toCents(params.newBalance);
 
   await database.write(async () => {
     const account = await accounts().find(params.accountId);
@@ -212,7 +223,7 @@ export async function saveAdjustment(params: {
       tx.accountDeleted = false;
     });
     const accountPrepared = account.prepareUpdate((a) => {
-      a.balance = params.newBalance;
+      a.balance = newBalance;
       a.lastReconciledAt = new Date().toISOString();
     });
     await database.batch(txPrepared, accountPrepared);
@@ -230,6 +241,7 @@ export async function saveTransfer(params: {
   amount: number;
 }): Promise<void> {
   const today = new Date().toISOString().split('T')[0];
+  const amount = toCents(params.amount);
 
   await database.write(async () => {
     const source = await accounts().find(params.sourceAccountId);
@@ -239,7 +251,7 @@ export async function saveTransfer(params: {
       tx._raw.id = uuidv4();
       tx.userId = params.userId;
       tx.accountId = params.sourceAccountId;
-      tx.amount = params.amount;
+      tx.amount = amount;
       tx.type = 'expense';
       tx.category = 'transfer';
       tx.displayName = `Transfer to ${params.destAccountName}`;
@@ -250,7 +262,7 @@ export async function saveTransfer(params: {
       tx._raw.id = uuidv4();
       tx.userId = params.userId;
       tx.accountId = params.destAccountId;
-      tx.amount = params.amount;
+      tx.amount = amount;
       tx.type = 'income';
       tx.category = 'transfer';
       tx.displayName = `Transfer from ${params.sourceAccountName}`;
@@ -258,10 +270,10 @@ export async function saveTransfer(params: {
       tx.accountDeleted = false;
     });
     const sourceUpdate = source.prepareUpdate((a) => {
-      a.balance = a.balance - params.amount;
+      a.balance = toCents(a.balance - amount);
     });
     const destUpdate = dest.prepareUpdate((a) => {
-      a.balance = a.balance + params.amount;
+      a.balance = toCents(a.balance + amount);
     });
 
     await database.batch(outTx, inTx, sourceUpdate, destUpdate);
@@ -305,8 +317,8 @@ export async function createAccount(input: {
       a.type = input.type;
       a.brandColour = input.brandColour;
       a.letterAvatar = input.letterAvatar;
-      a.balance = input.startingBalance;
-      a.startingBalance = input.startingBalance;
+      a.balance = toCents(input.startingBalance);
+      a.startingBalance = toCents(input.startingBalance);
       a.isActive = true;
       a.isDeletable = true;
       a.sortOrder = input.sortOrder ?? 0;
@@ -405,8 +417,8 @@ export async function createDebt(input: {
       d.userId = input.userId;
       d.debtorName = input.debtorName;
       d.description = input.description;
-      d.totalAmount = input.totalAmount;
-      d.amountPaid = input.amountPaid ?? 0;
+      d.totalAmount = toCents(input.totalAmount);
+      d.amountPaid = toCents(input.amountPaid ?? 0);
       d.dueDate = input.dueDate;
     });
   });
@@ -423,8 +435,8 @@ export async function updateDebt(
     await d.update((rec) => {
       if (patch.debtorName !== undefined) rec.debtorName = patch.debtorName;
       if (patch.description !== undefined) rec.description = patch.description;
-      if (patch.totalAmount !== undefined) rec.totalAmount = patch.totalAmount;
-      if (patch.amountPaid !== undefined) rec.amountPaid = patch.amountPaid;
+      if (patch.totalAmount !== undefined) rec.totalAmount = toCents(patch.totalAmount);
+      if (patch.amountPaid !== undefined) rec.amountPaid = toCents(patch.amountPaid);
       if (patch.dueDate !== undefined) rec.dueDate = patch.dueDate;
     });
   });
@@ -456,8 +468,8 @@ export async function createSavingsGoal(input: {
       g.userId = input.userId;
       g.name = input.name;
       g.description = input.description;
-      g.targetAmount = input.targetAmount;
-      g.currentAmount = input.currentAmount ?? 0;
+      g.targetAmount = toCents(input.targetAmount);
+      g.currentAmount = toCents(input.currentAmount ?? 0);
       g.targetDate = input.targetDate;
       g.icon = input.icon;
       g.color = input.color;
@@ -476,8 +488,8 @@ export async function updateSavingsGoal(
     await g.update((rec) => {
       if (patch.name !== undefined) rec.name = patch.name;
       if (patch.description !== undefined) rec.description = patch.description;
-      if (patch.targetAmount !== undefined) rec.targetAmount = patch.targetAmount;
-      if (patch.currentAmount !== undefined) rec.currentAmount = patch.currentAmount;
+      if (patch.targetAmount !== undefined) rec.targetAmount = toCents(patch.targetAmount);
+      if (patch.currentAmount !== undefined) rec.currentAmount = toCents(patch.currentAmount);
       if (patch.targetDate !== undefined) rec.targetDate = patch.targetDate;
       if (patch.icon !== undefined) rec.icon = patch.icon;
       if (patch.color !== undefined) rec.color = patch.color;
@@ -508,7 +520,7 @@ export async function createBillReminder(input: {
       b._raw.id = id;
       b.userId = input.userId;
       b.title = input.title;
-      b.amount = input.amount;
+      b.amount = input.amount === undefined ? undefined : toCents(input.amount);
       b.merchantName = input.merchantName;
       b.dueDate = input.dueDate;
       b.isRecurring = input.isRecurring ?? false;
@@ -527,7 +539,7 @@ export async function updateBillReminder(
     const b = await billReminders().find(billId);
     await b.update((rec) => {
       if (patch.title !== undefined) rec.title = patch.title;
-      if (patch.amount !== undefined) rec.amount = patch.amount;
+      if (patch.amount !== undefined) rec.amount = patch.amount === null ? undefined : toCents(patch.amount);
       if (patch.merchantName !== undefined) rec.merchantName = patch.merchantName;
       if (patch.dueDate !== undefined) rec.dueDate = patch.dueDate;
       if (patch.isRecurring !== undefined) rec.isRecurring = patch.isRecurring;

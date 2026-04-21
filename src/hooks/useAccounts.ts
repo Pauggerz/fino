@@ -4,6 +4,7 @@ import { Q } from '@nozbe/watermelondb';
 import { database } from '@/db';
 import type AccountModel from '@/db/models/Account';
 import { useAuth } from '@/contexts/AuthContext';
+import { triggerSync } from '@/services/watermelonSync';
 import type { Account } from '@/types';
 
 /* eslint-disable import/prefer-default-export */
@@ -58,5 +59,11 @@ export const useAccounts = () => {
     [accounts],
   );
 
-  return { accounts, totalBalance, loading, error: null, refetch: async () => {} };
+  return {
+    accounts,
+    totalBalance,
+    loading,
+    error: null,
+    refetch: triggerSync,
+  };
 };

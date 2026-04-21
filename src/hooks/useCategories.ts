@@ -6,10 +6,14 @@ import { database } from '@/db';
 import type CategoryModel from '@/db/models/Category';
 import type TransactionModel from '@/db/models/Transaction';
 import { useAuth } from '@/contexts/AuthContext';
+import { triggerSync } from '@/services/watermelonSync';
 import type { Category } from '@/types';
 
-// Income category keys — excluded from budget views.
-const INCOME_EMOJI_KEYS = new Set([
+// Income category names — excluded from budget views.
+// Matched against `category.name` (lowercased). Was previously matched against
+// `cat.emoji`, which silently never fired because `emoji` holds glyphs, not
+// names — income categories were leaking into the budget UI.
+const INCOME_CATEGORY_NAMES = new Set([
   'salary',
   'allowance',
   'freelance',
@@ -93,7 +97,7 @@ export const useCategories = () => {
         }
 
         const enriched: CategoryWithSpend[] = categoryRecords
-          .filter((cat) => !INCOME_EMOJI_KEYS.has((cat.emoji ?? '').toLowerCase()))
+          .filter((cat) => !INCOME_CATEGORY_NAMES.has(cat.name.toLowerCase()))
           .map((cat) => {
             const plain = toPlain(cat);
             const spent = spendMap[plain.name.toLowerCase()] ?? 0;
@@ -114,5 +118,5 @@ export const useCategories = () => {
     return () => sub.unsubscribe();
   }, [userId]);
 
-  return { categories, loading, error: null, refetch: async (_force?: boolean) => {} };
+  return { categories, loading, error: null, refetch: async (_force?: boolean) => triggerSync() };
 };

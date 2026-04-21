@@ -77,31 +77,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id, session.user.user_metadata).finally(() =>
-          setIsLoading(false)
-        );
+    // `getSession` and `onAuthStateChange` both fire on mount with the same
+    // session, which used to race the PGRST116 insert-fallback and could
+    // attempt a duplicate user-row insert under slow network. `didInit`
+    // ensures only the first arrival triggers the initial profile fetch.
+    const didInit = { current: false };
+
+    const handleSession = async (sess: Session | null) => {
+      setSession(sess);
+      setUser(sess?.user ?? null);
+      if (sess?.user) {
+        await fetchProfile(sess.user.id, sess.user.user_metadata);
       } else {
-        setIsLoading(false);
+        setProfile(null);
+        setProfileError(false);
       }
+      setIsLoading(false);
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (didInit.current) return;
+      didInit.current = true;
+      handleSession(session);
     });
 
-    // Listen for auth changes (login, logout, token refresh)
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await fetchProfile(session.user.id, session.user.user_metadata);
-        } else {
-          setProfile(null);
-          setProfileError(false);
+      async (event, session) => {
+        // Initial mount: skip if getSession already handled it.
+        if (event === 'INITIAL_SESSION') {
+          if (didInit.current) return;
+          didInit.current = true;
         }
-        setIsLoading(false);
+        await handleSession(session);
       }
     );
 

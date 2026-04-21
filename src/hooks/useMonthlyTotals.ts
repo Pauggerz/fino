@@ -3,6 +3,7 @@ import { Q } from '@nozbe/watermelondb';
 
 import { database } from '@/db';
 import { useAuth } from '@/contexts/AuthContext';
+import { triggerSync } from '@/services/watermelonSync';
 import type TransactionModel from '@/db/models/Transaction';
 
 export interface SparklinePoint {
@@ -59,6 +60,14 @@ export const useMonthlyTotals = (): MonthlyTotals => {
         Q.where('account_deleted', false),
       );
 
+    // Local-midnight normaliser keeps day buckets stable across UTC midnight
+    // for users west of UTC. Mixing 'YYYY-MM-DD' strings with raw Date.now()
+    // would otherwise shift today's tx into "yesterday" after 00:00 UTC.
+    const startOfLocalDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    const todayStart = startOfLocalDay(now);
+
     const sub = query.observe().subscribe((records) => {
       let income = 0;
       let expense = 0;
@@ -71,9 +80,8 @@ export const useMonthlyTotals = (): MonthlyTotals => {
           if ((tx.category ?? '').toLowerCase() === 'transfer') continue;
           expense += tx.amount;
           if (tx.date) {
-            const dayDiff = Math.floor(
-              (now.getTime() - new Date(tx.date).getTime()) / (1000 * 60 * 60 * 24),
-            );
+            const txStart = startOfLocalDay(new Date(tx.date));
+            const dayDiff = Math.floor((todayStart - txStart) / MS_PER_DAY);
             if (dayDiff >= 0 && dayDiff < 7) buckets[6 - dayDiff] += tx.amount;
           }
         }
@@ -95,6 +103,6 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     sparklineData,
     loading,
     error: null,
-    refetch: async () => {},
+    refetch: triggerSync,
   };
 };

@@ -6,6 +6,7 @@ import { database } from '@/db';
 import type AccountModel from '@/db/models/Account';
 import type TransactionModel from '@/db/models/Transaction';
 import { useAuth } from '@/contexts/AuthContext';
+import { triggerSync } from '@/services/watermelonSync';
 import { Transaction } from '@/types';
 import { formatSectionTitle } from '@/utils/groupByDate';
 
@@ -88,7 +89,7 @@ export const useTransactions = (
     if (transactionType) parts.push(Q.where('type', transactionType));
     if (category && category !== 'All') {
       if (category === 'Income') parts.push(Q.where('type', 'income'));
-      else parts.push(Q.where('category', Q.like(category)));
+      else parts.push(Q.where('category', Q.like(Q.sanitizeLikeString(category))));
     }
     if (dateRange) {
       parts.push(Q.where('date', Q.gte(dateRange.from)));
@@ -150,7 +151,9 @@ export const useTransactions = (
   }, [hasMore]);
 
   const refetch = useCallback(async () => {
-    // Observables auto-refresh — this is a no-op kept for API compatibility.
+    // Observables auto-refresh local data — kick a sync so pull-to-refresh
+    // actually pulls down anything new from the server.
+    await triggerSync();
   }, []);
 
   const sections: TransactionSection[] = useMemo(() => {
