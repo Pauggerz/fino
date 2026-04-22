@@ -21,6 +21,7 @@ export default class Transaction extends Model {
   @text('date') date!: string;
   @text('receipt_url') receiptUrl?: string;
   @field('account_deleted') accountDeleted!: boolean;
+  @field('is_transfer') isTransfer!: boolean;
   @field('merchant_confidence') merchantConfidence?: number;
   @field('amount_confidence') amountConfidence?: number;
   @field('date_confidence') dateConfidence?: number;

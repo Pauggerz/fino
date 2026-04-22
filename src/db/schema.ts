@@ -12,7 +12,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
  * WatermelonDB can compare it cheaply during pullChanges.
  */
 export default appSchema({
-  version: 1,
+  version: 2,
   tables: [
     tableSchema({
       name: 'accounts',
@@ -47,6 +47,7 @@ export default appSchema({
         { name: 'date', type: 'string', isIndexed: true },
         { name: 'receipt_url', type: 'string', isOptional: true },
         { name: 'account_deleted', type: 'boolean' },
+        { name: 'is_transfer', type: 'boolean' },
         { name: 'merchant_confidence', type: 'number', isOptional: true },
         { name: 'amount_confidence', type: 'number', isOptional: true },
         { name: 'date_confidence', type: 'number', isOptional: true },

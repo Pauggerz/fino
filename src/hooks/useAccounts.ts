@@ -54,8 +54,11 @@ export const useAccounts = () => {
     return () => sub.unsubscribe();
   }, [userId]);
 
+  // Round to cents so tiny float-drift on the reduce (which changes every
+  // sync pull as the accounts array re-emits) doesn't retrigger the balance
+  // withTiming animation on HomeScreen and cause a visible twitch.
   const totalBalance = useMemo(
-    () => accounts.reduce((sum, a) => sum + a.balance, 0),
+    () => Math.round(accounts.reduce((sum, a) => sum + a.balance, 0) * 100) / 100,
     [accounts],
   );
 

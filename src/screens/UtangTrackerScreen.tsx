@@ -17,6 +17,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -122,6 +125,15 @@ export default function UtangTrackerScreen() {
     total_amount: '',
     due_date: '',
   });
+  const [showDuePicker, setShowDuePicker] = useState(false);
+
+  const onDueDateChange = (event: DateTimePickerEvent, selected?: Date) => {
+    // Android dismisses by itself; iOS keeps the picker open until user taps away.
+    if (Platform.OS !== 'ios') setShowDuePicker(false);
+    if (event.type === 'dismissed' || !selected) return;
+    const iso = selected.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+    setAddForm((f) => ({ ...f, due_date: iso }));
+  };
 
   // ── Payment modal state
   const [payTarget, setPayTarget] = useState<Debt | null>(null);
@@ -660,24 +672,41 @@ export default function UtangTrackerScreen() {
                 >
                   AGREED TO PAY BY
                 </Text>
-                <TextInput
+                <Pressable
+                  onPress={() => setShowDuePicker(true)}
                   style={[
                     styles.input,
                     {
                       backgroundColor: isDark
                         ? colors.surfaceSubdued
                         : '#F4F4F8',
-                      color: colors.textPrimary,
+                      justifyContent: 'center',
                     },
                   ]}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.textSecondary}
-                  value={addForm.due_date}
-                  onChangeText={(t) =>
-                    setAddForm((f) => ({ ...f, due_date: t }))
-                  }
-                  keyboardType="numbers-and-punctuation"
-                />
+                >
+                  <Text
+                    style={{
+                      color: addForm.due_date
+                        ? colors.textPrimary
+                        : colors.textSecondary,
+                      fontSize: 15,
+                    }}
+                  >
+                    {addForm.due_date || 'Select date'}
+                  </Text>
+                </Pressable>
+                {showDuePicker && (
+                  <DateTimePicker
+                    value={
+                      addForm.due_date
+                        ? new Date(`${addForm.due_date}T00:00:00`)
+                        : new Date()
+                    }
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                    onChange={onDueDateChange}
+                  />
+                )}
               </View>
             </View>
 

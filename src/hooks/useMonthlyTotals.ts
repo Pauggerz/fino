@@ -74,10 +74,12 @@ export const useMonthlyTotals = (): MonthlyTotals => {
       const buckets: number[] = new Array(7).fill(0);
 
       for (const tx of records) {
+        // Inter-account transfers are balance moves, not real income/expense.
+        // The string check handles rows created before migration 013 backfilled is_transfer.
+        const isTransfer = tx.isTransfer || (tx.category ?? '').toLowerCase() === 'transfer';
+        if (isTransfer) continue;
         if (tx.type === 'income') income += tx.amount;
         if (tx.type === 'expense') {
-          // Exclude inter-account transfers from spend KPIs/sparkline.
-          if ((tx.category ?? '').toLowerCase() === 'transfer') continue;
           expense += tx.amount;
           if (tx.date) {
             const txStart = startOfLocalDay(new Date(tx.date));

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
 import { combineLatest } from 'rxjs';
 
@@ -89,8 +89,9 @@ export const useCategories = () => {
       ([categoryRecords, txRecords]) => {
         const spendMap: Record<string, number> = {};
         for (const tx of txRecords) {
-          // Transfers are account movements, not category spending.
-          if ((tx.category ?? '').toLowerCase() === 'transfer') continue;
+          // Transfers are account movements, not category spending. String
+          // check handles pre-migration-013 rows without is_transfer set.
+          if (tx.isTransfer || (tx.category ?? '').toLowerCase() === 'transfer') continue;
           if (!tx.category) continue;
           const key = tx.category.toLowerCase();
           spendMap[key] = (spendMap[key] ?? 0) + tx.amount;
@@ -118,5 +119,12 @@ export const useCategories = () => {
     return () => sub.unsubscribe();
   }, [userId]);
 
-  return { categories, loading, error: null, refetch: async (_force?: boolean) => triggerSync() };
+  // Stable reference — HomeScreen's useFocusEffect lists this in its deps,
+  // and a fresh arrow per render used to tear down + replay the entrance
+  // animation on every sync pull.
+  const refetch = useCallback(async (_force?: boolean): Promise<void> => {
+    await triggerSync();
+  }, []);
+
+  return { categories, loading, error: null, refetch };
 };

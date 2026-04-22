@@ -1304,15 +1304,20 @@ export default function FeedScreen() {
   const heroAmountPrefix = viewType === 'expense' ? '-' : '+';
 
   // ── Flatten sections → list items ──
-  const listData: ListItem[] = [
-    { type: 'hero' },
-    { type: 'sticky' },
-    { type: 'controls' },
-    ...sections.flatMap((s) => [
-      { type: 'header' as const, title: s.title },
-      ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
-    ]),
-  ];
+  // Memoised on `sections` — list identity is stable across unrelated parent
+  // re-renders, so FlashList's diffing stays cheap.
+  const listData = useMemo<ListItem[]>(
+    () => [
+      { type: 'hero' },
+      { type: 'sticky' },
+      { type: 'controls' },
+      ...sections.flatMap((s) => [
+        { type: 'header' as const, title: s.title },
+        ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
+      ]),
+    ],
+    [sections],
+  );
 
   const handleDeleteTransaction = useCallback(
     (tx: FeedTransaction) => {

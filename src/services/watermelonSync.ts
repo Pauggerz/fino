@@ -181,7 +181,11 @@ export async function syncDatabase(): Promise<void> {
         for (const row of (changedRows ?? []) as RemoteRow[]) rowsById.set(row.id, row);
         for (const row of (tombstoneRows ?? []) as RemoteRow[]) rowsById.set(row.id, row);
 
-        const created: Record<string, unknown>[] = [];
+        // `sendCreatedAsUpdated: true` on synchronize() requires that every
+        // row pulled from the server land in `updated` — never `created`.
+        // Watermelon emits a diagnostic error otherwise. Locally-new rows
+        // still get inserted because updating a non-existent id falls back
+        // to create.
         const updated: Record<string, unknown>[] = [];
         const deleted: string[] = [];
 
@@ -198,15 +202,11 @@ export async function syncDatabase(): Promise<void> {
             deleted.push(row.id);
             continue;
           }
-          const raw = remoteRowToRaw(table, row);
-          const wasNew =
-            row.created_at && toMs(row.created_at) > (lastPulledAt ?? 0);
-          if (wasNew) created.push(raw);
-          else updated.push(raw);
+          updated.push(remoteRowToRaw(table, row));
         }
 
         (changes as Record<string, { created: unknown[]; updated: unknown[]; deleted: string[] }>)[table] = {
-          created,
+          created: [],
           updated,
           deleted,
         };

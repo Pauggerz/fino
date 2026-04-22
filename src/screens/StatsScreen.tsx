@@ -177,15 +177,6 @@ const INCOME_THEME: Record<
   },
 };
 
-const DEFAULT_CATEGORY_BUDGETS: Record<string, number> = {
-  food: 1500,
-  transport: 1000,
-  shopping: 2000,
-  bills: 1500,
-  health: 1000,
-  default: 1000,
-};
-
 const INCOME_KEYS = new Set(INCOME_CATEGORIES.map((c) => c.key));
 
 const MONTH_NAMES = [
@@ -762,18 +753,22 @@ export default function InsightsScreen() {
           tile_bg_colour: c.tileBgColour ?? null,
           sort_order: c.sortOrder,
         }));
+        // Transfers are balance moves between accounts, not expense spend.
+        // String check handles pre-migration-013 rows without is_transfer set.
+        const isTransferRow = (t: TransactionModel) =>
+          t.isTransfer || (t.category ?? '').toLowerCase() === 'transfer';
+
         const txData = monthTxRecords
-          // Transfers are balance moves between accounts, not expense spend.
-          .filter((t) => t.type === 'expense' && (t.category ?? '').toLowerCase() !== 'transfer')
+          .filter((t) => t.type === 'expense' && !isTransferRow(t))
           .map((t) => ({ category: t.category ?? null, amount: t.amount, type: t.type }));
         const incomeTxData = monthTxRecords
-          .filter((t) => t.type === 'income')
+          .filter((t) => t.type === 'income' && !isTransferRow(t))
           .map((t) => ({ category: t.category ?? null, amount: t.amount }));
         const dailyTxData = monthTxRecords
-          .filter((t) => t.type === 'expense' && (t.category ?? '').toLowerCase() !== 'transfer')
+          .filter((t) => t.type === 'expense' && !isTransferRow(t))
           .map((t) => ({ date: t.date, amount: t.amount }));
         const topTxData = topExpenseRecords
-          .filter((t) => (t.category ?? '').toLowerCase() !== 'transfer')
+          .filter((t) => !isTransferRow(t))
           .slice(0, 5)
           .map((t) => ({
             display_name: t.displayName ?? null,
@@ -789,7 +784,7 @@ export default function InsightsScreen() {
           type: t.type,
         }));
         const prevTxData = prevMonthTxRecords
-          .filter((t) => (t.category ?? '').toLowerCase() !== 'transfer')
+          .filter((t) => !isTransferRow(t))
           .map((t) => ({
             category: t.category ?? null,
             amount: t.amount,
@@ -806,11 +801,10 @@ export default function InsightsScreen() {
           if (!key || INCOME_KEYS.has(emojiKey)) return;
           nextKeys.push(key);
           nextTotals[key] = 0;
-          nextBudgets[key] =
-            cat.budget_limit && cat.budget_limit > 0
-              ? cat.budget_limit
-              : (DEFAULT_CATEGORY_BUDGETS[key] ??
-                DEFAULT_CATEGORY_BUDGETS.default);
+          // 0 = "no budget set" — the UI guards against division by zero
+          // downstream. Was previously falling back to a compile-time default
+          // that could diverge from what the user edited.
+          nextBudgets[key] = cat.budget_limit && cat.budget_limit > 0 ? cat.budget_limit : 0;
           nextMeta[key] = {
             label: cat.name,
             emoji: cat.emoji,
@@ -928,6 +922,31 @@ export default function InsightsScreen() {
     // Month changed — force past the freshness gate since it's a different dataset.
     fetchStats(true);
   }, [selectedYear, selectedMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reactive refresh: any change to the tx or category collection triggers a
+  // recompute so a new transaction is reflected in Stats immediately, instead
+  // of waiting for the next focus. Debounced so batch writes (e.g. transfer
+  // creates two tx rows + updates both accounts) collapse into one refresh.
+  useEffect(() => {
+    if (!userId) return;
+    const txCol = database.get<TransactionModel>('transactions');
+    const catCol = database.get<CategoryModel>('categories');
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        fetchStats(true);
+      }, 250);
+    };
+    const subTx = txCol.changes.subscribe(schedule);
+    const subCat = catCol.changes.subscribe(schedule);
+    return () => {
+      if (timer) clearTimeout(timer);
+      subTx.unsubscribe();
+      subCat.unsubscribe();
+    };
+  }, [userId, fetchStats]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1234,8 +1253,7 @@ export default function InsightsScreen() {
           const meta = expenseCategoryMeta[catKey];
           const theme = CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other;
           const amount = expenseTotals[catKey] ?? 0;
-          const budget =
-            expenseBudgets[catKey] ?? DEFAULT_CATEGORY_BUDGETS.default;
+          const budget = expenseBudgets[catKey] ?? 0;
           const pct = budget > 0 ? (amount / budget) * 100 : 0;
           const color = meta?.textColor ?? theme.nameColor;
           const tileBg = meta?.tileBg ?? theme.badgeBg;

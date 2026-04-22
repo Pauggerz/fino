@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
-import { combineLatest } from 'rxjs';
 
 import { database } from '@/db';
 import type AccountModel from '@/db/models/Account';
@@ -11,6 +10,7 @@ import { Transaction } from '@/types';
 import { formatSectionTitle } from '@/utils/groupByDate';
 
 const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 250;
 
 export interface FeedTransaction extends Transaction {
   account_name: string;
@@ -78,11 +78,24 @@ export const useTransactions = (
   sortOrder?: SortOrder,
   transactionType?: 'expense' | 'income',
 ) => {
-  const [items, setItems] = useState<FeedTransaction[]>([]);
+  const [txRecords, setTxRecords] = useState<TransactionModel[]>([]);
+  const [accountMap, setAccountMap] = useState<Map<string, AccountModel>>(new Map());
   const [loading, setLoading] = useState(true);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery ?? '');
   const { user } = useAuth();
   const userId = user?.id;
+
+  // Debounce search input so typing doesn't re-query SQLite on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery ?? ''), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // Reset pagination whenever filters change (but not when visibleCount itself changes).
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [category, dateRange, debouncedSearch, accountId, sortOrder, transactionType]);
 
   const clauses = useMemo(() => {
     const parts: Q.Clause[] = [];
@@ -97,54 +110,76 @@ export const useTransactions = (
     }
     if (accountId) parts.push(Q.where('account_id', accountId));
 
+    const needle = debouncedSearch.trim();
+    if (needle) {
+      const like = `%${Q.sanitizeLikeString(needle)}%`;
+      parts.push(
+        Q.or(
+          Q.where('display_name', Q.like(like)),
+          Q.where('merchant_name', Q.like(like)),
+          Q.where('category', Q.like(like)),
+        ),
+      );
+    }
+
     if (sortOrder === 'amount_desc') parts.push(Q.sortBy('amount', Q.desc));
     else if (sortOrder === 'date_asc') parts.push(Q.sortBy('date', Q.asc));
     else parts.push(Q.sortBy('date', Q.desc));
 
-    return parts;
-  }, [category, dateRange, searchQuery, accountId, sortOrder, transactionType]);
+    // +1 so we can tell whether there are more rows beyond the visible window.
+    parts.push(Q.take(visibleCount + 1));
 
+    return parts;
+  }, [category, dateRange, debouncedSearch, accountId, sortOrder, transactionType, visibleCount]);
+
+  // Accounts subscription — kept separate so renaming an account doesn't
+  // re-run the transaction query. The account map just re-emits, the useMemo
+  // below maps against the latest map.
   useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
+    if (!userId) {
+      setAccountMap(new Map());
+      return;
+    }
+    const sub = database
+      .get<AccountModel>('accounts')
+      .query(Q.where('user_id', userId))
+      .observe()
+      .subscribe((records) => {
+        const map = new Map<string, AccountModel>();
+        for (const a of records) map.set(a.id, a);
+        setAccountMap(map);
+      });
+    return () => sub.unsubscribe();
+  }, [userId]);
+
+  // Transactions subscription — re-subscribes when filters or visibleCount change.
+  useEffect(() => {
     setLoading(true);
 
     if (!userId) {
-      setItems([]);
+      setTxRecords([]);
       setLoading(false);
       return;
     }
 
-    const txObs = database
+    const sub = database
       .get<TransactionModel>('transactions')
       .query(Q.where('user_id', userId), ...clauses)
-      .observe();
-    const accountsObs = database
-      .get<AccountModel>('accounts')
-      .query(Q.where('user_id', userId))
-      .observe();
-
-    const sub = combineLatest([txObs, accountsObs]).subscribe(([txRecords, accRecords]) => {
-      const accountMap = new Map<string, AccountModel>();
-      for (const a of accRecords) accountMap.set(a.id, a);
-
-      const needle = searchQuery?.trim().toLowerCase();
-      let mapped = txRecords.map((tx) => modelToPlain(tx, accountMap));
-      if (needle) {
-        mapped = mapped.filter((tx) => {
-          const hay = `${tx.display_name ?? ''} ${tx.merchant_name ?? ''} ${tx.category ?? ''} ${tx.amount}`.toLowerCase();
-          return hay.includes(needle);
-        });
-      }
-
-      setItems(mapped);
-      setLoading(false);
-    });
+      .observe()
+      .subscribe((records) => {
+        setTxRecords(records);
+        setLoading(false);
+      });
 
     return () => sub.unsubscribe();
-  }, [clauses, searchQuery, userId]);
+  }, [clauses, userId]);
 
-  const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount]);
-  const hasMore = visibleCount < items.length;
+  const hasMore = txRecords.length > visibleCount;
+
+  const items = useMemo(() => {
+    const sliced = hasMore ? txRecords.slice(0, visibleCount) : txRecords;
+    return sliced.map((tx) => modelToPlain(tx, accountMap));
+  }, [txRecords, accountMap, visibleCount, hasMore]);
 
   const loadMore = useCallback(() => {
     if (hasMore) setVisibleCount((prev) => prev + PAGE_SIZE);
@@ -158,17 +193,17 @@ export const useTransactions = (
 
   const sections: TransactionSection[] = useMemo(() => {
     const map: Record<string, FeedTransaction[]> = {};
-    visibleItems.forEach((tx) => {
+    items.forEach((tx) => {
       const title = formatSectionTitle(tx.date || new Date().toISOString());
       if (!map[title]) map[title] = [];
       map[title].push(tx);
     });
     return Object.entries(map).map(([title, data]) => ({ title, data }));
-  }, [visibleItems]);
+  }, [items]);
 
   return {
     sections,
-    items: visibleItems,
+    items,
     loading,
     loadingMore: false,
     loadMore,

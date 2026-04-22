@@ -1,4 +1,5 @@
 import { Q } from '@nozbe/watermelondb';
+import * as Crypto from 'expo-crypto';
 
 import { database } from '../db';
 import type AccountModel from '../db/models/Account';
@@ -19,11 +20,7 @@ const billReminders = () => database.get<BillReminderModel>('bill_reminders');
 const merchantMappings = () => database.get<MerchantMappingModel>('merchant_mappings');
 
 function uuidv4(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.floor(Math.random() * 16);
-    const v = c === 'x' ? r : (r % 4) + 8;
-    return v.toString(16);
-  });
+  return Crypto.randomUUID();
 }
 
 /**
@@ -257,6 +254,7 @@ export async function saveTransfer(params: {
       tx.displayName = `Transfer to ${params.destAccountName}`;
       tx.date = today;
       tx.accountDeleted = false;
+      tx.isTransfer = true;
     });
     const inTx = transactions().prepareCreate((tx) => {
       tx._raw.id = uuidv4();
@@ -268,6 +266,7 @@ export async function saveTransfer(params: {
       tx.displayName = `Transfer from ${params.sourceAccountName}`;
       tx.date = today;
       tx.accountDeleted = false;
+      tx.isTransfer = true;
     });
     const sourceUpdate = source.prepareUpdate((a) => {
       a.balance = toCents(a.balance - amount);
