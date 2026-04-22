@@ -185,7 +185,7 @@ export default function SavingsGoalScreen() {
             color: r.color,
             created_at: (raw.server_created_at as string) ?? '',
           } as Goal;
-        }),
+        })
       );
       setLoading(false);
     });
@@ -292,7 +292,10 @@ export default function SavingsGoalScreen() {
         });
       }
     } catch (err) {
-      Alert.alert('Save failed', err instanceof Error ? err.message : 'Please try again.');
+      Alert.alert(
+        'Save failed',
+        err instanceof Error ? err.message : 'Please try again.'
+      );
     }
   };
 
@@ -319,7 +322,10 @@ export default function SavingsGoalScreen() {
           prev ? { ...prev, current_amount: newAmount } : null
         );
     } catch (err) {
-      Alert.alert('Save failed', err instanceof Error ? err.message : 'Please try again.');
+      Alert.alert(
+        'Save failed',
+        err instanceof Error ? err.message : 'Please try again.'
+      );
     } finally {
       setDepositLoading(false);
     }
@@ -337,7 +343,10 @@ export default function SavingsGoalScreen() {
           try {
             await localDeleteGoal(goal.id);
           } catch (err) {
-            Alert.alert('Delete failed', err instanceof Error ? err.message : 'Please try again.');
+            Alert.alert(
+              'Delete failed',
+              err instanceof Error ? err.message : 'Please try again.'
+            );
           }
         },
       },

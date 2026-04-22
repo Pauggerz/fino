@@ -490,7 +490,8 @@ export default function AddTransactionSheet({ route }: Props) {
         category: category || null,
         displayName: aiText || category || 'Other',
         transactionNote: aiText || null,
-        signalSource: signalSource === 'ai_description' ? 'description' : 'manual',
+        signalSource:
+          signalSource === 'ai_description' ? 'description' : 'manual',
         date: selectedDate.toISOString().split('T')[0],
       });
 

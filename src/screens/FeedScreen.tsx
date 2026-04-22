@@ -1316,7 +1316,7 @@ export default function FeedScreen() {
         ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
       ]),
     ],
-    [sections],
+    [sections]
   );
 
   const handleDeleteTransaction = useCallback(

@@ -20,13 +20,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Q } from '@nozbe/watermelondb';
 import { useAccounts } from '@/hooks/useAccounts';
 import {
   ACCOUNT_LOGOS,
   ACCOUNT_AVATAR_OVERRIDE,
 } from '@/constants/accountLogos';
 import { supabase } from '@/services/supabase';
-import { Q } from '@nozbe/watermelondb';
 import { database } from '@/db';
 import type BillReminderModel from '@/db/models/BillReminder';
 import type CategoryModel from '@/db/models/Category';
@@ -460,7 +460,7 @@ function BudgetSettingsModal({
         .query(
           Q.where('user_id', userId),
           Q.where('is_active', true),
-          Q.sortBy('sort_order', Q.asc),
+          Q.sortBy('sort_order', Q.asc)
         )
         .fetch();
       const expenseOnly = records
@@ -490,8 +490,8 @@ function BudgetSettingsModal({
       categories.map((cat) =>
         updateCategory(cat.id, {
           budgetLimit: parseFloat(edits[cat.id] || '0') || undefined,
-        }),
-      ),
+        })
+      )
     );
     setSaving(false);
     onClose();
@@ -707,7 +707,7 @@ function BillRemindersModal({
       .query(
         Q.where('user_id', userId),
         Q.where('is_paid', false),
-        Q.sortBy('due_date', Q.asc),
+        Q.sortBy('due_date', Q.asc)
       )
       .fetch();
     const fresh: BillReminder[] = records.map((b) => ({
@@ -722,9 +722,12 @@ function BillRemindersModal({
       created_at: b.serverCreatedAt ?? new Date(b.updatedAt).toISOString(),
     }));
     setBills(fresh);
-    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(fresh)).catch((err) => {
-      if (__DEV__) console.warn('[MoreScreen] bills cache write failed:', err);
-    });
+    AsyncStorage.setItem(BILLS_CACHE_KEY, JSON.stringify(fresh)).catch(
+      (err) => {
+        if (__DEV__)
+          console.warn('[MoreScreen] bills cache write failed:', err);
+      }
+    );
     setLoading(false);
   }, [userId]);
 
@@ -783,7 +786,10 @@ function BillRemindersModal({
       fetchBills();
     } catch (err) {
       updateBillsCache(snapshot);
-      Alert.alert('Save failed', err instanceof Error ? err.message : 'Please try again.');
+      Alert.alert(
+        'Save failed',
+        err instanceof Error ? err.message : 'Please try again.'
+      );
     }
   };
 

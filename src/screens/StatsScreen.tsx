@@ -35,10 +35,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Q } from '@nozbe/watermelondb';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Dynamic Theme Hook
 import { useAuth } from '../contexts/AuthContext';
-import { Q } from '@nozbe/watermelondb';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import type CategoryModel from '@/db/models/Category';
@@ -723,7 +723,7 @@ export default function InsightsScreen() {
             .query(
               Q.where('user_id', userId),
               Q.where('date', Q.gte(monthRange.from)),
-              Q.where('date', Q.lte(monthRange.to)),
+              Q.where('date', Q.lte(monthRange.to))
             )
             .fetch(),
           txCol
@@ -731,7 +731,7 @@ export default function InsightsScreen() {
               Q.where('user_id', userId),
               Q.where('type', 'expense'),
               Q.where('date', Q.gte(prevFrom)),
-              Q.where('date', Q.lte(prevTo)),
+              Q.where('date', Q.lte(prevTo))
             )
             .fetch(),
           txCol
@@ -740,7 +740,7 @@ export default function InsightsScreen() {
               Q.where('type', 'expense'),
               Q.where('date', Q.gte(monthRange.from)),
               Q.where('date', Q.lte(monthRange.to)),
-              Q.sortBy('amount', Q.desc),
+              Q.sortBy('amount', Q.desc)
             )
             .fetch(),
         ]);
@@ -760,7 +760,11 @@ export default function InsightsScreen() {
 
         const txData = monthTxRecords
           .filter((t) => t.type === 'expense' && !isTransferRow(t))
-          .map((t) => ({ category: t.category ?? null, amount: t.amount, type: t.type }));
+          .map((t) => ({
+            category: t.category ?? null,
+            amount: t.amount,
+            type: t.type,
+          }));
         const incomeTxData = monthTxRecords
           .filter((t) => t.type === 'income' && !isTransferRow(t))
           .map((t) => ({ category: t.category ?? null, amount: t.amount }));
@@ -804,7 +808,8 @@ export default function InsightsScreen() {
           // 0 = "no budget set" — the UI guards against division by zero
           // downstream. Was previously falling back to a compile-time default
           // that could diverge from what the user edited.
-          nextBudgets[key] = cat.budget_limit && cat.budget_limit > 0 ? cat.budget_limit : 0;
+          nextBudgets[key] =
+            cat.budget_limit && cat.budget_limit > 0 ? cat.budget_limit : 0;
           nextMeta[key] = {
             label: cat.name,
             emoji: cat.emoji,

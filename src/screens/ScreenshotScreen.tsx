@@ -444,7 +444,9 @@ export default function ScreenshotScreen() {
 
       const targetAccountId =
         selectedAccount?.id ??
-        (parsedData.account.value ? String(parsedData.account.value) : undefined) ??
+        (parsedData.account.value
+          ? String(parsedData.account.value)
+          : undefined) ??
         accounts[0]?.id;
 
       if (!userId || !targetAccountId) {
@@ -454,7 +456,9 @@ export default function ScreenshotScreen() {
       await createTransaction({
         userId,
         accountId: targetAccountId,
-        merchantName: parsedData.merchant.value ? String(parsedData.merchant.value) : undefined,
+        merchantName: parsedData.merchant.value
+          ? String(parsedData.merchant.value)
+          : undefined,
         amount: Number(parsedData.amount.value),
         date: isoDate.split('T')[0],
         type: 'expense',

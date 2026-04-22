@@ -18,10 +18,10 @@ import BottomSheet, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { FlashList, ListRenderItem } from '@shopify/flash-list';
+import { Q } from '@nozbe/watermelondb';
 import { radius, spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext';
 import type { Transaction, Account } from '@/types';
-import { Q } from '@nozbe/watermelondb';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -121,7 +121,7 @@ export default function AccountDetailScreen() {
       .query(
         Q.where('user_id', userId),
         Q.where('account_id', selectedAccount.id),
-        Q.sortBy('date', Q.desc),
+        Q.sortBy('date', Q.desc)
       );
     const sub = query.observe().subscribe((records) => {
       setTransactions(
@@ -135,7 +135,8 @@ export default function AccountDetailScreen() {
           merchant_name: r.merchantName ?? null,
           display_name: r.displayName ?? null,
           transaction_note: r.transactionNote ?? null,
-          signal_source: (r.signalSource ?? null) as Transaction['signal_source'],
+          signal_source: (r.signalSource ??
+            null) as Transaction['signal_source'],
           date: r.date,
           receipt_url: r.receiptUrl ?? null,
           account_deleted: r.accountDeleted,
@@ -143,7 +144,7 @@ export default function AccountDetailScreen() {
           amount_confidence: r.amountConfidence ?? null,
           date_confidence: r.dateConfidence ?? null,
           created_at: r.serverCreatedAt ?? new Date(r.updatedAt).toISOString(),
-        })),
+        }))
       );
       setLoading(false);
     });

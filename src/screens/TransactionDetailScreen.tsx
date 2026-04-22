@@ -22,7 +22,10 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Skeleton } from '@/components/Skeleton';
-import { deleteTransaction, updateTransaction } from '@/services/localMutations';
+import {
+  deleteTransaction,
+  updateTransaction,
+} from '@/services/localMutations';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import type AccountModel from '@/db/models/Account';
@@ -216,12 +219,16 @@ export default function TransactionDetailScreen() {
     if (!transactionId) return;
     setLoading(true);
     try {
-      const record = await database.get<TransactionModel>('transactions').find(transactionId);
+      const record = await database
+        .get<TransactionModel>('transactions')
+        .find(transactionId);
       let accountName = '';
       let accountColour = colors.textSecondary;
       if (record.accountId) {
         try {
-          const acc = await database.get<AccountModel>('accounts').find(record.accountId);
+          const acc = await database
+            .get<AccountModel>('accounts')
+            .find(record.accountId);
           accountName = acc.name;
           accountColour = acc.brandColour ?? colors.textSecondary;
         } catch {
@@ -244,8 +251,10 @@ export default function TransactionDetailScreen() {
         merchant_confidence: record.merchantConfidence ?? null,
         amount_confidence: record.amountConfidence ?? null,
         date_confidence: record.dateConfidence ?? null,
-        signal_source: (record.signalSource ?? null) as Transaction['signal_source'],
-        created_at: record.serverCreatedAt ?? new Date(record.updatedAt).toISOString(),
+        signal_source: (record.signalSource ??
+          null) as Transaction['signal_source'],
+        created_at:
+          record.serverCreatedAt ?? new Date(record.updatedAt).toISOString(),
         account_name: accountName,
         account_brand_colour: accountColour,
       };

@@ -122,6 +122,16 @@ function remoteRowToRaw(table: TableName, row: RemoteRow): Record<string, unknow
 }
 
 /**
+ * Columns the client must never push — Supabase recomputes them from
+ * authoritative data (e.g. `accounts.balance` is derived from the sum of
+ * transactions via a server trigger). Pushing them would reintroduce a
+ * last-write-wins race when multiple devices sync concurrent transactions.
+ */
+const SERVER_OWNED_COLUMNS: Partial<Record<TableName, readonly string[]>> = {
+  accounts: ['balance'],
+};
+
+/**
  * Convert a WatermelonDB raw record into the payload Supabase expects. Drops
  * Watermelon-only fields and restores the Supabase `created_at` column from
  * `server_created_at`.
@@ -129,8 +139,10 @@ function remoteRowToRaw(table: TableName, row: RemoteRow): Record<string, unknow
 function rawToRemoteRow(table: TableName, raw: Record<string, unknown>): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   const dateCols = DATE_ONLY_COLUMNS[table];
+  const serverOwned = SERVER_OWNED_COLUMNS[table];
   for (const [key, value] of Object.entries(raw)) {
     if (key === '_status' || key === '_changed') continue;
+    if (serverOwned && serverOwned.includes(key)) continue;
     if (key === 'server_created_at') {
       if (value) body.created_at = toIsoString(value) ?? value;
       continue;
@@ -155,7 +167,12 @@ export async function syncDatabase(): Promise<void> {
     pullChanges: async ({ lastPulledAt }): Promise<SyncPullResult> => {
       const sinceIso = new Date(lastPulledAt ?? 0).toISOString();
       const changes: SyncDatabaseChangeSet = {} as SyncDatabaseChangeSet;
-      let serverNow = Date.now();
+      // Seed the watermark with `lastPulledAt` (never the local wall clock).
+      // A device whose clock is skewed into the future must not be allowed to
+      // stamp a future `serverNow` — the next pull would then miss real
+      // server changes until the server's clock caught up. We only advance
+      // `serverNow` based on timestamps Postgres actually produced.
+      let serverNow = lastPulledAt ?? 0;
 
       for (const table of SYNCED_TABLES) {
         // Pull both normal changes and tombstones separately. Some rows are
@@ -196,9 +213,11 @@ export async function syncDatabase(): Promise<void> {
             toMs(row.created_at),
             toMs(row.deleted_at),
           );
-          // Only emit a deletion if the tombstone itself is newer than the
-          // client's watermark.
-          if (row.deleted_at && toMs(row.deleted_at) > (lastPulledAt ?? 0)) {
+          // Any row with a tombstone is a delete. The server-side
+          // `updated_at > lastPulledAt` filter already guarantees freshness,
+          // so we must not re-check `deleted_at` against the client clock —
+          // a slow local clock would otherwise resurrect deleted rows.
+          if (row.deleted_at) {
             deleted.push(row.id);
             continue;
           }

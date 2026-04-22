@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { Q } from '@nozbe/watermelondb';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -24,7 +25,6 @@ import {
 import { useAccounts } from '@/hooks/useAccounts';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { useCategories } from '@/hooks/useCategories';
-import { Q } from '@nozbe/watermelondb';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 
@@ -122,7 +122,7 @@ export default function ChatScreen() {
           type: r.type,
           category: r.category ?? null,
           date: r.date,
-        })),
+        }))
       );
     });
     return () => sub.unsubscribe();

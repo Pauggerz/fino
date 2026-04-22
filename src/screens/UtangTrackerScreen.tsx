@@ -193,7 +193,10 @@ export default function UtangTrackerScreen() {
         dueDate: addForm.due_date.trim() || undefined,
       });
     } catch (err) {
-      Alert.alert('Save failed', err instanceof Error ? err.message : 'Please try again.');
+      Alert.alert(
+        'Save failed',
+        err instanceof Error ? err.message : 'Please try again.'
+      );
     }
   };
 
@@ -224,7 +227,10 @@ export default function UtangTrackerScreen() {
     try {
       await localUpdateDebt(targetId, { amountPaid: newPaid });
     } catch (err) {
-      Alert.alert('Save failed', err instanceof Error ? err.message : 'Please try again.');
+      Alert.alert(
+        'Save failed',
+        err instanceof Error ? err.message : 'Please try again.'
+      );
     } finally {
       setPayLoading(false);
     }
@@ -242,7 +248,10 @@ export default function UtangTrackerScreen() {
           try {
             await localDeleteDebt(debt.id);
           } catch (err) {
-            Alert.alert('Delete failed', err instanceof Error ? err.message : 'Please try again.');
+            Alert.alert(
+              'Delete failed',
+              err instanceof Error ? err.message : 'Please try again.'
+            );
           }
         },
       },
