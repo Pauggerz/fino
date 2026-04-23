@@ -314,7 +314,7 @@ export default function TransactionDetailScreen() {
       transactionNote: editedNote || null,
       accountId: editedAccountId,
       category: editedCategory,
-      date: editedDate.toISOString().split('T')[0],
+      date: editedDate.toISOString(),
     });
 
     const newAcctInfo = accounts.find((a) => a.id === editedAccountId);

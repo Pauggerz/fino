@@ -460,7 +460,7 @@ export default function ScreenshotScreen() {
           ? String(parsedData.merchant.value)
           : undefined,
         amount: Number(parsedData.amount.value),
-        date: isoDate.split('T')[0],
+        date: isoDate,
         type: 'expense',
         category: selectedCategory,
         signalSource: 'merchant',

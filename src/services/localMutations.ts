@@ -202,7 +202,7 @@ export async function saveAdjustment(params: {
 }): Promise<void> {
   const diff = toCents(params.newBalance - params.currentBalance);
   if (diff === 0) return;
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toISOString();
   const newBalance = toCents(params.newBalance);
 
   await database.write(async () => {
@@ -237,7 +237,7 @@ export async function saveTransfer(params: {
   destAccountName: string;
   amount: number;
 }): Promise<void> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toISOString();
   const amount = toCents(params.amount);
 
   await database.write(async () => {

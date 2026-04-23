@@ -49,6 +49,7 @@ import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
 import { setLastSaved } from '@/services/lastSavedStore';
 import { createTransaction } from '@/services/localMutations';
+import { getLocalDateString } from '@/utils/date';
 import type { Transaction } from '@/types';
 
 type TxType = 'exp' | 'inc';
@@ -154,7 +155,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const [showAmountLimitToast, setShowAmountLimitToast] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [tempSelectedDate, setTempSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
+    getLocalDateString(new Date())
   );
   const [showDatePickerModal, setShowDatePickerModal] = useState(false);
   const [recentAccountIds, setRecentAccountIds] = useState<string[]>([]);
@@ -492,7 +493,7 @@ export default function AddTransactionSheet({ route }: Props) {
         transactionNote: aiText || null,
         signalSource:
           signalSource === 'ai_description' ? 'description' : 'manual',
-        date: selectedDate.toISOString().split('T')[0],
+        date: selectedDate.toISOString(),
       });
 
       setLastSaved({
@@ -969,7 +970,7 @@ export default function AddTransactionSheet({ route }: Props) {
             <Calendar
               current={tempSelectedDate}
               onDayPress={(day) => setTempSelectedDate(day.dateString)}
-              maxDate={new Date().toISOString().split('T')[0]}
+              maxDate={getLocalDateString(new Date())}
               markedDates={{ [tempSelectedDate]: { selected: true } }}
               theme={{
                 selectedDayBackgroundColor: colors.primary,

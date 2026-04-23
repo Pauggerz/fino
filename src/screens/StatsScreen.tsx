@@ -700,12 +700,20 @@ export default function InsightsScreen() {
         const prevMonthNum = selectedMonth === 0 ? 11 : selectedMonth - 1;
         const prevYearNum =
           selectedMonth === 0 ? selectedYear - 1 : selectedYear;
-        const prevFrom = new Date(prevYearNum, prevMonthNum, 1)
-          .toISOString()
-          .split('T')[0];
-        const prevTo = new Date(prevYearNum, prevMonthNum + 1, 0)
-          .toISOString()
-          .split('T')[0];
+        const prevFrom = new Date(
+          prevYearNum,
+          prevMonthNum,
+          1
+        ).toISOString();
+        const prevTo = new Date(
+          prevYearNum,
+          prevMonthNum + 1,
+          0,
+          23,
+          59,
+          59,
+          999
+        ).toISOString();
 
         const catCol = database.get<CategoryModel>('categories');
         const txCol = database.get<TransactionModel>('transactions');
