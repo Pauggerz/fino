@@ -143,7 +143,7 @@ export const useTransactions = (
     const sub = database
       .get<AccountModel>('accounts')
       .query(Q.where('user_id', userId))
-      .observe()
+      .observeWithColumns(['name', 'brand_colour', 'letter_avatar'])
       .subscribe((records) => {
         const map = new Map<string, AccountModel>();
         for (const a of records) map.set(a.id, a);
@@ -165,7 +165,16 @@ export const useTransactions = (
     const sub = database
       .get<TransactionModel>('transactions')
       .query(Q.where('user_id', userId), ...clauses)
-      .observe()
+      .observeWithColumns([
+        'amount',
+        'type',
+        'date',
+        'is_transfer',
+        'category',
+        'merchant_name',
+        'display_name',
+        'account_id',
+      ])
       .subscribe((records) => {
         setTxRecords(records);
         setLoading(false);

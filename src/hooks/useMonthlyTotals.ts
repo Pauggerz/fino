@@ -80,7 +80,9 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     const MS_PER_DAY = 1000 * 60 * 60 * 24;
     const todayStart = startOfLocalDay(now);
 
-    const sub = query.observe().subscribe((records) => {
+    const sub = query
+      .observeWithColumns(['amount', 'type', 'date', 'is_transfer', 'category'])
+      .subscribe((records) => {
       let income = 0;
       let expense = 0;
       const buckets: number[] = new Array(7).fill(0);
