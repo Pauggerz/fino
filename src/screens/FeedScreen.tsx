@@ -53,7 +53,7 @@ import {
   INCOME_CATEGORIES,
   CATEGORY_COLOR,
 } from '@/constants/categoryMappings';
-import { supabase } from '@/services/supabase';
+import { deleteTransaction } from '@/services/localMutations';
 import Toast from '../components/Toast';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
 import { Skeleton } from '@/components/Skeleton';
@@ -1214,27 +1214,7 @@ export default function FeedScreen() {
   // ── Delete handler ──
   const handleDelete = useCallback(
     async (tx: FeedTransaction) => {
-      await supabase.from('transactions').delete().eq('id', tx.id);
-
-      if (!tx.account_deleted) {
-        const { data: acct } = await supabase
-          .from('accounts')
-          .select('balance')
-          .eq('id', tx.account_id)
-          .single();
-
-        if (acct) {
-          const restored =
-            tx.type === 'expense'
-              ? acct.balance + tx.amount
-              : acct.balance - tx.amount;
-          await supabase
-            .from('accounts')
-            .update({ balance: restored })
-            .eq('id', tx.account_id);
-        }
-      }
-
+      await deleteTransaction(tx.id);
       refetch();
       setToastTitle('Deleted');
       setToastSubtitle(
@@ -1324,15 +1304,20 @@ export default function FeedScreen() {
   const heroAmountPrefix = viewType === 'expense' ? '-' : '+';
 
   // ── Flatten sections → list items ──
-  const listData: ListItem[] = [
-    { type: 'hero' },
-    { type: 'sticky' },
-    { type: 'controls' },
-    ...sections.flatMap((s) => [
-      { type: 'header' as const, title: s.title },
-      ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
-    ]),
-  ];
+  // Memoised on `sections` — list identity is stable across unrelated parent
+  // re-renders, so FlashList's diffing stays cheap.
+  const listData = useMemo<ListItem[]>(
+    () => [
+      { type: 'hero' },
+      { type: 'sticky' },
+      { type: 'controls' },
+      ...sections.flatMap((s) => [
+        { type: 'header' as const, title: s.title },
+        ...s.data.map((tx) => ({ type: 'transaction' as const, data: tx })),
+      ]),
+    ],
+    [sections]
+  );
 
   const handleDeleteTransaction = useCallback(
     (tx: FeedTransaction) => {

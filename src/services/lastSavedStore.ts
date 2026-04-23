@@ -2,6 +2,11 @@
  * Lightweight module-level store that carries the most recently saved
  * transaction across the AddTransactionSheet → HomeScreen boundary so
  * HomeScreen can show an undo toast.
+ *
+ * Intentionally NOT reactive. The only consumer (HomeScreen) drains this
+ * once in its focus effect and clears it; there is no "observe the latest
+ * saved entry" use case. Don't wrap with useSyncExternalStore unless a
+ * second, always-mounted consumer appears.
  */
 
 export interface LastSavedEntry {

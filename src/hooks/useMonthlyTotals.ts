@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, startTransition } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '@/services/supabase';
-import { getUnsyncedPendingQueue } from '@/services/syncService';
+import { useEffect, useState } from 'react';
+import { Q } from '@nozbe/watermelondb';
 
-const CACHE_KEY = 'FINO_TOTALS_CACHE';
+import { database } from '@/db';
+import { useAuth } from '@/contexts/AuthContext';
+import { triggerSync } from '@/services/watermelonSync';
+import type TransactionModel from '@/db/models/Transaction';
 
 export interface SparklinePoint {
   id: string;
@@ -19,119 +20,103 @@ export interface MonthlyTotals {
   refetch: () => Promise<void>;
 }
 
+function monthBounds() {
+  const now = new Date();
+  const start = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    1,
+    0,
+    0,
+    0,
+    0,
+  ).toISOString();
+  const end = new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999,
+  ).toISOString();
+  return { start, end, now };
+}
+
 export const useMonthlyTotals = (): MonthlyTotals => {
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalExpense, setTotalExpense] = useState(0);
   const [sparklineData, setSparklineData] = useState<SparklinePoint[]>(
-    Array.from({ length: 7 }, (_, i) => ({ id: `day${i}`, val: 0 }))
+    Array.from({ length: 7 }, (_, i) => ({ id: `day${i}`, val: 0 })),
   );
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchTotals = useCallback(async () => {
-    setLoading(true);
-
-    let baseIncome = 0;
-    let baseExpense = 0;
-
-    // 1. Load from local cache first
-    try {
-      const cachedData = await AsyncStorage.getItem(CACHE_KEY);
-      if (cachedData) {
-        const parsed = JSON.parse(cachedData);
-        baseIncome = parsed.totalIncome || 0;
-        baseExpense = parsed.totalExpense || 0;
-      }
-    } catch (e) {
-      if (__DEV__) console.error('Failed to load totals cache', e);
-    }
-
-    const now = new Date();
-    const startOfMonth = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      1
-    ).toISOString();
-    const endOfMonth = new Date(
-      now.getFullYear(),
-      now.getMonth() + 1,
-      0,
-      23,
-      59,
-      59,
-      999
-    ).toISOString();
-
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('amount, type, date')
-      .gte('date', startOfMonth)
-      .lte('date', endOfMonth);
-
-    if (!error && data) {
-      setError(null);
-      baseIncome = data
-        .filter((t) => t.type === 'income')
-        .reduce((s, t) => s + t.amount, 0);
-      baseExpense = data
-        .filter((t) => t.type === 'expense')
-        .reduce((s, t) => s + t.amount, 0);
-
-      // Save to cache
-      AsyncStorage.setItem(
-        CACHE_KEY,
-        JSON.stringify({ totalIncome: baseIncome, totalExpense: baseExpense })
-      ).catch((e) => {
-        if (__DEV__) console.warn('[useMonthlyTotals] cache write failed:', e);
-      });
-
-      // Compute 7-day trailing sparkline from expense data
-      const buckets: number[] = new Array(7).fill(0);
-      data
-        .filter((t) => t.type === 'expense' && t.date)
-        .forEach((t) => {
-          const dayDiff = Math.floor(
-            (now.getTime() - new Date(t.date).getTime()) / (1000 * 60 * 60 * 24)
-          );
-          if (dayDiff >= 0 && dayDiff < 7) {
-            buckets[6 - dayDiff] += t.amount;
-          }
-        });
-      const maxBucket = Math.max(...buckets, 1);
-      startTransition(() => {
-        setSparklineData(
-          buckets.map((val, i) => ({ id: `day${i}`, val: val / maxBucket }))
-        );
-      });
-    } else if (error) {
-      setError(error.message ?? 'Failed to load monthly totals');
-    }
-
-    // 2. OFFLINE CALCULATION: Apply pending offline transactions
-    const pendingQueue = await getUnsyncedPendingQueue();
-    pendingQueue.forEach((tx) => {
-      if (!tx.date || tx.date < startOfMonth || tx.date > endOfMonth) return;
-      if (tx.type === 'income') baseIncome += tx.amount;
-      if (tx.type === 'expense') baseExpense += tx.amount;
-    });
-
-    startTransition(() => {
-      setTotalIncome(baseIncome);
-      setTotalExpense(baseExpense);
-      setLoading(false);
-    });
-  }, []);
+  const { user } = useAuth();
+  const userId = user?.id;
 
   useEffect(() => {
-    fetchTotals();
-  }, [fetchTotals]);
+    if (!userId) {
+      setTotalIncome(0);
+      setTotalExpense(0);
+      setSparklineData(Array.from({ length: 7 }, (_, i) => ({ id: `day${i}`, val: 0 })));
+      setLoading(false);
+      return;
+    }
+
+    const { start, end, now } = monthBounds();
+    const query = database
+      .get<TransactionModel>('transactions')
+      .query(
+        Q.where('user_id', userId),
+        Q.where('date', Q.gte(start)),
+        Q.where('date', Q.lte(end)),
+        Q.where('account_deleted', false),
+      );
+
+    // Local-midnight normaliser keeps day buckets stable across UTC midnight
+    // for users west of UTC. Mixing 'YYYY-MM-DD' strings with raw Date.now()
+    // would otherwise shift today's tx into "yesterday" after 00:00 UTC.
+    const startOfLocalDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    const todayStart = startOfLocalDay(now);
+
+    const sub = query.observe().subscribe((records) => {
+      let income = 0;
+      let expense = 0;
+      const buckets: number[] = new Array(7).fill(0);
+
+      for (const tx of records) {
+        // Inter-account transfers are balance moves, not real income/expense.
+        // The string check handles rows created before migration 013 backfilled is_transfer.
+        const isTransfer = tx.isTransfer || (tx.category ?? '').toLowerCase() === 'transfer';
+        if (isTransfer) continue;
+        if (tx.type === 'income') income += tx.amount;
+        if (tx.type === 'expense') {
+          expense += tx.amount;
+          if (tx.date) {
+            const txStart = startOfLocalDay(new Date(tx.date));
+            const dayDiff = Math.floor((todayStart - txStart) / MS_PER_DAY);
+            if (dayDiff >= 0 && dayDiff < 7) buckets[6 - dayDiff] += tx.amount;
+          }
+        }
+      }
+
+      const maxBucket = Math.max(...buckets, 1);
+      setTotalIncome(income);
+      setTotalExpense(expense);
+      setSparklineData(buckets.map((val, i) => ({ id: `day${i}`, val: val / maxBucket })));
+      setLoading(false);
+    });
+
+    return () => sub.unsubscribe();
+  }, [userId]);
 
   return {
     totalIncome,
     totalExpense,
     sparklineData,
     loading,
-    error,
-    refetch: fetchTotals,
+    error: null,
+    refetch: triggerSync,
   };
 };

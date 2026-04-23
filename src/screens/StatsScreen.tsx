@@ -35,9 +35,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Q } from '@nozbe/watermelondb';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Dynamic Theme Hook
-import { supabase } from '@/services/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { database } from '@/db';
+import type TransactionModel from '@/db/models/Transaction';
+import type CategoryModel from '@/db/models/Category';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import {
   INCOME_CATEGORIES,
@@ -171,15 +175,6 @@ const INCOME_THEME: Record<
     iconGrad: ['#F7F5F2', '#efece8'],
     badgeBg: '#F7F5F2',
   },
-};
-
-const DEFAULT_CATEGORY_BUDGETS: Record<string, number> = {
-  food: 1500,
-  transport: 1000,
-  shopping: 2000,
-  bills: 1500,
-  health: 1000,
-  default: 1000,
 };
 
 const INCOME_KEYS = new Set(INCOME_CATEGORIES.map((c) => c.key));
@@ -502,6 +497,8 @@ function AccountActivityCard({
 export default function InsightsScreen() {
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
+  const { user } = useAuth();
+  const userId = user?.id;
   const insets = useSafeAreaInsets();
   const styles = useMemo(
     () => createStyles(colors, isDark, insets.top),
@@ -661,6 +658,11 @@ export default function InsightsScreen() {
 
   const fetchStats = useCallback(
     async (force = false) => {
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
       const cacheKey = `FINO_STATS_CACHE_${selectedYear}_${selectedMonth}`;
 
       // Skip entirely if we just fetched the same month within the stale window.
@@ -694,11 +696,15 @@ export default function InsightsScreen() {
         }
         // Subsequent focuses: keep loading false so skeletons don't flash
 
-        // Compute prev month range for delta badges
+        // Compute prev month range for delta badges (date-only, matches tx.date format)
         const prevMonthNum = selectedMonth === 0 ? 11 : selectedMonth - 1;
         const prevYearNum =
           selectedMonth === 0 ? selectedYear - 1 : selectedYear;
-        const prevFrom = new Date(prevYearNum, prevMonthNum, 1).toISOString();
+        const prevFrom = new Date(
+          prevYearNum,
+          prevMonthNum,
+          1
+        ).toISOString();
         const prevTo = new Date(
           prevYearNum,
           prevMonthNum + 1,
@@ -709,61 +715,92 @@ export default function InsightsScreen() {
           999
         ).toISOString();
 
+        const catCol = database.get<CategoryModel>('categories');
+        const txCol = database.get<TransactionModel>('transactions');
+
         const [
-          { data: catData },
-          { data: txData },
-          { data: incomeTxData },
-          { data: dailyTxData },
-          { data: topTxData },
-          { data: acctTxData },
-          { data: prevTxData },
+          catRecords,
+          monthTxRecords,
+          prevMonthTxRecords,
+          topExpenseRecords,
         ] = await Promise.all([
-          supabase
-            .from('categories')
-            .select(
-              'name, budget_limit, emoji, text_colour, tile_bg_colour, sort_order'
+          catCol
+            .query(Q.where('user_id', userId), Q.where('is_active', true))
+            .fetch(),
+          txCol
+            .query(
+              Q.where('user_id', userId),
+              Q.where('date', Q.gte(monthRange.from)),
+              Q.where('date', Q.lte(monthRange.to))
             )
-            .eq('is_active', true),
-          supabase
-            .from('transactions')
-            .select('category, amount, type')
-            .eq('type', 'expense')
-            .gte('date', monthRange.from)
-            .lte('date', monthRange.to),
-          supabase
-            .from('transactions')
-            .select('category, amount')
-            .eq('type', 'income')
-            .gte('date', monthRange.from)
-            .lte('date', monthRange.to),
-          supabase
-            .from('transactions')
-            .select('date, amount')
-            .eq('type', 'expense')
-            .gte('date', monthRange.from)
-            .lte('date', monthRange.to),
-          supabase
-            .from('transactions')
-            .select(
-              'display_name, merchant_name, amount, category, date, account_id'
+            .fetch(),
+          txCol
+            .query(
+              Q.where('user_id', userId),
+              Q.where('type', 'expense'),
+              Q.where('date', Q.gte(prevFrom)),
+              Q.where('date', Q.lte(prevTo))
             )
-            .eq('type', 'expense')
-            .gte('date', monthRange.from)
-            .lte('date', monthRange.to)
-            .order('amount', { ascending: false })
-            .limit(5),
-          supabase
-            .from('transactions')
-            .select('account_id, amount, type')
-            .gte('date', monthRange.from)
-            .lte('date', monthRange.to),
-          supabase
-            .from('transactions')
-            .select('category, amount')
-            .eq('type', 'expense')
-            .gte('date', prevFrom)
-            .lte('date', prevTo),
+            .fetch(),
+          txCol
+            .query(
+              Q.where('user_id', userId),
+              Q.where('type', 'expense'),
+              Q.where('date', Q.gte(monthRange.from)),
+              Q.where('date', Q.lte(monthRange.to)),
+              Q.sortBy('amount', Q.desc)
+            )
+            .fetch(),
         ]);
+
+        const catData = catRecords.map((c) => ({
+          name: c.name,
+          budget_limit: c.budgetLimit ?? null,
+          emoji: c.emoji ?? null,
+          text_colour: c.textColour ?? null,
+          tile_bg_colour: c.tileBgColour ?? null,
+          sort_order: c.sortOrder,
+        }));
+        // Transfers are balance moves between accounts, not expense spend.
+        // String check handles pre-migration-013 rows without is_transfer set.
+        const isTransferRow = (t: TransactionModel) =>
+          t.isTransfer || (t.category ?? '').toLowerCase() === 'transfer';
+
+        const txData = monthTxRecords
+          .filter((t) => t.type === 'expense' && !isTransferRow(t))
+          .map((t) => ({
+            category: t.category ?? null,
+            amount: t.amount,
+            type: t.type,
+          }));
+        const incomeTxData = monthTxRecords
+          .filter((t) => t.type === 'income' && !isTransferRow(t))
+          .map((t) => ({ category: t.category ?? null, amount: t.amount }));
+        const dailyTxData = monthTxRecords
+          .filter((t) => t.type === 'expense' && !isTransferRow(t))
+          .map((t) => ({ date: t.date, amount: t.amount }));
+        const topTxData = topExpenseRecords
+          .filter((t) => !isTransferRow(t))
+          .slice(0, 5)
+          .map((t) => ({
+            display_name: t.displayName ?? null,
+            merchant_name: t.merchantName ?? null,
+            amount: t.amount,
+            category: t.category ?? null,
+            date: t.date,
+            account_id: t.accountId,
+          }));
+        const acctTxData = monthTxRecords.map((t) => ({
+          account_id: t.accountId,
+          amount: t.amount,
+          type: t.type,
+        }));
+        const prevTxData = prevMonthTxRecords
+          .filter((t) => !isTransferRow(t))
+          .map((t) => ({
+            category: t.category ?? null,
+            amount: t.amount,
+          }));
 
         const nextTotals: Record<string, number> = {};
         const nextBudgets: Record<string, number> = {};
@@ -776,11 +813,11 @@ export default function InsightsScreen() {
           if (!key || INCOME_KEYS.has(emojiKey)) return;
           nextKeys.push(key);
           nextTotals[key] = 0;
+          // 0 = "no budget set" — the UI guards against division by zero
+          // downstream. Was previously falling back to a compile-time default
+          // that could diverge from what the user edited.
           nextBudgets[key] =
-            cat.budget_limit && cat.budget_limit > 0
-              ? cat.budget_limit
-              : (DEFAULT_CATEGORY_BUDGETS[key] ??
-                DEFAULT_CATEGORY_BUDGETS.default);
+            cat.budget_limit && cat.budget_limit > 0 ? cat.budget_limit : 0;
           nextMeta[key] = {
             label: cat.name,
             emoji: cat.emoji,
@@ -885,7 +922,7 @@ export default function InsightsScreen() {
         setLoading(false);
       }
     },
-    [applyStatsBundle, monthRange, selectedMonth, selectedYear]
+    [applyStatsBundle, monthRange, selectedMonth, selectedYear, userId]
   );
 
   // Re-fetch when month/year changes while screen is already mounted;
@@ -898,6 +935,31 @@ export default function InsightsScreen() {
     // Month changed — force past the freshness gate since it's a different dataset.
     fetchStats(true);
   }, [selectedYear, selectedMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reactive refresh: any change to the tx or category collection triggers a
+  // recompute so a new transaction is reflected in Stats immediately, instead
+  // of waiting for the next focus. Debounced so batch writes (e.g. transfer
+  // creates two tx rows + updates both accounts) collapse into one refresh.
+  useEffect(() => {
+    if (!userId) return;
+    const txCol = database.get<TransactionModel>('transactions');
+    const catCol = database.get<CategoryModel>('categories');
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        fetchStats(true);
+      }, 250);
+    };
+    const subTx = txCol.changes.subscribe(schedule);
+    const subCat = catCol.changes.subscribe(schedule);
+    return () => {
+      if (timer) clearTimeout(timer);
+      subTx.unsubscribe();
+      subCat.unsubscribe();
+    };
+  }, [userId, fetchStats]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1204,8 +1266,7 @@ export default function InsightsScreen() {
           const meta = expenseCategoryMeta[catKey];
           const theme = CATEGORY_THEME[catKey] ?? CATEGORY_THEME.other;
           const amount = expenseTotals[catKey] ?? 0;
-          const budget =
-            expenseBudgets[catKey] ?? DEFAULT_CATEGORY_BUDGETS.default;
+          const budget = expenseBudgets[catKey] ?? 0;
           const pct = budget > 0 ? (amount / budget) * 100 : 0;
           const color = meta?.textColor ?? theme.nameColor;
           const tileBg = meta?.tileBg ?? theme.badgeBg;

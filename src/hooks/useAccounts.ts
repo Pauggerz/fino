@@ -1,101 +1,72 @@
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  startTransition,
-} from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '@/services/supabase';
-import { Account } from '@/types';
-import { getUnsyncedPendingQueue } from '@/services/syncService';
+import { useEffect, useMemo, useState } from 'react';
+import { Q } from '@nozbe/watermelondb';
+
+import { database } from '@/db';
+import type AccountModel from '@/db/models/Account';
+import { useAuth } from '@/contexts/AuthContext';
+import { triggerSync } from '@/services/watermelonSync';
+import type { Account } from '@/types';
 
 /* eslint-disable import/prefer-default-export */
 
-const CACHE_KEY = 'FINO_ACCOUNTS_CACHE';
+function toPlain(record: AccountModel): Account {
+  const raw = record._raw as Record<string, unknown>;
+  return {
+    id: record.id,
+    user_id: record.userId,
+    name: record.name,
+    type: record.type,
+    brand_colour: record.brandColour,
+    letter_avatar: record.letterAvatar,
+    balance: record.balance,
+    starting_balance: record.startingBalance,
+    is_active: record.isActive,
+    is_deletable: record.isDeletable,
+    sort_order: record.sortOrder,
+    created_at: (raw.server_created_at as string) ?? '',
+    last_reconciled_at: record.lastReconciledAt ?? null,
+  };
+}
 
 export const useAccounts = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const isFetchingRef = useRef(false);
-
-  const fetchAccounts = useCallback(async () => {
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
-    try {
-      let fetchedAccounts: Account[] = [];
-
-      // 1. Load from local cache first for instant/offline display
-      try {
-        const cachedData = await AsyncStorage.getItem(CACHE_KEY);
-        if (cachedData) {
-          fetchedAccounts = JSON.parse(cachedData);
-          // Cache hit — render immediately without a loading spinner
-        } else {
-          // First boot — no cache yet, show spinner while we fetch
-          setLoading(true);
-        }
-      } catch (e) {
-        if (__DEV__) console.error('Failed to load accounts cache', e);
-        setLoading(true);
-      }
-
-      // Show cache immediately (no pending delta yet — we apply it once after
-      // fresh data arrives to avoid double-counting if the sync queue drains
-      // between the two reads).
-      if (fetchedAccounts.length > 0) {
-        startTransition(() => {
-          setAccounts(fetchedAccounts);
-          setLoading(false);
-        });
-      }
-
-      // 2. Fetch fresh data from Supabase
-      const { data, error } = await supabase
-        .from('accounts')
-        .select('*')
-        .eq('is_active', true)
-        .order('sort_order');
-
-      // 3. If successful, update base variables and cache
-      if (!error && data) {
-        fetchedAccounts = data;
-        setError(null);
-        AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data)).catch((e) => {
-          if (__DEV__) console.warn('[useAccounts] cache write failed:', e);
-        });
-      } else if (error) {
-        setError(error.message ?? 'Failed to load accounts');
-      }
-
-      // 4. OFFLINE CALCULATION: Apply pending transactions to balances.
-      // Read the queue exactly once here so we never apply it twice.
-      const pendingQueue = await getUnsyncedPendingQueue();
-      const adjustedAccounts = fetchedAccounts.map((acc) => {
-        let pendingDelta = 0;
-        pendingQueue.forEach((tx) => {
-          if (tx.account_id === acc.id) {
-            pendingDelta += tx.type === 'expense' ? -tx.amount : tx.amount;
-          }
-        });
-        return { ...acc, balance: acc.balance + pendingDelta };
-      });
-
-      startTransition(() => {
-        setAccounts(adjustedAccounts);
-        setLoading(false);
-      });
-    } finally {
-      isFetchingRef.current = false;
-    }
-  }, []);
+  const { user } = useAuth();
+  const userId = user?.id;
 
   useEffect(() => {
-    fetchAccounts();
-  }, [fetchAccounts]);
+    if (!userId) {
+      setAccounts([]);
+      setLoading(false);
+      return;
+    }
+    const query = database
+      .get<AccountModel>('accounts')
+      .query(
+        Q.where('user_id', userId),
+        Q.where('is_active', true),
+        Q.sortBy('sort_order', Q.asc),
+      );
+    const sub = query.observe().subscribe((records) => {
+      setAccounts(records.map(toPlain));
+      setLoading(false);
+    });
+    return () => sub.unsubscribe();
+  }, [userId]);
 
-  const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
+  // Round to cents so tiny float-drift on the reduce (which changes every
+  // sync pull as the accounts array re-emits) doesn't retrigger the balance
+  // withTiming animation on HomeScreen and cause a visible twitch.
+  const totalBalance = useMemo(
+    () => Math.round(accounts.reduce((sum, a) => sum + a.balance, 0) * 100) / 100,
+    [accounts],
+  );
 
-  return { accounts, totalBalance, loading, error, refetch: fetchAccounts };
+  return {
+    accounts,
+    totalBalance,
+    loading,
+    error: null,
+    refetch: triggerSync,
+  };
 };

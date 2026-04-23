@@ -5,6 +5,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // for the same cache key across multiple hook instances.
 const inFlightRequests = new Map<string, Promise<void>>();
 
+// Bump this when the shape of any cached payload changes. All previously-cached
+// keys become unreadable (and harmlessly ignored) so old payloads can't be
+// deserialised as the new type.
+const CACHE_KEY_VERSION = 'v1';
+const versionedKey = (key: string) => `${CACHE_KEY_VERSION}:${key}`;
+
 /**
  * Stale-While-Revalidate data hook.
  *
@@ -42,21 +48,23 @@ export function useCachedQuery<T>(
     };
   }, []);
 
+  const storageKey = versionedKey(key);
+
   /** Optimistically overwrite both in-memory state and the AsyncStorage cache. */
   const mutate = useCallback(
     async (newData: T[]) => {
       if (mountedRef.current) setData(newData);
       try {
-        await AsyncStorage.setItem(key, JSON.stringify(newData));
+        await AsyncStorage.setItem(storageKey, JSON.stringify(newData));
       } catch (e) {
         if (__DEV__)
           console.error(
-            `[useCachedQuery] mutate cache write failed (${key})`,
+            `[useCachedQuery] mutate cache write failed (${storageKey})`,
             e
           );
       }
     },
-    [key]
+    [storageKey]
   );
 
   /**
@@ -64,8 +72,8 @@ export function useCachedQuery<T>(
    * so only one network request is ever in flight per key at a time.
    */
   const refetch = useCallback(async () => {
-    if (inFlightRequests.has(key)) {
-      return inFlightRequests.get(key);
+    if (inFlightRequests.has(storageKey)) {
+      return inFlightRequests.get(storageKey);
     }
 
     const request = (async () => {
@@ -76,20 +84,20 @@ export function useCachedQuery<T>(
         if (error || !remote) return;
         if (!mountedRef.current) return;
 
-        await AsyncStorage.setItem(key, JSON.stringify(remote)).catch(() => {});
+        await AsyncStorage.setItem(storageKey, JSON.stringify(remote)).catch(() => {});
         if (mountedRef.current) setData(remote);
       } catch (e) {
         if (__DEV__)
-          console.error(`[useCachedQuery] background fetch failed (${key})`, e);
+          console.error(`[useCachedQuery] background fetch failed (${storageKey})`, e);
       }
     })();
 
     inFlightRequests.set(
-      key,
-      request.finally(() => inFlightRequests.delete(key))
+      storageKey,
+      request.finally(() => inFlightRequests.delete(storageKey))
     );
-    return inFlightRequests.get(key);
-  }, [key]);
+    return inFlightRequests.get(storageKey);
+  }, [storageKey]);
 
   // Initial load: serve cache instantly, then revalidate in background
   useEffect(() => {
@@ -98,14 +106,14 @@ export function useCachedQuery<T>(
     const load = async () => {
       // 1. Serve stale cache immediately — no loading flash for returning users
       try {
-        const cached = await AsyncStorage.getItem(key);
+        const cached = await AsyncStorage.getItem(storageKey);
         if (cached && !cancelled) {
           setData(JSON.parse(cached));
           setLoading(false);
         }
       } catch (e) {
         if (__DEV__)
-          console.error(`[useCachedQuery] cache read failed (${key})`, e);
+          console.error(`[useCachedQuery] cache read failed (${storageKey})`, e);
       }
 
       // 2. Revalidate in the background
@@ -120,9 +128,9 @@ export function useCachedQuery<T>(
     return () => {
       cancelled = true;
     };
-    // key is the only real dependency — fetcher changes are handled via fetcherRef
+    // storageKey is the only real dependency — fetcher changes are handled via fetcherRef
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [storageKey]);
 
   return { data, loading, mutate, refetch };
 }

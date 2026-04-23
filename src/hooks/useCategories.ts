@@ -1,17 +1,19 @@
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  startTransition,
-} from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '@/services/supabase';
-import { Category } from '@/types';
-import { getUnsyncedPendingQueue } from '@/services/syncService';
+import { useCallback, useEffect, useState } from 'react';
+import { Q } from '@nozbe/watermelondb';
+import { combineLatest } from 'rxjs';
 
-// Keys used for income categories — exclude them from expense/budget views
-const INCOME_EMOJI_KEYS = new Set([
+import { database } from '@/db';
+import type CategoryModel from '@/db/models/Category';
+import type TransactionModel from '@/db/models/Transaction';
+import { useAuth } from '@/contexts/AuthContext';
+import { triggerSync } from '@/services/watermelonSync';
+import type { Category } from '@/types';
+
+// Income category names — excluded from budget views.
+// Matched against `category.name` (lowercased). Was previously matched against
+// `cat.emoji`, which silently never fired because `emoji` holds glyphs, not
+// names — income categories were leaking into the budget UI.
+const INCOME_CATEGORY_NAMES = new Set([
   'salary',
   'allowance',
   'freelance',
@@ -20,151 +22,121 @@ const INCOME_EMOJI_KEYS = new Set([
   'investment',
 ]);
 
-const CACHE_KEY = 'FINO_CATEGORIES_CACHE';
-
 export interface CategoryWithSpend extends Category {
   spent: number;
   pct: number;
   state: 'under' | 'nearing' | 'over';
 }
 
-const STALE_WINDOW_MS = 15_000;
+function toPlain(record: CategoryModel): Category {
+  return {
+    id: record.id,
+    user_id: record.userId,
+    name: record.name,
+    emoji: record.emoji ?? null,
+    tile_bg_colour: record.tileBgColour ?? null,
+    text_colour: record.textColour ?? null,
+    budget_limit: record.budgetLimit ?? null,
+    is_active: record.isActive,
+    is_default: record.isDefault,
+    sort_order: record.sortOrder,
+  };
+}
+
+function monthBounds() {
+  const now = new Date();
+  const start = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    1,
+    0,
+    0,
+    0,
+    0,
+  ).toISOString();
+  const end = new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999,
+  ).toISOString();
+  return { start, end };
+}
 
 export const useCategories = () => {
   const [categories, setCategories] = useState<CategoryWithSpend[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const isFetchingRef = useRef(false);
-  const lastFetchedAt = useRef(0);
-
-  const fetchCategoriesAndSpend = useCallback(async (force = false) => {
-    if (isFetchingRef.current) return;
-    if (!force && Date.now() - lastFetchedAt.current < STALE_WINDOW_MS) return;
-    isFetchingRef.current = true;
-    try {
-      let baseCategories: Category[] = [];
-      let hasCachedData = false;
-
-      // 1. Load from local cache first
-      try {
-        const cachedData = await AsyncStorage.getItem(CACHE_KEY);
-        if (cachedData) {
-          baseCategories = JSON.parse(cachedData);
-          hasCachedData = true;
-        } else {
-          // No cache — show spinner on first boot only
-          setLoading(true);
-        }
-      } catch (e) {
-        if (__DEV__) console.error('Failed to load categories cache', e);
-        setLoading(true);
-      }
-
-      // Immediately surface cached categories so the UI renders without waiting
-      if (hasCachedData) {
-        setLoading(false);
-      }
-
-      const now = new Date();
-      const startOfMonth = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        1
-      ).toISOString();
-      const endOfMonth = new Date(
-        now.getFullYear(),
-        now.getMonth() + 1,
-        0,
-        23,
-        59,
-        59,
-        999
-      ).toISOString();
-
-      // 2. Fetch active categories
-      const { data: catData, error: catError } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('is_active', true)
-        .order('sort_order');
-
-      if (!catError && catData) {
-        baseCategories = catData;
-        setError(null);
-      } else if (catError) {
-        setError(catError.message ?? 'Failed to load categories');
-      }
-
-      // 3. Fetch expenses for the current month
-      const { data: txData, error: txError } = await supabase
-        .from('transactions')
-        .select('category, amount')
-        .eq('type', 'expense')
-        .gte('date', startOfMonth)
-        .lte('date', endOfMonth);
-
-      const expenses = txData && !txError ? txData : [];
-      const spendMap: Record<string, number> = {};
-
-      expenses.forEach((tx) => {
-        if (tx.category) {
-          const catKey = tx.category.toLowerCase();
-          spendMap[catKey] = (spendMap[catKey] || 0) + tx.amount;
-        }
-      });
-
-      // 4. OFFLINE CALCULATION: Add offline pending expenses
-      const pendingQueue = await getUnsyncedPendingQueue();
-      pendingQueue.forEach((tx) => {
-        if (!tx.date || tx.date < startOfMonth || tx.date > endOfMonth) return;
-        if (tx.type === 'expense' && tx.category) {
-          const catKey = tx.category.toLowerCase();
-          spendMap[catKey] = (spendMap[catKey] || 0) + tx.amount;
-        }
-      });
-
-      // 5. Combine and calculate states
-      const enriched = baseCategories
-        .filter(
-          (cat) => !INCOME_EMOJI_KEYS.has((cat.emoji ?? '').toLowerCase())
-        )
-        .map((cat) => {
-          const spent = spendMap[cat.name.toLowerCase()] || 0;
-          let pct = 0;
-          if (cat.budget_limit && cat.budget_limit > 0) {
-            pct = spent / cat.budget_limit;
-          }
-
-          let state: 'under' | 'nearing' | 'over' = 'under';
-          if (cat.budget_limit) {
-            if (pct >= 1) state = 'over';
-            else if (pct >= 0.7) state = 'nearing';
-          }
-
-          return { ...cat, spent, pct, state };
-        });
-
-      // 6. Update state and cache
-      startTransition(() => {
-        setCategories(enriched);
-        setLoading(false);
-      });
-      if (!catError && catData) {
-        AsyncStorage.setItem(CACHE_KEY, JSON.stringify(baseCategories)).catch(
-          (e) => {
-            if (__DEV__) console.warn('[useCategories] cache write failed:', e);
-          }
-        );
-      }
-      lastFetchedAt.current = Date.now();
-    } finally {
-      isFetchingRef.current = false;
-    }
-  }, []);
+  const { user } = useAuth();
+  const userId = user?.id;
 
   useEffect(() => {
-    fetchCategoriesAndSpend();
-  }, [fetchCategoriesAndSpend]);
+    if (!userId) {
+      setCategories([]);
+      setLoading(false);
+      return;
+    }
+    const { start, end } = monthBounds();
 
-  return { categories, loading, error, refetch: fetchCategoriesAndSpend };
+    const categoriesQuery = database
+      .get<CategoryModel>('categories')
+      .query(
+        Q.where('user_id', userId),
+        Q.where('is_active', true),
+        Q.sortBy('sort_order', Q.asc),
+      );
+
+    const expensesQuery = database
+      .get<TransactionModel>('transactions')
+      .query(
+        Q.where('user_id', userId),
+        Q.where('type', 'expense'),
+        Q.where('date', Q.gte(start)),
+        Q.where('date', Q.lte(end)),
+      );
+
+    const sub = combineLatest([categoriesQuery.observe(), expensesQuery.observe()]).subscribe(
+      ([categoryRecords, txRecords]) => {
+        const spendMap: Record<string, number> = {};
+        for (const tx of txRecords) {
+          // Transfers are account movements, not category spending. String
+          // check handles pre-migration-013 rows without is_transfer set.
+          if (tx.isTransfer || (tx.category ?? '').toLowerCase() === 'transfer') continue;
+          if (!tx.category) continue;
+          const key = tx.category.toLowerCase();
+          spendMap[key] = (spendMap[key] ?? 0) + tx.amount;
+        }
+
+        const enriched: CategoryWithSpend[] = categoryRecords
+          .filter((cat) => !INCOME_CATEGORY_NAMES.has(cat.name.toLowerCase()))
+          .map((cat) => {
+            const plain = toPlain(cat);
+            const spent = spendMap[plain.name.toLowerCase()] ?? 0;
+            const pct = plain.budget_limit && plain.budget_limit > 0 ? spent / plain.budget_limit : 0;
+            let state: 'under' | 'nearing' | 'over' = 'under';
+            if (plain.budget_limit) {
+              if (pct >= 1) state = 'over';
+              else if (pct >= 0.7) state = 'nearing';
+            }
+            return { ...plain, spent, pct, state };
+          });
+
+        setCategories(enriched);
+        setLoading(false);
+      },
+    );
+
+    return () => sub.unsubscribe();
+  }, [userId]);
+
+  // Stable reference — HomeScreen's useFocusEffect lists this in its deps,
+  // and a fresh arrow per render used to tear down + replay the entrance
+  // animation on every sync pull.
+  const refetch = useCallback(async (_force?: boolean): Promise<void> => {
+    await triggerSync();
+  }, []);
+
+  return { categories, loading, error: null, refetch };
 };

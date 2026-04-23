@@ -43,6 +43,9 @@ module.exports = {
     'import/prefer-default-export': 'off',
     'no-plusplus': 'off',
     'no-shadow': 'off',
+    // WatermelonDB's public API exposes `_raw`, `_changed`, `_status` on Model
+    // instances — these underscore names are mandatory, not stylistic.
+    'no-underscore-dangle': ['error', { allow: ['_raw', '_changed', '_status'] }],
     'no-bitwise': 'off',
     'consistent-return': 'off',
     radix: 'off',

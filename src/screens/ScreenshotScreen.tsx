@@ -17,6 +17,7 @@ import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
+import { createTransaction } from '@/services/localMutations';
 import { useAccounts } from '@/hooks/useAccounts';
 import { Account } from '@/types';
 import {
@@ -441,40 +442,33 @@ export default function ScreenshotScreen() {
         ? new Date().toISOString()
         : rawDate.toISOString();
 
-      const { error } = await supabase.from('transactions').insert({
-        user_id: userId,
-        account_id:
-          selectedAccount?.id ?? parsedData.account.value ?? accounts[0]?.id,
-        merchant_name: parsedData.merchant.value,
+      const targetAccountId =
+        selectedAccount?.id ??
+        (parsedData.account.value
+          ? String(parsedData.account.value)
+          : undefined) ??
+        accounts[0]?.id;
+
+      if (!userId || !targetAccountId) {
+        throw new Error('Missing user or account context — cannot save.');
+      }
+
+      await createTransaction({
+        userId,
+        accountId: targetAccountId,
+        merchantName: parsedData.merchant.value
+          ? String(parsedData.merchant.value)
+          : undefined,
         amount: Number(parsedData.amount.value),
         date: isoDate,
         type: 'expense',
         category: selectedCategory,
-        signal_source: 'merchant',
-        merchant_confidence: parsedData.merchant.confidence,
-        amount_confidence: parsedData.amount.confidence,
-        date_confidence: parsedData.date.confidence,
-        receipt_url: selectedImage,
+        signalSource: 'merchant',
+        merchantConfidence: parsedData.merchant.confidence,
+        amountConfidence: parsedData.amount.confidence,
+        dateConfidence: parsedData.date.confidence,
+        receiptUrl: selectedImage ?? undefined,
       });
-
-      if (error) throw error;
-
-      // Update account balance
-      const accountId =
-        selectedAccount?.id ?? String(parsedData.account.value ?? '');
-      if (accountId) {
-        const { data: acct } = await supabase
-          .from('accounts')
-          .select('balance')
-          .eq('id', accountId)
-          .single();
-        if (acct) {
-          await supabase
-            .from('accounts')
-            .update({ balance: acct.balance - Number(parsedData.amount.value) })
-            .eq('id', accountId);
-        }
-      }
 
       navigation.goBack();
     } catch (err: any) {

@@ -26,6 +26,8 @@ import {
   DMMono_500Medium,
 } from '@expo-google-fonts/dm-mono';
 
+import DatabaseProvider from '@nozbe/watermelondb/react/DatabaseProvider';
+
 import RootNavigator from './src/navigation/RootNavigator';
 import { SyncProvider } from './src/contexts/SyncContext';
 import { AuthProvider } from './src/contexts/AuthContext';
@@ -33,6 +35,7 @@ import { supabase } from './src/services/supabase';
 import { ACCOUNT_LOGOS } from './src/constants/accountLogos';
 import { ThemeProvider } from './src/contexts/ThemeContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { database } from './src/db';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -129,16 +132,18 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <ErrorBoundary>
-        <ThemeProvider>
-          <SafeAreaProvider>
-            <AuthProvider>
-              <SyncProvider>
-                <RootNavigator />
-                <StatusBar style="auto" />
-              </SyncProvider>
-            </AuthProvider>
-          </SafeAreaProvider>
-        </ThemeProvider>
+        <DatabaseProvider database={database}>
+          <ThemeProvider>
+            <SafeAreaProvider>
+              <AuthProvider>
+                <SyncProvider>
+                  <RootNavigator />
+                  <StatusBar style="auto" />
+                </SyncProvider>
+              </AuthProvider>
+            </SafeAreaProvider>
+          </ThemeProvider>
+        </DatabaseProvider>
       </ErrorBoundary>
     </GestureHandlerRootView>
   );
