@@ -14,7 +14,10 @@
     "scheme": "fino",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.fino.app"
+      "bundleIdentifier": "com.fino.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -50,6 +53,11 @@
       "@react-native-community/datetimepicker",
       "expo-web-browser",
       "expo-apple-authentication"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "286a6e23-4b2f-4147-84bf-c7be9bb910ae"
+      }
+    }
   }
 }
