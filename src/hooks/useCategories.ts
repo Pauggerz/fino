@@ -97,7 +97,10 @@ export const useCategories = () => {
         Q.where('date', Q.lte(end)),
       );
 
-    const sub = combineLatest([categoriesQuery.observe(), expensesQuery.observe()]).subscribe(
+    const sub = combineLatest([
+      categoriesQuery.observeWithColumns(['name', 'emoji', 'budget_limit', 'is_active', 'sort_order']),
+      expensesQuery.observeWithColumns(['amount', 'category', 'type', 'is_transfer', 'date']),
+    ]).subscribe(
       ([categoryRecords, txRecords]) => {
         const spendMap: Record<string, number> = {};
         for (const tx of txRecords) {

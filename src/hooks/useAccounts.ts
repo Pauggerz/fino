@@ -47,7 +47,17 @@ export const useAccounts = () => {
         Q.where('is_active', true),
         Q.sortBy('sort_order', Q.asc),
       );
-    const sub = query.observe().subscribe((records) => {
+    const sub = query
+      .observeWithColumns([
+        'balance',
+        'name',
+        'type',
+        'brand_colour',
+        'letter_avatar',
+        'is_active',
+        'sort_order',
+      ])
+      .subscribe((records) => {
       setAccounts(records.map(toPlain));
       setLoading(false);
     });

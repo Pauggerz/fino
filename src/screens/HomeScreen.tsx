@@ -4,7 +4,6 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
-  useTransition,
 } from 'react';
 import {
   View,
@@ -12,16 +11,14 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
-  InteractionManager,
 } from 'react-native';
 import RAnim, {
   useSharedValue,
   useAnimatedStyle,
-  useAnimatedProps,
   withTiming,
   withDelay,
   withSpring,
+  Easing,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path as SvgPath } from 'react-native-svg';
@@ -42,7 +39,6 @@ import {
   SCALED_CARD_H,
   CARD_SCALE,
 } from '@/components/home/ScaledWalletCard';
-import { BALANCE_ANIMATE_MS } from '../services/balanceCalc';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories, CategoryWithSpend } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
@@ -52,14 +48,9 @@ import ProfileSidebar from '@/components/ProfileSidebar';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import type { ThemeColors } from '@/constants/theme';
 
-// ─── Animated primitives (module-level) ──────────────────────────────────────
+// ─── Rolling balance (slot-machine style) ────────────────────────────────────
 
-const AnimatedTextInput = RAnim.createAnimatedComponent(TextInput);
-
-/** Worklet-safe number formatter — mimics toLocaleString('en-PH', { minimumFractionDigits: 2 }) */
-function formatBalanceWorklet(n: number): string {
-  'worklet';
-
+function formatBalanceString(n: number): string {
   const neg = n < 0;
   const abs = Math.abs(n);
   const rounded = Math.round(abs * 100) / 100;
@@ -74,6 +65,114 @@ function formatBalanceWorklet(n: number): string {
     out += s[i];
   }
   return `${neg ? '-' : ''}${out}.${frac}`;
+}
+
+const REEL_DIGIT_H = 48; // must match heroAmount.lineHeight
+const REEL_CYCLES = 3;
+const REEL_BASE_MS = 650;
+const REEL_STEP_MS = 55; // each digit to the right spins this much longer
+
+/**
+ * A single digit slot rendered as a vertical strip of 0-9 that scrolls to the
+ * target digit. Uses teleport-then-animate so the reel can be retriggered on
+ * every balance change without snapping back to zero visually.
+ */
+function RollingDigit({
+  target,
+  indexFromLeft,
+  textStyle,
+}: {
+  target: number;
+  indexFromLeft: number;
+  textStyle: any;
+}) {
+  const translateY = useSharedValue(0);
+  const prev = useRef<number>(target);
+  const initialized = useRef(false);
+
+  useEffect(() => {
+    const duration = REEL_BASE_MS + indexFromLeft * REEL_STEP_MS;
+
+    if (!initialized.current) {
+      initialized.current = true;
+      translateY.value = 0;
+      translateY.value = withTiming(
+        -(REEL_CYCLES * 10 + target) * REEL_DIGIT_H,
+        { duration, easing: Easing.out(Easing.cubic) },
+      );
+      prev.current = target;
+      return;
+    }
+
+    if (prev.current === target) return;
+
+    const from = -prev.current * REEL_DIGIT_H;
+    const delta = ((target - prev.current) + 10) % 10;
+    const to = -(prev.current + REEL_CYCLES * 10 + delta) * REEL_DIGIT_H;
+    translateY.value = from;
+    translateY.value = withTiming(to, {
+      duration,
+      easing: Easing.out(Easing.cubic),
+    });
+    prev.current = target;
+  }, [target, indexFromLeft, translateY]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  // Strip of 60 slots covers any prev→target roll within REEL_CYCLES cycles.
+  return (
+    <View style={{ height: REEL_DIGIT_H, overflow: 'hidden' }}>
+      <RAnim.View style={animStyle}>
+        {Array.from({ length: 60 }, (_, i) => (
+          <Text key={i} style={[textStyle, { height: REEL_DIGIT_H }]}>
+            {i % 10}
+          </Text>
+        ))}
+      </RAnim.View>
+    </View>
+  );
+}
+
+function RollingBalance({
+  value,
+  textStyle,
+  isPrivacyMode,
+}: {
+  value: number;
+  textStyle: any;
+  isPrivacyMode: boolean;
+}) {
+  if (isPrivacyMode) return <Text style={textStyle}>***</Text>;
+
+  const formatted = formatBalanceString(value);
+  const chars = formatted.split('');
+  // Width-keyed index prefix — when digit count changes (e.g. 9,999 → 10,000)
+  // the reels remount instead of the last slot inheriting an unrelated digit.
+  const keyBase = `len${chars.length}`;
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+      {chars.map((ch, i) => {
+        if (ch >= '0' && ch <= '9') {
+          return (
+            <RollingDigit
+              key={`${keyBase}-${i}`}
+              target={Number(ch)}
+              indexFromLeft={i}
+              textStyle={textStyle}
+            />
+          );
+        }
+        return (
+          <Text key={`${keyBase}-${i}`} style={textStyle}>
+            {ch}
+          </Text>
+        );
+      })}
+    </View>
+  );
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -116,10 +215,9 @@ function onTrackLabel(pct: number): string {
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
-  const { status: syncStatus, syncVersion } = useSync();
+  const { status: syncStatus } = useSync();
   const { profile } = useAuth();
   const userName = profile?.name || 'User';
-  const [, startTransition] = useTransition();
 
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -192,29 +290,6 @@ export default function HomeScreen() {
     transform: [{ scale: eyeScale.value }],
   }));
 
-  useEffect(() => {
-    if (syncVersion > 0) {
-      const task = InteractionManager.runAfterInteractions(() => {
-        startTransition(() => {
-          // syncVersion only increments after a successful queue flush,
-          // so force past any freshness gates — data genuinely changed.
-          refetchAccounts();
-          refetchCategories(true);
-          refetchTotals();
-          lastFocusRefetchAt.current = Date.now();
-        });
-      });
-      return () => task.cancel();
-    }
-    return undefined;
-  }, [
-    syncVersion,
-    startTransition,
-    refetchAccounts,
-    refetchCategories,
-    refetchTotals,
-  ]);
-
   const getSyncColor = () => {
     switch (syncStatus) {
       case 'synced':
@@ -229,19 +304,6 @@ export default function HomeScreen() {
     }
   };
 
-  // ── Balance animation (off-JS-thread via reanimated shared value) ────────────
-  const balanceSV = useSharedValue(totalBalance);
-  const animatedBalanceProps = useAnimatedProps(() => ({
-    text: formatBalanceWorklet(balanceSV.value),
-    defaultValue: formatBalanceWorklet(balanceSV.value),
-  }));
-
-  useEffect(() => {
-    balanceSV.value = withTiming(totalBalance, {
-      duration: BALANCE_ANIMATE_MS,
-    });
-  }, [totalBalance, balanceSV]);
-
   const [toastVisible, setToastVisible] = useState(false);
   const [toastTitle, setToastTitle] = useState('');
   const [toastSubtitle, setToastSubtitle] = useState('');
@@ -253,9 +315,6 @@ export default function HomeScreen() {
   );
 
   const hasAnimated = useRef(false);
-  const hasFocusedOnce = useRef(false);
-  const lastFocusRefetchAt = useRef(0);
-  const FOCUS_REFETCH_STALE_MS = 30_000;
 
   useFocusEffect(
     useCallback(() => {
@@ -295,24 +354,6 @@ export default function HomeScreen() {
         );
       }
 
-      let task: ReturnType<
-        typeof InteractionManager.runAfterInteractions
-      > | null = null;
-      // Skip refetch on fast tab switches — syncVersion effect handles post-sync refresh separately.
-      const now = Date.now();
-      const isFresh = now - lastFocusRefetchAt.current < FOCUS_REFETCH_STALE_MS;
-      if (hasFocusedOnce.current && !isFresh) {
-        lastFocusRefetchAt.current = now;
-        task = InteractionManager.runAfterInteractions(() => {
-          startTransition(() => {
-            refetchAccounts();
-            refetchCategories();
-            refetchTotals();
-          });
-        });
-      }
-      hasFocusedOnce.current = true;
-
       const last = getLastSaved();
       if (last) {
         clearLastSaved();
@@ -329,16 +370,11 @@ export default function HomeScreen() {
       }
 
       return () => {
-        task?.cancel();
         // Sidebar uses a global Modal; always close it when Home loses focus
         // so it can never intercept touches on other screens.
         setSidebarVisible(false);
       };
     }, [
-      startTransition,
-      refetchAccounts,
-      refetchCategories,
-      refetchTotals,
       isPrivacyMode,
       greetingOpacity,
       greetingTransY,
@@ -602,15 +638,11 @@ export default function HomeScreen() {
               ) : (
                 <>
                   <Text style={styles.heroCurr}>₱</Text>
-                  {isPrivacyMode ? (
-                    <Text style={styles.heroAmount}>***</Text>
-                  ) : (
-                    <AnimatedTextInput
-                      animatedProps={animatedBalanceProps}
-                      editable={false}
-                      style={styles.heroAmount}
-                    />
-                  )}
+                  <RollingBalance
+                    value={totalBalance}
+                    textStyle={styles.heroAmount}
+                    isPrivacyMode={isPrivacyMode}
+                  />
                 </>
               )}
             </View>
