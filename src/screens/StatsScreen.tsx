@@ -494,7 +494,7 @@ function AccountActivityCard({
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
-export default function InsightsScreen() {
+function InsightsScreen() {
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
@@ -4034,3 +4034,5 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       paddingVertical: 12,
     },
   });
+
+export default React.memo(InsightsScreen);
