@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import Svg, { Path } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import type { RootStackParamList } from '@/navigation/RootNavigator';
 import { supabase } from '../services/supabase';
 import { createTransaction } from '@/services/localMutations';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -149,6 +150,7 @@ function Stepper({
 
 export default function ScreenshotScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<RouteProp<RootStackParamList, 'ScreenshotScreen'>>();
   const { accounts } = useAccounts();
 
   const [selectedSource, setSelectedSource] = useState<'camera' | 'upload'>(
@@ -181,6 +183,16 @@ export default function ScreenshotScreen() {
   const [fixedFields, setFixedFields] = useState<string[]>([]);
 
   const daysInMonth = new Date(draftYear, draftMonth + 1, 0).getDate();
+
+  // Auto-parse when opened from iOS share sheet
+  useEffect(() => {
+    const uri = route.params?.sharedImageUri;
+    if (!uri) return;
+    setSelectedImage(uri);
+    setSelectedSource('upload');
+    processReceipt(uri);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const hasUnresolvedCheck = parsedData
     ? Object.values(parsedData).some((f) => f.status === 'check')
