@@ -77,103 +77,107 @@ const REEL_STEP_MS = 55; // each digit to the right spins this much longer
  * target digit. Uses teleport-then-animate so the reel can be retriggered on
  * every balance change without snapping back to zero visually.
  */
-function RollingDigit({
-  target,
-  indexFromLeft,
-  textStyle,
-}: {
-  target: number;
-  indexFromLeft: number;
-  textStyle: any;
-}) {
-  const translateY = useSharedValue(0);
-  const prev = useRef<number>(target);
-  const initialized = useRef(false);
+const RollingDigit = React.memo(
+  ({
+    target,
+    indexFromLeft,
+    textStyle,
+  }: {
+    target: number;
+    indexFromLeft: number;
+    textStyle: any;
+  }) => {
+    const translateY = useSharedValue(0);
+    const prev = useRef<number>(target);
+    const initialized = useRef(false);
 
-  useEffect(() => {
-    const duration = REEL_BASE_MS + indexFromLeft * REEL_STEP_MS;
+    useEffect(() => {
+      const duration = REEL_BASE_MS + indexFromLeft * REEL_STEP_MS;
 
-    if (!initialized.current) {
-      initialized.current = true;
-      translateY.value = 0;
-      translateY.value = withTiming(
-        -(REEL_CYCLES * 10 + target) * REEL_DIGIT_H,
-        { duration, easing: Easing.out(Easing.cubic) },
-      );
-      prev.current = target;
-      return;
-    }
-
-    if (prev.current === target) return;
-
-    const from = -prev.current * REEL_DIGIT_H;
-    const delta = ((target - prev.current) + 10) % 10;
-    const to = -(prev.current + REEL_CYCLES * 10 + delta) * REEL_DIGIT_H;
-    translateY.value = from;
-    translateY.value = withTiming(to, {
-      duration,
-      easing: Easing.out(Easing.cubic),
-    });
-    prev.current = target;
-  }, [target, indexFromLeft, translateY]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-  }));
-
-  // Strip of 60 slots covers any prev→target roll within REEL_CYCLES cycles.
-  return (
-    <View style={{ height: REEL_DIGIT_H, overflow: 'hidden' }}>
-      <RAnim.View style={animStyle}>
-        {Array.from({ length: 60 }, (_, i) => (
-          <Text key={i} style={[textStyle, { height: REEL_DIGIT_H }]}>
-            {i % 10}
-          </Text>
-        ))}
-      </RAnim.View>
-    </View>
-  );
-}
-
-function RollingBalance({
-  value,
-  textStyle,
-  isPrivacyMode,
-}: {
-  value: number;
-  textStyle: any;
-  isPrivacyMode: boolean;
-}) {
-  if (isPrivacyMode) return <Text style={textStyle}>***</Text>;
-
-  const formatted = formatBalanceString(value);
-  const chars = formatted.split('');
-  // Width-keyed index prefix — when digit count changes (e.g. 9,999 → 10,000)
-  // the reels remount instead of the last slot inheriting an unrelated digit.
-  const keyBase = `len${chars.length}`;
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-      {chars.map((ch, i) => {
-        if (ch >= '0' && ch <= '9') {
-          return (
-            <RollingDigit
-              key={`${keyBase}-${i}`}
-              target={Number(ch)}
-              indexFromLeft={i}
-              textStyle={textStyle}
-            />
-          );
-        }
-        return (
-          <Text key={`${keyBase}-${i}`} style={textStyle}>
-            {ch}
-          </Text>
+      if (!initialized.current) {
+        initialized.current = true;
+        translateY.value = 0;
+        translateY.value = withTiming(
+          -(REEL_CYCLES * 10 + target) * REEL_DIGIT_H,
+          { duration, easing: Easing.out(Easing.cubic) }
         );
-      })}
-    </View>
-  );
-}
+        prev.current = target;
+        return;
+      }
+
+      if (prev.current === target) return;
+
+      const from = -prev.current * REEL_DIGIT_H;
+      const delta = (target - prev.current + 10) % 10;
+      const to = -(prev.current + REEL_CYCLES * 10 + delta) * REEL_DIGIT_H;
+      translateY.value = from;
+      translateY.value = withTiming(to, {
+        duration,
+        easing: Easing.out(Easing.cubic),
+      });
+      prev.current = target;
+    }, [target, indexFromLeft, translateY]);
+
+    const animStyle = useAnimatedStyle(() => ({
+      transform: [{ translateY: translateY.value }],
+    }));
+
+    // Strip of 60 slots covers any prev→target roll within REEL_CYCLES cycles.
+    return (
+      <View style={{ height: REEL_DIGIT_H, overflow: 'hidden' }}>
+        <RAnim.View style={animStyle}>
+          {Array.from({ length: 60 }, (_, i) => (
+            <Text key={i} style={[textStyle, { height: REEL_DIGIT_H }]}>
+              {i % 10}
+            </Text>
+          ))}
+        </RAnim.View>
+      </View>
+    );
+  }
+);
+
+const RollingBalance = React.memo(
+  ({
+    value,
+    textStyle,
+    isPrivacyMode,
+  }: {
+    value: number;
+    textStyle: any;
+    isPrivacyMode: boolean;
+  }) => {
+    if (isPrivacyMode) return <Text style={textStyle}>***</Text>;
+
+    const formatted = formatBalanceString(value);
+    const chars = formatted.split('');
+    // Width-keyed index prefix — when digit count changes (e.g. 9,999 → 10,000)
+    // the reels remount instead of the last slot inheriting an unrelated digit.
+    const keyBase = `len${chars.length}`;
+
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+        {chars.map((ch, i) => {
+          if (ch >= '0' && ch <= '9') {
+            return (
+              <RollingDigit
+                key={`${keyBase}-${i}`}
+                target={Number(ch)}
+                indexFromLeft={i}
+                textStyle={textStyle}
+              />
+            );
+          }
+          return (
+            <Text key={`${keyBase}-${i}`} style={textStyle}>
+              {ch}
+            </Text>
+          );
+        })}
+      </View>
+    );
+  }
+);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

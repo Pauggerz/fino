@@ -34,6 +34,20 @@ yarn-error.*
 .env*.local
 CLAUDE.md
 
+# scratch / planning docs (local only, not part of the repo)
+implementation_plan*.md
+plan*.md
+scratch*
+notes*.md
+TODO.local.md
+
+# IDE / editor metadata
+.idea/
+*.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
 # typescript
 *.tsbuildinfo
 
