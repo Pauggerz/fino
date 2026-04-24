@@ -1,11 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run:*)",
-      "Bash(npx eslint:*)",
-      "Bash(ls \"c:\\\\Users\\\\Admin\\\\Downloads\\\\fino\\\\fino\\\\src\\\\constants\"\" 2>/dev/null || echo \"Directory does not exist \")",
-      "Bash(npx expo:*)",
-      "Bash(npx prettier:*)"
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(gh pr create --title 'feat: onboarding flow on first app launch' --body ':*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(grep -l \"react-native-skia\" /Users/tmpl/Documents/FINO/fino/src/screens/onboarding/*.tsx)",
+      "Bash(ls /Users/tmpl/Documents/FINO/fino/supabase/*.sql)",
+      "Bash(git commit:*)",
+      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); deps={**p.get\\('dependencies',{}\\), **p.get\\('devDependencies',{}\\)}; [print\\(k,v\\) for k,v in deps.items\\(\\) if 'share' in k.lower\\(\\) or 'intent' in k.lower\\(\\)]\")"
     ]
   }
 }

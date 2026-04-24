@@ -18,6 +18,10 @@
       "buildNumber": "2.0.0",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.fino.app"],
+        "com.apple.developer.applesignin": ["Default"]
       }
     },
     "android": {
