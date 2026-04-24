@@ -1,5 +1,6 @@
 import 'react-native-gesture-handler';
 import { useEffect, useState } from 'react';
+import { ShareIntentProvider } from 'expo-share-intent';
 import { StyleSheet, Linking } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -122,6 +123,7 @@ export default function App() {
   }
 
   return (
+    <ShareIntentProvider>
     <GestureHandlerRootView style={styles.container}>
       <ErrorBoundary>
         <DatabaseProvider database={database}>
@@ -138,6 +140,7 @@ export default function App() {
         </DatabaseProvider>
       </ErrorBoundary>
     </GestureHandlerRootView>
+    </ShareIntentProvider>
   );
 }
 

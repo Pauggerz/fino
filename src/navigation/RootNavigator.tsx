@@ -1,9 +1,11 @@
-import React, { lazy, startTransition, Suspense, useState } from 'react';
+import React, { lazy, startTransition, Suspense, useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import {
   NavigationContainer,
   NavigatorScreenParams,
+  useNavigation,
 } from '@react-navigation/native';
+import { useShareIntent } from 'expo-share-intent';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -85,7 +87,7 @@ export type RootStackParamList = {
       note?: string;
     };
   };
-  ScreenshotScreen: undefined;
+  ScreenshotScreen: { sharedImageUri?: string } | undefined;
   ChatScreen: undefined;
   BillSplitter: undefined;
   UtangTracker: undefined;
@@ -168,6 +170,25 @@ function TabNavigator() {
 
 // ─── Root Stack ─────────────────────────────────────────────────────────────
 
+// Watches for incoming share-sheet images and routes to ScreenshotScreen.
+// Must live inside NavigationContainer so useNavigation is available.
+function ShareIntentHandler() {
+  const { shareIntent, resetShareIntent } = useShareIntent();
+  const navigation = useNavigation<any>();
+  const { session } = useAuth();
+
+  useEffect(() => {
+    if (!shareIntent || !session) return;
+    const file = shareIntent.files?.[0];
+    if (!file?.path) return;
+
+    navigation.navigate('ScreenshotScreen', { sharedImageUri: file.path });
+    resetShareIntent();
+  }, [shareIntent, session]);
+
+  return null;
+}
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
@@ -184,6 +205,7 @@ export default function RootNavigator() {
 
   return (
     <NavigationContainer>
+      <ShareIntentHandler />
       <Suspense fallback={<ModalLoadingShim />}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!hasOnboarded ? (

@@ -22,7 +22,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#5a9e72",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -66,7 +66,17 @@
       "expo-asset",
       "@react-native-community/datetimepicker",
       "expo-web-browser",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      [
+        "expo-share-intent",
+        {
+          "iosShareExtensionName": "fino",
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsImageWithMaxCount": 1
+          },
+          "iosShareAppGroupIdentifier": "group.com.fino.app"
+        }
+      ]
     ],
     "extra": {
       "eas": {
