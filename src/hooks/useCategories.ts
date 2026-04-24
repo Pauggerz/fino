@@ -67,11 +67,21 @@ function monthBounds() {
   return { start, end };
 }
 
+// Cross-mount cache: remounts on Home ↔ Feed serve last-known categories
+// synchronously instead of flashing an empty list while observables spin up.
+const categoriesCache = new Map<string, CategoryWithSpend[]>();
+const categoriesKey = (userId: string) => {
+  const d = new Date();
+  return `${userId}-${d.getFullYear()}-${d.getMonth()}`;
+};
+
 export const useCategories = () => {
-  const [categories, setCategories] = useState<CategoryWithSpend[]>([]);
-  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const userId = user?.id;
+
+  const cached = userId ? categoriesCache.get(categoriesKey(userId)) : undefined;
+  const [categories, setCategories] = useState<CategoryWithSpend[]>(cached ?? []);
+  const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
     if (!userId) {
@@ -132,6 +142,7 @@ export const useCategories = () => {
 
         setCategories(enriched);
         setLoading(false);
+        categoriesCache.set(categoriesKey(userId), enriched);
       },
     );
 

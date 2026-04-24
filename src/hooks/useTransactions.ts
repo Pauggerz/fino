@@ -7,7 +7,7 @@ import type TransactionModel from '@/db/models/Transaction';
 import { useAuth } from '@/contexts/AuthContext';
 import { triggerSync } from '@/services/watermelonSync';
 import { Transaction } from '@/types';
-import { formatSectionTitle } from '@/utils/groupByDate';
+import { formatRowTime, formatSectionTitle } from '@/utils/groupByDate';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 250;
@@ -16,6 +16,9 @@ export interface FeedTransaction extends Transaction {
   account_name: string;
   account_brand_colour: string;
   account_letter_avatar: string;
+  // Pre-formatted at the data layer so row components don't allocate a Date +
+  // Intl.DateTimeFormat per scroll frame.
+  time: string;
   isPending?: boolean;
 }
 
@@ -67,6 +70,7 @@ function modelToPlain(
     account_name: acct?.name ?? 'Unknown',
     account_brand_colour: acct?.brandColour ?? '#888888',
     account_letter_avatar: acct?.letterAvatar ?? '?',
+    time: formatRowTime(tx.date),
   };
 }
 

@@ -79,14 +79,6 @@ function getMonthRange(year: number, month: number): DateRange {
   return { from, to };
 }
 
-// Reused for every transaction row — constructing Intl.DateTimeFormat per call
-// is ~100× slower than .format() on an existing instance, and the row used to
-// build one per render, per row, per frame.
-const TIME_FMT = new Intl.DateTimeFormat('en-PH', {
-  hour: 'numeric',
-  minute: '2-digit',
-});
-
 // Static lookup — INCOME_CATEGORIES never changes at runtime, so build the
 // name→entry map once at module load instead of scanning it per row.
 const INCOME_CATEGORY_BY_NAME: Map<string, (typeof INCOME_CATEGORIES)[number]> =
@@ -998,7 +990,9 @@ const FeedTransactionRow = React.memo(
       iconColor = CATEGORY_COLOR[iconKey] ?? colors.incomeGreen;
     }
 
-    const time = TIME_FMT.format(new Date(tx.date));
+    // Pre-formatted upstream in useTransactions.modelToPlain — row is now pure
+    // presentation, no per-frame allocation.
+    const time = tx.time;
 
     // Stable within the row's lifetime so MemoizedSwipeableRow's shallow
     // compare doesn't re-render it on every parent-driven render.
