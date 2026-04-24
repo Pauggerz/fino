@@ -72,10 +72,21 @@ const REEL_CYCLES = 3;
 const REEL_BASE_MS = 650;
 const REEL_STEP_MS = 55; // each digit to the right spins this much longer
 
+// Strip is 11 rows: digits 0-9 plus a wrap-around 0 at the bottom so the
+// transition between 9 → 0 is visually continuous during the modulo wrap.
+const DIGIT_ROWS: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+const REEL_CYCLE_H = 10 * REEL_DIGIT_H;
+
 /**
- * A single digit slot rendered as a vertical strip of 0-9 that scrolls to the
- * target digit. Uses teleport-then-animate so the reel can be retriggered on
- * every balance change without snapping back to zero visually.
+ * A single digit slot. Previous implementation rendered 60 Text views per
+ * digit so the strip was tall enough to cover any prev→target roll without
+ * wrapping. With 7 visible digits that meant 420 native Text views just for
+ * the balance — measurable lag at HomeScreen mount.
+ *
+ * New implementation: the translateY shared value is unbounded (monotonically
+ * decreasing as the reel "spins"), but the useAnimatedStyle worklet wraps it
+ * modulo one cycle height before applying it. 11 Text rows cover every visual
+ * state: 77 views total for a 7-digit balance (82% reduction).
  */
 const RollingDigit = React.memo(
   ({
@@ -96,7 +107,6 @@ const RollingDigit = React.memo(
 
       if (!initialized.current) {
         initialized.current = true;
-        translateY.value = 0;
         translateY.value = withTiming(
           -(REEL_CYCLES * 10 + target) * REEL_DIGIT_H,
           { duration, easing: Easing.out(Easing.cubic) }
@@ -107,28 +117,33 @@ const RollingDigit = React.memo(
 
       if (prev.current === target) return;
 
-      const from = -prev.current * REEL_DIGIT_H;
+      // Animate forward from wherever the strip is now — modulo wrap in the
+      // worklet handles the visual continuity. No snapping needed.
       const delta = (target - prev.current + 10) % 10;
-      const to = -(prev.current + REEL_CYCLES * 10 + delta) * REEL_DIGIT_H;
-      translateY.value = from;
-      translateY.value = withTiming(to, {
+      const next =
+        translateY.value - (REEL_CYCLES * 10 + delta) * REEL_DIGIT_H;
+      translateY.value = withTiming(next, {
         duration,
         easing: Easing.out(Easing.cubic),
       });
       prev.current = target;
     }, [target, indexFromLeft, translateY]);
 
-    const animStyle = useAnimatedStyle(() => ({
-      transform: [{ translateY: translateY.value }],
-    }));
+    const animStyle = useAnimatedStyle(() => {
+      // translateY is negative and decreasing as the reel spins downward.
+      // Wrap the shift distance into [0, REEL_CYCLE_H) so we only ever show
+      // rows 0..10 of the strip regardless of how many cycles have elapsed.
+      const raw = translateY.value;
+      const wrapped = (((-raw) % REEL_CYCLE_H) + REEL_CYCLE_H) % REEL_CYCLE_H;
+      return { transform: [{ translateY: -wrapped }] };
+    });
 
-    // Strip of 60 slots covers any prev→target roll within REEL_CYCLES cycles.
     return (
       <View style={{ height: REEL_DIGIT_H, overflow: 'hidden' }}>
         <RAnim.View style={animStyle}>
-          {Array.from({ length: 60 }, (_, i) => (
+          {DIGIT_ROWS.map((d, i) => (
             <Text key={i} style={[textStyle, { height: REEL_DIGIT_H }]}>
-              {i % 10}
+              {d}
             </Text>
           ))}
         </RAnim.View>
