@@ -41,6 +41,19 @@
             "BROWSABLE",
             "DEFAULT"
           ]
+        },
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "fino"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -58,6 +71,12 @@
       "eas": {
         "projectId": "286a6e23-4b2f-4147-84bf-c7be9bb910ae"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/286a6e23-4b2f-4147-84bf-c7be9bb910ae"
     }
   }
 }
