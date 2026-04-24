@@ -41,3 +41,14 @@ export function formatSectionTitle(isoDate: string): string {
 export function formatRowTime(isoDate: string): string {
   return TIME_FMT.format(new Date(isoDate));
 }
+
+// Short date for list rows (e.g. "Mar 22"). Shared formatter — cheap to call
+// per row once the Intl instance is cached.
+const SHORT_DATE_FMT = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+});
+
+export function formatShortDate(isoDate: string): string {
+  return SHORT_DATE_FMT.format(new Date(isoDate));
+}

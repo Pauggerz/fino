@@ -407,15 +407,22 @@ function HomeScreen() {
 
   const { text: greetText, emoji: greetEmoji } = getGreeting();
   const daysLeft = getDaysLeftInMonth();
-  const totalBudget = categories.reduce((s, c) => s + (c.budget_limit ?? 0), 0);
+  const totalBudget = useMemo(
+    () => categories.reduce((s, c) => s + (c.budget_limit ?? 0), 0),
+    [categories],
+  );
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
 
   // Use real 7-day daily-expense sparkline from useMonthlyTotals.
   // Override the last bar with today's actual pctSpent so it always reflects reality.
   const lastBarVal = Math.min(pctSpent > 0 ? pctSpent : getMonthPace(), 1);
-  const SPARKLINE = sparklineData.map((bar, i) =>
-    i === sparklineData.length - 1 ? { ...bar, val: lastBarVal } : bar
+  const SPARKLINE = useMemo(
+    () =>
+      sparklineData.map((bar, i) =>
+        i === sparklineData.length - 1 ? { ...bar, val: lastBarVal } : bar,
+      ),
+    [sparklineData, lastBarVal],
   );
 
   const delta = totalIncome - monthlyExpense;
@@ -930,7 +937,7 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       marginBottom: 6,
     },
     greetingName: {
-      fontFamily: 'Nunito_400Regular',
+      fontFamily: 'Inter_400Regular',
       fontSize: 26,
       lineHeight: 32,
     },

@@ -148,10 +148,17 @@ function TabNavigator() {
       )}
       screenOptions={{
         headerShown: false,
+        // Freeze inactive tab screens — pauses their JS work (Reanimated
+        // worklets, Skia draws, non-focused observable subscribers continue
+        // but their state updates never reach React). Switching back thaws
+        // instantly because the view hierarchy is kept in memory.
+        freezeOnBlur: true,
+        // lazy is the default, but make it explicit: Stats/More/Feed don't
+        // mount until first tapped. Home cold-starts alone.
+        lazy: true,
       }}
     >
       <Tab.Screen name="home" component={HomeScreen} />
-      {/* unmountOnBlur safely removed to satisfy TypeScript */}
       <Tab.Screen name="feed" component={FeedNavigator} />
       <Tab.Screen name="stats" component={InsightsScreen} />
       <Tab.Screen name="more" component={MoreNavigator} />

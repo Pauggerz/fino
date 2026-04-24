@@ -38,6 +38,7 @@ import WalletCard, { getCfg } from '../components/WalletCard';
 import TransferModal from '@/components/account/TransferModal';
 import AdjustBalanceSheet from '@/components/account/AdjustBalanceSheet';
 import { saveEditAccount } from '@/services/transactionMutations';
+import { formatShortDate } from '@/utils/groupByDate';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -343,12 +344,7 @@ export default function AccountDetailScreen() {
               <Text style={styles.txCategory}>
                 {categoryLabel.charAt(0).toUpperCase() + categoryLabel.slice(1)}
               </Text>
-              <Text style={styles.txDate}>
-                {new Date(item.date).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </Text>
+              <Text style={styles.txDate}>{formatShortDate(item.date)}</Text>
             </View>
           </View>
           <Text
