@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
+import { debounceTime } from 'rxjs/operators';
 
 import { database } from '@/db';
 import { useAuth } from '@/contexts/AuthContext';
@@ -80,8 +81,11 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     const MS_PER_DAY = 1000 * 60 * 60 * 24;
     const todayStart = startOfLocalDay(now);
 
+    // Debounce collapses observer bursts from sync pulls. Without it, a 30-row
+    // pull reruns the month aggregation loop 30 times — with it, once per burst.
     const sub = query
       .observeWithColumns(['amount', 'type', 'date', 'is_transfer', 'category'])
+      .pipe(debounceTime(50))
       .subscribe((records) => {
       let income = 0;
       let expense = 0;
