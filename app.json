@@ -15,6 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.fino.app",
+      "buildNumber": "2.0.0",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
