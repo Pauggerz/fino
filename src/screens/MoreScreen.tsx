@@ -1090,7 +1090,7 @@ function BillRemindersModal({
 
 // ─── MAIN SCREEN ─────────────────────────────────────────────────────────────
 
-export default function MoreScreen() {
+function MoreScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
@@ -2090,3 +2090,5 @@ const createBillStyles = (colors: any, isDark: boolean) =>
 function setShowAppSettings(arg0: boolean) {
   throw new Error('Function not implemented.');
 }
+
+export default React.memo(MoreScreen);
