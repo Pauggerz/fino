@@ -3,10 +3,11 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
-import { Alert, AppState, AppStateStatus } from 'react-native';
+import { Alert, AppState, AppStateStatus, InteractionManager } from 'react-native';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { hasUnsyncedChanges } from '@nozbe/watermelondb/sync';
 
@@ -15,18 +16,24 @@ import { triggerSync as runSync } from '@/services/watermelonSync';
 
 export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
 
-interface SyncContextProps {
+interface SyncStatusContextValue {
   status: SyncStatus;
-  forceSync: () => Promise<void>;
-  syncVersion: number;
   lastSyncedAt: Date | null;
+  forceSync: () => Promise<void>;
 }
 
-const SyncContext = createContext<SyncContextProps>({
+interface SyncVersionContextValue {
+  syncVersion: number;
+}
+
+const SyncStatusContext = createContext<SyncStatusContextValue>({
   status: 'synced',
-  forceSync: async () => {},
-  syncVersion: 0,
   lastSyncedAt: null,
+  forceSync: async () => {},
+});
+
+const SyncVersionContext = createContext<SyncVersionContextValue>({
+  syncVersion: 0,
 });
 
 const checkIsOnline = (state: NetInfoState) =>
@@ -79,13 +86,24 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // Wrap every automatic sync invocation in runAfterInteractions so the pull
+  // never competes with an in-progress gesture for JS-thread time.
+  const scheduleSync = useCallback(
+    (isConnected: boolean, force = false) => {
+      InteractionManager.runAfterInteractions(() => {
+        triggerSync(isConnected, force);
+      });
+    },
+    [triggerSync],
+  );
+
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
 
     const startInterval = () => {
       if (interval) return;
       interval = setInterval(() => {
-        NetInfo.fetch().then((state) => triggerSync(checkIsOnline(state)));
+        NetInfo.fetch().then((state) => scheduleSync(checkIsOnline(state)));
       }, SYNC_INTERVAL_MS);
     };
     const stopInterval = () => {
@@ -96,15 +114,15 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const unsubscribeNet = NetInfo.addEventListener((state) => {
-      triggerSync(checkIsOnline(state));
+      scheduleSync(checkIsOnline(state));
     });
-    NetInfo.fetch().then((state) => triggerSync(checkIsOnline(state), true));
+    NetInfo.fetch().then((state) => scheduleSync(checkIsOnline(state), true));
     startInterval();
 
     const onAppState = (state: AppStateStatus) => {
       if (state === 'active') {
         // Resume + immediate pull on foreground — but only if it's been a while.
-        NetInfo.fetch().then((s) => triggerSync(checkIsOnline(s)));
+        NetInfo.fetch().then((s) => scheduleSync(checkIsOnline(s)));
         startInterval();
       } else {
         stopInterval();
@@ -117,20 +135,44 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
       stopInterval();
       appStateSub.remove();
     };
-  }, [triggerSync]);
+  }, [scheduleSync]);
+
+  const forceSync = useCallback(() => triggerSync(true, true), [triggerSync]);
+
+  // Status + forceSync live in one context (consumed by UI badges).
+  // syncVersion lives in a separate context (consumed only by hooks that
+  // invalidate caches on successful pulls). Splitting prevents status-pill
+  // consumers from re-rendering every time syncVersion bumps.
+  const statusValue = useMemo<SyncStatusContextValue>(
+    () => ({ status, lastSyncedAt, forceSync }),
+    [status, lastSyncedAt, forceSync],
+  );
+  const versionValue = useMemo<SyncVersionContextValue>(
+    () => ({ syncVersion }),
+    [syncVersion],
+  );
 
   return (
-    <SyncContext.Provider
-      value={{
-        status,
-        forceSync: () => triggerSync(true, true),
-        syncVersion,
-        lastSyncedAt,
-      }}
-    >
-      {children}
-    </SyncContext.Provider>
+    <SyncStatusContext.Provider value={statusValue}>
+      <SyncVersionContext.Provider value={versionValue}>
+        {children}
+      </SyncVersionContext.Provider>
+    </SyncStatusContext.Provider>
   );
 };
 
-export const useSync = () => useContext(SyncContext);
+// Back-compat shape for existing callers that want the whole thing. Prefer the
+// narrower hooks below for perf-sensitive consumers.
+export const useSync = () => {
+  const statusCtx = useContext(SyncStatusContext);
+  const versionCtx = useContext(SyncVersionContext);
+  return {
+    status: statusCtx.status,
+    lastSyncedAt: statusCtx.lastSyncedAt,
+    forceSync: statusCtx.forceSync,
+    syncVersion: versionCtx.syncVersion,
+  };
+};
+
+export const useSyncStatus = () => useContext(SyncStatusContext);
+export const useSyncVersion = () => useContext(SyncVersionContext).syncVersion;

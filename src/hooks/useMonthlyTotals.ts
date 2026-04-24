@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
+import { debounceTime } from 'rxjs/operators';
 
 import { database } from '@/db';
 import { useAuth } from '@/contexts/AuthContext';
@@ -43,21 +44,45 @@ function monthBounds() {
   return { start, end, now };
 }
 
+// Cross-mount cache: users bounce Home ↔ Feed constantly, and remounting used
+// to show a loading flash while the observable first emit rolled through. Now
+// the first paint serves the last-known aggregates synchronously; the observer
+// overwrites within ~50ms.
+interface AggregateSnapshot {
+  totalIncome: number;
+  totalExpense: number;
+  sparklineData: SparklinePoint[];
+}
+const monthlyCache = new Map<string, AggregateSnapshot>();
+const monthKey = (userId: string) => {
+  const d = new Date();
+  return `${userId}-${d.getFullYear()}-${d.getMonth()}`;
+};
+
+const EMPTY_SPARKLINE: SparklinePoint[] = Array.from({ length: 7 }, (_, i) => ({
+  id: `day${i}`,
+  val: 0,
+}));
+
 export const useMonthlyTotals = (): MonthlyTotals => {
-  const [totalIncome, setTotalIncome] = useState(0);
-  const [totalExpense, setTotalExpense] = useState(0);
-  const [sparklineData, setSparklineData] = useState<SparklinePoint[]>(
-    Array.from({ length: 7 }, (_, i) => ({ id: `day${i}`, val: 0 })),
-  );
-  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const userId = user?.id;
+
+  // Seed state from cross-mount cache so remount paints last-known values
+  // immediately instead of zeros.
+  const cached = userId ? monthlyCache.get(monthKey(userId)) : undefined;
+  const [totalIncome, setTotalIncome] = useState(cached?.totalIncome ?? 0);
+  const [totalExpense, setTotalExpense] = useState(cached?.totalExpense ?? 0);
+  const [sparklineData, setSparklineData] = useState<SparklinePoint[]>(
+    cached?.sparklineData ?? EMPTY_SPARKLINE,
+  );
+  const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
     if (!userId) {
       setTotalIncome(0);
       setTotalExpense(0);
-      setSparklineData(Array.from({ length: 7 }, (_, i) => ({ id: `day${i}`, val: 0 })));
+      setSparklineData(EMPTY_SPARKLINE);
       setLoading(false);
       return;
     }
@@ -80,8 +105,11 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     const MS_PER_DAY = 1000 * 60 * 60 * 24;
     const todayStart = startOfLocalDay(now);
 
+    // Debounce collapses observer bursts from sync pulls. Without it, a 30-row
+    // pull reruns the month aggregation loop 30 times — with it, once per burst.
     const sub = query
       .observeWithColumns(['amount', 'type', 'date', 'is_transfer', 'category'])
+      .pipe(debounceTime(50))
       .subscribe((records) => {
       let income = 0;
       let expense = 0;
@@ -104,10 +132,19 @@ export const useMonthlyTotals = (): MonthlyTotals => {
       }
 
       const maxBucket = Math.max(...buckets, 1);
+      const nextSparkline = buckets.map((val, i) => ({
+        id: `day${i}`,
+        val: val / maxBucket,
+      }));
       setTotalIncome(income);
       setTotalExpense(expense);
-      setSparklineData(buckets.map((val, i) => ({ id: `day${i}`, val: val / maxBucket })));
+      setSparklineData(nextSparkline);
       setLoading(false);
+      monthlyCache.set(monthKey(userId), {
+        totalIncome: income,
+        totalExpense: expense,
+        sparklineData: nextSparkline,
+      });
     });
 
     return () => sub.unsubscribe();

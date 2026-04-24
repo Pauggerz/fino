@@ -9,8 +9,6 @@ import { Asset } from 'expo-asset';
 
 import {
   useFonts,
-  Nunito_400Regular,
-  Nunito_600SemiBold,
   Nunito_700Bold,
   Nunito_800ExtraBold,
   Nunito_900Black,
@@ -42,11 +40,11 @@ SplashScreen.preventAutoHideAsync();
 
 export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [isAssetsReady, setIsAssetsReady] = useState(false);
 
+  // 11 → 9 fonts. Nunito_400/600 dropped as unused after consolidating
+  // one-off call sites onto already-loaded Inter weights. Each font is a
+  // network fetch + parse on cold start; fewer loads = faster time-to-paint.
   const [fontsLoaded] = useFonts({
-    Nunito_400Regular,
-    Nunito_600SemiBold,
     Nunito_700Bold,
     Nunito_800ExtraBold,
     Nunito_900Black,
@@ -97,25 +95,19 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
-  // Pre-load local image assets
+  // Fire-and-forget asset warm-up. The logos are require()'d so they're
+  // already in the JS bundle; Asset.loadAsync only primes the file-system
+  // cache for Image rendering. Not worth blocking splash on — first paint of
+  // Home doesn't render all 5 logos simultaneously anyway.
   useEffect(() => {
-    async function prepareAssets() {
-      try {
-        // Cast the values to number[] to satisfy the TypeScript compiler
-        const imageAssets = Object.values(ACCOUNT_LOGOS) as number[];
-        await Asset.loadAsync(imageAssets);
-      } catch (error) {
-        console.warn('Asset pre-loading failed:', error);
-      } finally {
-        setIsAssetsReady(true);
-      }
-    }
-
-    prepareAssets();
+    const imageAssets = Object.values(ACCOUNT_LOGOS) as number[];
+    Asset.loadAsync(imageAssets).catch((error) => {
+      console.warn('Asset pre-loading failed:', error);
+    });
   }, []);
 
   // Determine if all required resources are loaded
-  const isAppReady = fontsLoaded && isAuthReady && isAssetsReady;
+  const isAppReady = fontsLoaded && isAuthReady;
 
   useEffect(() => {
     if (isAppReady) {

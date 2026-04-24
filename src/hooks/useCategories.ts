@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
 import { combineLatest } from 'rxjs';
+import { debounceTime } from 'rxjs/operators';
 
 import { database } from '@/db';
 import type CategoryModel from '@/db/models/Category';
@@ -66,11 +67,21 @@ function monthBounds() {
   return { start, end };
 }
 
+// Cross-mount cache: remounts on Home ↔ Feed serve last-known categories
+// synchronously instead of flashing an empty list while observables spin up.
+const categoriesCache = new Map<string, CategoryWithSpend[]>();
+const categoriesKey = (userId: string) => {
+  const d = new Date();
+  return `${userId}-${d.getFullYear()}-${d.getMonth()}`;
+};
+
 export const useCategories = () => {
-  const [categories, setCategories] = useState<CategoryWithSpend[]>([]);
-  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const userId = user?.id;
+
+  const cached = userId ? categoriesCache.get(categoriesKey(userId)) : undefined;
+  const [categories, setCategories] = useState<CategoryWithSpend[]>(cached ?? []);
+  const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
     if (!userId) {
@@ -97,10 +108,13 @@ export const useCategories = () => {
         Q.where('date', Q.lte(end)),
       );
 
+    // Debounce collapses observer bursts (e.g. a sync pull writing 30 tx rows
+    // fires 30 emissions; debounced, the downstream rebuild of spendMap runs
+    // once per burst). 50ms is imperceptible to users but catches full pulls.
     const sub = combineLatest([
       categoriesQuery.observeWithColumns(['name', 'emoji', 'budget_limit', 'is_active', 'sort_order']),
       expensesQuery.observeWithColumns(['amount', 'category', 'type', 'is_transfer', 'date']),
-    ]).subscribe(
+    ]).pipe(debounceTime(50)).subscribe(
       ([categoryRecords, txRecords]) => {
         const spendMap: Record<string, number> = {};
         for (const tx of txRecords) {
@@ -128,6 +142,7 @@ export const useCategories = () => {
 
         setCategories(enriched);
         setLoading(false);
+        categoriesCache.set(categoriesKey(userId), enriched);
       },
     );
 

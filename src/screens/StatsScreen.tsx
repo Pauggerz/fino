@@ -48,6 +48,7 @@ import {
   CATEGORY_COLOR,
 } from '@/constants/categoryMappings';
 import { Skeleton } from '@/components/Skeleton';
+import { formatShortDate } from '@/utils/groupByDate';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -494,7 +495,7 @@ function AccountActivityCard({
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
-export default function InsightsScreen() {
+function InsightsScreen() {
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
@@ -2395,13 +2396,7 @@ Format strictly: ["insight 1", "insight 2", "insight 3"]`;
                         tx.merchant_name ??
                         tx.category ??
                         'Transaction';
-                      const dateStr = new Date(tx.date).toLocaleDateString(
-                        'en-PH',
-                        {
-                          month: 'short',
-                          day: 'numeric',
-                        }
-                      );
+                      const dateStr = formatShortDate(tx.date);
                       return (
                         <TouchableOpacity
                           key={i}
@@ -3707,7 +3702,7 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       flex: 1,
     },
     aiFullTitle: {
-      fontFamily: 'Inter_800ExtraBold',
+      fontFamily: 'Inter_700Bold',
       fontSize: 13,
       color: colors.lavenderDark,
     },
@@ -3878,7 +3873,7 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       flexShrink: 0,
     },
     topTxRankText: {
-      fontFamily: 'Inter_800ExtraBold',
+      fontFamily: 'Inter_700Bold',
       fontSize: 10,
       color: colors.textSecondary,
     },
@@ -4034,3 +4029,5 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       paddingVertical: 12,
     },
   });
+
+export default React.memo(InsightsScreen);

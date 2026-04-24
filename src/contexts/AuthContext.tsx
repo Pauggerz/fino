@@ -1,5 +1,12 @@
 // src/contexts/AuthContext.tsx
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
 import { User } from '../types';
@@ -72,9 +79,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     if (user) await fetchProfile(user.id);
-  };
+  }, [user]);
 
   useEffect(() => {
     // `getSession` and `onAuthStateChange` both fire on mount with the same
@@ -117,20 +124,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        session,
-        user,
-        profile,
-        isLoading,
-        profileError,
-        refreshProfile,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  // Memoized so every sync / unrelated re-render in the tree above us doesn't
+  // recreate the value object and cascade re-renders through every useAuth()
+  // consumer (and their children).
+  const value = useMemo<AuthContextData>(
+    () => ({ session, user, profile, isLoading, profileError, refreshProfile }),
+    [session, user, profile, isLoading, profileError, refreshProfile],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);

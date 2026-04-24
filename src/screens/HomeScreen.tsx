@@ -72,108 +72,127 @@ const REEL_CYCLES = 3;
 const REEL_BASE_MS = 650;
 const REEL_STEP_MS = 55; // each digit to the right spins this much longer
 
+// Strip is 11 rows: digits 0-9 plus a wrap-around 0 at the bottom so the
+// transition between 9 → 0 is visually continuous during the modulo wrap.
+const DIGIT_ROWS: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+const REEL_CYCLE_H = 10 * REEL_DIGIT_H;
+
 /**
- * A single digit slot rendered as a vertical strip of 0-9 that scrolls to the
- * target digit. Uses teleport-then-animate so the reel can be retriggered on
- * every balance change without snapping back to zero visually.
+ * A single digit slot. Previous implementation rendered 60 Text views per
+ * digit so the strip was tall enough to cover any prev→target roll without
+ * wrapping. With 7 visible digits that meant 420 native Text views just for
+ * the balance — measurable lag at HomeScreen mount.
+ *
+ * New implementation: the translateY shared value is unbounded (monotonically
+ * decreasing as the reel "spins"), but the useAnimatedStyle worklet wraps it
+ * modulo one cycle height before applying it. 11 Text rows cover every visual
+ * state: 77 views total for a 7-digit balance (82% reduction).
  */
-function RollingDigit({
-  target,
-  indexFromLeft,
-  textStyle,
-}: {
-  target: number;
-  indexFromLeft: number;
-  textStyle: any;
-}) {
-  const translateY = useSharedValue(0);
-  const prev = useRef<number>(target);
-  const initialized = useRef(false);
+const RollingDigit = React.memo(
+  ({
+    target,
+    indexFromLeft,
+    textStyle,
+  }: {
+    target: number;
+    indexFromLeft: number;
+    textStyle: any;
+  }) => {
+    const translateY = useSharedValue(0);
+    const prev = useRef<number>(target);
+    const initialized = useRef(false);
 
-  useEffect(() => {
-    const duration = REEL_BASE_MS + indexFromLeft * REEL_STEP_MS;
+    useEffect(() => {
+      const duration = REEL_BASE_MS + indexFromLeft * REEL_STEP_MS;
 
-    if (!initialized.current) {
-      initialized.current = true;
-      translateY.value = 0;
-      translateY.value = withTiming(
-        -(REEL_CYCLES * 10 + target) * REEL_DIGIT_H,
-        { duration, easing: Easing.out(Easing.cubic) },
-      );
-      prev.current = target;
-      return;
-    }
-
-    if (prev.current === target) return;
-
-    const from = -prev.current * REEL_DIGIT_H;
-    const delta = ((target - prev.current) + 10) % 10;
-    const to = -(prev.current + REEL_CYCLES * 10 + delta) * REEL_DIGIT_H;
-    translateY.value = from;
-    translateY.value = withTiming(to, {
-      duration,
-      easing: Easing.out(Easing.cubic),
-    });
-    prev.current = target;
-  }, [target, indexFromLeft, translateY]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-  }));
-
-  // Strip of 60 slots covers any prev→target roll within REEL_CYCLES cycles.
-  return (
-    <View style={{ height: REEL_DIGIT_H, overflow: 'hidden' }}>
-      <RAnim.View style={animStyle}>
-        {Array.from({ length: 60 }, (_, i) => (
-          <Text key={i} style={[textStyle, { height: REEL_DIGIT_H }]}>
-            {i % 10}
-          </Text>
-        ))}
-      </RAnim.View>
-    </View>
-  );
-}
-
-function RollingBalance({
-  value,
-  textStyle,
-  isPrivacyMode,
-}: {
-  value: number;
-  textStyle: any;
-  isPrivacyMode: boolean;
-}) {
-  if (isPrivacyMode) return <Text style={textStyle}>***</Text>;
-
-  const formatted = formatBalanceString(value);
-  const chars = formatted.split('');
-  // Width-keyed index prefix — when digit count changes (e.g. 9,999 → 10,000)
-  // the reels remount instead of the last slot inheriting an unrelated digit.
-  const keyBase = `len${chars.length}`;
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-      {chars.map((ch, i) => {
-        if (ch >= '0' && ch <= '9') {
-          return (
-            <RollingDigit
-              key={`${keyBase}-${i}`}
-              target={Number(ch)}
-              indexFromLeft={i}
-              textStyle={textStyle}
-            />
-          );
-        }
-        return (
-          <Text key={`${keyBase}-${i}`} style={textStyle}>
-            {ch}
-          </Text>
+      if (!initialized.current) {
+        initialized.current = true;
+        translateY.value = withTiming(
+          -(REEL_CYCLES * 10 + target) * REEL_DIGIT_H,
+          { duration, easing: Easing.out(Easing.cubic) }
         );
-      })}
-    </View>
-  );
-}
+        prev.current = target;
+        return;
+      }
+
+      if (prev.current === target) return;
+
+      // Animate forward from wherever the strip is now — modulo wrap in the
+      // worklet handles the visual continuity. No snapping needed.
+      const delta = (target - prev.current + 10) % 10;
+      const next =
+        translateY.value - (REEL_CYCLES * 10 + delta) * REEL_DIGIT_H;
+      translateY.value = withTiming(next, {
+        duration,
+        easing: Easing.out(Easing.cubic),
+      });
+      prev.current = target;
+    }, [target, indexFromLeft, translateY]);
+
+    const animStyle = useAnimatedStyle(() => {
+      // translateY is negative and decreasing as the reel spins downward.
+      // Wrap the shift distance into [0, REEL_CYCLE_H) so we only ever show
+      // rows 0..10 of the strip regardless of how many cycles have elapsed.
+      const raw = translateY.value;
+      const wrapped = (((-raw) % REEL_CYCLE_H) + REEL_CYCLE_H) % REEL_CYCLE_H;
+      return { transform: [{ translateY: -wrapped }] };
+    });
+
+    return (
+      <View style={{ height: REEL_DIGIT_H, overflow: 'hidden' }}>
+        <RAnim.View style={animStyle}>
+          {DIGIT_ROWS.map((d, i) => (
+            <Text key={i} style={[textStyle, { height: REEL_DIGIT_H }]}>
+              {d}
+            </Text>
+          ))}
+        </RAnim.View>
+      </View>
+    );
+  }
+);
+
+const RollingBalance = React.memo(
+  ({
+    value,
+    textStyle,
+    isPrivacyMode,
+  }: {
+    value: number;
+    textStyle: any;
+    isPrivacyMode: boolean;
+  }) => {
+    if (isPrivacyMode) return <Text style={textStyle}>***</Text>;
+
+    const formatted = formatBalanceString(value);
+    const chars = formatted.split('');
+    // Width-keyed index prefix — when digit count changes (e.g. 9,999 → 10,000)
+    // the reels remount instead of the last slot inheriting an unrelated digit.
+    const keyBase = `len${chars.length}`;
+
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+        {chars.map((ch, i) => {
+          if (ch >= '0' && ch <= '9') {
+            return (
+              <RollingDigit
+                key={`${keyBase}-${i}`}
+                target={Number(ch)}
+                indexFromLeft={i}
+                textStyle={textStyle}
+              />
+            );
+          }
+          return (
+            <Text key={`${keyBase}-${i}`} style={textStyle}>
+              {ch}
+            </Text>
+          );
+        })}
+      </View>
+    );
+  }
+);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -213,7 +232,7 @@ function onTrackLabel(pct: number): string {
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
-export default function HomeScreen() {
+function HomeScreen() {
   const navigation = useNavigation<any>();
   const { status: syncStatus } = useSync();
   const { profile } = useAuth();
@@ -403,15 +422,22 @@ export default function HomeScreen() {
 
   const { text: greetText, emoji: greetEmoji } = getGreeting();
   const daysLeft = getDaysLeftInMonth();
-  const totalBudget = categories.reduce((s, c) => s + (c.budget_limit ?? 0), 0);
+  const totalBudget = useMemo(
+    () => categories.reduce((s, c) => s + (c.budget_limit ?? 0), 0),
+    [categories],
+  );
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
 
   // Use real 7-day daily-expense sparkline from useMonthlyTotals.
   // Override the last bar with today's actual pctSpent so it always reflects reality.
   const lastBarVal = Math.min(pctSpent > 0 ? pctSpent : getMonthPace(), 1);
-  const SPARKLINE = sparklineData.map((bar, i) =>
-    i === sparklineData.length - 1 ? { ...bar, val: lastBarVal } : bar
+  const SPARKLINE = useMemo(
+    () =>
+      sparklineData.map((bar, i) =>
+        i === sparklineData.length - 1 ? { ...bar, val: lastBarVal } : bar,
+      ),
+    [sparklineData, lastBarVal],
   );
 
   const delta = totalIncome - monthlyExpense;
@@ -926,7 +952,7 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       marginBottom: 6,
     },
     greetingName: {
-      fontFamily: 'Nunito_400Regular',
+      fontFamily: 'Inter_400Regular',
       fontSize: 26,
       lineHeight: 32,
     },
@@ -1305,3 +1331,5 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       color: colors.primary,
     },
   });
+
+export default React.memo(HomeScreen);

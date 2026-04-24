@@ -1,4 +1,5 @@
-import React, { startTransition, useState } from 'react';
+import React, { lazy, startTransition, Suspense, useState } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import {
   NavigationContainer,
   NavigatorScreenParams,
@@ -13,16 +14,37 @@ import InsightsScreen from '../screens/StatsScreen';
 import TransactionDetailScreen from '../screens/TransactionDetailScreen';
 import AddTransactionSheet from '../screens/AddTransactionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
-import ScreenshotScreen from '../screens/ScreenshotScreen';
 import AccountDetailScreen from '../screens/AccountDetailScreen';
 import MoreScreen from '../screens/MoreScreen';
-import ChatScreen from '../screens/ChatScreen';
-import BillSplitterScreen from '../screens/BillSplitterScreen';
-import UtangTrackerScreen from '../screens/UtangTrackerScreen';
-import SavingsGoalScreen from '../screens/SavingsGoalScreen';
 import LoginScreen from '../screens/LoginScreen';
-import OnboardingScreen from '../screens/OnboardingScreen';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
+
+// Modal screens — not part of first paint. Split out of the initial bundle
+// graph so cold start doesn't parse them. Suspense boundary below catches the
+// load flash on first open.
+const ChatScreen = lazy(() => import('../screens/ChatScreen'));
+const BillSplitterScreen = lazy(() => import('../screens/BillSplitterScreen'));
+const UtangTrackerScreen = lazy(() => import('../screens/UtangTrackerScreen'));
+const SavingsGoalScreen = lazy(() => import('../screens/SavingsGoalScreen'));
+const ScreenshotScreen = lazy(() => import('../screens/ScreenshotScreen'));
+const OnboardingScreen = lazy(() => import('../screens/OnboardingScreen'));
+
+function ModalLoadingShim() {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.white,
+      }}
+    >
+      <ActivityIndicator color={colors.primary} />
+    </View>
+  );
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -126,10 +148,17 @@ function TabNavigator() {
       )}
       screenOptions={{
         headerShown: false,
+        // Freeze inactive tab screens — pauses their JS work (Reanimated
+        // worklets, Skia draws, non-focused observable subscribers continue
+        // but their state updates never reach React). Switching back thaws
+        // instantly because the view hierarchy is kept in memory.
+        freezeOnBlur: true,
+        // lazy is the default, but make it explicit: Stats/More/Feed don't
+        // mount until first tapped. Home cold-starts alone.
+        lazy: true,
       }}
     >
       <Tab.Screen name="home" component={HomeScreen} />
-      {/* unmountOnBlur safely removed to satisfy TypeScript */}
       <Tab.Screen name="feed" component={FeedNavigator} />
       <Tab.Screen name="stats" component={InsightsScreen} />
       <Tab.Screen name="more" component={MoreNavigator} />
@@ -155,7 +184,8 @@ export default function RootNavigator() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Suspense fallback={<ModalLoadingShim />}>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!hasOnboarded ? (
           <Stack.Screen name="Onboarding">
             {(props) => (
@@ -222,7 +252,8 @@ export default function RootNavigator() {
             />
           </>
         )}
-      </Stack.Navigator>
+        </Stack.Navigator>
+      </Suspense>
     </NavigationContainer>
   );
 }

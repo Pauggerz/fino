@@ -6,6 +6,19 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
+// Reused across feed rows. Constructing Intl.DateTimeFormat is ~100× slower
+// than .format() on an existing instance.
+const TIME_FMT = new Intl.DateTimeFormat('en-PH', {
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+const SECTION_DATE_FMT = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+});
+
 /* eslint-disable import/prefer-default-export */
 
 /**
@@ -22,9 +35,20 @@ export function formatSectionTitle(isoDate: string): string {
   yesterday.setDate(now.getDate() - 1);
   if (isSameDay(date, yesterday)) return 'Yesterday';
 
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
+  return SECTION_DATE_FMT.format(date);
+}
+
+export function formatRowTime(isoDate: string): string {
+  return TIME_FMT.format(new Date(isoDate));
+}
+
+// Short date for list rows (e.g. "Mar 22"). Shared formatter — cheap to call
+// per row once the Intl instance is cached.
+const SHORT_DATE_FMT = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+});
+
+export function formatShortDate(isoDate: string): string {
+  return SHORT_DATE_FMT.format(new Date(isoDate));
 }
