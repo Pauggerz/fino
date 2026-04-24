@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Q } from '@nozbe/watermelondb';
 import { combineLatest } from 'rxjs';
+import { debounceTime } from 'rxjs/operators';
 
 import { database } from '@/db';
 import type CategoryModel from '@/db/models/Category';
@@ -97,10 +98,13 @@ export const useCategories = () => {
         Q.where('date', Q.lte(end)),
       );
 
+    // Debounce collapses observer bursts (e.g. a sync pull writing 30 tx rows
+    // fires 30 emissions; debounced, the downstream rebuild of spendMap runs
+    // once per burst). 50ms is imperceptible to users but catches full pulls.
     const sub = combineLatest([
       categoriesQuery.observeWithColumns(['name', 'emoji', 'budget_limit', 'is_active', 'sort_order']),
       expensesQuery.observeWithColumns(['amount', 'category', 'type', 'is_transfer', 'date']),
-    ]).subscribe(
+    ]).pipe(debounceTime(50)).subscribe(
       ([categoryRecords, txRecords]) => {
         const spendMap: Record<string, number> = {};
         for (const tx of txRecords) {
