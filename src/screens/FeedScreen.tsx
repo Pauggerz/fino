@@ -79,6 +79,24 @@ function getMonthRange(year: number, month: number): DateRange {
   return { from, to };
 }
 
+// Reused for every transaction row — constructing Intl.DateTimeFormat per call
+// is ~100× slower than .format() on an existing instance, and the row used to
+// build one per render, per row, per frame.
+const TIME_FMT = new Intl.DateTimeFormat('en-PH', {
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+// Static lookup — INCOME_CATEGORIES never changes at runtime, so build the
+// name→entry map once at module load instead of scanning it per row.
+const INCOME_CATEGORY_BY_NAME: Map<string, (typeof INCOME_CATEGORIES)[number]> =
+  new Map(INCOME_CATEGORIES.map((c) => [c.name.toLowerCase(), c]));
+
+const INCOME_FILTER_OPTIONS: string[] = [
+  'All',
+  ...INCOME_CATEGORIES.map((c) => c.name),
+];
+
 const MONTH_NAMES = [
   'January',
   'February',
@@ -947,7 +965,7 @@ const FeedHeaderRow = React.memo(
 const FeedTransactionRow = React.memo(
   ({
     tx,
-    categories,
+    categoryByName,
     styles,
     swipeStyles,
     colors,
@@ -956,7 +974,7 @@ const FeedTransactionRow = React.memo(
     onDelete,
   }: {
     tx: FeedTransaction;
-    categories: any[];
+    categoryByName: Map<string, any>;
     styles: FeedStyles;
     swipeStyles: FeedSwipeStyles;
     colors: any;
@@ -969,24 +987,18 @@ const FeedTransactionRow = React.memo(
     let iconKey = 'default';
     let iconColor = colors.textSecondary;
 
+    const catKey = (tx.category ?? '').toLowerCase();
     if (isExpense) {
-      const catData = categories.find(
-        (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
-      );
+      const catData = categoryByName.get(catKey);
       iconKey = catData?.emoji ?? 'default';
       iconColor = catData?.text_colour ?? colors.textSecondary;
     } else {
-      const incCat = INCOME_CATEGORIES.find(
-        (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
-      );
+      const incCat = INCOME_CATEGORY_BY_NAME.get(catKey);
       iconKey = incCat?.key ?? 'default';
       iconColor = CATEGORY_COLOR[iconKey] ?? colors.incomeGreen;
     }
 
-    const time = new Date(tx.date).toLocaleTimeString('en-PH', {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
+    const time = TIME_FMT.format(new Date(tx.date));
 
     // Stable within the row's lifetime so MemoizedSwipeableRow's shallow
     // compare doesn't re-render it on every parent-driven render.
@@ -1054,7 +1066,7 @@ const FeedTransactionRow = React.memo(
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export default function FeedScreen() {
+function FeedScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<FeedStackParamList, 'FeedMain'>>();
   const insets = useSafeAreaInsets();
@@ -1257,10 +1269,22 @@ export default function FeedScreen() {
   }, []);
 
   // ── Filter chip options ──
-  const expenseFilterOptions = ['All', ...categories.map((c) => c.name)];
-  const incomeFilterOptions = ['All', ...INCOME_CATEGORIES.map((c) => c.name)];
-  const filterOptions =
-    viewType === 'income' ? incomeFilterOptions : expenseFilterOptions;
+  // Fresh arrays per render previously broke FeedControls' React.memo — every
+  // keystroke in the search box re-rendered the chip carousel.
+  const filterOptions = useMemo<string[]>(
+    () =>
+      viewType === 'income'
+        ? INCOME_FILTER_OPTIONS
+        : ['All', ...categories.map((c) => c.name)],
+    [viewType, categories],
+  );
+
+  // O(1) category lookup for FeedTransactionRow. Was a linear .find() per row,
+  // per render — the single biggest scroll-frame cost in the profiler.
+  const categoryByName = useMemo(
+    () => new Map(categories.map((c) => [c.name.toLowerCase(), c])),
+    [categories],
+  );
 
   // ── Delete handler ──
   const handleDelete = useCallback(
@@ -1474,7 +1498,7 @@ export default function FeedScreen() {
       return (
         <FeedTransactionRow
           tx={item.data}
-          categories={categories}
+          categoryByName={categoryByName}
           styles={styles}
           swipeStyles={swipeStyles}
           colors={colors}
@@ -1510,6 +1534,7 @@ export default function FeedScreen() {
       filterOptions,
       activeCategory,
       categories,
+      categoryByName,
       loading,
       swipeHintVisible,
       totalEntries,
@@ -1561,7 +1586,7 @@ export default function FeedScreen() {
             data={listData}
             renderItem={renderItem}
             getItemType={getItemType}
-            drawDistance={250}
+            drawDistance={500}
             refreshControl={
               <RefreshControl
                 refreshing={isRefreshing}
@@ -2267,3 +2292,5 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       paddingHorizontal: 32,
     },
   });
+
+export default React.memo(FeedScreen);
