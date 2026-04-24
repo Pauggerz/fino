@@ -217,7 +217,7 @@ function onTrackLabel(pct: number): string {
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
-export default function HomeScreen() {
+function HomeScreen() {
   const navigation = useNavigation<any>();
   const { status: syncStatus } = useSync();
   const { profile } = useAuth();
@@ -1309,3 +1309,5 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       color: colors.primary,
     },
   });
+
+export default React.memo(HomeScreen);
