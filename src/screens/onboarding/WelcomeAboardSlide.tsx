@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Icon, type IconName } from '../../components/icons/Icon';
 
 interface Props {
   isActive: boolean;
@@ -391,11 +392,13 @@ export default function WelcomeAboardSlide({ isActive, onDone }: Props) {
 
         {/* Feature pills */}
         <View style={s.pillsGrid}>
-          {[
-            { icon: '📊', text: 'Smart Budgets' },
-            { icon: '🔔', text: 'Spend Alerts' },
-            { icon: '🤖', text: 'AI Insights' },
-          ].map((pill, i) => {
+          {(
+            [
+              { icon: 'chart', text: 'Smart Budgets' },
+              { icon: 'bell', text: 'Spend Alerts' },
+              { icon: 'sparkle', text: 'AI Insights' },
+            ] as { icon: IconName; text: string }[]
+          ).map((pill, i) => {
             const ops = [pill1Op, pill2Op, pill3Op];
             const ys = [pill1Y, pill2Y, pill3Y];
             return (
@@ -406,7 +409,11 @@ export default function WelcomeAboardSlide({ isActive, onDone }: Props) {
                   { opacity: ops[i], transform: [{ translateY: ys[i] }] },
                 ]}
               >
-                <Text style={s.pillIcon}>{pill.icon}</Text>
+                <Icon
+                  name={pill.icon}
+                  size={14}
+                  color="rgba(168,213,181,0.8)"
+                />
                 <Text style={s.pillText}>{pill.text}</Text>
               </Animated.View>
             );
@@ -544,7 +551,6 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  pillIcon: { fontSize: 14 },
   pillText: { fontSize: 12, fontWeight: '600', color: 'rgba(168,213,181,0.8)' },
   ctaBtn: {
     borderRadius: 16,

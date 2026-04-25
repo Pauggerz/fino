@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '../components/icons/Icon';
 import { useNavigation } from '@react-navigation/native';
 import { Q } from '@nozbe/watermelondb';
 import { spacing } from '../constants/theme';
@@ -133,7 +134,7 @@ export default function ChatScreen() {
       {
         id: 'msg-welcome',
         type: 'ai',
-        text: "Hi! 👋 Here's your financial snapshot this month:",
+        text: "Hi! Here's your financial snapshot this month:",
         richData: [
           {
             label: 'Spent this month',
@@ -232,7 +233,9 @@ export default function ChatScreen() {
 
   const renderEmptyGuard = () => (
     <View style={styles.emptyStateContainer}>
-      <Text style={styles.emptyEmoji}>🌱</Text>
+      <View style={styles.emptyIconWrap}>
+        <Icon name="chat" size={48} color={colors.chatAILabel} />
+      </View>
       <Text style={styles.emptyHeading}>Start your journey</Text>
       <Text style={styles.emptyBody}>
         Fino needs some data to work its magic. Log your first expense or income
@@ -478,6 +481,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingHorizontal: 40,
     },
     emptyEmoji: { fontSize: 48, marginBottom: 16 },
+    emptyIconWrap: { marginBottom: 16 },
     emptyHeading: {
       fontFamily: 'Nunito_800ExtraBold',
       fontSize: 20,
