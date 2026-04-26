@@ -30,6 +30,8 @@ import { useSync } from '@/contexts/SyncContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
+import { Icon, type IconName } from '@/components/icons/Icon';
+import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 import { Skeleton } from '@/components/Skeleton';
 import Toast from '../components/Toast';
 import BudgetTile from '@/components/home/BudgetTile';
@@ -196,11 +198,11 @@ const RollingBalance = React.memo(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getGreeting(): { text: string; emoji: string } {
+function getGreeting(): { text: string; icon: IconName } {
   const h = new Date().getHours();
-  if (h < 12) return { text: 'Good morning', emoji: '☀️' };
-  if (h < 18) return { text: 'Good afternoon', emoji: '⛅' };
-  return { text: 'Good evening', emoji: '🌙' };
+  if (h < 12) return { text: 'Good morning', icon: 'sun' };
+  if (h < 18) return { text: 'Good afternoon', icon: 'cloud-sun' };
+  return { text: 'Good evening', icon: 'moon' };
 }
 
 function getDaysLeftInMonth(): number {
@@ -420,7 +422,7 @@ function HomeScreen() {
     setToastVisible(true);
   }, [undoTxId]);
 
-  const { text: greetText, emoji: greetEmoji } = getGreeting();
+  const { text: greetText, icon: greetIcon } = getGreeting();
   const daysLeft = getDaysLeftInMonth();
   const totalBudget = useMemo(
     () => categories.reduce((s, c) => s + (c.budget_limit ?? 0), 0),
@@ -465,16 +467,16 @@ function HomeScreen() {
     const top = spent[0];
     const share = Math.round((top.spend / monthlyExpense) * 100);
     const over = top.limit > 0 && top.spend > top.limit;
-    const emoji = top.emoji || '📊';
+    const emojiSuffix = top.emoji ? ` ${top.emoji}` : '';
 
     if (over) {
       return {
-        headline: `${top.name} is over budget ${emoji}`,
+        headline: `${top.name} is over budget${emojiSuffix}`,
         body: `${share}% of your spend this month. Tap to review the limit.`,
       };
     }
     return {
-      headline: `${top.name} leads your spend ${emoji}`,
+      headline: `${top.name} leads your spend${emojiSuffix}`,
       body: `${share}% of this month so far. Keep an eye on it over the next ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`,
     };
   }, [categories, monthlyExpense, daysLeft]);
@@ -504,9 +506,16 @@ function HomeScreen() {
                   marginBottom: 6,
                 }}
               >
-                <Text style={[styles.greetingPill, { marginBottom: 0 }]}>
-                  {greetText} {greetEmoji}
-                </Text>
+                <View style={styles.greetingPillRow}>
+                  <Text style={[styles.greetingPill, { marginBottom: 0 }]}>
+                    {greetText}
+                  </Text>
+                  <Icon
+                    name={greetIcon}
+                    size={14}
+                    color={colors.textSecondary}
+                  />
+                </View>
                 {/* Sync Status Dot */}
                 <View
                   style={{
@@ -889,11 +898,7 @@ function HomeScreen() {
                 style={styles.insightCard}
               >
                 <View style={styles.insightAvatar}>
-                  <Ionicons
-                    name="sparkles"
-                    size={16}
-                    color={colors.lavenderDark}
-                  />
+                  <FinoIntelIcon size={20} color={colors.lavenderDark} />
                 </View>
 
                 <View style={styles.insightBody}>
@@ -950,6 +955,11 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       fontSize: 13,
       color: colors.textSecondary,
       marginBottom: 6,
+    },
+    greetingPillRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
     },
     greetingName: {
       fontFamily: 'Inter_400Regular',

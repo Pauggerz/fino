@@ -44,6 +44,8 @@ import {
   createDebouncedAnalyzer,
   type AIAnalysisResult,
 } from '../services/aiCategoryMap';
+import { suggestCategory } from '../services/IntelligenceEngine';
+import { useAuth } from '../contexts/AuthContext';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
@@ -103,8 +105,10 @@ export default function AddTransactionSheet({ route }: Props) {
   );
   const discardShakeX = useRef(new Animated.Value(0)).current;
   const analyzer = useRef(createDebouncedAnalyzer()).current;
+  const aiTextRef = useRef('');
 
   // Data Hooks
+  const { user } = useAuth();
   const { accounts, loading: accountsLoading } = useAccounts();
   const { categories, loading: categoriesLoading } = useCategories();
 
@@ -414,22 +418,53 @@ export default function AddTransactionSheet({ route }: Props) {
   const handleAiTextChange = (text: string) => {
     setAiText(text);
     setAiResult(null);
-    if (text.trim()) {
-      analyzer.analyze(text, (result) => {
-        setAiResult(result);
-        if (result.suggestedCategory) {
-          const matched = categories.find(
-            (c) => c.name.toLowerCase() === result.suggestedCategory
-          );
-          if (matched) {
-            setCategory(matched.name);
-            setSignalSource('ai_description');
-          }
-        }
-      });
-    } else {
+    const trimmed = text.trim();
+    aiTextRef.current = trimmed;
+    if (!trimmed) {
       analyzer.cancel();
       setSignalSource('manual');
+      return;
+    }
+
+    // Snapshot the latest typed text so an out-of-order async result can be
+    // discarded if the user has since edited the field.
+    const tokenText = trimmed;
+
+    // 1) Immediate keyword analyzer — fast UI feedback.
+    analyzer.analyze(text, (result) => {
+      if (tokenText !== aiTextRef.current) return;
+      setAiResult(result);
+      if (result.suggestedCategory) {
+        const matched = categories.find(
+          (c) => c.name.toLowerCase() === result.suggestedCategory
+        );
+        if (matched) {
+          setCategory(matched.name);
+          setSignalSource('ai_description');
+        }
+      }
+    });
+
+    // 2) IntelligenceEngine — checks user's transaction history offline.
+    //    A historical match beats the static keyword dictionary because it
+    //    captures merchants the user actually buys from.
+    if (user?.id) {
+      const catNames = categories.map((c) => c.name);
+      suggestCategory(user.id, tokenText, catNames)
+        .then((sug) => {
+          if (tokenText !== aiTextRef.current) return;
+          if (
+            sug.source === 'history' &&
+            sug.category &&
+            (sug.confidence === 'high' || sug.confidence === 'medium')
+          ) {
+            setCategory(sug.category);
+            setSignalSource('ai_description');
+          }
+        })
+        .catch(() => {
+          /* silent — keyword fallback already applied */
+        });
     }
   };
 

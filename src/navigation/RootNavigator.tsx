@@ -1,5 +1,6 @@
 import React, { lazy, startTransition, Suspense, useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   NavigationContainer,
   NavigatorScreenParams,
@@ -31,6 +32,11 @@ const UtangTrackerScreen = lazy(() => import('../screens/UtangTrackerScreen'));
 const SavingsGoalScreen = lazy(() => import('../screens/SavingsGoalScreen'));
 const ScreenshotScreen = lazy(() => import('../screens/ScreenshotScreen'));
 const OnboardingScreen = lazy(() => import('../screens/OnboardingScreen'));
+const CashFlowScreen = lazy(() => import('../screens/CashFlowScreen'));
+const SankeyFullscreenScreen = lazy(
+  () => import('../screens/SankeyFullscreenScreen')
+);
+const IconPreviewScreen = lazy(() => import('../screens/IconPreviewScreen'));
 
 function ModalLoadingShim() {
   const { colors } = useTheme();
@@ -92,6 +98,18 @@ export type RootStackParamList = {
   BillSplitter: undefined;
   UtangTracker: undefined;
   SavingsGoal: undefined;
+  CashFlow: { accountId?: string } | undefined;
+  IconPreview: undefined;
+  SankeyFullscreen: {
+    income: number;
+    savings: number;
+    expenseNodes: {
+      key: string;
+      label: string;
+      amount: number;
+      color: string;
+    }[];
+  };
 };
 
 // ─── Navigators ─────────────────────────────────────────────────────────────
@@ -193,15 +211,15 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
   const { session, isLoading } = useAuth();
-  // DEV: always show onboarding for critiquing. To restore normal behaviour,
-  // replace the line below with the commented-out block.
-  const [hasOnboarded, setHasOnboarded] = useState(false);
-  // const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
-  // useEffect(() => {
-  //   AsyncStorage.getItem('hasOnboarded').then(val => setHasOnboarded(val === 'true'));
-  // }, []);
+  const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
 
-  if (isLoading) return null;
+  useEffect(() => {
+    AsyncStorage.getItem('hasOnboarded').then((val) =>
+      setHasOnboarded(val === 'true')
+    );
+  }, []);
+
+  if (isLoading || hasOnboarded === null) return null;
 
   return (
     <NavigationContainer>
@@ -271,6 +289,24 @@ export default function RootNavigator() {
               name="SavingsGoal"
               component={SavingsGoalScreen}
               options={{ headerShown: false, presentation: 'modal' }}
+            />
+            <Stack.Screen
+              name="CashFlow"
+              component={CashFlowScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="SankeyFullscreen"
+              component={SankeyFullscreenScreen}
+              options={{
+                headerShown: false,
+                presentation: 'fullScreenModal',
+              }}
+            />
+            <Stack.Screen
+              name="IconPreview"
+              component={IconPreviewScreen}
+              options={{ headerShown: false }}
             />
           </>
         )}

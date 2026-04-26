@@ -35,6 +35,7 @@ import {
 } from '@/constants/categoryMappings';
 import type { MoreStackParamList } from '../navigation/RootNavigator';
 import WalletCard, { getCfg } from '../components/WalletCard';
+import { Icon } from '../components/icons/Icon';
 import TransferModal from '@/components/account/TransferModal';
 import AdjustBalanceSheet from '@/components/account/AdjustBalanceSheet';
 import { saveEditAccount } from '@/services/transactionMutations';
@@ -510,7 +511,10 @@ export default function AccountDetailScreen() {
                     setEditSheetVisible(true);
                   }}
                 >
-                  <Text style={styles.backBtnText}>✏️ Edit</Text>
+                  <View style={styles.heroEditBtnInner}>
+                    <Icon name="edit" size={14} color="#FFFFFF" />
+                    <Text style={styles.backBtnText}>Edit</Text>
+                  </View>
                 </TouchableOpacity>
               </View>
 
@@ -534,7 +538,10 @@ export default function AccountDetailScreen() {
                       })
                     }
                   >
-                    <Text style={styles.qaBtnText}>➕ Add Funds</Text>
+                    <View style={styles.heroEditBtnInner}>
+                      <Icon name="add" size={14} color="#FFFFFF" />
+                      <Text style={styles.qaBtnText}>Add Funds</Text>
+                    </View>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.qaBtn}
@@ -644,9 +651,14 @@ export default function AccountDetailScreen() {
                 ]}
                 onPress={() => setAdjustSheetVisible(true)}
               >
-                <Text style={[styles.adjustBadgeText, { color: config.color }]}>
-                  ⚖️ Adjust Balance
-                </Text>
+                <View style={styles.adjustBadgeInner}>
+                  <Icon name="balance" size={14} color={config.color} />
+                  <Text
+                    style={[styles.adjustBadgeText, { color: config.color }]}
+                  >
+                    Adjust Balance
+                  </Text>
+                </View>
               </TouchableOpacity>
             </View>
 
@@ -659,7 +671,7 @@ export default function AccountDetailScreen() {
                     if (searchVisible) setSearchQuery('');
                   }}
                 >
-                  <Text style={styles.searchIconText}>🔍</Text>
+                  <Icon name="search" size={18} color={colors.textSecondary} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() =>
@@ -1003,6 +1015,11 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingHorizontal: 12,
       borderRadius: radius.pill,
     },
+    heroEditBtnInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
     backBtnText: {
       fontFamily: 'Inter_600SemiBold',
       fontSize: 13,
@@ -1129,6 +1146,11 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderRadius: 10,
       paddingVertical: 8,
       paddingHorizontal: 12,
+    },
+    adjustBadgeInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
     },
     adjustBadgeText: {
       fontFamily: 'Inter_600SemiBold',
