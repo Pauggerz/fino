@@ -1,6 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/contexts/ThemeContext';
 import fmtPeso from '@/utils/format';
 
@@ -28,6 +30,7 @@ export function CashFlowCard({
   daysElapsed: number;
 }) {
   const { colors, isDark } = useTheme();
+  const navigation = useNavigation<any>();
   const net = income - expenses;
   const positive = net >= 0;
   const savingsPct = income > 0 ? Math.round((net / income) * 100) : 0;
@@ -51,6 +54,10 @@ export function CashFlowCard({
   const deltaUp = prevNet !== null && net >= prevNet;
 
   return (
+    <Pressable
+      onPress={() => navigation.navigate('CashFlow')}
+      android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
+    >
     <LinearGradient
       colors={
         isDark
@@ -66,6 +73,7 @@ export function CashFlowCard({
         <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>
           CASH FLOW
         </Text>
+        <View style={styles.headRight}>
         {deltaLabel ? (
           <View
             style={[
@@ -88,6 +96,12 @@ export function CashFlowCard({
             </Text>
           </View>
         ) : null}
+          <Ionicons
+            name="chevron-forward"
+            size={14}
+            color={colors.textSecondary}
+          />
+        </View>
       </View>
 
       {/* Hero net amount */}
@@ -210,6 +224,7 @@ export function CashFlowCard({
         </View>
       </View>
     </LinearGradient>
+    </Pressable>
   );
 }
 
@@ -248,6 +263,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  headRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   cardTitle: {
     fontFamily: 'Inter_700Bold',

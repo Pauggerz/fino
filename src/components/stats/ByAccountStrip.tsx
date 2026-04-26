@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { Image } from 'expo-image';
+import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
 import fmtPeso from '@/utils/format';
@@ -22,6 +23,7 @@ export function ByAccountStrip({
   totalExpense: number;
 }) {
   const { colors } = useTheme();
+  const navigation = useNavigation<any>();
   const denom = totalExpense > 0 ? totalExpense : 1;
 
   return (
@@ -58,8 +60,15 @@ export function ByAccountStrip({
             const accentColor = a.brandColour ?? colors.primary;
             const logo = ACCOUNT_LOGOS[a.name];
             return (
-              <View
+              <Pressable
                 key={a.id}
+                onPress={() =>
+                  navigation.navigate('CashFlow', { accountId: a.id })
+                }
+                android_ripple={{
+                  color: 'rgba(0,0,0,0.06)',
+                  borderless: false,
+                }}
                 style={[
                   styles.acct,
                   { backgroundColor: colors.surfaceSubdued },
@@ -117,7 +126,7 @@ export function ByAccountStrip({
                 >
                   {pct.toFixed(0)}% · {a.txCount} txns
                 </Text>
-              </View>
+              </Pressable>
             );
           })}
         </ScrollView>

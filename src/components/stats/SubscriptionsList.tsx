@@ -31,7 +31,7 @@ export function SubscriptionsList({
     >
       <View style={styles.headRow}>
         <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>
-          SUBSCRIPTIONS
+          RECURRING BILLS
         </Text>
         <View
           style={[styles.pill, { backgroundColor: colors.coralLight }]}

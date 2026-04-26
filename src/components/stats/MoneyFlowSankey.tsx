@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Rect, Text as SvgText } from 'react-native-svg';
 import { useTheme } from '@/contexts/ThemeContext';
 import fmtPeso from '@/utils/format';
@@ -17,10 +18,12 @@ export function MoneyFlowSankey({
   income,
   savings,
   expenseNodes,
+  onExpand,
 }: {
   income: number;
   savings: number;
   expenseNodes: SankeyNode[];
+  onExpand?: () => void;
 }) {
   const { colors } = useTheme();
 
@@ -33,9 +36,12 @@ export function MoneyFlowSankey({
       color: colors.incomeGreen,
     },
     ...expenseNodes,
-  ].filter((n) => n.amount > 0);
+  ].filter((n) => Number.isFinite(n.amount) && n.amount > 0);
 
   const totalRight = rightNodes.reduce((s, n) => s + n.amount, 0);
+  // Scale against the larger side so paths fit when income > expenses (savings
+  // visible as gap), and when expenses > income (overspend) we still see flow.
+  // Fallback to 1 keeps SVG math safe; the early-return below catches no-data.
   const total = Math.max(income, totalRight, 1);
 
   const W = Math.max(280, SCREEN_W - 32 - 36);
@@ -43,6 +49,8 @@ export function MoneyFlowSankey({
   const PAD_TOP = 18;
   const PAD_BOTTOM = 22;
   const innerH = H - PAD_TOP - PAD_BOTTOM;
+  // Floor for any node so a tiny category isn't an invisible 1-pixel sliver.
+  const MIN_BAND = 4;
 
   const incomeBlockX = 24;
   const incomeBlockW = 36;
@@ -50,11 +58,20 @@ export function MoneyFlowSankey({
   const rightBlockX = W - 90;
   const labelX = rightBlockX + rightBlockW + 6;
 
-  // Compute right-side y positions
+  // Compute proportional band heights, then enforce a min height per band and
+  // re-normalise so the stack still totals innerH (avoid overflow off-card).
+  const rawHeights = rightNodes.map(
+    (n) => (n.amount / total) * innerH
+  );
+  const flooredHeights = rawHeights.map((h) => Math.max(h, MIN_BAND));
+  const sumFloored = flooredHeights.reduce((s, h) => s + h, 0) || 1;
+  const heights = flooredHeights.map((h) => (h / sumFloored) * innerH);
+
+  // Right-side y positions
   const rightYs: { y0: number; y1: number; node: SankeyNode }[] = [];
   let cum = 0;
-  rightNodes.forEach((n) => {
-    const h = (n.amount / total) * innerH;
+  rightNodes.forEach((n, i) => {
+    const h = heights[i];
     rightYs.push({
       y0: PAD_TOP + cum,
       y1: PAD_TOP + cum + h,
@@ -63,16 +80,20 @@ export function MoneyFlowSankey({
     cum += h;
   });
 
-  // Income spans the full innerH (or proportional if income < total)
-  const incomeH = (Math.min(income, total) / total) * innerH;
+  // Income spans full innerH when income >= totalRight; otherwise shrinks
+  // proportionally so flow paths visually convey the deficit.
+  const incomeH = income >= totalRight
+    ? innerH
+    : (income / total) * innerH;
   const incomeY0 = PAD_TOP;
   const incomeY1 = PAD_TOP + incomeH;
 
-  // Carve income into segments matching right-side proportions
+  // Income segments: proportional to right-side bands within the income block.
   const incomeSegments: { y0: number; y1: number; node: SankeyNode }[] = [];
+  const sumHeights = heights.reduce((s, h) => s + h, 0) || 1;
   let icum = 0;
-  rightNodes.forEach((n) => {
-    const h = (n.amount / total) * innerH;
+  rightNodes.forEach((n, i) => {
+    const h = (heights[i] / sumHeights) * incomeH;
     incomeSegments.push({
       y0: incomeY0 + icum,
       y1: incomeY0 + icum + h,
@@ -92,12 +113,30 @@ export function MoneyFlowSankey({
         <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>
           MONEY FLOW
         </Text>
-        <View
-          style={[styles.betaPill, { backgroundColor: colors.lavender }]}
-        >
-          <Text style={[styles.betaText, { color: colors.lavenderDark }]}>
-            BETA
-          </Text>
+        <View style={styles.headRight}>
+          <View
+            style={[styles.betaPill, { backgroundColor: colors.lavender }]}
+          >
+            <Text style={[styles.betaText, { color: colors.lavenderDark }]}>
+              BETA
+            </Text>
+          </View>
+          {onExpand ? (
+            <Pressable
+              onPress={onExpand}
+              hitSlop={8}
+              style={[
+                styles.expandBtn,
+                { backgroundColor: colors.surfaceSubdued },
+              ]}
+            >
+              <Ionicons
+                name="expand-outline"
+                size={14}
+                color={colors.textSecondary}
+              />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
@@ -238,10 +277,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.2,
   },
+  headRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   betaPill: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
+  },
+  expandBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   betaText: {
     fontFamily: 'Inter_700Bold',

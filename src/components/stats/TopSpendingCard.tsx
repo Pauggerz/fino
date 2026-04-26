@@ -33,7 +33,7 @@ export function TopSpendingCard({
   totalExpense: number;
 }) {
   const { colors } = useTheme();
-  const [mode, setMode] = useState<Mode>('merchants');
+  const [mode, setMode] = useState<Mode>('transactions');
 
   const rows = useMemo(() => {
     if (mode === 'merchants') return merchants.slice(0, 5);

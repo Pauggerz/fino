@@ -18,9 +18,15 @@ const CHART_SIZE = 110;
 
 export function CategoryDonut({ slices }: { slices: DonutSlice[] }) {
   const { colors } = useTheme();
-  const total = slices.reduce((s, x) => s + x.amount, 0);
-  const top = slices[0];
-  const topPct = top && total > 0 ? Math.round((top.amount / total) * 100) : 0;
+
+  // Drop non-positive amounts so SVG dasharray math never sees 0 / NaN / -.
+  const safeSlices = slices.filter(
+    (s) => Number.isFinite(s.amount) && s.amount > 0
+  );
+  const total = safeSlices.reduce((s, x) => s + x.amount, 0);
+  const hasData = total > 0;
+  const top = hasData ? safeSlices[0] : undefined;
+  const topPct = top ? Math.round((top.amount / total) * 100) : 0;
 
   let cumulative = 0;
 
@@ -52,8 +58,8 @@ export function CategoryDonut({ slices }: { slices: DonutSlice[] }) {
                 stroke={colors.surfaceSubdued}
                 strokeWidth={STROKE}
               />
-              {total > 0
-                ? slices.map((s) => {
+              {hasData
+                ? safeSlices.map((s) => {
                     const fraction = s.amount / total;
                     const dash = fraction * CIRC;
                     const offset = -cumulative * CIRC;
@@ -75,7 +81,7 @@ export function CategoryDonut({ slices }: { slices: DonutSlice[] }) {
                   })
                 : null}
             </G>
-            {total > 0 && top ? (
+            {hasData && top ? (
               <>
                 <SvgText
                   x={50}
@@ -103,7 +109,7 @@ export function CategoryDonut({ slices }: { slices: DonutSlice[] }) {
         </View>
 
         <View style={styles.legend}>
-          {slices.length === 0 ? (
+          {!hasData ? (
             <Text
               style={[
                 styles.emptyText,
@@ -113,7 +119,7 @@ export function CategoryDonut({ slices }: { slices: DonutSlice[] }) {
               No expenses this month yet.
             </Text>
           ) : (
-            slices.map((s) => (
+            safeSlices.map((s) => (
               <View key={s.key} style={styles.legendRow}>
                 <View
                   style={[

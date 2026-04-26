@@ -15,10 +15,9 @@ export type QuickNavTab = {
 };
 
 export const DEFAULT_TABS: QuickNavTab[] = [
-  { key: 'sec-01', num: '01', label: 'Stand' },
-  { key: 'sec-02', num: '02', label: 'Where' },
-  { key: 'sec-03', num: '03', label: 'When' },
-  { key: 'sec-04', num: '04', label: 'Flow' },
+  { key: 'sec-01', num: '01', label: 'Pulse' },
+  { key: 'sec-02', num: '02', label: 'Spend' },
+  { key: 'sec-03', num: '03', label: 'Patterns' },
 ];
 
 export function QuickScrollNav({

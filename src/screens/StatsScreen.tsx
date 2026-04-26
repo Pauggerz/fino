@@ -31,7 +31,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import type CategoryModel from '@/db/models/Category';
-import type BillReminderModel from '@/db/models/BillReminder';
 import { useAccounts } from '@/hooks/useAccounts';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { CATEGORY_COLOR } from '@/constants/categoryMappings';
@@ -47,14 +46,11 @@ import {
 } from '@/components/stats/TopSpendingCard';
 import { ByAccountStrip, type AccountSpend } from '@/components/stats/ByAccountStrip';
 import { MoneyFlowSankey, type SankeyNode } from '@/components/stats/MoneyFlowSankey';
-import {
-  SubscriptionsList,
-  type SubscriptionRow,
-} from '@/components/stats/SubscriptionsList';
 import { FinoHeadline, FinoChip } from '@/components/stats/FinoChip';
 import { QuickScrollNav, DEFAULT_TABS } from '@/components/stats/QuickScrollNav';
 import { MonthPickerModal } from '@/components/stats/MonthPickerModal';
 import DowPatternChart from '@/components/stats/DowPatternChart';
+import TimeOfDayChart from '@/components/stats/TimeOfDayChart';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -96,6 +92,9 @@ type StatsBundle = {
   dailySeries: { day: number; amount: number }[];
   dailyMax: number;
   dowAvg: number[];
+  // Time-of-day buckets: [morning, afternoon, evening, night]
+  todTotals: number[];
+  todCounts: number[];
   // Cash flow
   prevTotalIncome: number;
   prevTotalExpense: number;
@@ -118,6 +117,8 @@ const EMPTY_BUNDLE: StatsBundle = {
   dailySeries: [],
   dailyMax: 1,
   dowAvg: [0, 0, 0, 0, 0, 0, 0],
+  todTotals: [0, 0, 0, 0],
+  todCounts: [0, 0, 0, 0],
   prevTotalIncome: 0,
   prevTotalExpense: 0,
   trendNet: [],
@@ -152,7 +153,6 @@ function InsightsScreen() {
 
   // ── Data state ──
   const [bundle, setBundle] = useState<StatsBundle>(EMPTY_BUNDLE);
-  const [subscriptions, setSubscriptions] = useState<SubscriptionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -176,7 +176,7 @@ function InsightsScreen() {
 
   // ── Quick-scroll nav ──
   const scrollViewRef = useRef<any>(null);
-  const sectionOffsets = useRef<number[]>([0, 0, 0, 0]);
+  const sectionOffsets = useRef<number[]>([0, 0, 0]);
   const [activeIndex, setActiveIndex] = useState(0);
   const navScrolled = useSharedValue(0);
 
@@ -311,6 +311,10 @@ function InsightsScreen() {
         const dailyMap: Record<number, number> = {};
         const dowTotals = [0, 0, 0, 0, 0, 0, 0];
         const dowCounts = [0, 0, 0, 0, 0, 0, 0];
+        // Time-of-day buckets, indexed [morning, afternoon, evening, night].
+        // Bucket boundaries: morning 5–12, afternoon 12–17, evening 17–21, night 21–5.
+        const todTotals = [0, 0, 0, 0];
+        const todCounts = [0, 0, 0, 0];
         const acctExpense: Record<string, { amount: number; count: number }> = {};
         const merchantMap: Record<
           string,
@@ -337,9 +341,21 @@ function InsightsScreen() {
           dailyMap[day] = (dailyMap[day] ?? 0) + t.amount;
 
           // DOW
-          const dow = (new Date(t.date).getDay() + 6) % 7;
+          const txDate = new Date(t.date);
+          const dow = (txDate.getDay() + 6) % 7;
           dowTotals[dow] += t.amount;
           dowCounts[dow] += 1;
+
+          // Time-of-day bucket from local hour. Indexes match the chart:
+          // 0 morning (5–12), 1 afternoon (12–17), 2 evening (17–21), 3 night.
+          const hr = txDate.getHours();
+          const todIdx =
+            hr >= 5 && hr < 12 ? 0
+            : hr >= 12 && hr < 17 ? 1
+            : hr >= 17 && hr < 21 ? 2
+            : 3;
+          todTotals[todIdx] += t.amount;
+          todCounts[todIdx] += 1;
 
           // Accounts
           const acct = acctExpense[t.accountId] ?? { amount: 0, count: 0 };
@@ -369,13 +385,21 @@ function InsightsScreen() {
           dowCounts[i] > 0 ? sum / dowCounts[i] : 0
         );
 
-        const expenseTotalsByCat = Object.entries(expenseByCat)
-          .map(([key, amount]) => ({
-            key,
-            label: catLabelByKey[key] ?? cap(key),
-            amount,
-          }))
-          .sort((a, b) => b.amount - a.amount);
+        // Materialise the category aggregation. Filter steps:
+        //   1. Drop NaN / non-finite (defensive against bad rows from sync).
+        //   2. Drop zero / negative amounts — they break donut + sankey math.
+        //   3. Sort desc so downstream slicing (top 8 / top 6) keeps the leaders.
+        const expenseTotalsByCat: { key: string; label: string; amount: number }[] =
+          Object.entries(expenseByCat)
+            .filter(
+              ([, amount]) => Number.isFinite(amount) && amount > 0
+            )
+            .map(([key, amount]) => ({
+              key,
+              label: catLabelByKey[key] ?? cap(key),
+              amount,
+            }))
+            .sort((a, b) => b.amount - a.amount);
 
         // Cumulative by day (1..daysInMonth)
         const cumulativeByDay: number[] = [];
@@ -479,6 +503,8 @@ function InsightsScreen() {
           dailySeries,
           dailyMax,
           dowAvg,
+          todTotals,
+          todCounts,
           prevTotalIncome,
           prevTotalExpense,
           trendNet,
@@ -505,31 +531,6 @@ function InsightsScreen() {
     [accounts, daysInMonth, monthRange, selectedMonth, selectedYear, userId]
   );
 
-  // ── Subscriptions (separate query, not month-scoped) ──
-  const fetchSubscriptions = useCallback(async () => {
-    if (!userId) return;
-    try {
-      const recs = await database
-        .get<BillReminderModel>('bill_reminders')
-        .query(
-          Q.where('user_id', userId),
-          Q.where('is_recurring', true)
-        )
-        .fetch();
-      const rows: SubscriptionRow[] = recs
-        .map((r) => ({
-          id: r.id,
-          title: r.title,
-          amount: r.amount ?? 0,
-          dueDate: r.dueDate,
-        }))
-        .sort((a, b) => b.amount - a.amount);
-      startTransition(() => setSubscriptions(rows));
-    } catch (err) {
-      if (__DEV__) console.warn('[StatsScreen] subs fetch failed:', err);
-    }
-  }, [userId]);
-
   // Re-fetch when month changes
   useEffect(() => {
     fetchStats(true);
@@ -540,37 +541,33 @@ function InsightsScreen() {
     if (!userId) return;
     const txCol = database.get<TransactionModel>('transactions');
     const catCol = database.get<CategoryModel>('categories');
-    const billCol = database.get<BillReminderModel>('bill_reminders');
     let timer: ReturnType<typeof setTimeout> | null = null;
     const schedule = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
         fetchStats(true);
-        fetchSubscriptions();
       }, 250);
     };
     const subs = [
       txCol.changes.subscribe(schedule),
       catCol.changes.subscribe(schedule),
-      billCol.changes.subscribe(schedule),
     ];
     return () => {
       if (timer) clearTimeout(timer);
       subs.forEach((s) => s.unsubscribe());
     };
-  }, [userId, fetchStats, fetchSubscriptions]);
+  }, [userId, fetchStats]);
 
   useFocusEffect(
     useCallback(() => {
       const task = InteractionManager.runAfterInteractions(() => {
         startTransition(() => {
           fetchStats();
-          fetchSubscriptions();
         });
       });
       return () => task.cancel();
-    }, [fetchStats, fetchSubscriptions])
+    }, [fetchStats])
   );
 
   const handlePrevMonth = () => {
@@ -622,7 +619,6 @@ function InsightsScreen() {
   const finoHeadlineText = buildHeadline(bundle);
   const finoWhereChip = buildWhereChip(bundle);
   const finoWhenChip = buildWhenChip(bundle);
-  const finoFlowChip = buildFlowChip(bundle, subscriptions);
 
   // ── Render ──
 
@@ -677,7 +673,6 @@ function InsightsScreen() {
               try {
                 await Promise.all([
                   fetchStats(true),
-                  fetchSubscriptions(),
                   refetchAccounts(),
                 ]);
               } finally {
@@ -723,9 +718,9 @@ function InsightsScreen() {
           onTabPress={handleTabPress}
         />
 
-        {/* 3: SECTION 01 — Where you stand */}
+        {/* 3: SECTION 01 — Pulse */}
         <View onLayout={handleSectionLayout(0)}>
-          <SectionLabel num="01" title="Where you stand" colors={colors} />
+          <SectionLabel num="01" title="Your pulse" colors={colors} />
           <CashFlowCard
             income={bundle.totalIncome}
             expenses={bundle.totalExpense}
@@ -738,6 +733,18 @@ function InsightsScreen() {
             largest={bundle.largestExpense}
             txCount={bundle.txCount}
             daysElapsed={daysElapsed}
+          />
+          <MoneyFlowSankey
+            income={bundle.totalIncome}
+            savings={bundle.totalIncome - bundle.totalExpense}
+            expenseNodes={sankeyExpenseNodes}
+            onExpand={() =>
+              navigation.navigate('SankeyFullscreen', {
+                income: bundle.totalIncome,
+                savings: bundle.totalIncome - bundle.totalExpense,
+                expenseNodes: sankeyExpenseNodes,
+              })
+            }
           />
           <TrajectoryChart
             cumulative={bundle.cumulativeByDay}
@@ -768,7 +775,7 @@ function InsightsScreen() {
 
         {/* 5: SECTION 03 — When you spend */}
         <View onLayout={handleSectionLayout(2)}>
-          <SectionLabel num="03" title="When you spend" colors={colors} />
+          <SectionLabel num="03" title="Spending patterns" colors={colors} />
           <FinoChip text={finoWhenChip} />
           <View
             style={[
@@ -783,18 +790,23 @@ function InsightsScreen() {
             </View>
             <DowPatternChart dowAvg={bundle.dowAvg} colors={colors} />
           </View>
-        </View>
-
-        {/* 6: SECTION 04 — The flow */}
-        <View onLayout={handleSectionLayout(3)}>
-          <SectionLabel num="04" title="The flow" colors={colors} />
-          <FinoChip text={finoFlowChip} />
-          <MoneyFlowSankey
-            income={bundle.totalIncome}
-            savings={bundle.totalIncome - bundle.totalExpense}
-            expenseNodes={sankeyExpenseNodes}
-          />
-          <SubscriptionsList subscriptions={subscriptions} />
+          <View
+            style={[
+              styles.dowCard,
+              { backgroundColor: colors.white, borderColor: colors.cardBorderTransparent },
+            ]}
+          >
+            <View style={styles.dowHead}>
+              <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>
+                TIME-OF-DAY PATTERN
+              </Text>
+            </View>
+            <TimeOfDayChart
+              todTotals={bundle.todTotals}
+              todCounts={bundle.todCounts}
+              colors={colors}
+            />
+          </View>
         </View>
 
         <View style={{ height: 80 }} />
@@ -869,50 +881,62 @@ function buildHeadline(b: StatsBundle): string {
 
 function buildWhereChip(b: StatsBundle): string {
   const top = b.expenseTotalsByCat[0];
+  const second = b.expenseTotalsByCat[1];
   const topMerchant = b.topMerchants[0];
   if (!top && !topMerchant) {
     return 'No expenses tracked yet — your top categories will appear here.';
   }
-  const parts: string[] = [];
+  // Lead with concentration: how dominant is the top category vs the rest?
   if (top && b.totalExpense > 0) {
-    const pct = Math.round((top.amount / b.totalExpense) * 100);
-    parts.push(`${cap(top.label)} is ${pct}% of spend`);
+    const topPct = Math.round((top.amount / b.totalExpense) * 100);
+    if (second && topPct >= 40) {
+      const ratio = top.amount / Math.max(second.amount, 1);
+      return `${cap(top.label)} dominates at ${topPct}% — ${ratio.toFixed(1)}× more than ${cap(second.label)}.`;
+    }
+    if (topMerchant && topMerchant.count >= 3) {
+      const merchPct = Math.round((topMerchant.amount / b.totalExpense) * 100);
+      return `${cap(top.label)} is ${topPct}% of spend; ${topMerchant.name} alone is ${merchPct}% across ${topMerchant.count} visits.`;
+    }
+    return `${cap(top.label)} is your biggest category at ${topPct}% of spend (${fmtPeso(top.amount)}).`;
   }
   if (topMerchant) {
-    parts.push(`top merchant ${topMerchant.name} at ${fmtPeso(topMerchant.amount)}`);
+    return `Top merchant: ${topMerchant.name} at ${fmtPeso(topMerchant.amount)} across ${topMerchant.count} txns.`;
   }
-  return parts.join(' · ') + '.';
+  return '';
 }
 
 function buildWhenChip(b: StatsBundle): string {
-  const peakIdx = b.dowAvg.reduce(
+  const peakDowIdx = b.dowAvg.reduce(
     (best, v, i) => (v > b.dowAvg[best] ? i : best),
     0
   );
-  const days = ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'];
-  const peakValue = b.dowAvg[peakIdx];
-  if (!peakValue) {
+  const peakDowValue = b.dowAvg[peakDowIdx];
+  if (!peakDowValue) {
     return 'Need a few days of activity before patterns show up.';
   }
+  const days = ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'];
+  const todLabels = ['mornings', 'afternoons', 'evenings', 'nights'];
+
+  // Combine day-of-week and time-of-day signals for a richer headline.
+  const peakTodIdx = b.todTotals.reduce(
+    (best, v, i) => (v > b.todTotals[best] ? i : best),
+    0
+  );
+  const peakTodValue = b.todTotals[peakTodIdx];
+  const todTotal = b.todTotals.reduce((s, v) => s + v, 0);
+
+  if (peakTodValue > 0 && todTotal > 0) {
+    const todShare = Math.round((peakTodValue / todTotal) * 100);
+    return `${days[peakDowIdx]} & ${todLabels[peakTodIdx]} dominate — ${todShare}% of spend lands in your ${todLabels[peakTodIdx].slice(0, -1)} window.`;
+  }
+
   const weekdayAvg =
     b.dowAvg.slice(0, 5).reduce((s, v) => s + v, 0) / 5 || 1;
-  const ratio = peakValue / weekdayAvg;
-  if (peakIdx >= 5) {
-    return `${days[peakIdx]} are your peak — ${ratio.toFixed(1)}× weekday average.`;
+  const ratio = peakDowValue / weekdayAvg;
+  if (peakDowIdx >= 5) {
+    return `${days[peakDowIdx]} are your peak — ${ratio.toFixed(1)}× weekday average.`;
   }
-  return `${days[peakIdx]} top your spending at ${fmtPeso(peakValue)} on average.`;
-}
-
-function buildFlowChip(b: StatsBundle, subs: SubscriptionRow[]): string {
-  const subTotal = subs.reduce((s, x) => s + (x.amount || 0), 0);
-  if (subTotal === 0) {
-    return 'No active subscriptions tracked. Mark a bill reminder as recurring to see it here.';
-  }
-  if (b.totalIncome > 0) {
-    const pct = (subTotal / b.totalIncome) * 100;
-    return `${fmtPeso(subTotal)}/mo locked in subscriptions — ${pct.toFixed(1)}% of income.`;
-  }
-  return `${fmtPeso(subTotal)}/mo locked in subscriptions, ${fmtPeso(subTotal * 12)} per year.`;
+  return `${days[peakDowIdx]} top your spending at ${fmtPeso(peakDowValue)} on average.`;
 }
 
 function cap(s: string): string {
