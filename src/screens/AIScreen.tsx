@@ -6,7 +6,7 @@ export default function AIScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.iconBox}>
-        <FinoIntelIcon size={36} color="#7A4AB8" filled />
+        <FinoIntelIcon size={52} color="#7A4AB8" filled />
       </View>
       <View style={styles.labelRow}>
         <Text style={styles.text}>Fino Intelligence</Text>

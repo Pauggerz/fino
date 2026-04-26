@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Q } from '@nozbe/watermelondb';
@@ -1227,11 +1228,7 @@ function MoreScreen() {
           {/* Left content */}
           <View style={{ flex: 1 }}>
             <View style={styles.finoBadge}>
-              <Ionicons
-                name="sparkles"
-                size={11}
-                color={colors.insightPurple}
-              />
+              <FinoIntelIcon size={18} color={colors.insightPurple} />
               <Text
                 style={[styles.finoBadgeText, { color: colors.insightPurple }]}
               >
@@ -1295,10 +1292,10 @@ function MoreScreen() {
               },
             ]}
           >
-            <Ionicons
-              name="sparkles"
-              size={36}
+            <FinoIntelIcon
+              size={56}
               color={isDark ? '#C9B8F5' : colors.lavenderDark}
+              filled
             />
           </View>
         </TouchableOpacity>

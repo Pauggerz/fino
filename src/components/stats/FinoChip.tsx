@@ -18,7 +18,7 @@ export function FinoHeadline({ text }: { text: string }) {
       ]}
     >
       <View style={[styles.iconBox, { backgroundColor: colors.lavender }]}>
-        <FinoIntelIcon size={16} color={colors.lavenderDark} filled />
+        <FinoIntelIcon size={24} color={colors.lavenderDark} filled />
       </View>
       <View style={{ flex: 1 }}>
         <View style={styles.headlineLabelRow}>
@@ -56,7 +56,7 @@ export function FinoChip({ text }: { text: string }) {
       ]}
     >
       <View style={[styles.chipIconBox, { backgroundColor: colors.lavender }]}>
-        <FinoIntelIcon size={12} color={colors.lavenderDark} />
+        <FinoIntelIcon size={18} color={colors.lavenderDark} />
       </View>
       <Text style={[styles.chipText, { color: colors.textPrimary }]}>
         {text}
@@ -81,9 +81,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   iconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -125,9 +125,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   chipIconBox: {
-    width: 20,
-    height: 20,
-    borderRadius: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
