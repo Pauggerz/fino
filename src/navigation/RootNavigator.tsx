@@ -36,6 +36,7 @@ const CashFlowScreen = lazy(() => import('../screens/CashFlowScreen'));
 const SankeyFullscreenScreen = lazy(
   () => import('../screens/SankeyFullscreenScreen')
 );
+const IconPreviewScreen = lazy(() => import('../screens/IconPreviewScreen'));
 
 function ModalLoadingShim() {
   const { colors } = useTheme();
@@ -98,6 +99,7 @@ export type RootStackParamList = {
   UtangTracker: undefined;
   SavingsGoal: undefined;
   CashFlow: { accountId?: string } | undefined;
+  IconPreview: undefined;
   SankeyFullscreen: {
     income: number;
     savings: number;
@@ -300,6 +302,11 @@ export default function RootNavigator() {
                 headerShown: false,
                 presentation: 'fullScreenModal',
               }}
+            />
+            <Stack.Screen
+              name="IconPreview"
+              component={IconPreviewScreen}
+              options={{ headerShown: false }}
             />
           </>
         )}

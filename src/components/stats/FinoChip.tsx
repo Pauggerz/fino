@@ -1,18 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '@/contexts/ThemeContext';
-
-function StarIcon({ size = 12, fill }: { size?: number; fill: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M12 2l1.8 6L20 9.6l-5 4 1.5 6.4L12 16.5 7.5 20 9 13.6 4 9.6 10.2 8z"
-        fill={fill}
-      />
-    </Svg>
-  );
-}
+import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 
 export function FinoHeadline({ text }: { text: string }) {
   const { colors, isDark } = useTheme();
@@ -28,13 +17,22 @@ export function FinoHeadline({ text }: { text: string }) {
         },
       ]}
     >
-      <View style={[styles.starBox, { backgroundColor: colors.lavender }]}>
-        <StarIcon size={14} fill={colors.lavenderDark} />
+      <View style={[styles.iconBox, { backgroundColor: colors.lavender }]}>
+        <FinoIntelIcon size={16} color={colors.lavenderDark} filled />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.headlineLabel, { color: colors.lavenderDark }]}>
-          Fino Intelligence
-        </Text>
+        <View style={styles.headlineLabelRow}>
+          <Text style={[styles.headlineLabel, { color: colors.lavenderDark }]}>
+            Fino Intelligence
+          </Text>
+          <View style={[styles.betaPill, { backgroundColor: colors.lavender }]}>
+            <Text
+              style={[styles.betaPillText, { color: colors.lavenderDark }]}
+            >
+              BETA
+            </Text>
+          </View>
+        </View>
         <Text style={[styles.headlineText, { color: colors.textPrimary }]}>
           {text}
         </Text>
@@ -57,12 +55,17 @@ export function FinoChip({ text }: { text: string }) {
         },
       ]}
     >
-      <View style={[styles.chipStar, { backgroundColor: colors.lavender }]}>
-        <StarIcon size={10} fill={colors.lavenderDark} />
+      <View style={[styles.chipIconBox, { backgroundColor: colors.lavender }]}>
+        <FinoIntelIcon size={12} color={colors.lavenderDark} />
       </View>
       <Text style={[styles.chipText, { color: colors.textPrimary }]}>
         {text}
       </Text>
+      <View style={[styles.chipBetaPill, { backgroundColor: colors.lavender }]}>
+        <Text style={[styles.chipBetaText, { color: colors.lavenderDark }]}>
+          BETA
+        </Text>
+      </View>
     </View>
   );
 }
@@ -77,19 +80,34 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 14,
   },
-  starBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
+  iconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headlineLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
   },
   headlineLabel: {
     fontFamily: 'Inter_700Bold',
     fontSize: 9,
     letterSpacing: 1,
-    marginBottom: 2,
     textTransform: 'uppercase',
+  },
+  betaPill: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  betaPillText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 8,
+    letterSpacing: 0.6,
   },
   headlineText: {
     fontFamily: 'Inter_500Medium',
@@ -106,9 +124,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  chipStar: {
-    width: 18,
-    height: 18,
+  chipIconBox: {
+    width: 20,
+    height: 20,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
@@ -118,5 +136,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
     lineHeight: 16,
+  },
+  chipBetaPill: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  chipBetaText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 8,
+    letterSpacing: 0.6,
   },
 });

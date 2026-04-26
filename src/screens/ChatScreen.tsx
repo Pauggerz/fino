@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
+import { FinoIntelIcon } from '../components/icons/FinoIntelIcon';
 import { useNavigation } from '@react-navigation/native';
 import { Q } from '@nozbe/watermelondb';
 import { spacing } from '../constants/theme';
@@ -290,7 +291,7 @@ export default function ChatScreen() {
         <View style={styles.aiBubble}>
           <View style={styles.aiLabelRow}>
             <View style={styles.aiIconBox}>
-              <Text style={styles.aiIconGlyph}>✦</Text>
+              <FinoIntelIcon size={11} color={colors.lavenderDark} />
             </View>
             <Text style={styles.aiLabelText}>Fino</Text>
           </View>
@@ -349,7 +350,7 @@ export default function ChatScreen() {
         </TouchableOpacity>
         <View style={styles.headerProfile}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarGlyph}>✦</Text>
+            <FinoIntelIcon size={18} color={colors.lavenderDark} filled />
           </View>
           <View>
             <Text style={styles.headerTitle}>Ask Fino</Text>

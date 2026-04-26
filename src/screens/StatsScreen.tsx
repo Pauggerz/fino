@@ -51,6 +51,7 @@ import { QuickScrollNav, DEFAULT_TABS } from '@/components/stats/QuickScrollNav'
 import { MonthPickerModal } from '@/components/stats/MonthPickerModal';
 import DowPatternChart from '@/components/stats/DowPatternChart';
 import TimeOfDayChart from '@/components/stats/TimeOfDayChart';
+import { getInsights, type Insights } from '@/services/IntelligenceEngine';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -153,6 +154,7 @@ function InsightsScreen() {
 
   // ── Data state ──
   const [bundle, setBundle] = useState<StatsBundle>(EMPTY_BUNDLE);
+  const [insights, setInsights] = useState<Insights | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -531,9 +533,21 @@ function InsightsScreen() {
     [accounts, daysInMonth, monthRange, selectedMonth, selectedYear, userId]
   );
 
+  // ── Intelligence engine ──
+  const fetchInsights = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const res = await getInsights(userId, selectedYear, selectedMonth);
+      startTransition(() => setInsights(res));
+    } catch (err) {
+      if (__DEV__) console.warn('[StatsScreen] insights fetch failed:', err);
+    }
+  }, [userId, selectedYear, selectedMonth]);
+
   // Re-fetch when month changes
   useEffect(() => {
     fetchStats(true);
+    fetchInsights();
   }, [selectedYear, selectedMonth]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reactive refresh on transaction / category changes
@@ -549,9 +563,13 @@ function InsightsScreen() {
         fetchStats(true);
       }, 250);
     };
+    const schedule2 = () => {
+      schedule();
+      fetchInsights();
+    };
     const subs = [
-      txCol.changes.subscribe(schedule),
-      catCol.changes.subscribe(schedule),
+      txCol.changes.subscribe(schedule2),
+      catCol.changes.subscribe(schedule2),
     ];
     return () => {
       if (timer) clearTimeout(timer);
@@ -564,10 +582,11 @@ function InsightsScreen() {
       const task = InteractionManager.runAfterInteractions(() => {
         startTransition(() => {
           fetchStats();
+          fetchInsights();
         });
       });
       return () => task.cancel();
-    }, [fetchStats])
+    }, [fetchStats, fetchInsights])
   );
 
   const handlePrevMonth = () => {
@@ -616,9 +635,11 @@ function InsightsScreen() {
     [bundle.expenseTotalsByCat]
   );
 
-  const finoHeadlineText = buildHeadline(bundle);
-  const finoWhereChip = buildWhereChip(bundle);
-  const finoWhenChip = buildWhenChip(bundle);
+  // Engine output is preferred; static helpers serve as a synchronous
+  // fallback while the first WatermelonDB query resolves.
+  const finoHeadlineText = insights?.headline ?? buildHeadline(bundle);
+  const finoWhereChip = insights?.whereChip ?? buildWhereChip(bundle);
+  const finoWhenChip = insights?.whenChip ?? buildWhenChip(bundle);
 
   // ── Render ──
 
@@ -643,10 +664,10 @@ function InsightsScreen() {
         <Text style={styles.headerTitle}>Insights</Text>
         <TouchableOpacity
           activeOpacity={0.75}
-          onPress={() => navigation.navigate('ChatScreen')}
+          onPress={() => navigation.navigate('IconPreview')}
           style={[styles.notifBtn, { backgroundColor: colors.white, borderColor: colors.border }]}
         >
-          <Ionicons name="notifications-outline" size={18} color={colors.textPrimary} />
+          <Ionicons name="sparkles-outline" size={18} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
 

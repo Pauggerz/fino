@@ -31,6 +31,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Icon, type IconName } from '@/components/icons/Icon';
+import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 import { Skeleton } from '@/components/Skeleton';
 import Toast from '../components/Toast';
 import BudgetTile from '@/components/home/BudgetTile';
@@ -897,11 +898,7 @@ function HomeScreen() {
                 style={styles.insightCard}
               >
                 <View style={styles.insightAvatar}>
-                  <Ionicons
-                    name="sparkles"
-                    size={16}
-                    color={colors.lavenderDark}
-                  />
+                  <FinoIntelIcon size={20} color={colors.lavenderDark} />
                 </View>
 
                 <View style={styles.insightBody}>
