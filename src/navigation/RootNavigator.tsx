@@ -36,7 +36,6 @@ const CashFlowScreen = lazy(() => import('../screens/CashFlowScreen'));
 const SankeyFullscreenScreen = lazy(
   () => import('../screens/SankeyFullscreenScreen')
 );
-const IconPreviewScreen = lazy(() => import('../screens/IconPreviewScreen'));
 
 function ModalLoadingShim() {
   const { colors } = useTheme();
@@ -64,7 +63,6 @@ export type FeedStackParamList = {
         filterSortOrder?: string;
       }
     | undefined;
-  TransactionDetail: { id: string };
 };
 
 export type MoreStackParamList = {
@@ -99,7 +97,7 @@ export type RootStackParamList = {
   UtangTracker: undefined;
   SavingsGoal: undefined;
   CashFlow: { accountId?: string } | undefined;
-  IconPreview: undefined;
+  TransactionDetail: { id: string };
   SankeyFullscreen: {
     income: number;
     savings: number;
@@ -121,10 +119,6 @@ function FeedNavigator() {
       screenOptions={{ headerShown: false, freezeOnBlur: true }}
     >
       <FeedStack.Screen name="FeedMain" component={FeedScreen} />
-      <FeedStack.Screen
-        name="TransactionDetail"
-        component={TransactionDetailScreen}
-      />
     </FeedStack.Navigator>
   );
 }
@@ -296,17 +290,17 @@ export default function RootNavigator() {
               options={{ headerShown: false }}
             />
             <Stack.Screen
+              name="TransactionDetail"
+              component={TransactionDetailScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
               name="SankeyFullscreen"
               component={SankeyFullscreenScreen}
               options={{
                 headerShown: false,
                 presentation: 'fullScreenModal',
               }}
-            />
-            <Stack.Screen
-              name="IconPreview"
-              component={IconPreviewScreen}
-              options={{ headerShown: false }}
             />
           </>
         )}

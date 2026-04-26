@@ -898,7 +898,7 @@ function HomeScreen() {
                 style={styles.insightCard}
               >
                 <View style={styles.insightAvatar}>
-                  <FinoIntelIcon size={20} color={colors.lavenderDark} />
+                  <FinoIntelIcon size={28} color={colors.lavenderDark} />
                 </View>
 
                 <View style={styles.insightBody}>

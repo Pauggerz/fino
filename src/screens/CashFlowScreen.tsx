@@ -64,7 +64,7 @@ type Bundle = {
   txCount: number;
   topInflowCats: CategoryRow[];
   topOutflowCats: CategoryRow[];
-  recentTxns: TxnRow[];
+  transactions: TxnRow[];
 };
 
 const EMPTY_BUNDLE: Bundle = {
@@ -77,8 +77,10 @@ const EMPTY_BUNDLE: Bundle = {
   txCount: 0,
   topInflowCats: [],
   topOutflowCats: [],
-  recentTxns: [],
+  transactions: [],
 };
+
+const TXN_PAGE_SIZE = 10;
 
 export default function CashFlowScreen() {
   const navigation = useNavigation<any>();
@@ -116,6 +118,26 @@ export default function CashFlowScreen() {
 
   const [bundle, setBundle] = useState<Bundle>(EMPTY_BUNDLE);
   const [loading, setLoading] = useState(true);
+  const [txnPage, setTxnPage] = useState(0);
+
+  // Reset pagination when month/account changes — old page index could
+  // point past the end of a smaller dataset.
+  useEffect(() => {
+    setTxnPage(0);
+  }, [selectedYear, selectedMonth, accountId]);
+
+  const txnPageCount = Math.max(
+    1,
+    Math.ceil(bundle.transactions.length / TXN_PAGE_SIZE)
+  );
+  const txnPageRows = useMemo(
+    () =>
+      bundle.transactions.slice(
+        txnPage * TXN_PAGE_SIZE,
+        (txnPage + 1) * TXN_PAGE_SIZE
+      ),
+    [bundle.transactions, txnPage]
+  );
 
   const fetchData = useCallback(async () => {
     if (!userId) {
@@ -182,7 +204,7 @@ export default function CashFlowScreen() {
       let txCount = 0;
       const inflowByCat: Record<string, number> = {};
       const outflowByCat: Record<string, number> = {};
-      const recent: TxnRow[] = [];
+      const transactions: TxnRow[] = [];
 
       monthTx.forEach((t) => {
         if (isTransferRow(t)) return;
@@ -198,19 +220,17 @@ export default function CashFlowScreen() {
         } else {
           return;
         }
-        if (recent.length < 8) {
-          recent.push({
-            id: t.id,
-            name:
-              t.displayName ??
-              t.merchantName ??
-              cap(t.category ?? (t.type === 'income' ? 'Income' : 'Expense')),
-            category: t.category ?? null,
-            amount: t.amount,
-            date: t.date,
-            type: t.type as 'income' | 'expense',
-          });
-        }
+        transactions.push({
+          id: t.id,
+          name:
+            t.displayName ??
+            t.merchantName ??
+            cap(t.category ?? (t.type === 'income' ? 'Income' : 'Expense')),
+          category: t.category ?? null,
+          amount: t.amount,
+          date: t.date,
+          type: t.type as 'income' | 'expense',
+        });
       });
 
       let prevIncome = 0;
@@ -258,7 +278,7 @@ export default function CashFlowScreen() {
         txCount,
         topInflowCats: toRows(inflowByCat),
         topOutflowCats: toRows(outflowByCat),
-        recentTxns: recent,
+        transactions,
       });
     } finally {
       setLoading(false);
@@ -419,76 +439,181 @@ export default function CashFlowScreen() {
                 },
               ]}
             >
-              <Text
-                style={[styles.cardTitle, { color: colors.textSecondary }]}
-              >
-                RECENT TRANSACTIONS
-              </Text>
-              {bundle.recentTxns.length === 0 ? (
+              <View style={styles.txnHeader}>
+                <Text
+                  style={[styles.cardTitle, { color: colors.textSecondary }]}
+                >
+                  TRANSACTIONS
+                </Text>
+                {bundle.transactions.length > 0 ? (
+                  <Text
+                    style={[styles.txnHeaderCount, { color: colors.textSecondary }]}
+                  >
+                    {bundle.transactions.length}
+                  </Text>
+                ) : null}
+              </View>
+              {bundle.transactions.length === 0 ? (
                 <Text style={[styles.empty, { color: colors.textSecondary }]}>
                   No transactions in {monthLabel}
                   {account ? ` for ${account.name}` : ''}.
                 </Text>
               ) : (
-                bundle.recentTxns.map((t, i) => {
-                  const isInc = t.type === 'income';
-                  return (
+                <>
+                  {txnPageRows.map((t, i) => {
+                    const isInc = t.type === 'income';
+                    return (
+                      <Pressable
+                        key={t.id}
+                        onPress={() =>
+                          navigation.navigate('TransactionDetail', { id: t.id })
+                        }
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open ${t.name}`}
+                        android_ripple={{ color: colors.surfaceSubdued }}
+                        style={({ pressed }) => [
+                          styles.txnRow,
+                          i < txnPageRows.length - 1 && {
+                            borderBottomColor: colors.border,
+                            borderBottomWidth: StyleSheet.hairlineWidth,
+                          },
+                          pressed && { opacity: 0.6 },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.txnTypeIcon,
+                            {
+                              backgroundColor: isInc
+                                ? colors.incomeGreen + '1F'
+                                : colors.expenseRed + '1F',
+                            },
+                          ]}
+                          accessibilityLabel={isInc ? 'Income' : 'Expense'}
+                        >
+                          <Ionicons
+                            name={isInc ? 'arrow-down' : 'arrow-up'}
+                            size={14}
+                            color={
+                              isInc ? colors.incomeGreen : colors.expenseRed
+                            }
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[
+                              styles.txnName,
+                              { color: colors.textPrimary },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {t.name}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.txnSub,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            {formatShort(t.date)}
+                            {t.category ? ` · ${cap(t.category)}` : ''}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.txnAmt,
+                            {
+                              color: isInc
+                                ? colors.incomeGreen
+                                : colors.expenseRed,
+                            },
+                          ]}
+                        >
+                          {isInc ? '+' : '−'}
+                          {fmtPeso(t.amount)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+
+                  {txnPageCount > 1 ? (
                     <View
-                      key={t.id}
                       style={[
-                        styles.txnRow,
-                        i < bundle.recentTxns.length - 1 && {
-                          borderBottomColor: colors.border,
-                          borderBottomWidth: StyleSheet.hairlineWidth,
-                        },
+                        styles.pagerRow,
+                        { borderTopColor: colors.border },
                       ]}
                     >
-                      <View
+                      <Pressable
+                        onPress={() =>
+                          setTxnPage((p) => Math.max(0, p - 1))
+                        }
+                        disabled={txnPage === 0}
+                        accessibilityRole="button"
+                        accessibilityLabel="Previous page"
                         style={[
-                          styles.txnDot,
+                          styles.pagerBtn,
                           {
-                            backgroundColor: categoryColor(
-                              t.category ?? null
-                            ),
-                          },
-                        ]}
-                      />
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={[
-                            styles.txnName,
-                            { color: colors.textPrimary },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {t.name}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.txnSub,
-                            { color: colors.textSecondary },
-                          ]}
-                        >
-                          {formatShort(t.date)}
-                          {t.category ? ` · ${cap(t.category)}` : ''}
-                        </Text>
-                      </View>
-                      <Text
-                        style={[
-                          styles.txnAmt,
-                          {
-                            color: isInc
-                              ? colors.incomeGreen
-                              : colors.expenseRed,
+                            backgroundColor: colors.surfaceSubdued,
+                            opacity: txnPage === 0 ? 0.4 : 1,
                           },
                         ]}
                       >
-                        {isInc ? '+' : '−'}
-                        {fmtPeso(t.amount)}
+                        <Ionicons
+                          name="chevron-back"
+                          size={14}
+                          color={colors.textPrimary}
+                        />
+                        <Text
+                          style={[
+                            styles.pagerBtnText,
+                            { color: colors.textPrimary },
+                          ]}
+                        >
+                          Prev
+                        </Text>
+                      </Pressable>
+
+                      <Text
+                        style={[styles.pagerLabel, { color: colors.textSecondary }]}
+                      >
+                        Page {txnPage + 1} of {txnPageCount}
                       </Text>
+
+                      <Pressable
+                        onPress={() =>
+                          setTxnPage((p) =>
+                            Math.min(txnPageCount - 1, p + 1)
+                          )
+                        }
+                        disabled={txnPage >= txnPageCount - 1}
+                        accessibilityRole="button"
+                        accessibilityLabel="Next page"
+                        style={[
+                          styles.pagerBtn,
+                          {
+                            backgroundColor: colors.surfaceSubdued,
+                            opacity:
+                              txnPage >= txnPageCount - 1 ? 0.4 : 1,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.pagerBtnText,
+                            { color: colors.textPrimary },
+                          ]}
+                        >
+                          Next
+                        </Text>
+                        <Ionicons
+                          name="chevron-forward"
+                          size={14}
+                          color={colors.textPrimary}
+                        />
+                      </Pressable>
                     </View>
-                  );
-                })
+                  ) : null}
+                </>
               )}
             </View>
           </>
@@ -723,10 +848,12 @@ function createStyles(colors: any, topInset: number) {
       gap: 10,
       paddingVertical: 10,
     },
-    txnDot: {
-      width: 8,
-      height: 8,
+    txnTypeIcon: {
+      width: 28,
+      height: 28,
       borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     txnName: {
       fontFamily: 'Inter_600SemiBold',
@@ -740,6 +867,39 @@ function createStyles(colors: any, topInset: number) {
     txnAmt: {
       fontFamily: 'DMMono_500Medium',
       fontSize: 13,
+    },
+    txnHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    txnHeaderCount: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 11,
+    },
+    pagerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderTopWidth: StyleSheet.hairlineWidth,
+      paddingTop: 12,
+      marginTop: 6,
+    },
+    pagerBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingVertical: 7,
+      paddingHorizontal: 12,
+      borderRadius: 999,
+    },
+    pagerBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+    },
+    pagerLabel: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 11,
     },
   });
 }

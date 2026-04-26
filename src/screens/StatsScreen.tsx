@@ -47,6 +47,7 @@ import {
 import { ByAccountStrip, type AccountSpend } from '@/components/stats/ByAccountStrip';
 import { MoneyFlowSankey, type SankeyNode } from '@/components/stats/MoneyFlowSankey';
 import { FinoHeadline, FinoChip } from '@/components/stats/FinoChip';
+import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 import { QuickScrollNav, DEFAULT_TABS } from '@/components/stats/QuickScrollNav';
 import { MonthPickerModal } from '@/components/stats/MonthPickerModal';
 import DowPatternChart from '@/components/stats/DowPatternChart';
@@ -190,19 +191,27 @@ function InsightsScreen() {
   );
 
   const handleTabPress = useCallback((idx: number) => {
+    setActiveIndex(idx);
     const y = Math.max(0, sectionOffsets.current[idx] - 4);
     scrollViewRef.current?.scrollTo?.({ y, animated: true });
   }, []);
 
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const y = e.nativeEvent.contentOffset.y;
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      const y = contentOffset.y;
       navScrolled.value = withTiming(y > 60 ? 1 : 0, { duration: 180 });
       // Active section: highest index whose offset is above scroll position
       let next = 0;
       const offsets = sectionOffsets.current;
       for (let i = 0; i < offsets.length; i++) {
         if (offsets[i] - 80 <= y) next = i;
+      }
+      // The last section's offset can exceed max scroll (the page is shorter
+      // than the section header is tall), so the loop above never reaches it.
+      // Anchor to the last section when scroll is bottom-clamped.
+      if (contentSize.height - (y + layoutMeasurement.height) < 8) {
+        next = offsets.length - 1;
       }
       if (next !== activeIndex) setActiveIndex(next);
     },
@@ -664,10 +673,18 @@ function InsightsScreen() {
         <Text style={styles.headerTitle}>Insights</Text>
         <TouchableOpacity
           activeOpacity={0.75}
-          onPress={() => navigation.navigate('IconPreview')}
-          style={[styles.notifBtn, { backgroundColor: colors.white, borderColor: colors.border }]}
+          onPress={() => navigation.navigate('ChatScreen')}
+          accessibilityRole="button"
+          accessibilityLabel="Ask Fino"
+          style={[
+            styles.notifBtn,
+            {
+              backgroundColor: colors.lavenderLight,
+              borderColor: colors.cardBorderTransparent,
+            },
+          ]}
         >
-          <Ionicons name="sparkles-outline" size={18} color={colors.textPrimary} />
+          <FinoIntelIcon size={20} color={colors.lavenderDark} />
         </TouchableOpacity>
       </View>
 

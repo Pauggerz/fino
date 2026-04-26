@@ -35,9 +35,9 @@ import {
   ACCOUNT_AVATAR_OVERRIDE,
 } from '@/constants/accountLogos';
 import type { Transaction } from '@/types';
-import type { FeedStackParamList } from '../navigation/RootNavigator';
+import type { RootStackParamList } from '../navigation/RootNavigator';
 
-type DetailRouteProp = RouteProp<FeedStackParamList, 'TransactionDetail'>;
+type DetailRouteProp = RouteProp<RootStackParamList, 'TransactionDetail'>;
 
 interface TransactionWithAccount extends Transaction {
   account_name: string;

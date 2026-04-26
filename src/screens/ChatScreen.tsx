@@ -291,7 +291,7 @@ export default function ChatScreen() {
         <View style={styles.aiBubble}>
           <View style={styles.aiLabelRow}>
             <View style={styles.aiIconBox}>
-              <FinoIntelIcon size={11} color={colors.lavenderDark} />
+              <FinoIntelIcon size={16} color={colors.lavenderDark} />
             </View>
             <Text style={styles.aiLabelText}>Fino</Text>
           </View>
@@ -350,7 +350,7 @@ export default function ChatScreen() {
         </TouchableOpacity>
         <View style={styles.headerProfile}>
           <View style={styles.avatar}>
-            <FinoIntelIcon size={18} color={colors.lavenderDark} filled />
+            <FinoIntelIcon size={26} color={colors.lavenderDark} filled />
           </View>
           <View>
             <Text style={styles.headerTitle}>Ask Fino</Text>

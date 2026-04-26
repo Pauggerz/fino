@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Circle, G, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G } from 'react-native-svg';
 import { useTheme } from '@/contexts/ThemeContext';
 import fmtPeso from '@/utils/format';
 
@@ -81,31 +81,20 @@ export function CategoryDonut({ slices }: { slices: DonutSlice[] }) {
                   })
                 : null}
             </G>
-            {hasData && top ? (
-              <>
-                <SvgText
-                  x={50}
-                  y={48}
-                  fontFamily="Inter_700Bold"
-                  fontSize={12}
-                  fill={colors.textPrimary}
-                  textAnchor="middle"
-                >
-                  {topPct}%
-                </SvgText>
-                <SvgText
-                  x={50}
-                  y={60}
-                  fontFamily="Inter_500Medium"
-                  fontSize={7.5}
-                  fill={colors.textSecondary}
-                  textAnchor="middle"
-                >
-                  on {top.label}
-                </SvgText>
-              </>
-            ) : null}
           </Svg>
+          {hasData && top ? (
+            <View style={styles.centerLabel} pointerEvents="none">
+              <Text style={[styles.centerPct, { color: colors.textPrimary }]}>
+                {topPct}%
+              </Text>
+              <Text
+                style={[styles.centerSub, { color: colors.textSecondary }]}
+                numberOfLines={1}
+              >
+                on {top.label}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.legend}>
@@ -180,7 +169,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
   },
-  svgWrap: { width: CHART_SIZE, height: CHART_SIZE },
+  svgWrap: {
+    width: CHART_SIZE,
+    height: CHART_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  centerLabel: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  centerPct: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 16,
+    lineHeight: 18,
+  },
+  centerSub: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 9,
+    lineHeight: 11,
+    marginTop: 1,
+    maxWidth: 70,
+    textAlign: 'center',
+  },
   legend: { flex: 1, gap: 6 },
   legendRow: {
     flexDirection: 'row',
