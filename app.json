@@ -20,8 +20,12 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
-        "com.apple.security.application-groups": ["group.com.fino.app"],
-        "com.apple.developer.applesignin": ["Default"]
+        "com.apple.security.application-groups": [
+          "group.com.fino.app"
+        ],
+        "com.apple.developer.applesignin": [
+          "Default"
+        ]
       }
     },
     "android": {
@@ -34,19 +38,6 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.fino.app",
       "intentFilters": [
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "fino"
-            }
-          ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
-        },
         {
           "action": "VIEW",
           "autoVerify": true,
@@ -84,14 +75,11 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "286a6e23-4b2f-4147-84bf-c7be9bb910ae"
+        "projectId": "47e9c8fa-2518-45e0-89e2-2e0498a2879c"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/286a6e23-4b2f-4147-84bf-c7be9bb910ae"
     }
   }
 }
