@@ -26,7 +26,8 @@ export type Anomaly = {
 };
 
 export type TrajectoryForecast = {
-  /** Projected end-of-month total based on daily run rate. */
+  /** Projected end-of-month total. Day-of-week-weighted when we have enough
+   *  history to derive a per-weekday multiplier; otherwise a flat run rate. */
   projected: number;
   /** Spent so far. */
   spent: number;
@@ -40,6 +41,31 @@ export type TrajectoryForecast = {
   rolling3MoAvg: number;
   /** True if current pace puts the user above their 3-mo avg. */
   pacingOver: boolean;
+  /** True when the projection used per-weekday weighting (vs flat dailyAvg). */
+  usedDowWeighting: boolean;
+};
+
+export type RecurringBill = {
+  merchant: string;
+  category: string | null;
+  /** Typical amount (median across prior occurrences). */
+  amount: number;
+  /** Typical day-of-month it lands on. */
+  dayOfMonth: number;
+  /** Number of prior months this charge appeared in. */
+  monthsObserved: number;
+  /** ISO date of the next predicted charge, or null if it likely already hit. */
+  nextEstimatedDate: string | null;
+  /** Estimated days until the next charge (negative if past-due-looking). */
+  daysUntilNext: number | null;
+};
+
+export type Sentiment = 'positive' | 'neutral' | 'cautious' | 'negative';
+
+export type CoachMessage = {
+  sentiment: Sentiment;
+  /** Short, actionable one-liner the UI can surface as the "coach" tip. */
+  message: string;
 };
 
 export type Habit = {
@@ -67,6 +93,10 @@ export type Insights = {
   trajectory: TrajectoryForecast | null;
   habits: Habit[];
   weekDeltas: WeekDelta[];
+  /** Detected recurring bills/subscriptions from prior 3 months. */
+  recurring: RecurringBill[];
+  /** Localised financial coach tip — sentiment + actionable message. */
+  coach: CoachMessage;
 };
 
 export type CategorySuggestion = {
@@ -160,17 +190,86 @@ function detectAnomalies(
   return out.sort((a, b) => b.pctOver - a.pctOver);
 }
 
+/**
+ * Sum prior-month expenses bucketed by day-of-week (0=Mon … 6=Sun).
+ * Returns null per-bucket when there's not enough history to weight.
+ */
+function dayOfWeekAverages(
+  txns: TransactionModel[]
+): { avgByDow: number[]; totalAvg: number; samplesByDow: number[] } {
+  const totals = [0, 0, 0, 0, 0, 0, 0];
+  const seenByDow: Set<string>[] = [
+    new Set(),
+    new Set(),
+    new Set(),
+    new Set(),
+    new Set(),
+    new Set(),
+    new Set(),
+  ];
+  for (const t of txns) {
+    if (isTransferRow(t) || t.type !== 'expense') continue;
+    const dow = (new Date(t.date).getDay() + 6) % 7; // 0 = Mon
+    totals[dow] += t.amount;
+    seenByDow[dow].add(t.date.slice(0, 10));
+  }
+  const samplesByDow = seenByDow.map((s) => s.size);
+  const avgByDow = totals.map((sum, i) =>
+    samplesByDow[i] > 0 ? sum / samplesByDow[i] : 0
+  );
+  const sumSamples = samplesByDow.reduce((s, n) => s + n, 0);
+  const totalAvg =
+    sumSamples > 0
+      ? totals.reduce((s, n) => s + n, 0) / sumSamples
+      : 0;
+  return { avgByDow, totalAvg, samplesByDow };
+}
+
 function forecastTrajectory(
   monthSpent: number,
   daysElapsed: number,
   daysInMonth: number,
   prior3MoTotal: number,
-  prior3MoCount: number
+  prior3MoCount: number,
+  args: {
+    /** Year/month of the forecast horizon (used to compute remaining day-of-week). */
+    year: number;
+    month: number;
+    /** Prior-month transactions used to derive day-of-week multipliers. */
+    priorTxns: TransactionModel[];
+  }
 ): TrajectoryForecast {
   const dailyAvg = daysElapsed > 0 ? monthSpent / daysElapsed : 0;
-  const projected = dailyAvg * daysInMonth;
   const rolling3MoAvg =
     prior3MoCount > 0 ? prior3MoTotal / prior3MoCount : 0;
+
+  // Day-of-week-aware projection: use the user's historical per-weekday
+  // average to project the remaining days in the current month. Falls back
+  // to the flat daily run rate when we don't have at least 4 buckets with
+  // ≥2 samples each.
+  const { avgByDow, totalAvg, samplesByDow } = dayOfWeekAverages(
+    args.priorTxns
+  );
+  const populatedBuckets = samplesByDow.filter((n) => n >= 2).length;
+  const usedDowWeighting = populatedBuckets >= 4 && totalAvg > 0;
+
+  let projected: number;
+  if (usedDowWeighting) {
+    let projectedRemaining = 0;
+    for (let day = daysElapsed + 1; day <= daysInMonth; day++) {
+      const dow =
+        (new Date(args.year, args.month, day).getDay() + 6) % 7;
+      const bucketAvg = avgByDow[dow] > 0 ? avgByDow[dow] : totalAvg;
+      // Scale the historical bucket average to match this user's current
+      // spending intensity (so a heavier-than-usual month still projects up).
+      const intensity = dailyAvg > 0 ? dailyAvg / totalAvg : 1;
+      projectedRemaining += bucketAvg * intensity;
+    }
+    projected = monthSpent + projectedRemaining;
+  } else {
+    projected = dailyAvg * daysInMonth;
+  }
+
   return {
     projected,
     spent: monthSpent,
@@ -179,6 +278,259 @@ function forecastTrajectory(
     daysRemaining: Math.max(0, daysInMonth - daysElapsed),
     rolling3MoAvg,
     pacingOver: rolling3MoAvg > 0 && projected > rolling3MoAvg,
+    usedDowWeighting,
+  };
+}
+
+// ─── Recurring bill detection ───────────────────────────────────────────────
+
+function median(xs: number[]): number {
+  if (xs.length === 0) return 0;
+  const sorted = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[m - 1] + sorted[m]) / 2
+    : sorted[m];
+}
+
+/**
+ * Detects recurring expenses across the prior 3 months. A merchant qualifies
+ * when it appears in ≥2 distinct months at the same approximate amount
+ * (within ±25%) and roughly the same day-of-month (±4 days). Returns a list
+ * sorted by the next expected charge.
+ */
+function detectRecurring(
+  prior3MoTx: TransactionModel[],
+  now: Date
+): RecurringBill[] {
+  type Hit = {
+    amount: number;
+    monthKey: string;
+    dayOfMonth: number;
+    category: string | null;
+  };
+  const groups = new Map<string, Hit[]>();
+  for (const t of prior3MoTx) {
+    if (isTransferRow(t) || t.type !== 'expense') continue;
+    const merchant =
+      ((t.merchantName ?? '').trim() ||
+        (t.displayName ?? '').trim()).toLowerCase();
+    if (!merchant) continue;
+    const d = new Date(t.date);
+    const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
+    const slot = groups.get(merchant) ?? [];
+    slot.push({
+      amount: t.amount,
+      monthKey,
+      dayOfMonth: d.getDate(),
+      category: (t.category ?? null) || null,
+    });
+    groups.set(merchant, slot);
+  }
+
+  const out: RecurringBill[] = [];
+  for (const [merchant, hits] of groups) {
+    // Keep only the largest charge per (merchant, month) so subscriptions
+    // aren't drowned out by multiple grocery trips at the same store.
+    const byMonth = new Map<string, Hit>();
+    for (const h of hits) {
+      const cur = byMonth.get(h.monthKey);
+      if (!cur || h.amount > cur.amount) byMonth.set(h.monthKey, h);
+    }
+    const monthly = Array.from(byMonth.values());
+    if (monthly.length < 2) continue;
+
+    const amounts = monthly.map((h) => h.amount);
+    const med = median(amounts);
+    if (med <= 0) continue;
+    // All amounts must land within ±25% of the median (subscriptions are
+    // usually identical; bills wobble within this band).
+    const withinBand = amounts.every(
+      (a) => Math.abs(a - med) / med <= 0.25
+    );
+    if (!withinBand) continue;
+
+    const days = monthly.map((h) => h.dayOfMonth);
+    const medDay = Math.round(median(days));
+    const dayConsistent = days.every((d) => Math.abs(d - medDay) <= 4);
+    if (!dayConsistent) continue;
+
+    // Build the next-charge estimate. Try this month first; if the typical
+    // day-of-month has already passed, look at next month instead.
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const lastDayThis = new Date(year, month + 1, 0).getDate();
+    let nextDate: Date | null = new Date(
+      year,
+      month,
+      Math.min(medDay, lastDayThis)
+    );
+    if (nextDate.getTime() < now.getTime() - 24 * 60 * 60 * 1000) {
+      const lastDayNext = new Date(year, month + 2, 0).getDate();
+      nextDate = new Date(year, month + 1, Math.min(medDay, lastDayNext));
+    }
+    const daysUntilNext = nextDate
+      ? Math.round(
+          (nextDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)
+        )
+      : null;
+
+    out.push({
+      merchant,
+      category:
+        monthly.find((h) => h.category)?.category ?? null,
+      amount: Math.round(med * 100) / 100,
+      dayOfMonth: medDay,
+      monthsObserved: monthly.length,
+      nextEstimatedDate: nextDate ? nextDate.toISOString() : null,
+      daysUntilNext,
+    });
+  }
+
+  // Soonest upcoming charges first; tie-break on amount.
+  return out.sort((a, b) => {
+    const ad = a.daysUntilNext ?? 999;
+    const bd = b.daysUntilNext ?? 999;
+    if (ad !== bd) return ad - bd;
+    return b.amount - a.amount;
+  });
+}
+
+// ─── Coach / sentiment ──────────────────────────────────────────────────────
+
+function buildCoachMessage(args: {
+  totalIncome: number;
+  totalExpense: number;
+  trajectory: TrajectoryForecast;
+  currentByCat: Record<string, number>;
+  monthTx: TransactionModel[];
+  isCurrent: boolean;
+}): CoachMessage {
+  const {
+    totalIncome,
+    totalExpense,
+    trajectory,
+    currentByCat,
+    monthTx,
+    isCurrent,
+  } = args;
+
+  if (totalIncome === 0 && totalExpense === 0) {
+    return {
+      sentiment: 'neutral',
+      message:
+        'Add a few transactions to unlock tailored coaching from Fino.',
+    };
+  }
+
+  // Weekend vs weekday pressure — useful for pinpointing leisure overspend.
+  let weekdaySum = 0;
+  let weekendSum = 0;
+  let weekdayDays = new Set<string>();
+  let weekendDays = new Set<string>();
+  for (const t of monthTx) {
+    if (isTransferRow(t) || t.type !== 'expense') continue;
+    const d = new Date(t.date);
+    const dow = d.getDay(); // 0 = Sun, 6 = Sat
+    const dateKey = t.date.slice(0, 10);
+    if (dow === 0 || dow === 6) {
+      weekendSum += t.amount;
+      weekendDays.add(dateKey);
+    } else {
+      weekdaySum += t.amount;
+      weekdayDays.add(dateKey);
+    }
+  }
+  const weekdayAvg =
+    weekdayDays.size > 0 ? weekdaySum / weekdayDays.size : 0;
+  const weekendAvg =
+    weekendDays.size > 0 ? weekendSum / weekendDays.size : 0;
+  const weekendHeavy =
+    weekendAvg > 0 && weekdayAvg > 0 && weekendAvg / weekdayAvg >= 1.5;
+
+  // Top category concentration.
+  const sortedCats = Object.entries(currentByCat).sort(
+    (a, b) => b[1] - a[1]
+  );
+  const topCat = sortedCats[0];
+  const topShare =
+    topCat && totalExpense > 0 ? topCat[1] / totalExpense : 0;
+
+  // Savings rate.
+  const net = totalIncome - totalExpense;
+  const savingsRate = totalIncome > 0 ? net / totalIncome : 0;
+
+  // 1) Negative net or strong over-pace → corrective tone.
+  if (totalIncome > 0 && net < 0) {
+    return {
+      sentiment: 'negative',
+      message: `Spending is ${fmtPeso(-net)} over income this month. Pause non-essentials and revisit your top category to close the gap.`,
+    };
+  }
+  if (
+    isCurrent &&
+    trajectory.rolling3MoAvg > 0 &&
+    trajectory.projected > trajectory.rolling3MoAvg * 1.15
+  ) {
+    const overshoot = trajectory.projected - trajectory.rolling3MoAvg;
+    if (weekendHeavy && topCat) {
+      return {
+        sentiment: 'cautious',
+        message: `On pace for ${fmtPeso(overshoot)} over your 3-mo average. Weekends in ${cap(topCat[0])} are driving it — try meal-prepping or a set weekend budget.`,
+      };
+    }
+    return {
+      sentiment: 'cautious',
+      message: `Pacing ${fmtPeso(overshoot)} above your 3-mo average. Cut back on ${topCat ? cap(topCat[0]) : 'discretionary spend'} for a few days to reset.`,
+    };
+  }
+
+  // 2) Concentration risk in a single category.
+  if (topShare >= 0.45 && topCat && totalExpense > 0) {
+    return {
+      sentiment: 'cautious',
+      message: `${cap(topCat[0])} is ${Math.round(topShare * 100)}% of your spend. A small cap on this category will free up the most cash.`,
+    };
+  }
+
+  // 3) Strong positive savings rate.
+  if (savingsRate >= 0.3) {
+    return {
+      sentiment: 'positive',
+      message: `You're keeping ${Math.round(savingsRate * 100)}% of income (${fmtPeso(net)}). Consider moving the surplus to savings before month-end.`,
+    };
+  }
+  if (savingsRate >= 0.15) {
+    return {
+      sentiment: 'positive',
+      message: `Saving ${Math.round(savingsRate * 100)}% of income — solid. Bumping it to 20% would noticeably accelerate your goals.`,
+    };
+  }
+
+  // 4) Pacing comfortably below baseline.
+  if (
+    isCurrent &&
+    trajectory.rolling3MoAvg > 0 &&
+    trajectory.projected < trajectory.rolling3MoAvg * 0.9
+  ) {
+    const saved = trajectory.rolling3MoAvg - trajectory.projected;
+    return {
+      sentiment: 'positive',
+      message: `On track to spend ${fmtPeso(saved)} less than your 3-mo average — keep it going.`,
+    };
+  }
+
+  // 5) Default: neutral nudge.
+  if (topCat && totalExpense > 0) {
+    return {
+      sentiment: 'neutral',
+      message: `${cap(topCat[0])} is your biggest line item this month. A 10% trim there is the simplest savings win.`,
+    };
+  }
+  return {
+    sentiment: 'neutral',
+    message:
+      'Steady month so far — log a few more transactions to sharpen Fino’s coaching.',
   };
 }
 
@@ -324,10 +676,20 @@ export async function getInsights(
     daysElapsed,
     daysInMonth,
     prior3MoTotal,
-    prior3MoMonthsCount
+    prior3MoMonthsCount,
+    { year, month, priorTxns: prior3MoTx }
   );
   const habits = recognizeHabits(merchantMap, daysElapsed, daysInMonth);
   const weekDeltas = isCurrent ? computeWeekDeltas(monthTx, today) : [];
+  const recurring = detectRecurring(prior3MoTx, today);
+  const coach = buildCoachMessage({
+    totalIncome,
+    totalExpense,
+    trajectory,
+    currentByCat,
+    monthTx,
+    isCurrent,
+  });
 
   // ── Build chip strings ─────────────────────────────────────────────
   const headline = composeHeadline({
@@ -335,6 +697,7 @@ export async function getInsights(
     totalExpense,
     trajectory,
     anomalies,
+    coach,
   });
   const whereChip = composeWhereChip({
     currentByCat,
@@ -352,6 +715,8 @@ export async function getInsights(
     trajectory: isCurrent ? trajectory : null,
     habits,
     weekDeltas,
+    recurring,
+    coach,
   };
 }
 
@@ -360,14 +725,20 @@ function composeHeadline(args: {
   totalExpense: number;
   trajectory: TrajectoryForecast;
   anomalies: Anomaly[];
+  coach: CoachMessage;
 }): string {
-  const { totalIncome, totalExpense, trajectory, anomalies } = args;
+  const { totalIncome, totalExpense, trajectory, anomalies, coach } = args;
   if (totalIncome === 0 && totalExpense === 0) {
     return 'No transactions yet this month — start tracking to see your trends.';
   }
+  // Anomalies are the loudest signal — surface them first.
   if (anomalies.length > 0) {
     const top = anomalies[0];
     return `Heads up — ${cap(top.category)} is ${(top.pctOver * 100).toFixed(0)}% above your 3-mo average (${fmtPeso(top.current)} vs ${fmtPeso(top.baseline)}).`;
+  }
+  // Negative-sentiment coach overrides everything else (overspend, etc.).
+  if (coach.sentiment === 'negative') {
+    return coach.message;
   }
   if (totalIncome <= 0) {
     return `You've spent ${fmtPeso(totalExpense)} so far. Add an income transaction to see your savings rate.`;
@@ -377,10 +748,17 @@ function composeHeadline(args: {
   if (trajectory.rolling3MoAvg > 0) {
     const diff = trajectory.projected - trajectory.rolling3MoAvg;
     if (Math.abs(diff) > trajectory.rolling3MoAvg * 0.15) {
+      const paceLabel = trajectory.usedDowWeighting
+        ? 'On pace (weighted by your weekday rhythm)'
+        : 'On pace';
       return diff > 0
-        ? `On pace to spend ${fmtPeso(diff)} more than your 3-mo average. Saving ${pct}% of income.`
-        : `On pace to spend ${fmtPeso(-diff)} less than your 3-mo average — keep it going.`;
+        ? `${paceLabel} to spend ${fmtPeso(diff)} more than your 3-mo average. Saving ${pct}% of income.`
+        : `${paceLabel} to spend ${fmtPeso(-diff)} less than your 3-mo average — keep it going.`;
     }
+  }
+  // Defer to the coach for cautious/positive nuance when no other signal fires.
+  if (coach.sentiment === 'cautious' || coach.sentiment === 'positive') {
+    return coach.message;
   }
   if (pct >= 30) {
     return `Strong month — keeping ${pct}% of income (${fmtPeso(net)}).`;

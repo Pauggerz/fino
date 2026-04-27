@@ -42,7 +42,11 @@ import { CategoryIcon } from '@/components/CategoryIcon';
 import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
 import {
   createDebouncedAnalyzer,
+  detectAccount,
+  buildAmountState,
+  buildDisplayName,
   type AIAnalysisResult,
+  type Category,
 } from '../services/aiCategoryMap';
 import { suggestCategory } from '../services/IntelligenceEngine';
 import { useAuth } from '../contexts/AuthContext';
@@ -144,9 +148,18 @@ export default function AddTransactionSheet({ route }: Props) {
   const [firstOperand, setFirstOperand] = useState<string>(''); // saved 1st operand
   const [operator, setOperator] = useState<string | null>(null);
   const [justEvaled, setJustEvaled] = useState(false);
+  // True while the amount field still reflects an auto-filled value from the
+  // AI description parser. Reset as soon as the user touches the numpad.
+  const [amountAutoFilled, setAmountAutoFilled] = useState(false);
 
   // Other state
   const [accountId, setAccountId] = useState<string>('');
+  // True while the active account was auto-selected by the AI description
+  // parser. Reset the moment the user manually taps an account chip.
+  const [accountAutoSet, setAccountAutoSet] = useState(false);
+  // Surface form (e.g. "gcash", "bpi") that the AI matched against an
+  // account — used so the display-name builder can strip it from the items list.
+  const [aiAccountSurface, setAiAccountSurface] = useState<string | null>(null);
   const [category, setCategory] = useState<string>('');
   const [aiText, setAiText] = useState<string>('');
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
@@ -340,6 +353,8 @@ export default function AddTransactionSheet({ route }: Props) {
   const handleNumTap = useCallback(
     (key: string) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      // Any manual keypad press means the user is taking over the amount.
+      setAmountAutoFilled(false);
 
       // ── Clear ──
       if (key === 'C') {
@@ -351,8 +366,17 @@ export default function AddTransactionSheet({ route }: Props) {
       }
 
       // ── Backspace ──
+      // Walks back through calculator state: trim active digits first, then
+      // remove the pending operator, then trim the saved first operand.
       if (key === 'back') {
-        setAmount((prev) => prev.slice(0, -1));
+        if (amount.length > 0) {
+          setAmount((prev) => prev.slice(0, -1));
+        } else if (operator !== null) {
+          setOperator(null);
+        } else if (firstOperand.length > 0) {
+          setFirstOperand((prev) => prev.slice(0, -1));
+        }
+        setJustEvaled(false);
         return;
       }
 
@@ -423,6 +447,15 @@ export default function AddTransactionSheet({ route }: Props) {
     if (!trimmed) {
       analyzer.cancel();
       setSignalSource('manual');
+      setAiAccountSurface(null);
+      // Clear any auto-filled amount once the description is empty.
+      if (amountAutoFilled) {
+        setAmount('');
+        setFirstOperand('');
+        setOperator(null);
+        setJustEvaled(false);
+        setAmountAutoFilled(false);
+      }
       return;
     }
 
@@ -442,6 +475,51 @@ export default function AddTransactionSheet({ route }: Props) {
           setCategory(matched.name);
           setSignalSource('ai_description');
         }
+      }
+      // Auto-fill amount from extracted numbers in the description. Multiple
+      // numbers (e.g. "20 for rice and 10 for chicken") populate the
+      // calculator with a pending "+" so the user sees `20 + 10` and can
+      // press = to total — same shape as a manual keypad entry. Only
+      // overwrite when the user hasn't manually entered an amount yet
+      // (or the existing amount was itself auto-filled).
+      const safeToFill =
+        amountAutoFilled ||
+        (!amount && !firstOperand && operator === null);
+      if (result.extractedAmounts.length > 0) {
+        if (safeToFill) {
+          const calc = buildAmountState(result.extractedAmounts);
+          if (calc) {
+            setAmount(calc.amount);
+            setFirstOperand(calc.firstOperand);
+            setOperator(calc.operator);
+            setJustEvaled(false);
+            setAmountAutoFilled(true);
+          }
+        }
+      } else if (amountAutoFilled) {
+        // Description no longer has any numbers — clear the auto-fill so
+        // the value field stops showing a stale amount.
+        setAmount('');
+        setFirstOperand('');
+        setOperator(null);
+        setJustEvaled(false);
+        setAmountAutoFilled(false);
+      }
+      // Auto-select an account when the description mentions one ("via gcash",
+      // "from BPI", etc.). Honour any manual chip tap by leaving accountAutoSet
+      // false there.
+      const acctHit = detectAccount(
+        tokenText,
+        accounts.map((a) => ({ id: a.id, name: a.name }))
+      );
+      if (acctHit && (accountAutoSet || !accountId || accountId === accounts[0]?.id)) {
+        if (acctHit.accountId !== accountId) {
+          setAccountId(acctHit.accountId);
+        }
+        setAccountAutoSet(true);
+        setAiAccountSurface(acctHit.matchedKeyword);
+      } else if (!acctHit) {
+        setAiAccountSurface(null);
       }
     });
 
@@ -481,7 +559,14 @@ export default function AddTransactionSheet({ route }: Props) {
       );
       return;
     }
-    if (!amount || parseFloat(amount) <= 0) {
+    // Auto-evaluate any pending operator so the saved amount is the SUM
+    // (e.g. "20 + 10" → 30) without forcing the user to press = first.
+    const parsedAmount =
+      firstOperand && operator
+        ? parseFloat(evaluateExpr(firstOperand, operator, amount || '0'))
+        : parseFloat(amount || firstOperand || '0');
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
         () => {}
       );
@@ -502,7 +587,6 @@ export default function AddTransactionSheet({ route }: Props) {
       return;
     }
 
-    const parsedAmount = parseFloat(amount);
     if (parsedAmount > 9_999_999) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
         () => {}
@@ -517,6 +601,27 @@ export default function AddTransactionSheet({ route }: Props) {
     setIsSaving(true);
     const txType: Transaction['type'] = type === 'exp' ? 'expense' : 'income';
 
+    // Build a structured display name from the description + selected category.
+    // Expenses use the category-aware formatter; income transactions stay with
+    // the user's note (or fall back to category) so "Salary - Payday" reads OK.
+    const lowerCat = category.toLowerCase();
+    const STRUCTURED_CATS: Category[] = [
+      'food',
+      'transport',
+      'shopping',
+      'bills',
+      'health',
+    ];
+    const matchedCat = STRUCTURED_CATS.find((c) => c === lowerCat);
+    const structuredName =
+      txType === 'expense' && matchedCat
+        ? buildDisplayName(aiText, matchedCat, {
+            accountSurface: aiAccountSurface,
+          })
+        : '';
+    const finalDisplayName =
+      structuredName || aiText || category || 'Other';
+
     try {
       const txId = await createTransaction({
         userId: acc.user_id,
@@ -524,7 +629,7 @@ export default function AddTransactionSheet({ route }: Props) {
         amount: parsedAmount,
         type: txType,
         category: category || null,
-        displayName: aiText || category || 'Other',
+        displayName: finalDisplayName,
         transactionNote: aiText || null,
         signalSource:
           signalSource === 'ai_description' ? 'description' : 'manual',
@@ -580,6 +685,14 @@ export default function AddTransactionSheet({ route }: Props) {
   const amountColor = type === 'exp' ? colors.expenseRed : colors.primary;
   const amountBorderColor =
     type === 'exp' ? 'rgba(192,80,58,0.18)' : 'rgba(91,140,110,0.18)';
+
+  // Live preview of the pending sum so the user sees the running total
+  // (e.g. "= ₱30.00") without having to press = first.
+  const pendingTotal =
+    firstOperand && operator
+      ? parseFloat(evaluateExpr(firstOperand, operator, amount || '0'))
+      : null;
+  const hasAmountInput = amount.length > 0 || firstOperand.length > 0;
 
   return (
     <View style={styles.container}>
@@ -677,6 +790,15 @@ export default function AddTransactionSheet({ route }: Props) {
                 <Text style={styles.amountExpr}>
                   {firstOperand} {operator}
                 </Text>
+                {pendingTotal !== null &&
+                Number.isFinite(pendingTotal) &&
+                amount.length > 0 ? (
+                  <Text
+                    style={[styles.amountExpr, { color: amountColor }]}
+                  >
+                    = ₱{pendingTotal.toFixed(2)}
+                  </Text>
+                ) : null}
               </View>
             ) : null}
           </View>
@@ -801,7 +923,10 @@ export default function AddTransactionSheet({ route }: Props) {
                           styles.acctChip,
                           isSel && styles.acctChipActive,
                         ]}
-                        onPress={() => setAccountId(acc.id)}
+                        onPress={() => {
+                          setAccountId(acc.id);
+                          setAccountAutoSet(false);
+                        }}
                       >
                         <View
                           style={[
@@ -934,7 +1059,7 @@ export default function AddTransactionSheet({ route }: Props) {
 
           {/* ── Save Button ─────────────────────────────────────────────── */}
           <TouchableOpacity
-            disabled={!amount || isSaving}
+            disabled={!hasAmountInput || isSaving}
             onPress={handleSave}
             style={styles.saveBtnWrap}
           >
@@ -942,7 +1067,7 @@ export default function AddTransactionSheet({ route }: Props) {
               colors={['#4a7a5e', '#5B8C6E']}
               style={[
                 styles.saveBtn,
-                (!amount || isSaving) && { opacity: 0.45 },
+                (!hasAmountInput || isSaving) && { opacity: 0.45 },
               ]}
             >
               <Text style={styles.saveBtnText}>
