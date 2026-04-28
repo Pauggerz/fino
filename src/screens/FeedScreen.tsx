@@ -423,51 +423,32 @@ const FeedHero = React.memo(
           {heroAmountPrefix}
           {fmtPeso(totalAmount)}
         </Text>
-        {deltaPercent !== null && (
-          <View
-            style={[
-              styles.heroDeltaChip,
-              viewType === 'expense'
-                ? deltaPercent > 0
-                  ? styles.heroDeltaChipBad
-                  : styles.heroDeltaChipGood
-                : deltaPercent >= 0
-                  ? styles.heroDeltaChipGood
-                  : styles.heroDeltaChipBad,
-            ]}
-          >
-            <Ionicons
-              name={deltaPercent >= 0 ? 'arrow-up' : 'arrow-down'}
-              size={10}
-              color={
-                viewType === 'expense'
-                  ? deltaPercent > 0
-                    ? '#FFC2B7'
-                    : '#B5ECC6'
-                  : deltaPercent >= 0
-                    ? '#B5ECC6'
-                    : '#FFC2B7'
-              }
-            />
-            <Text
-              style={[
-                styles.heroDeltaChipText,
-                {
-                  color:
-                    viewType === 'expense'
-                      ? deltaPercent > 0
-                        ? '#FFC2B7'
-                        : '#B5ECC6'
-                      : deltaPercent >= 0
-                        ? '#B5ECC6'
-                        : '#FFC2B7',
-                },
-              ]}
-            >
-              {Math.abs(deltaPercent)}% {deltaLabel}
-            </Text>
-          </View>
-        )}
+        {deltaPercent !== null &&
+          (() => {
+            // Good = "what the user wants": less spending OR more income.
+            const isGood =
+              viewType === 'expense' ? deltaPercent <= 0 : deltaPercent >= 0;
+            return (
+              <View
+                style={[
+                  styles.heroDeltaChip,
+                  isGood ? styles.heroDeltaChipGood : styles.heroDeltaChipBad,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.heroDeltaChipText,
+                    isGood
+                      ? styles.heroDeltaChipTextGood
+                      : styles.heroDeltaChipTextBad,
+                  ]}
+                >
+                  {deltaPercent >= 0 ? '↑' : '↓'} {Math.abs(deltaPercent)}%{' '}
+                  {deltaLabel}
+                </Text>
+              </View>
+            );
+          })()}
       </View>
 
       {accountSpend.length > 0 ? (
@@ -2016,28 +1997,30 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       lineHeight: 36,
       color: '#FFFFFF',
     },
+    // Mirrors HomeScreen `trendBadge` so the % delta speaks one design language
+    // across the app. Good/bad variants reuse existing theme tokens.
     heroDeltaChip: {
       alignSelf: 'flex-start',
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      borderRadius: 999,
+      borderRadius: 8,
       paddingVertical: 3,
       paddingHorizontal: 8,
       marginTop: 8,
-      borderWidth: 1,
     },
     heroDeltaChipGood: {
-      backgroundColor: 'rgba(126,216,160,0.18)',
-      borderColor: 'rgba(126,216,160,0.28)',
+      backgroundColor: colors.primaryLight25,
     },
     heroDeltaChipBad: {
-      backgroundColor: 'rgba(255,138,120,0.18)',
-      borderColor: 'rgba(255,138,120,0.28)',
+      backgroundColor: colors.coralLight,
     },
     heroDeltaChipText: {
       fontFamily: 'Inter_600SemiBold',
       fontSize: 11,
+    },
+    heroDeltaChipTextGood: {
+      color: colors.mint,
+    },
+    heroDeltaChipTextBad: {
+      color: colors.coralDark,
     },
 
     // ── Balance carousel ──
