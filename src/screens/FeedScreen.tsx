@@ -1,11 +1,13 @@
 // src/screens/FeedScreen.tsx
 import React, {
+  useEffect,
   useState,
   useRef,
   useCallback,
   useMemo,
   useTransition,
 } from 'react';
+import { Q } from '@nozbe/watermelondb';
 import {
   View,
   Text,
@@ -54,6 +56,9 @@ import {
   CATEGORY_COLOR,
 } from '@/constants/categoryMappings';
 import { deleteTransaction } from '@/services/localMutations';
+import { database } from '@/db';
+import type TransactionModel from '@/db/models/Transaction';
+import { useAuth } from '@/contexts/AuthContext';
 import Toast from '../components/Toast';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
 import { Skeleton } from '@/components/Skeleton';
@@ -340,11 +345,12 @@ const FeedHero = React.memo(
     handleNextMonth,
     onOpenMonthPicker,
     viewType,
-    heroInfoTitle,
-    heroInfoSubtitle,
     accountSpend,
-    heroAmountLabel,
     heroAmountPrefix,
+    totalAmount,
+    totalLabel,
+    deltaPercent,
+    deltaLabel,
   }: {
     styles: FeedStyles;
     colors: any;
@@ -354,11 +360,12 @@ const FeedHero = React.memo(
     handleNextMonth: () => void;
     onOpenMonthPicker: () => void;
     viewType: 'expense' | 'income';
-    heroInfoTitle: string;
-    heroInfoSubtitle: string;
     accountSpend: AccountSpend[];
-    heroAmountLabel: string;
     heroAmountPrefix: string;
+    totalAmount: number;
+    totalLabel: string;
+    deltaPercent: number | null;
+    deltaLabel: string;
   }) => (
     <LinearGradient
       colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
@@ -408,34 +415,59 @@ const FeedHero = React.memo(
             />
           </TouchableOpacity>
         </View>
-
-        <View style={styles.heroTypeChip}>
-          <Ionicons
-            name={viewType === 'expense' ? 'trending-down' : 'trending-up'}
-            size={12}
-            color={
-              viewType === 'expense' ? colors.expenseRed : colors.incomeGreen
-            }
-          />
-          <Text
-            style={[
-              styles.heroTypeChipText,
-              {
-                color:
-                  viewType === 'expense'
-                    ? colors.expenseRed
-                    : colors.incomeGreen,
-              },
-            ]}
-          >
-            {viewType === 'expense' ? 'Expenses' : 'Income'}
-          </Text>
-        </View>
       </View>
 
-      <View style={styles.heroInfoHeader}>
-        <Text style={styles.heroInfoTitle}>{heroInfoTitle}</Text>
-        <Text style={styles.heroInfoSubtitle}>{heroInfoSubtitle}</Text>
+      <View style={styles.heroTotalBlock}>
+        <Text style={styles.heroTotalLabel}>{totalLabel}</Text>
+        <Text style={styles.heroTotalAmount}>
+          {heroAmountPrefix}
+          {fmtPeso(totalAmount)}
+        </Text>
+        {deltaPercent !== null && (
+          <View
+            style={[
+              styles.heroDeltaChip,
+              viewType === 'expense'
+                ? deltaPercent > 0
+                  ? styles.heroDeltaChipBad
+                  : styles.heroDeltaChipGood
+                : deltaPercent >= 0
+                  ? styles.heroDeltaChipGood
+                  : styles.heroDeltaChipBad,
+            ]}
+          >
+            <Ionicons
+              name={deltaPercent >= 0 ? 'arrow-up' : 'arrow-down'}
+              size={10}
+              color={
+                viewType === 'expense'
+                  ? deltaPercent > 0
+                    ? '#FFC2B7'
+                    : '#B5ECC6'
+                  : deltaPercent >= 0
+                    ? '#B5ECC6'
+                    : '#FFC2B7'
+              }
+            />
+            <Text
+              style={[
+                styles.heroDeltaChipText,
+                {
+                  color:
+                    viewType === 'expense'
+                      ? deltaPercent > 0
+                        ? '#FFC2B7'
+                        : '#B5ECC6'
+                      : deltaPercent >= 0
+                        ? '#B5ECC6'
+                        : '#FFC2B7',
+                },
+              ]}
+            >
+              {Math.abs(deltaPercent)}% {deltaLabel}
+            </Text>
+          </View>
+        )}
       </View>
 
       {accountSpend.length > 0 ? (
@@ -457,7 +489,6 @@ const FeedHero = React.memo(
                   {acc.name.toUpperCase()}
                 </Text>
               </View>
-              <Text style={styles.balanceCardMeta}>{heroAmountLabel}</Text>
               <Text style={styles.balanceCardAmount}>
                 {heroAmountPrefix}
                 {fmtPeso(acc.amount)}
@@ -992,7 +1023,7 @@ const FeedTransactionRow = React.memo(
 
     // Pre-formatted upstream in useTransactions.modelToPlain — row is now pure
     // presentation, no per-frame allocation.
-    const time = tx.time;
+    const { time } = tx;
 
     // Stable within the row's lifetime so MemoizedSwipeableRow's shallow
     // compare doesn't re-render it on every parent-driven render.
@@ -1272,14 +1303,14 @@ function FeedScreen() {
       viewType === 'income'
         ? INCOME_FILTER_OPTIONS
         : ['All', ...categories.map((c) => c.name)],
-    [viewType, categories],
+    [viewType, categories]
   );
 
   // O(1) category lookup for FeedTransactionRow. Was a linear .find() per row,
   // per render — the single biggest scroll-frame cost in the profiler.
   const categoryByName = useMemo(
     () => new Map(categories.map((c) => [c.name.toLowerCase(), c])),
-    [categories],
+    [categories]
   );
 
   // ── Delete handler ──
@@ -1366,13 +1397,139 @@ function FeedScreen() {
     return Object.values(map);
   }, [sections, viewType]);
 
-  const heroInfoTitle =
-    viewType === 'expense' ? 'Spending by Account' : 'Income by Account';
-  const heroInfoSubtitle = `${monthLabel} · ${accountSpend.length} account${
-    accountSpend.length === 1 ? '' : 's'
-  }`;
-  const heroAmountLabel = viewType === 'expense' ? 'Spent' : 'Received';
   const heroAmountPrefix = viewType === 'expense' ? '-' : '+';
+
+  // ── Hero total + previous-period total (for the delta chip) ──
+  // Sums the full period via DB query rather than the paginated `sections`,
+  // so the headline figure is accurate even when only the first 20 rows are
+  // loaded. Mirrors the prevIncome/prevExpense pattern in CashFlowScreen.
+  const { user } = useAuth();
+  const userId = user?.id;
+  const [periodTotal, setPeriodTotal] = useState(0);
+  const [prevPeriodTotal, setPrevPeriodTotal] = useState(0);
+
+  const periodRanges = useMemo(() => {
+    if (filterDatePreset === '30d') {
+      const to = new Date();
+      const from = new Date();
+      from.setDate(from.getDate() - 30);
+      const prevTo = new Date(from.getTime() - 1);
+      const prevFrom = new Date(prevTo);
+      prevFrom.setDate(prevFrom.getDate() - 30);
+      return {
+        curFrom: from.toISOString(),
+        curTo: to.toISOString(),
+        prevFrom: prevFrom.toISOString(),
+        prevTo: prevTo.toISOString(),
+        deltaLabel: 'vs prev 30 days',
+      };
+    }
+    if (filterDatePreset === '90d') {
+      const to = new Date();
+      const from = new Date();
+      from.setDate(from.getDate() - 90);
+      const prevTo = new Date(from.getTime() - 1);
+      const prevFrom = new Date(prevTo);
+      prevFrom.setDate(prevFrom.getDate() - 90);
+      return {
+        curFrom: from.toISOString(),
+        curTo: to.toISOString(),
+        prevFrom: prevFrom.toISOString(),
+        prevTo: prevTo.toISOString(),
+        deltaLabel: 'vs prev 90 days',
+      };
+    }
+    const curFrom = new Date(selectedYear, selectedMonth, 1).toISOString();
+    const curTo = new Date(
+      selectedYear,
+      selectedMonth + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    ).toISOString();
+    const prevMonthIdx = selectedMonth === 0 ? 11 : selectedMonth - 1;
+    const prevYearIdx = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+    const prevFrom = new Date(prevYearIdx, prevMonthIdx, 1).toISOString();
+    const prevTo = new Date(
+      prevYearIdx,
+      prevMonthIdx + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    ).toISOString();
+    return {
+      curFrom,
+      curTo,
+      prevFrom,
+      prevTo,
+      deltaLabel: `vs ${MONTH_NAMES[prevMonthIdx]}`,
+    };
+  }, [filterDatePreset, selectedYear, selectedMonth]);
+
+  useEffect(() => {
+    if (!userId) {
+      setPeriodTotal(0);
+      setPrevPeriodTotal(0);
+      return;
+    }
+    const baseFilters: Q.Clause[] = [
+      Q.where('user_id', userId),
+      Q.where('type', viewType),
+      Q.where('account_deleted', false),
+    ];
+    if (filterAccountId) {
+      baseFilters.push(Q.where('account_id', filterAccountId));
+    }
+    const txCol = database.get<TransactionModel>('transactions');
+    const sumNonTransfer = (records: TransactionModel[]) => {
+      let sum = 0;
+      for (const t of records) {
+        const isTransfer =
+          t.isTransfer || (t.category ?? '').toLowerCase() === 'transfer';
+        if (!isTransfer) sum += t.amount;
+      }
+      return sum;
+    };
+    const curSub = txCol
+      .query(
+        ...baseFilters,
+        Q.where('date', Q.gte(periodRanges.curFrom)),
+        Q.where('date', Q.lte(periodRanges.curTo))
+      )
+      .observeWithColumns(['amount', 'type', 'category', 'is_transfer'])
+      .subscribe((records) => setPeriodTotal(sumNonTransfer(records)));
+    const prevSub = txCol
+      .query(
+        ...baseFilters,
+        Q.where('date', Q.gte(periodRanges.prevFrom)),
+        Q.where('date', Q.lte(periodRanges.prevTo))
+      )
+      .observeWithColumns(['amount', 'type', 'category', 'is_transfer'])
+      .subscribe((records) => setPrevPeriodTotal(sumNonTransfer(records)));
+    return () => {
+      curSub.unsubscribe();
+      prevSub.unsubscribe();
+    };
+  }, [userId, viewType, filterAccountId, periodRanges]);
+
+  const periodMonthName = MONTH_NAMES[selectedMonth];
+  const totalLabel = useMemo(() => {
+    const verb = viewType === 'expense' ? 'Spent' : 'Received';
+    if (filterDatePreset === '30d') return `${verb} in last 30 days`;
+    if (filterDatePreset === '90d') return `${verb} in last 90 days`;
+    return `${verb} in ${periodMonthName}`;
+  }, [viewType, filterDatePreset, periodMonthName]);
+
+  const deltaPercent = useMemo<number | null>(() => {
+    if (prevPeriodTotal <= 0) return null;
+    if (periodTotal <= 0 && prevPeriodTotal <= 0) return null;
+    const pct = ((periodTotal - prevPeriodTotal) / prevPeriodTotal) * 100;
+    return Math.round(pct);
+  }, [periodTotal, prevPeriodTotal]);
 
   // ── Flatten sections → list items ──
   // Memoised on `sections` — list identity is stable across unrelated parent
@@ -1435,11 +1592,12 @@ function FeedScreen() {
             handleNextMonth={handleNextMonth}
             onOpenMonthPicker={openMonthPicker}
             viewType={viewType}
-            heroInfoTitle={heroInfoTitle}
-            heroInfoSubtitle={heroInfoSubtitle}
             accountSpend={accountSpend}
-            heroAmountLabel={heroAmountLabel}
             heroAmountPrefix={heroAmountPrefix}
+            totalAmount={periodTotal}
+            totalLabel={totalLabel}
+            deltaPercent={deltaPercent}
+            deltaLabel={periodRanges.deltaLabel}
           />
         );
       }
@@ -1536,10 +1694,11 @@ function FeedScreen() {
       totalEntries,
       sections.length,
       accountSpend,
-      heroInfoTitle,
-      heroInfoSubtitle,
-      heroAmountLabel,
       heroAmountPrefix,
+      periodTotal,
+      totalLabel,
+      deltaPercent,
+      periodRanges.deltaLabel,
       handleTxPress,
       handleDeleteTransaction,
     ]
@@ -1836,37 +1995,49 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       color: colors.whiteTransparent80,
       paddingHorizontal: 6,
     },
-    // Hero type chip (read-only indicator replacing the old toggle)
-    heroTypeChip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5,
-      backgroundColor: colors.blackTransparent15,
-      borderRadius: 999,
-      paddingVertical: 6,
-      paddingHorizontal: 12,
-      alignSelf: 'flex-start',
-    },
-    heroTypeChipText: {
-      fontFamily: 'Inter_600SemiBold',
-      fontSize: 12,
-    },
-
-    heroInfoHeader: {
-      marginTop: 2,
-      marginBottom: 10,
+    // ── Hero total + delta block ──
+    heroTotalBlock: {
+      marginTop: 4,
+      marginBottom: 14,
       zIndex: 2,
     },
-    heroInfoTitle: {
+    heroTotalLabel: {
       fontFamily: 'Inter_600SemiBold',
-      fontSize: 12,
-      color: colors.whiteTransparent80,
-      marginBottom: 1,
-    },
-    heroInfoSubtitle: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 10,
+      fontSize: 11,
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
       color: colors.whiteTransparent55,
+      marginBottom: 4,
+    },
+    heroTotalAmount: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 30,
+      letterSpacing: -0.5,
+      lineHeight: 36,
+      color: '#FFFFFF',
+    },
+    heroDeltaChip: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      borderRadius: 999,
+      paddingVertical: 3,
+      paddingHorizontal: 8,
+      marginTop: 8,
+      borderWidth: 1,
+    },
+    heroDeltaChipGood: {
+      backgroundColor: 'rgba(126,216,160,0.18)',
+      borderColor: 'rgba(126,216,160,0.28)',
+    },
+    heroDeltaChipBad: {
+      backgroundColor: 'rgba(255,138,120,0.18)',
+      borderColor: 'rgba(255,138,120,0.28)',
+    },
+    heroDeltaChipText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
     },
 
     // ── Balance carousel ──
@@ -1891,12 +2062,6 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       fontSize: 10,
       color: colors.whiteTransparent55 ?? 'rgba(255,255,255,0.55)',
       letterSpacing: 0.5,
-    },
-    balanceCardMeta: {
-      fontFamily: 'Inter_500Medium',
-      fontSize: 10,
-      color: colors.whiteTransparent55 ?? 'rgba(255,255,255,0.55)',
-      marginBottom: 2,
     },
     balanceCardAmount: {
       fontFamily: 'DMMono_500Medium',
