@@ -42,6 +42,23 @@ export interface TransactionFilters {
   sortOrder?: SortOrder;
 }
 
+// Cross-mount cache for the first-paint snapshot per filter signature. Users
+// bounce Home ↔ Feed constantly; without this, every revisit reflashed the
+// list skeleton while SQLite re-ran the same query. visibleCount is excluded
+// from the key intentionally — only the initial PAGE_SIZE paint needs to be
+// instant; pagination state has its own UI affordance (loadingMore).
+const txSnapshotCache = new Map<string, TransactionModel[]>();
+const txSnapshotKey = (
+  userId: string,
+  category?: string,
+  dateRange?: DateRange,
+  search?: string,
+  accountId?: string,
+  sortOrder?: SortOrder,
+  transactionType?: 'expense' | 'income',
+) =>
+  `${userId}|${category ?? ''}|${dateRange?.from ?? ''}-${dateRange?.to ?? ''}|${search ?? ''}|${accountId ?? ''}|${sortOrder ?? ''}|${transactionType ?? ''}`;
+
 function modelToPlain(
   tx: TransactionModel,
   accountMap: Map<string, AccountModel>,
@@ -82,13 +99,30 @@ export const useTransactions = (
   sortOrder?: SortOrder,
   transactionType?: 'expense' | 'income',
 ) => {
-  const [txRecords, setTxRecords] = useState<TransactionModel[]>([]);
-  const [accountMap, setAccountMap] = useState<Map<string, AccountModel>>(new Map());
-  const [loading, setLoading] = useState(true);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery ?? '');
   const { user } = useAuth();
   const userId = user?.id;
+  const initialCacheKey = userId
+    ? txSnapshotKey(
+        userId,
+        category,
+        dateRange,
+        searchQuery ?? '',
+        accountId,
+        sortOrder,
+        transactionType,
+      )
+    : null;
+  const initialCached = initialCacheKey
+    ? txSnapshotCache.get(initialCacheKey)
+    : undefined;
+
+  const [txRecords, setTxRecords] = useState<TransactionModel[]>(
+    initialCached ?? [],
+  );
+  const [accountMap, setAccountMap] = useState<Map<string, AccountModel>>(new Map());
+  const [loading, setLoading] = useState(!initialCached);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery ?? '');
 
   // Debounce search input so typing doesn't re-query SQLite on every keystroke.
   useEffect(() => {
@@ -156,10 +190,27 @@ export const useTransactions = (
     return () => sub.unsubscribe();
   }, [userId]);
 
-  // Transactions subscription — re-subscribes when filters or visibleCount change.
-  useEffect(() => {
-    setLoading(true);
+  const cacheKey = useMemo(
+    () =>
+      userId
+        ? txSnapshotKey(
+            userId,
+            category,
+            dateRange,
+            debouncedSearch,
+            accountId,
+            sortOrder,
+            transactionType,
+          )
+        : null,
+    [userId, category, dateRange, debouncedSearch, accountId, sortOrder, transactionType],
+  );
 
+  // Transactions subscription — re-subscribes when filters or visibleCount change.
+  // Note: we deliberately do NOT setLoading(true) on every effect run. If the
+  // consumer already has cached rows for this filter signature, the list
+  // should keep rendering them while the observable catches up.
+  useEffect(() => {
     if (!userId) {
       setTxRecords([]);
       setLoading(false);
@@ -182,10 +233,11 @@ export const useTransactions = (
       .subscribe((records) => {
         setTxRecords(records);
         setLoading(false);
+        if (cacheKey) txSnapshotCache.set(cacheKey, records);
       });
 
     return () => sub.unsubscribe();
-  }, [clauses, userId]);
+  }, [clauses, userId, cacheKey]);
 
   const hasMore = txRecords.length > visibleCount;
 

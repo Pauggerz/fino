@@ -8,6 +8,7 @@ import {
   ScrollView,
   TextInput,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import BottomSheet, {
@@ -16,7 +17,12 @@ import BottomSheet, {
   BottomSheetBackdrop,
 } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  RouteProp,
+  useFocusEffect,
+} from '@react-navigation/native';
 import { FlashList, ListRenderItem } from '@shopify/flash-list';
 import { Q } from '@nozbe/watermelondb';
 import { radius, spacing } from '../constants/theme';
@@ -41,6 +47,13 @@ import AdjustBalanceSheet from '@/components/account/AdjustBalanceSheet';
 import { saveEditAccount } from '@/services/transactionMutations';
 import { formatShortDate } from '@/utils/groupByDate';
 
+// Cross-mount cache for per-account transaction lists. Without this, opening
+// the same account twice replays the loading skeleton each time while the
+// observable spins up. Observer overwrites on every emission.
+const accountTxCache = new Map<string, Transaction[]>();
+const accountTxKey = (userId: string, accountId: string) =>
+  `${userId}:${accountId}`;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtPeso(n: number): string {
@@ -64,17 +77,42 @@ export default function AccountDetailScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<MoreStackParamList, 'AccountDetail'>>();
-  const { id } = route.params;
+  const { id, from } = route.params;
+
+  // When this screen was opened from Home (jumping into the More tab's stack),
+  // a plain goBack() lands on Tools instead of returning to Home. Pop the
+  // stack and flip the tab back to Home so the user ends up where they started.
+  const handleBack = useCallback(() => {
+    navigation.goBack();
+    if (from === 'home') {
+      navigation.getParent()?.navigate('home');
+    }
+  }, [navigation, from]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        handleBack();
+        return true;
+      });
+      return () => sub.remove();
+    }, [handleBack])
+  );
 
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
-  const { accounts, refetch: refetchAccounts } = useAccounts();
+  const { accounts, loading: accountsLoading, refetch: refetchAccounts } =
+    useAccounts();
   const { categories } = useCategories();
   const { user } = useAuth();
   const userId = user?.id;
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedTxs =
+    userId ? accountTxCache.get(accountTxKey(userId, id)) : undefined;
+  const [transactions, setTransactions] = useState<Transaction[]>(
+    cachedTxs ?? []
+  );
+  const [loading, setLoading] = useState(!cachedTxs);
 
   // ── Modal states ──
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -109,38 +147,41 @@ export default function AccountDetailScreen() {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    // Don't reset loading to true here — if we already have cached rows for
+    // this account the screen should keep showing them while the observable
+    // catches up. Only the initial mount with no cache renders the skeleton.
+    const acctId = selectedAccount.id;
     const query = database
       .get<TransactionModel>('transactions')
       .query(
         Q.where('user_id', userId),
-        Q.where('account_id', selectedAccount.id),
+        Q.where('account_id', acctId),
         Q.sortBy('date', Q.desc)
       );
     const sub = query.observe().subscribe((records) => {
-      setTransactions(
-        records.map((r) => ({
-          id: r.id,
-          user_id: r.userId,
-          account_id: r.accountId,
-          amount: r.amount,
-          type: r.type as Transaction['type'],
-          category: r.category ?? null,
-          merchant_name: r.merchantName ?? null,
-          display_name: r.displayName ?? null,
-          transaction_note: r.transactionNote ?? null,
-          signal_source: (r.signalSource ??
-            null) as Transaction['signal_source'],
-          date: r.date,
-          receipt_url: r.receiptUrl ?? null,
-          account_deleted: r.accountDeleted,
-          merchant_confidence: r.merchantConfidence ?? null,
-          amount_confidence: r.amountConfidence ?? null,
-          date_confidence: r.dateConfidence ?? null,
-          created_at: r.serverCreatedAt ?? new Date(r.updatedAt).toISOString(),
-        }))
-      );
+      const next: Transaction[] = records.map((r) => ({
+        id: r.id,
+        user_id: r.userId,
+        account_id: r.accountId,
+        amount: r.amount,
+        type: r.type as Transaction['type'],
+        category: r.category ?? null,
+        merchant_name: r.merchantName ?? null,
+        display_name: r.displayName ?? null,
+        transaction_note: r.transactionNote ?? null,
+        signal_source: (r.signalSource ??
+          null) as Transaction['signal_source'],
+        date: r.date,
+        receipt_url: r.receiptUrl ?? null,
+        account_deleted: r.accountDeleted,
+        merchant_confidence: r.merchantConfidence ?? null,
+        amount_confidence: r.amountConfidence ?? null,
+        date_confidence: r.dateConfidence ?? null,
+        created_at: r.serverCreatedAt ?? new Date(r.updatedAt).toISOString(),
+      }));
+      setTransactions(next);
       setLoading(false);
+      accountTxCache.set(accountTxKey(userId, acctId), next);
     });
     return () => sub.unsubscribe();
   }, [selectedAccount?.id, userId]);
@@ -417,7 +458,10 @@ export default function AccountDetailScreen() {
   };
 
   // ─── Loading skeleton ─────────────────────────────────────────────────────
-  if (loading) {
+  // Show skeleton while either the account list or the transaction list is
+  // still resolving — otherwise a cold mount briefly falls through to the
+  // "Account not found" branch before useAccounts emits its first value.
+  if (loading || accountsLoading) {
     return (
       <View style={styles.container}>
         <View
@@ -522,7 +566,7 @@ export default function AccountDetailScreen() {
         <Text style={styles.emptyText}>Account not found.</Text>
         <TouchableOpacity
           style={styles.backGhostBtn}
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
         >
           <Text style={styles.backGhostBtnText}>Go back</Text>
         </TouchableOpacity>
@@ -553,7 +597,7 @@ export default function AccountDetailScreen() {
               <View style={styles.heroTopBar}>
                 <TouchableOpacity
                   style={styles.heroIconBtn}
-                  onPress={() => navigation.goBack()}
+                  onPress={handleBack}
                   hitSlop={8}
                 >
                   <Text style={styles.heroIconArrow}>←</Text>
@@ -1038,7 +1082,7 @@ export default function AccountDetailScreen() {
               style={styles.confirmBtn}
               onPress={() => {
                 setShowDeleteModal(false);
-                navigation.goBack();
+                handleBack();
               }}
             >
               <Text style={styles.confirmBtnText}>Yes, Delete Account</Text>

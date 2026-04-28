@@ -68,7 +68,7 @@ export type FeedStackParamList = {
 
 export type MoreStackParamList = {
   MoreMain: undefined;
-  AccountDetail: { id: string };
+  AccountDetail: { id: string; from?: 'home' };
 };
 
 export type TabStackParamList = {

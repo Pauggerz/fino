@@ -314,7 +314,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
         () =>
           navigation.navigate('more', {
             screen: 'AccountDetail',
-            params: { id },
+            params: { id, from: 'home' },
           }),
         260
       );

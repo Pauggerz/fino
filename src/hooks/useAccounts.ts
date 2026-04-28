@@ -28,11 +28,21 @@ function toPlain(record: AccountModel): Account {
   };
 }
 
+// Cross-mount cache: useAccounts is consumed by ~10 screens (Home, Feed,
+// AccountDetail, More, Stats, Chat, AddTransaction, …). Without this, every
+// remount briefly returned [] before the observable's first emission, which
+// caused "Account not found" flashes on AccountDetail and skeleton flickers
+// elsewhere. The observer overwrites the cache on every emission so it never
+// goes stale within a session.
+const accountsCache = new Map<string, Account[]>();
+
 export const useAccounts = () => {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const userId = user?.id;
+
+  const cached = userId ? accountsCache.get(userId) : undefined;
+  const [accounts, setAccounts] = useState<Account[]>(cached ?? []);
+  const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
     if (!userId) {
@@ -58,8 +68,10 @@ export const useAccounts = () => {
         'sort_order',
       ])
       .subscribe((records) => {
-      setAccounts(records.map(toPlain));
+      const next = records.map(toPlain);
+      setAccounts(next);
       setLoading(false);
+      accountsCache.set(userId, next);
     });
     return () => sub.unsubscribe();
   }, [userId]);
