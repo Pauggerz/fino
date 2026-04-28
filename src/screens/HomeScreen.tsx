@@ -790,7 +790,7 @@ function HomeScreen() {
                   onPress={() =>
                     navigation.navigate('more', {
                       screen: 'AccountDetail',
-                      params: { id: acc.id, from: 'home' },
+                      params: { id: acc.id },
                     })
                   }
                 />

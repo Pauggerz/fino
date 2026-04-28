@@ -1228,11 +1228,10 @@ function MoreScreen() {
           {/* Left content */}
           <View style={{ flex: 1 }}>
             <View style={styles.finoBadge}>
-              <FinoIntelIcon size={18} color={colors.insightPurple} />
               <Text
                 style={[styles.finoBadgeText, { color: colors.insightPurple }]}
               >
-                AI POWERED
+                Powered by Fino Intelligence
               </Text>
             </View>
             <Text
@@ -1253,7 +1252,7 @@ function MoreScreen() {
                 },
               ]}
             >
-              Your personal AI money coach. Ask anything about your finances.
+              Your personal AI money coach. Ask insights about your finances.
             </Text>
             <View
               style={[
