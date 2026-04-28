@@ -58,14 +58,6 @@ function fmtTrend(current: number, previous: number): string {
   return `${sign} ${Math.abs(pct).toFixed(0)}% vs last mo`;
 }
 
-function fmtTrendCount(current: number, previous: number): string {
-  if (previous === 0 && current === 0) return '';
-  if (previous === 0) return 'New this month';
-  const diff = current - previous;
-  const sign = diff >= 0 ? '▲' : '▼';
-  return `${sign} ${Math.abs(diff)} vs last mo`;
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AccountDetailScreen() {
@@ -165,47 +157,39 @@ export default function AccountDetailScreen() {
   const balance = selectedAccount?.balance ?? 0;
 
   // ── Monthly stats + trends ──
-  const {
-    monthIn,
-    monthOut,
-    prevMonthIn,
-    prevMonthOut,
-    prevMonthCount,
-    curMonthCount,
-  } = useMemo(() => {
-    const now = new Date();
-    const curMonth = now.getMonth();
-    const curYear = now.getFullYear();
-    const prevDate = new Date(curYear, curMonth - 1, 1);
-    const prevMonth = prevDate.getMonth();
-    const prevYear = prevDate.getFullYear();
+  const { monthIn, monthOut, prevMonthIn, prevMonthOut, curMonthCount } =
+    useMemo(() => {
+      const now = new Date();
+      const curMonth = now.getMonth();
+      const curYear = now.getFullYear();
+      const prevDate = new Date(curYear, curMonth - 1, 1);
+      const prevMonth = prevDate.getMonth();
+      const prevYear = prevDate.getFullYear();
 
-    return transactions.reduce(
-      (acc, tx) => {
-        const d = new Date(tx.date);
-        const m = d.getMonth();
-        const y = d.getFullYear();
-        if (m === curMonth && y === curYear) {
-          acc.curMonthCount += 1;
-          if (tx.type === 'income') acc.monthIn += tx.amount;
-          else acc.monthOut += tx.amount;
-        } else if (m === prevMonth && y === prevYear) {
-          acc.prevMonthCount += 1;
-          if (tx.type === 'income') acc.prevMonthIn += tx.amount;
-          else acc.prevMonthOut += tx.amount;
+      return transactions.reduce(
+        (acc, tx) => {
+          const d = new Date(tx.date);
+          const m = d.getMonth();
+          const y = d.getFullYear();
+          if (m === curMonth && y === curYear) {
+            acc.curMonthCount += 1;
+            if (tx.type === 'income') acc.monthIn += tx.amount;
+            else acc.monthOut += tx.amount;
+          } else if (m === prevMonth && y === prevYear) {
+            if (tx.type === 'income') acc.prevMonthIn += tx.amount;
+            else acc.prevMonthOut += tx.amount;
+          }
+          return acc;
+        },
+        {
+          monthIn: 0,
+          monthOut: 0,
+          prevMonthIn: 0,
+          prevMonthOut: 0,
+          curMonthCount: 0,
         }
-        return acc;
-      },
-      {
-        monthIn: 0,
-        monthOut: 0,
-        prevMonthIn: 0,
-        prevMonthOut: 0,
-        prevMonthCount: 0,
-        curMonthCount: 0,
-      }
-    );
-  }, [transactions]);
+      );
+    }, [transactions]);
 
   // ── Unique categories for filter pills ──
   const uniqueCategories = useMemo(
@@ -216,6 +200,68 @@ export default function AccountDetailScreen() {
     ],
     [transactions]
   );
+
+  // ── Share of total wealth (across all accounts) ──
+  const totalAccountsBalance = useMemo(
+    () => accounts.reduce((s, a) => s + (a.balance || 0), 0),
+    [accounts]
+  );
+  const sharePct =
+    totalAccountsBalance > 0 ? (balance / totalAccountsBalance) * 100 : 0;
+
+  // ── 14-day daily flow for sparkline ──
+  const dailyFlow = useMemo(() => {
+    const days: { date: Date; in: number; out: number }[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      days.push({ date: d, in: 0, out: 0 });
+    }
+    const startMs = days[0].date.getTime();
+    transactions.forEach((t) => {
+      const td = new Date(t.date);
+      td.setHours(0, 0, 0, 0);
+      const idx = Math.floor((td.getTime() - startMs) / 86400000);
+      if (idx >= 0 && idx < 14) {
+        if (t.type === 'income') days[idx].in += t.amount;
+        else days[idx].out += t.amount;
+      }
+    });
+    const max = Math.max(...days.map((d) => d.in + d.out), 1);
+    return { days, max };
+  }, [transactions]);
+
+  // ── Top 3 spending categories this month ──
+  const topCats = useMemo(() => {
+    const now = new Date();
+    const m = now.getMonth();
+    const y = now.getFullYear();
+    const map = new Map<string, number>();
+    let totalOut = 0;
+    transactions.forEach((t) => {
+      if (t.type !== 'expense') return;
+      const d = new Date(t.date);
+      if (d.getMonth() !== m || d.getFullYear() !== y) return;
+      const key = (t.category ?? 'other').toLowerCase();
+      map.set(key, (map.get(key) ?? 0) + t.amount);
+      totalOut += t.amount;
+    });
+    const items = [...map.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([cat, amt]) => ({
+        cat,
+        amt,
+        pct: totalOut > 0 ? (amt / totalOut) * 100 : 0,
+      }));
+    const maxAmt = items.length > 0 ? items[0].amt : 1;
+    return { items, totalOut, maxAmt };
+  }, [transactions]);
+
+  // ── Net flow this month ──
+  const monthNet = monthIn - monthOut;
 
   // ── Filtered transactions ──
   const filteredTxns = useMemo(() => {
@@ -236,13 +282,6 @@ export default function AccountDetailScreen() {
       .slice(0, q || activeCategory ? 5 : 3);
   }, [transactions, activeCategory, searchQuery]);
 
-  // ── Progress bar widths ──
-  const outBarPct = monthIn > 0 ? Math.min((monthOut / monthIn) * 100, 100) : 0;
-  const countBarPct =
-    prevMonthCount > 0
-      ? Math.min((curMonthCount / prevMonthCount) * 100, 100)
-      : 50;
-
   // ── Last reconciled ──
   const lastReconciledLabel = selectedAccount?.last_reconciled_at
     ? new Date(selectedAccount.last_reconciled_at).toLocaleDateString('en-US', {
@@ -251,6 +290,21 @@ export default function AccountDetailScreen() {
         year: 'numeric',
       })
     : 'Never';
+
+  // ── Created date ──
+  const createdLabel = selectedAccount?.created_at
+    ? new Date(selectedAccount.created_at).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : '—';
+
+  // ── Current month label ──
+  const currentMonthLabel = new Date().toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
 
   // ── Other accounts for Transfer ──
   const otherAccounts = useMemo(
@@ -484,7 +538,7 @@ export default function AccountDetailScreen() {
         renderItem={renderTxn}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
         ListHeaderComponent={
           <>
             <LinearGradient
@@ -493,28 +547,39 @@ export default function AccountDetailScreen() {
               end={{ x: 1, y: 1 }}
               style={[
                 styles.hero,
-                { paddingTop: Math.max(insets.top, 16) + 10 },
+                { paddingTop: Math.max(insets.top, 16) + 8 },
               ]}
             >
               <View style={styles.heroTopBar}>
                 <TouchableOpacity
-                  style={styles.backBtn}
+                  style={styles.heroIconBtn}
                   onPress={() => navigation.goBack()}
+                  hitSlop={8}
                 >
-                  <Text style={styles.backBtnText}>← Back</Text>
+                  <Text style={styles.heroIconArrow}>←</Text>
                 </TouchableOpacity>
+                <View style={styles.heroTitleWrap}>
+                  <Text style={styles.heroTitleText} numberOfLines={1}>
+                    {selectedAccount.name}
+                  </Text>
+                  <Text style={styles.heroTitleSub} numberOfLines={1}>
+                    {(selectedAccount.type ?? 'ACCOUNT').toUpperCase()}
+                  </Text>
+                </View>
                 <TouchableOpacity
-                  style={styles.heroEditBtn}
-                  onPress={() => {
-                    setEditName(selectedAccount?.name ?? '');
-                    setEditType(selectedAccount?.type ?? '');
-                    setEditSheetVisible(true);
-                  }}
+                  style={styles.heroIconBtn}
+                  onPress={() =>
+                    navigation.navigate('Tabs', {
+                      screen: 'feed',
+                      params: {
+                        screen: 'FeedMain',
+                        params: { filterAccount: id },
+                      },
+                    })
+                  }
+                  hitSlop={8}
                 >
-                  <View style={styles.heroEditBtnInner}>
-                    <Icon name="edit" size={14} color="#FFFFFF" />
-                    <Text style={styles.backBtnText}>Edit</Text>
-                  </View>
+                  <Icon name="chart" size={16} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
 
@@ -522,6 +587,27 @@ export default function AccountDetailScreen() {
                 <View style={styles.cardWrapper}>
                   <WalletCard account={selectedAccount} />
                 </View>
+
+                {totalAccountsBalance > 0 && (
+                  <View style={styles.shareWrap}>
+                    <View style={styles.shareRow}>
+                      <Text style={styles.shareLabel}>
+                        Share of total wealth
+                      </Text>
+                      <Text style={styles.sharePct}>
+                        {sharePct.toFixed(0)}%
+                      </Text>
+                    </View>
+                    <View style={styles.shareTrack}>
+                      <View
+                        style={[
+                          styles.shareFill,
+                          { width: `${Math.min(Math.max(sharePct, 0), 100)}%` },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                )}
 
                 <View style={styles.quickActionsRow}>
                   <TouchableOpacity
@@ -538,129 +624,226 @@ export default function AccountDetailScreen() {
                       })
                     }
                   >
-                    <View style={styles.heroEditBtnInner}>
+                    <View style={styles.qaIcon}>
                       <Icon name="add" size={14} color="#FFFFFF" />
-                      <Text style={styles.qaBtnText}>Add Funds</Text>
                     </View>
+                    <Text style={styles.qaBtnText}>Add Funds</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.qaBtn}
                     onPress={() => setShowTransferModal(true)}
                   >
-                    <Text style={styles.qaBtnText}>↗ Transfer</Text>
+                    <View style={styles.qaIcon}>
+                      <Text style={styles.qaIconGlyph}>↗</Text>
+                    </View>
+                    <Text style={styles.qaBtnText}>Transfer</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.qaBtn}
+                    onPress={() => setAdjustSheetVisible(true)}
+                  >
+                    <View style={styles.qaIcon}>
+                      <Icon name="balance" size={14} color="#FFFFFF" />
+                    </View>
+                    <Text style={styles.qaBtnText}>Adjust</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             </LinearGradient>
 
-            <View style={styles.statsRow}>
-              <View style={styles.statChip}>
-                <Text style={styles.statLabel}>In (This Month)</Text>
-                <Text style={[styles.statValue, { color: colors.incomeGreen }]}>
-                  +{fmtPeso(monthIn)}
-                </Text>
-                <View style={styles.progressTrack}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      { width: '100%', backgroundColor: colors.incomeGreen },
-                    ]}
-                  />
+            {/* Money Flow card */}
+            <View style={styles.sectionPad}>
+              <View style={styles.flowCard}>
+                <View style={styles.flowHead}>
+                  <Text style={styles.flowTitle}>Money Flow</Text>
+                  <View style={styles.monthChip}>
+                    <Text style={styles.monthChipText}>
+                      {currentMonthLabel}
+                    </Text>
+                  </View>
                 </View>
-                {!!fmtTrend(monthIn, prevMonthIn) && (
-                  <Text
-                    style={[
-                      styles.trendText,
-                      {
-                        color:
-                          monthIn >= prevMonthIn
-                            ? colors.incomeGreen
-                            : colors.expenseRed,
-                      },
-                    ]}
-                  >
-                    {fmtTrend(monthIn, prevMonthIn)}
-                  </Text>
-                )}
-              </View>
+                <View style={styles.flowCols}>
+                  <View style={styles.flowCol}>
+                    <Text style={styles.flowColLabel}>In</Text>
+                    <Text
+                      style={[
+                        styles.flowColVal,
+                        { color: colors.incomeGreen },
+                      ]}
+                    >
+                      +{fmtPeso(monthIn)}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.flowColDelta,
+                        {
+                          color:
+                            monthIn === prevMonthIn
+                              ? colors.textSecondary
+                              : monthIn >= prevMonthIn
+                                ? colors.incomeGreen
+                                : colors.expenseRed,
+                        },
+                      ]}
+                    >
+                      {fmtTrend(monthIn, prevMonthIn) || '—'}
+                    </Text>
+                  </View>
+                  <View style={styles.flowDivider} />
+                  <View style={styles.flowCol}>
+                    <Text style={styles.flowColLabel}>Out</Text>
+                    <Text
+                      style={[
+                        styles.flowColVal,
+                        { color: colors.expenseRed },
+                      ]}
+                    >
+                      −{fmtPeso(monthOut)}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.flowColDelta,
+                        {
+                          color:
+                            monthOut === prevMonthOut
+                              ? colors.textSecondary
+                              : monthOut <= prevMonthOut
+                                ? colors.incomeGreen
+                                : colors.expenseRed,
+                        },
+                      ]}
+                    >
+                      {fmtTrend(monthOut, prevMonthOut) || '—'}
+                    </Text>
+                  </View>
+                  <View style={styles.flowDivider} />
+                  <View style={styles.flowCol}>
+                    <Text style={styles.flowColLabel}>Net</Text>
+                    <Text
+                      style={[
+                        styles.flowColVal,
+                        {
+                          color:
+                            monthNet >= 0
+                              ? colors.textPrimary
+                              : colors.expenseRed,
+                        },
+                      ]}
+                    >
+                      {monthNet >= 0 ? '+' : '−'}
+                      {fmtPeso(monthNet)}
+                    </Text>
+                    <Text style={styles.flowColDelta}>
+                      {curMonthCount} txn{curMonthCount === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                </View>
 
-              <View style={styles.statChip}>
-                <Text style={styles.statLabel}>Out (This Month)</Text>
-                <Text style={[styles.statValue, { color: colors.expenseRed }]}>
-                  −{fmtPeso(monthOut)}
-                </Text>
-                <View style={styles.progressTrack}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: `${outBarPct}%`,
-                        backgroundColor: colors.expenseRed,
-                      },
-                    ]}
-                  />
+                {/* 14-day sparkline */}
+                <View style={styles.sparkWrap}>
+                  {dailyFlow.days.map((d, i) => {
+                    const SPARK_H = 38;
+                    const total = d.in + d.out;
+                    const inH = total > 0 ? (d.in / dailyFlow.max) * SPARK_H : 0;
+                    const outH = total > 0 ? (d.out / dailyFlow.max) * SPARK_H : 0;
+                    return (
+                      <View key={i} style={styles.sparkBar}>
+                        <View
+                          style={[
+                            styles.sparkSeg,
+                            {
+                              height: outH,
+                              backgroundColor: colors.expenseRed,
+                              opacity: 0.85,
+                            },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.sparkSeg,
+                            {
+                              height: inH,
+                              backgroundColor: colors.incomeGreen,
+                              opacity: 0.9,
+                              marginTop: inH > 0 && outH > 0 ? 1 : 0,
+                            },
+                          ]}
+                        />
+                      </View>
+                    );
+                  })}
                 </View>
-                {!!fmtTrend(monthOut, prevMonthOut) && (
-                  <Text
-                    style={[
-                      styles.trendText,
-                      {
-                        color:
-                          monthOut <= prevMonthOut
-                            ? colors.incomeGreen
-                            : colors.expenseRed,
-                      },
-                    ]}
-                  >
-                    {fmtTrend(monthOut, prevMonthOut)}
-                  </Text>
-                )}
-              </View>
-
-              <View style={styles.statChip}>
-                <Text style={styles.statLabel}>Transactions</Text>
-                <Text style={styles.statValue}>{curMonthCount}</Text>
-                <View style={styles.progressTrack}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: `${countBarPct}%`,
-                        backgroundColor: colors.textSecondary,
-                      },
-                    ]}
-                  />
+                <View style={styles.sparkFoot}>
+                  <Text style={styles.sparkFootText}>14 days ago</Text>
+                  <Text style={styles.sparkFootText}>Today</Text>
                 </View>
-                {!!fmtTrendCount(curMonthCount, prevMonthCount) && (
-                  <Text style={styles.trendText}>
-                    {fmtTrendCount(curMonthCount, prevMonthCount)}
-                  </Text>
-                )}
               </View>
             </View>
 
-            <View style={styles.metaCard}>
-              <View>
-                <Text style={styles.metaLabel}>Last Reconciled</Text>
-                <Text style={styles.metaValue}>{lastReconciledLabel}</Text>
-              </View>
-              <TouchableOpacity
-                style={[
-                  styles.adjustBadge,
-                  { backgroundColor: `${config.color}22` },
-                ]}
-                onPress={() => setAdjustSheetVisible(true)}
-              >
-                <View style={styles.adjustBadgeInner}>
-                  <Icon name="balance" size={14} color={config.color} />
-                  <Text
-                    style={[styles.adjustBadgeText, { color: config.color }]}
+            {/* Top categories */}
+            {topCats.items.length > 0 && (
+              <View style={styles.sectionPad}>
+                <View style={styles.sectionHeaderInline}>
+                  <Text style={styles.sectionTitle}>Where it went</Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      navigation.navigate('Tabs', {
+                        screen: 'feed',
+                        params: {
+                          screen: 'FeedMain',
+                          params: { filterAccount: id },
+                        },
+                      })
+                    }
                   >
-                    Adjust Balance
-                  </Text>
+                    <Text style={[styles.seeAll, { color: config.color }]}>
+                      View breakdown →
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
-            </View>
+                <View style={styles.catCard}>
+                  {topCats.items.map((c, i) => {
+                    const { key, color: catColor } = getPillIcon(c.cat);
+                    const barW = (c.amt / topCats.maxAmt) * 100;
+                    return (
+                      <View
+                        key={c.cat}
+                        style={[styles.catRow, i > 0 && styles.catRowDivider]}
+                      >
+                        <CategoryIcon
+                          categoryKey={key}
+                          color={catColor}
+                          wrapperSize={32}
+                          size={16}
+                        />
+                        <View style={styles.catMeta}>
+                          <Text style={styles.catName}>
+                            {c.cat.charAt(0).toUpperCase() + c.cat.slice(1)}
+                          </Text>
+                          <View style={styles.catBar}>
+                            <View
+                              style={[
+                                styles.catBarFill,
+                                {
+                                  width: `${barW}%`,
+                                  backgroundColor: catColor,
+                                },
+                              ]}
+                            />
+                          </View>
+                        </View>
+                        <View style={styles.catRight}>
+                          <Text style={styles.catAmt}>−{fmtPeso(c.amt)}</Text>
+                          <Text style={styles.catPct}>
+                            {c.pct.toFixed(0)}% of out
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
 
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Recent Transactions</Text>
@@ -670,6 +853,7 @@ export default function AccountDetailScreen() {
                     setSearchVisible((v) => !v);
                     if (searchVisible) setSearchQuery('');
                   }}
+                  hitSlop={8}
                 >
                   <Icon name="search" size={18} color={colors.textSecondary} />
                 </TouchableOpacity>
@@ -688,7 +872,7 @@ export default function AccountDetailScreen() {
                   }
                 >
                   <Text style={[styles.seeAll, { color: config.color }]}>
-                    See all →
+                    See all{transactions.length ? ` (${transactions.length})` : ''} →
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -786,11 +970,59 @@ export default function AccountDetailScreen() {
           </Text>
         }
         ListFooterComponent={
-          <View style={styles.actionWrap}>
-            <TouchableOpacity onPress={() => setShowDeleteModal(true)}>
-              <Text style={styles.deleteLinkText}>Delete Account</Text>
-            </TouchableOpacity>
-          </View>
+          <>
+            <View style={styles.sectionPad}>
+              <View style={styles.detailsCard}>
+                <View style={styles.detailsHead}>
+                  <Text style={styles.detailsTitle}>Account details</Text>
+                  <View
+                    style={[
+                      styles.typeBadge,
+                      { backgroundColor: `${config.color}1F` },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.typeBadgeText, { color: config.color }]}
+                    >
+                      {(selectedAccount.type ?? 'Account').toLowerCase()}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.detailsRow}>
+                  <Text style={styles.detailsKey}>Last reconciled</Text>
+                  <Text style={styles.detailsVal}>{lastReconciledLabel}</Text>
+                </View>
+                <View style={styles.detailsRow}>
+                  <Text style={styles.detailsKey}>Created</Text>
+                  <Text style={styles.detailsVal}>{createdLabel}</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.detailsRow, styles.detailsRowLast]}
+                  onPress={() => {
+                    setEditName(selectedAccount?.name ?? '');
+                    setEditType(selectedAccount?.type ?? '');
+                    setEditSheetVisible(true);
+                  }}
+                >
+                  <Text style={styles.detailsKey}>Account name &amp; type</Text>
+                  <Text
+                    style={[styles.detailsEditLink, { color: config.color }]}
+                  >
+                    Edit →
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.actionWrap}>
+              <TouchableOpacity
+                style={styles.dangerBtn}
+                onPress={() => setShowDeleteModal(true)}
+              >
+                <Text style={styles.dangerBtnText}>Delete this account</Text>
+              </TouchableOpacity>
+            </View>
+          </>
         }
       />
 
@@ -964,7 +1196,6 @@ const createStyles = (colors: any, isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     scrollView: { flex: 1 },
-    contentContainer: { paddingBottom: 52 },
     containerCenter: {
       flex: 1,
       backgroundColor: colors.background,
@@ -1001,7 +1232,39 @@ const createStyles = (colors: any, isDark: boolean) =>
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: 16,
+      marginBottom: 14,
+    },
+    heroIconBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(255,255,255,0.18)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroIconArrow: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 18,
+      color: '#FFFFFF',
+      lineHeight: 20,
+    },
+    heroTitleWrap: {
+      flex: 1,
+      alignItems: 'center',
+      paddingHorizontal: 8,
+    },
+    heroTitleText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 14,
+      color: '#FFFFFF',
+      letterSpacing: 0.3,
+    },
+    heroTitleSub: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 9.5,
+      color: 'rgba(255,255,255,0.7)',
+      letterSpacing: 1.6,
+      marginTop: 2,
     },
     backBtn: {
       backgroundColor: 'rgba(255,255,255,0.2)',
@@ -1024,6 +1287,38 @@ const createStyles = (colors: any, isDark: boolean) =>
       fontFamily: 'Inter_600SemiBold',
       fontSize: 13,
       color: '#FFFFFF',
+    },
+    // Share-of-wealth strip
+    shareWrap: {
+      width: '100%',
+      marginTop: 16,
+      gap: 6,
+    },
+    shareRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    shareLabel: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 11,
+      color: 'rgba(255,255,255,0.78)',
+    },
+    sharePct: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 13,
+      color: '#FFFFFF',
+    },
+    shareTrack: {
+      height: 5,
+      borderRadius: 999,
+      backgroundColor: 'rgba(255,255,255,0.18)',
+      overflow: 'hidden',
+    },
+    shareFill: {
+      height: '100%',
+      borderRadius: 999,
+      backgroundColor: 'rgba(255,255,255,0.92)',
     },
     heroBody: { alignItems: 'center', paddingBottom: 16 },
     cardWrapper: {
@@ -1055,19 +1350,288 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: '#FFFFFF',
       letterSpacing: -1.5,
     },
-    quickActionsRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
-    qaBtn: {
-      backgroundColor: 'rgba(255,255,255,0.2)',
-      paddingVertical: 10,
-      paddingHorizontal: 20,
-      borderRadius: 12,
+    quickActionsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 18,
+      width: '100%',
     },
-    qaBtnText: {
+    qaBtn: {
+      flex: 1,
+      backgroundColor: 'rgba(255,255,255,0.16)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.18)',
+      paddingVertical: 10,
+      paddingHorizontal: 6,
+      borderRadius: 14,
+      alignItems: 'center',
+      gap: 5,
+    },
+    qaIcon: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: 'rgba(255,255,255,0.22)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    qaIconGlyph: {
       fontFamily: 'Inter_600SemiBold',
       fontSize: 13,
       color: '#FFFFFF',
+      lineHeight: 15,
     },
-    // Stats
+    qaBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: '#FFFFFF',
+    },
+    // Section helper
+    sectionPad: {
+      paddingHorizontal: spacing.screenPadding,
+      marginTop: 18,
+    },
+    sectionHeaderInline: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 4,
+      marginBottom: 10,
+    },
+    // Money Flow card
+    flowCard: {
+      backgroundColor: colors.white,
+      borderRadius: radius.card,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'transparent',
+    },
+    flowHead: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    flowTitle: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 13,
+      color: colors.textPrimary,
+    },
+    monthChip: {
+      backgroundColor: colors.background,
+      paddingVertical: 4,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+    },
+    monthChipText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: colors.textSecondary,
+    },
+    flowCols: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    flowCol: {
+      flex: 1,
+      paddingVertical: 4,
+    },
+    flowColLabel: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 9.5,
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+      marginBottom: 4,
+    },
+    flowColVal: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
+    flowColDelta: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 9.5,
+      color: colors.textSecondary,
+      marginTop: 3,
+    },
+    flowDivider: {
+      width: 1,
+      height: 36,
+      backgroundColor: isDark
+        ? 'rgba(255,255,255,0.08)'
+        : 'rgba(30,30,46,0.08)',
+      marginHorizontal: 4,
+    },
+    // Sparkline
+    sparkWrap: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      gap: 3,
+      height: 40,
+      marginTop: 14,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderTopColor: isDark
+        ? 'rgba(255,255,255,0.05)'
+        : 'rgba(30,30,46,0.06)',
+    },
+    sparkBar: {
+      flex: 1,
+      flexDirection: 'column',
+      justifyContent: 'flex-end',
+    },
+    sparkSeg: {
+      width: '100%',
+      borderRadius: 1.5,
+    },
+    sparkFoot: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 6,
+    },
+    sparkFootText: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 9,
+      color: colors.textSecondary,
+    },
+    // Top categories
+    catCard: {
+      backgroundColor: colors.white,
+      borderRadius: radius.card,
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'transparent',
+    },
+    catRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 9,
+    },
+    catRowDivider: {
+      borderTopWidth: 1,
+      borderTopColor: isDark
+        ? 'rgba(255,255,255,0.05)'
+        : 'rgba(30,30,46,0.06)',
+    },
+    catMeta: {
+      flex: 1,
+      gap: 5,
+    },
+    catName: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.textPrimary,
+    },
+    catBar: {
+      height: 4,
+      borderRadius: 999,
+      backgroundColor: isDark
+        ? 'rgba(255,255,255,0.06)'
+        : 'rgba(30,30,46,0.05)',
+      overflow: 'hidden',
+    },
+    catBarFill: {
+      height: '100%',
+      borderRadius: 999,
+    },
+    catRight: {
+      alignItems: 'flex-end',
+    },
+    catAmt: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 12.5,
+      color: colors.textPrimary,
+    },
+    catPct: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 9.5,
+      color: colors.textSecondary,
+      marginTop: 1,
+    },
+    // Account details card
+    detailsCard: {
+      backgroundColor: colors.white,
+      borderRadius: radius.card,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'transparent',
+    },
+    detailsHead: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingBottom: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: isDark
+        ? 'rgba(255,255,255,0.06)'
+        : 'rgba(30,30,46,0.06)',
+    },
+    detailsTitle: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 13,
+      color: colors.textPrimary,
+    },
+    typeBadge: {
+      paddingVertical: 4,
+      paddingHorizontal: 8,
+      borderRadius: 6,
+    },
+    typeBadgeText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 9,
+      letterSpacing: 1.2,
+      textTransform: 'uppercase',
+    },
+    detailsRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: isDark
+        ? 'rgba(255,255,255,0.05)'
+        : 'rgba(30,30,46,0.05)',
+    },
+    detailsRowLast: {
+      borderBottomWidth: 0,
+      paddingBottom: 0,
+    },
+    detailsKey: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 11.5,
+      color: colors.textSecondary,
+    },
+    detailsVal: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 12,
+      color: colors.textPrimary,
+    },
+    detailsEditLink: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.primary,
+    },
+    // Danger zone
+    dangerBtn: {
+      width: '100%',
+      paddingVertical: 12,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: 'rgba(192,80,58,0.35)',
+      borderStyle: 'dashed',
+      alignItems: 'center',
+      backgroundColor: 'transparent',
+    },
+    dangerBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.coralDark,
+    },
+    // Stats (legacy — kept to avoid breaking the loading skeleton)
     statsRow: {
       flexDirection: 'row',
       paddingHorizontal: spacing.screenPadding,

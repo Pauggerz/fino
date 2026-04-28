@@ -122,8 +122,7 @@ const RollingDigit = React.memo(
       // Animate forward from wherever the strip is now — modulo wrap in the
       // worklet handles the visual continuity. No snapping needed.
       const delta = (target - prev.current + 10) % 10;
-      const next =
-        translateY.value - (REEL_CYCLES * 10 + delta) * REEL_DIGIT_H;
+      const next = translateY.value - (REEL_CYCLES * 10 + delta) * REEL_DIGIT_H;
       translateY.value = withTiming(next, {
         duration,
         easing: Easing.out(Easing.cubic),
@@ -136,7 +135,7 @@ const RollingDigit = React.memo(
       // Wrap the shift distance into [0, REEL_CYCLE_H) so we only ever show
       // rows 0..10 of the strip regardless of how many cycles have elapsed.
       const raw = translateY.value;
-      const wrapped = (((-raw) % REEL_CYCLE_H) + REEL_CYCLE_H) % REEL_CYCLE_H;
+      const wrapped = ((-raw % REEL_CYCLE_H) + REEL_CYCLE_H) % REEL_CYCLE_H;
       return { transform: [{ translateY: -wrapped }] };
     });
 
@@ -360,19 +359,6 @@ function HomeScreen() {
           180,
           withSpring(0, { damping: 16, stiffness: 160 })
         );
-      } else {
-        // Lightweight re-entry on tab switches — keeps the screen feeling alive without a flash.
-        cardOpacity.value = 0.6;
-        cardTransY.value = 8;
-        belowOpacity.value = 0.55;
-        belowTransY.value = 10;
-        cardOpacity.value = withTiming(1, { duration: 200 });
-        cardTransY.value = withSpring(0, { damping: 20, stiffness: 220 });
-        belowOpacity.value = withDelay(40, withTiming(1, { duration: 220 }));
-        belowTransY.value = withDelay(
-          40,
-          withSpring(0, { damping: 20, stiffness: 200 })
-        );
       }
 
       const last = getLastSaved();
@@ -426,7 +412,7 @@ function HomeScreen() {
   const daysLeft = getDaysLeftInMonth();
   const totalBudget = useMemo(
     () => categories.reduce((s, c) => s + (c.budget_limit ?? 0), 0),
-    [categories],
+    [categories]
   );
   const pctSpent = totalBudget > 0 ? monthlyExpense / totalBudget : 0;
   const statusLabel = onTrackLabel(pctSpent);
@@ -437,9 +423,9 @@ function HomeScreen() {
   const SPARKLINE = useMemo(
     () =>
       sparklineData.map((bar, i) =>
-        i === sparklineData.length - 1 ? { ...bar, val: lastBarVal } : bar,
+        i === sparklineData.length - 1 ? { ...bar, val: lastBarVal } : bar
       ),
-    [sparklineData, lastBarVal],
+    [sparklineData, lastBarVal]
   );
 
   const delta = totalIncome - monthlyExpense;
@@ -687,18 +673,36 @@ function HomeScreen() {
             </View>
 
             <View style={styles.heroRow}>
-              <View style={[styles.heroCol, styles.heroColBorder]}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() =>
+                  navigation.navigate('feed', {
+                    screen: 'FeedMain',
+                    params: { initialViewType: 'income' },
+                  })
+                }
+                style={[styles.heroCol, styles.heroColBorder]}
+              >
                 <Text style={styles.heroColLabel}>Income</Text>
                 <Text style={styles.heroColVal}>
                   {isPrivacyMode ? '₱***' : `+${fmtPeso(totalIncome)}`}
                 </Text>
-              </View>
-              <View style={styles.heroCol}>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() =>
+                  navigation.navigate('feed', {
+                    screen: 'FeedMain',
+                    params: { initialViewType: 'expense' },
+                  })
+                }
+                style={styles.heroCol}
+              >
                 <Text style={styles.heroColLabel}>Spent</Text>
                 <Text style={styles.heroColVal}>
                   {isPrivacyMode ? '₱***' : `−${fmtPeso(monthlyExpense)}`}
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
           </TouchableOpacity>
 
@@ -934,8 +938,15 @@ function HomeScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
-  StyleSheet.create({
+const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) => {
+  const appleShadow = {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+  };
+  return StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: colors.background,
@@ -989,6 +1000,7 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       borderWidth: 1,
       borderColor: colors.onTrackBorder,
       backgroundColor: colors.onTrackBg1,
+      ...appleShadow,
     },
     sparkline: {
       flexDirection: 'row',
@@ -1018,11 +1030,7 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       overflow: 'hidden',
       paddingTop: 20,
       paddingBottom: 16,
-      shadowColor: colors.heroCardShadow,
-      shadowOffset: { width: 0, height: 14 },
-      shadowOpacity: 0.45,
-      shadowRadius: 32,
-      elevation: 12,
+      ...appleShadow,
     },
     blob: {
       position: 'absolute',
@@ -1184,7 +1192,12 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       gap: 10,
       marginBottom: 16,
     },
-    catTileWrap: { width: '47.5%' },
+    catTileWrap: {
+      width: '47.5%',
+      borderRadius: 24,
+      backgroundColor: colors.background,
+      ...appleShadow,
+    },
     catTile: {
       borderRadius: 24,
       height: 120,
@@ -1240,6 +1253,7 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       flexDirection: 'row',
       gap: 12,
       alignItems: 'flex-start',
+      ...appleShadow,
     },
     insightAvatar: {
       width: 36,
@@ -1341,5 +1355,6 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       color: colors.primary,
     },
   });
+};
 
 export default React.memo(HomeScreen);

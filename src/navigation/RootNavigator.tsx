@@ -61,6 +61,7 @@ export type FeedStackParamList = {
         filterCategory?: string;
         filterAccount?: string;
         filterSortOrder?: string;
+        initialViewType?: 'expense' | 'income';
       }
     | undefined;
 };
