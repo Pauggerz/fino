@@ -1079,7 +1079,9 @@ function FeedScreen() {
   );
 
   // ── View type: expense or income ──
-  const [viewType, setViewType] = useState<'expense' | 'income'>('expense');
+  const [viewType, setViewType] = useState<'expense' | 'income'>(
+    route.params?.initialViewType ?? 'expense'
+  );
 
   // ── Active category filter ──
   const [activeCategory, setActiveCategory] = useState(
@@ -1220,12 +1222,6 @@ function FeedScreen() {
           60,
           withSpring(0, { damping: 18, stiffness: 180 })
         );
-      } else {
-        // Lightweight re-entry on tab switches
-        listOpacity.value = 0.6;
-        listTransY.value = 6;
-        listOpacity.value = withTiming(1, { duration: 200 });
-        listTransY.value = withSpring(0, { damping: 20, stiffness: 220 });
       }
       startTransition(() => {
         refetch();
@@ -1255,6 +1251,12 @@ function FeedScreen() {
       setFilterSortOrder(route.params.filterSortOrder as SortOrder);
     }
   }, [route.params?.filterSortOrder]);
+
+  React.useEffect(() => {
+    if (route.params?.initialViewType !== undefined) {
+      setViewType(route.params.initialViewType);
+    }
+  }, [route.params?.initialViewType]);
 
   // Reset category filter when switching tabs
   const handleViewTypeSwitch = useCallback((type: 'expense' | 'income') => {
