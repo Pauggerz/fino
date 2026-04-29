@@ -65,7 +65,7 @@
       [
         "expo-share-intent",
         {
-          "iosShareExtensionName": "fino",
+          "iosShareExtensionName": "FinoShareExtension",
           "iosActivationRules": {
             "NSExtensionActivationSupportsImageWithMaxCount": 1
           },
