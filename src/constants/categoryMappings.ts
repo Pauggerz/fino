@@ -570,6 +570,7 @@ export const CATEGORY_EMOJI: Record<string, string> = {
   shopping: '🛍',
   bills: '⚡',
   health: '❤️',
+  others: '📦',
 };
 
 // Maps DB category key → tile background colour (matches theme.ts catXxxBg)
@@ -580,6 +581,7 @@ export const CATEGORY_TILE_BG: Record<string, string> = {
   shopping: '#FFF0F3',
   bills: '#F3EFFF',
   health: '#EFF8F2',
+  others: '#F2EFEC',
   // Income categories
   salary: '#EFF8F2',
   allowance: '#EEF6FF',
@@ -598,6 +600,7 @@ export const CATEGORY_COLOR: Record<string, string> = {
   shopping: '#C0503A',
   bills: '#7A4AB8',
   health: '#2d6a4f',
+  others: '#5C5550',
   // Income categories
   salary: '#2d6a4f',
   allowance: '#3A80C0',
@@ -607,6 +610,30 @@ export const CATEGORY_COLOR: Record<string, string> = {
   investment: '#1a7a6e',
   default: '#888780',
 };
+
+// Default expense categories — DB key + display name. New signups receive
+// these via the seed trigger; existing users get them backfilled by migration.
+// CategoryScreen uses this list to mark rows non-deletable (only customs
+// can be deleted) and to validate uniqueness against new-category names.
+export interface DefaultExpenseCategoryDef {
+  key: string;
+  name: string;
+  sortOrder: number;
+}
+
+export const DEFAULT_EXPENSE_CATEGORIES: DefaultExpenseCategoryDef[] = [
+  { key: 'food', name: 'Food', sortOrder: 0 },
+  { key: 'transport', name: 'Transport', sortOrder: 1 },
+  { key: 'shopping', name: 'Shopping', sortOrder: 2 },
+  { key: 'bills', name: 'Bills', sortOrder: 3 },
+  { key: 'health', name: 'Health', sortOrder: 4 },
+  { key: 'others', name: 'Others', sortOrder: 5 },
+];
+
+/** Set of default expense keys — used to gate the Delete action in CategoryScreen. */
+export const DEFAULT_EXPENSE_KEYS: ReadonlySet<string> = new Set(
+  DEFAULT_EXPENSE_CATEGORIES.map((c) => c.key),
+);
 
 // Income category definitions (used in AddTransactionSheet + FeedScreen)
 export interface IncomeCategoryDef {
@@ -623,3 +650,8 @@ export const INCOME_CATEGORIES: IncomeCategoryDef[] = [
   { key: 'investment', name: 'Investment' },
   { key: 'default', name: 'Others' },
 ];
+
+/** Set of income keys — used to filter income out of expense-only screens. */
+export const INCOME_KEYS: ReadonlySet<string> = new Set(
+  INCOME_CATEGORIES.map((c) => c.key),
+);

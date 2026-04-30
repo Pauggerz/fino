@@ -30,16 +30,12 @@ import {
 import { supabase } from '@/services/supabase';
 import { database } from '@/db';
 import type BillReminderModel from '@/db/models/BillReminder';
-import type CategoryModel from '@/db/models/Category';
 import {
   createAccount,
   createBillReminder,
   updateBillReminder,
   deleteBillReminder,
-  updateCategory,
 } from '@/services/localMutations';
-import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
-import { CategoryIcon } from '@/components/CategoryIcon';
 import { getCanonicalBrandName } from '@/components/WalletCard';
 import { Skeleton } from '@/components/Skeleton';
 import { spacing } from '../constants/theme';
@@ -75,18 +71,7 @@ const ACCOUNT_COLORS = [
   '#888780',
 ];
 
-const INCOME_KEYS = new Set(INCOME_CATEGORIES.map((c) => c.key));
-
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface BudgetCategory {
-  id: string;
-  name: string;
-  emoji: string | null;
-  budget_limit: number | null;
-  text_colour: string | null;
-  tile_bg_colour: string | null;
-}
 
 interface BillReminder {
   id: string;
@@ -425,187 +410,6 @@ function BillQuickViewModal({
           </View>
         </Pressable>
       </Pressable>
-    </Modal>
-  );
-}
-
-// ─── BUDGET SETTINGS MODAL ────────────────────────────────────────────────────
-
-function BudgetSettingsModal({
-  visible,
-  onClose,
-}: {
-  visible: boolean;
-  onClose: () => void;
-}) {
-  const { colors, isDark } = useTheme();
-  const modalStyles = useMemo(
-    () => createModalStyles(colors, isDark),
-    [colors, isDark]
-  );
-  const budgetStyles = useMemo(
-    () => createBudgetStyles(colors, isDark),
-    [colors, isDark]
-  );
-  const { user } = useAuth();
-  const userId = user?.id;
-
-  const [categories, setCategories] = useState<BudgetCategory[]>([]);
-  const [edits, setEdits] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!visible) return;
-    const run = async () => {
-      if (!userId) {
-        setCategories([]);
-        setEdits({});
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      const records = await database
-        .get<CategoryModel>('categories')
-        .query(
-          Q.where('user_id', userId),
-          Q.where('is_active', true),
-          Q.sortBy('sort_order', Q.asc)
-        )
-        .fetch();
-      const expenseOnly = records
-        .filter((cat) => !INCOME_KEYS.has((cat.emoji ?? '').toLowerCase()))
-        .map((cat) => ({
-          id: cat.id,
-          name: cat.name,
-          emoji: cat.emoji ?? null,
-          budget_limit: cat.budgetLimit ?? null,
-          text_colour: cat.textColour ?? null,
-          tile_bg_colour: cat.tileBgColour ?? null,
-        })) as BudgetCategory[];
-      setCategories(expenseOnly);
-      const initial: Record<string, string> = {};
-      expenseOnly.forEach((c) => {
-        initial[c.id] = c.budget_limit != null ? String(c.budget_limit) : '';
-      });
-      setEdits(initial);
-      setLoading(false);
-    };
-    run();
-  }, [visible, userId]);
-
-  const handleSave = async () => {
-    setSaving(true);
-    await Promise.all(
-      categories.map((cat) =>
-        updateCategory(cat.id, {
-          budgetLimit: parseFloat(edits[cat.id] || '0') || undefined,
-        })
-      )
-    );
-    setSaving(false);
-    onClose();
-  };
-
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <View style={modalStyles.sheet}>
-        <View style={modalStyles.handle} />
-        <View style={modalStyles.sheetHeader}>
-          <Text style={modalStyles.sheetTitle}>Budget Settings</Text>
-          <TouchableOpacity
-            onPress={onClose}
-            activeOpacity={0.7}
-            style={{ padding: 11 }}
-          >
-            <Ionicons name="close" size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        {loading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
-        ) : (
-          <ScrollView
-            contentContainerStyle={{ paddingBottom: 40 }}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View
-              style={{
-                backgroundColor: colors.catTileEmptyBg,
-                borderRadius: 12,
-                padding: 12,
-                marginBottom: 20,
-              }}
-            >
-              <Text style={budgetStyles.hint}>
-                Set monthly spending limits for each category. Leave blank for
-                no limit.
-              </Text>
-            </View>
-            {categories.map((cat) => {
-              const color = cat.text_colour ?? colors.textSecondary;
-              const bg = cat.tile_bg_colour ?? colors.catTileEmptyBg;
-              return (
-                <View key={cat.id} style={budgetStyles.catRow}>
-                  <View
-                    style={[
-                      budgetStyles.catIconCircle,
-                      { backgroundColor: bg },
-                    ]}
-                  >
-                    <CategoryIcon
-                      categoryKey={cat.name.toLowerCase()}
-                      color={color}
-                      size={18}
-                      wrapperSize={28}
-                    />
-                  </View>
-                  <Text style={[budgetStyles.catName, { color }]}>
-                    {cat.name}
-                  </Text>
-                  <View style={budgetStyles.budgetInputRow}>
-                    <Text style={budgetStyles.pesoSign}>₱</Text>
-                    <TextInput
-                      style={budgetStyles.budgetInput}
-                      value={edits[cat.id] ?? ''}
-                      onChangeText={(v) =>
-                        setEdits((prev) => ({
-                          ...prev,
-                          [cat.id]: v.replace(/[^0-9]/g, ''),
-                        }))
-                      }
-                      placeholder="No limit"
-                      placeholderTextColor={colors.textSecondary}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                </View>
-              );
-            })}
-            <TouchableOpacity
-              style={[
-                modalStyles.primaryBtn,
-                { marginTop: 24 },
-                saving && { opacity: 0.6 },
-              ]}
-              onPress={handleSave}
-              disabled={saving}
-              activeOpacity={0.8}
-            >
-              {saving ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={modalStyles.primaryBtnText}>Save Budgets</Text>
-              )}
-            </TouchableOpacity>
-          </ScrollView>
-        )}
-      </View>
     </Modal>
   );
 }
@@ -1101,7 +905,6 @@ function MoreScreen() {
     [colors, isDark]
   );
 
-  const [showBudgetSettings, setShowBudgetSettings] = useState(false);
   const [showBillReminders, setShowBillReminders] = useState(false);
   const [quickViewBill, setQuickViewBill] = useState<BillReminder | null>(null);
   const { forceSync } = useSync();
@@ -1117,7 +920,7 @@ function MoreScreen() {
 
   const handleToolPress = (id: string) => {
     if (id === 'fino') navigation.navigate('ChatScreen');
-    else if (id === 'budget') setShowBudgetSettings(true);
+    else if (id === 'budget') navigation.navigate('Categories');
     else if (id === 'bills') setShowBillReminders(true);
     else if (id === 'settings') setShowAppSettings(true);
     else if (id === 'splitter') navigation.navigate('BillSplitter');
@@ -1136,8 +939,8 @@ function MoreScreen() {
     },
     {
       id: 'budget',
-      label: 'Budget',
-      desc: 'Set monthly spending limits',
+      label: 'Category and Budget Set-up',
+      desc: 'Manage categories and monthly limits',
       icon: 'pie-chart',
       color: colors.primary,
       bg: colors.primaryLight,
@@ -1228,11 +1031,10 @@ function MoreScreen() {
           {/* Left content */}
           <View style={{ flex: 1 }}>
             <View style={styles.finoBadge}>
-              <FinoIntelIcon size={18} color={colors.insightPurple} />
               <Text
                 style={[styles.finoBadgeText, { color: colors.insightPurple }]}
               >
-                AI POWERED
+                Powered by Fino Intelligence
               </Text>
             </View>
             <Text
@@ -1253,7 +1055,7 @@ function MoreScreen() {
                 },
               ]}
             >
-              Your personal AI money coach. Ask anything about your finances.
+              Your personal AI money coach. Ask insights about your finances.
             </Text>
             <View
               style={[
@@ -1337,10 +1139,6 @@ function MoreScreen() {
         bill={quickViewBill}
         onClose={() => setQuickViewBill(null)}
         onPaid={() => setQuickViewBill(null)}
-      />
-      <BudgetSettingsModal
-        visible={showBudgetSettings}
-        onClose={() => setShowBudgetSettings(false)}
       />
       <BillRemindersModal
         visible={showBillReminders}
@@ -1898,55 +1696,6 @@ const createQuickStyles = (colors: any, isDark: boolean) =>
       fontFamily: 'Inter_400Regular',
       fontSize: 14,
       color: colors.textSecondary,
-    },
-  });
-
-const createBudgetStyles = (colors: any, isDark: boolean) =>
-  StyleSheet.create({
-    hint: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 13,
-      color: colors.textSecondary,
-      lineHeight: 19,
-    },
-    catRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 14,
-      gap: 12,
-    },
-    catIconCircle: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    catName: { fontFamily: 'Inter_600SemiBold', fontSize: 15, flex: 1 },
-    budgetInputRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 10,
-      overflow: 'hidden',
-      minWidth: 110,
-    },
-    pesoSign: {
-      fontFamily: 'DMMono_500Medium',
-      fontSize: 14,
-      color: colors.textSecondary,
-      paddingHorizontal: 12,
-      backgroundColor: colors.background,
-      paddingVertical: 12,
-    },
-    budgetInput: {
-      fontFamily: 'DMMono_500Medium',
-      fontSize: 14,
-      color: colors.textPrimary,
-      paddingVertical: 10,
-      paddingHorizontal: 8,
-      minWidth: 70,
     },
   });
 

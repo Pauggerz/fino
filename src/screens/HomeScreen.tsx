@@ -1000,7 +1000,6 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       borderWidth: 1,
       borderColor: colors.onTrackBorder,
       backgroundColor: colors.onTrackBg1,
-      ...appleShadow,
     },
     sparkline: {
       flexDirection: 'row',

@@ -33,6 +33,7 @@ const SavingsGoalScreen = lazy(() => import('../screens/SavingsGoalScreen'));
 const ScreenshotScreen = lazy(() => import('../screens/ScreenshotScreen'));
 const OnboardingScreen = lazy(() => import('../screens/OnboardingScreen'));
 const CashFlowScreen = lazy(() => import('../screens/CashFlowScreen'));
+const CategoryScreen = lazy(() => import('../screens/CategoryScreen'));
 const SankeyFullscreenScreen = lazy(
   () => import('../screens/SankeyFullscreenScreen')
 );
@@ -68,7 +69,7 @@ export type FeedStackParamList = {
 
 export type MoreStackParamList = {
   MoreMain: undefined;
-  AccountDetail: { id: string };
+  AccountDetail: { id: string; from?: 'home' };
 };
 
 export type TabStackParamList = {
@@ -98,6 +99,7 @@ export type RootStackParamList = {
   UtangTracker: undefined;
   SavingsGoal: undefined;
   CashFlow: { accountId?: string } | undefined;
+  Categories: undefined;
   TransactionDetail: { id: string };
   SankeyFullscreen: {
     income: number;
@@ -289,6 +291,11 @@ export default function RootNavigator() {
               name="CashFlow"
               component={CashFlowScreen}
               options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="Categories"
+              component={CategoryScreen}
+              options={{ headerShown: false, presentation: 'modal' }}
             />
             <Stack.Screen
               name="TransactionDetail"

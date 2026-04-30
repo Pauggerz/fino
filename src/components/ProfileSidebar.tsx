@@ -33,19 +33,19 @@ import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccounts } from '../hooks/useAccounts';
+import { useCategories } from '../hooks/useCategories';
 import { supabase } from '../services/supabase';
 import { Q } from '@nozbe/watermelondb';
 import { database } from '../db';
-import type CategoryModel from '../db/models/Category';
 import type BillReminderModel from '../db/models/BillReminder';
 import {
   ACCOUNT_LOGOS,
   ACCOUNT_AVATAR_OVERRIDE,
 } from '../constants/accountLogos';
 import { Skeleton } from './Skeleton';
+import { CategoryIcon } from './CategoryIcon';
 import { spacing, ACCENT_THEMES, ThemeColors } from '../constants/theme';
 import { AddAccountModal } from '../screens/MoreScreen';
-import { CategoryIcon } from './CategoryIcon';
 
 const { width: W, height: H } = Dimensions.get('window');
 const PANEL_W = Math.round(W * 0.88); // ~88% — leaves a peek on the left
@@ -150,6 +150,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
   const { user } = useAuth();
   const userId = user?.id;
   const { accounts, loading, refetch: refetchAccounts } = useAccounts();
+  const { categories, loading: loadingCategories } = useCategories();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
 
@@ -162,19 +163,9 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
   const [userInitial, setUserInitial] = useState('G');
 
   const [accountsExpanded, setAccountsExpanded] = useState(false);
-  const [budgetExpanded, setBudgetExpanded] = useState(false);
   const [billsExpanded, setBillsExpanded] = useState(false);
+  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
 
-  const [budgetCategories, setBudgetCategories] = useState<
-    {
-      id: string;
-      name: string;
-      emoji: string | null;
-      budget_limit: number | null;
-      text_colour: string | null;
-      tile_bg_colour: string | null;
-    }[]
-  >([]);
   const [bills, setBills] = useState<
     {
       id: string;
@@ -185,7 +176,6 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
       is_recurring: boolean;
     }[]
   >([]);
-  const [loadingBudget, setLoadingBudget] = useState(false);
   const [loadingBills, setLoadingBills] = useState(false);
 
   const [showSettings, setShowSettings] = useState(false);
@@ -213,29 +203,6 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
       }
     });
   }, [visible]);
-
-  // ── Fetch budget categories ──────────────────────────────────────────────
-  useEffect(() => {
-    if (!budgetExpanded || !userId) return;
-    setLoadingBudget(true);
-    database
-      .get<CategoryModel>('categories')
-      .query(Q.where('user_id', userId), Q.sortBy('name', Q.asc))
-      .fetch()
-      .then((records) => {
-        setBudgetCategories(
-          records.map((c) => ({
-            id: c.id,
-            name: c.name,
-            emoji: c.emoji ?? null,
-            budget_limit: c.budgetLimit ?? null,
-            text_colour: c.textColour ?? null,
-            tile_bg_colour: c.tileBgColour ?? null,
-          })),
-        );
-        setLoadingBudget(false);
-      });
-  }, [budgetExpanded, userId]);
 
   // ── Fetch bills ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -314,7 +281,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
         () =>
           navigation.navigate('more', {
             screen: 'AccountDetail',
-            params: { id },
+            params: { id, from: 'home' },
           }),
         260
       );
@@ -486,8 +453,8 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 color={colors.primary}
                 bg={isDark ? colors.primaryLight : '#E8F4EC'}
                 onPress={() => {
-                  setBudgetExpanded(false);
                   setBillsExpanded(false);
+                  setCategoriesExpanded(false);
                   setAccountsExpanded((v) => !v);
                 }}
                 colors={colors}
@@ -496,13 +463,13 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
               />
               <GridItem
                 icon="pie-chart-outline"
-                label="Budget"
+                label="Categories & Budget"
                 color={colors.statWarnBar}
                 bg={isDark ? '#3A2E1D' : '#FFF4E5'}
                 onPress={() => {
                   setAccountsExpanded(false);
                   setBillsExpanded(false);
-                  setBudgetExpanded((v) => !v);
+                  setCategoriesExpanded((v) => !v);
                 }}
                 colors={colors}
                 isDark={isDark}
@@ -515,7 +482,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 bg={isDark ? colors.lavenderLight : '#F0ECFD'}
                 onPress={() => {
                   setAccountsExpanded(false);
-                  setBudgetExpanded(false);
+                  setCategoriesExpanded(false);
                   setBillsExpanded((v) => !v);
                 }}
                 colors={colors}
@@ -650,89 +617,6 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                     Add new account
                   </Text>
                 </TouchableOpacity>
-              </View>
-            )}
-
-            {/* ── Budget expandable ── */}
-            {budgetExpanded && (
-              <View
-                style={[
-                  styles.accountsBlock,
-                  {
-                    backgroundColor: isDark ? colors.background : '#F8F8FA',
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                {loadingBudget ? (
-                  [0, 1, 2].map((i) => (
-                    <View key={i} style={styles.acctRow}>
-                      <Skeleton width={32} height={32} borderRadius={16} />
-                      <Skeleton
-                        width={100}
-                        height={12}
-                        style={{ marginLeft: 10, flex: 1 }}
-                      />
-                      <Skeleton width={60} height={12} />
-                    </View>
-                  ))
-                ) : budgetCategories.filter((c) => c.budget_limit != null)
-                    .length === 0 ? (
-                  <View style={[styles.acctRow, { borderBottomWidth: 0 }]}>
-                    <Text
-                      style={[
-                        styles.acctName,
-                        { color: colors.textSecondary, marginLeft: 0 },
-                      ]}
-                    >
-                      No budgets set yet
-                    </Text>
-                  </View>
-                ) : (
-                  budgetCategories
-                    .filter((c) => c.budget_limit != null)
-                    .map((cat, i, arr) => {
-                      const color = cat.text_colour ?? colors.primary;
-                      return (
-                        <View
-                          key={cat.id}
-                          style={[
-                            styles.acctRow,
-                            i === arr.length - 1 && { borderBottomWidth: 0 },
-                          ]}
-                        >
-                          <View style={styles.acctLeft}>
-                            <CategoryIcon
-                              categoryKey={cat.name.toLowerCase()}
-                              color={color}
-                              size={15}
-                              wrapperSize={32}
-                            />
-                            <Text
-                              style={[
-                                styles.acctName,
-                                { color: colors.textPrimary },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {cat.name}
-                            </Text>
-                          </View>
-                          <Text
-                            style={[
-                              styles.acctBalance,
-                              { color: colors.textPrimary },
-                            ]}
-                          >
-                            ₱
-                            {cat.budget_limit!.toLocaleString('en-PH', {
-                              minimumFractionDigits: 0,
-                            })}
-                          </Text>
-                        </View>
-                      );
-                    })
-                )}
               </View>
             )}
 
@@ -941,6 +825,117 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                     );
                   })
                 )}
+              </View>
+            )}
+
+            {/* ── Categories expandable ── */}
+            {categoriesExpanded && (
+              <View
+                style={[
+                  styles.accountsBlock,
+                  {
+                    backgroundColor: isDark ? colors.background : '#F8F8FA',
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                {loadingCategories ? (
+                  [0, 1, 2].map((i) => (
+                    <View key={i} style={styles.acctRow}>
+                      <Skeleton width={32} height={32} borderRadius={10} />
+                      <View style={{ flex: 1, gap: 5, marginLeft: 10 }}>
+                        <Skeleton width={110} height={11} />
+                        <Skeleton width={70} height={10} />
+                      </View>
+                      <Skeleton width={54} height={11} />
+                    </View>
+                  ))
+                ) : categories.length === 0 ? (
+                  <View style={[styles.acctRow, { borderBottomWidth: 0 }]}>
+                    <Text
+                      style={[
+                        styles.acctName,
+                        { color: colors.textSecondary, marginLeft: 0 },
+                      ]}
+                    >
+                      No categories yet
+                    </Text>
+                  </View>
+                ) : (
+                  categories.map((cat, i) => {
+                    const limit = cat.budget_limit;
+                    const stateColor =
+                      cat.state === 'over'
+                        ? colors.expenseRed
+                        : cat.state === 'nearing'
+                          ? colors.statWarnBar
+                          : colors.textSecondary;
+                    return (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[
+                          styles.acctRow,
+                          i === categories.length - 1 && {
+                            borderBottomWidth: 0,
+                          },
+                        ]}
+                        activeOpacity={0.65}
+                        onPress={() => {
+                          onClose();
+                          setTimeout(
+                            () => (navigation as any).navigate('Categories'),
+                            260,
+                          );
+                        }}
+                      >
+                        <View style={styles.acctLeft}>
+                          <CategoryIcon
+                            categoryKey={(cat.emoji ?? 'others').toLowerCase()}
+                            color={cat.text_colour ?? colors.textSecondary}
+                            size={16}
+                            wrapperSize={30}
+                          />
+                          <Text
+                            style={[
+                              styles.acctName,
+                              { color: colors.textPrimary },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {cat.name}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[styles.acctBalance, { color: stateColor }]}
+                        >
+                          {limit != null
+                            ? `₱${Math.round(cat.spent).toLocaleString('en-PH')} / ₱${Math.round(limit).toLocaleString('en-PH')}`
+                            : `₱${Math.round(cat.spent).toLocaleString('en-PH')}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+                <TouchableOpacity
+                  style={styles.addAcctRow}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    onClose();
+                    setTimeout(
+                      () => (navigation as any).navigate('Categories'),
+                      260,
+                    );
+                  }}
+                >
+                  <Ionicons
+                    name="settings-outline"
+                    size={16}
+                    color={colors.primary}
+                  />
+                  <Text style={[styles.addAcctText, { color: colors.primary }]}>
+                    Manage categories
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
 
