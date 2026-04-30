@@ -915,6 +915,7 @@ export default function AddTransactionSheet({ route }: Props) {
                   ))
                 : sortedAccounts.map((acc) => {
                     const isSel = accountId === acc.id;
+                    const isAutoSelected = isSel && accountAutoSet;
                     const logo = ACCOUNT_LOGOS[acc.name];
                     return (
                       <TouchableOpacity
@@ -958,6 +959,9 @@ export default function AddTransactionSheet({ route }: Props) {
                         >
                           {acc.name}
                         </Text>
+                        {isAutoSelected && (
+                          <Text style={styles.acctChipAiMark}>✦</Text>
+                        )}
                       </TouchableOpacity>
                     );
                   })}
@@ -988,6 +992,8 @@ export default function AddTransactionSheet({ route }: Props) {
                         ? cat.key
                         : (cat.emoji ?? '').toLowerCase();
                     const isSel = category === cat.name;
+                    const isAutoSelected =
+                      isSel && signalSource === 'ai_description';
                     const cs = resolveCategoryStyle(catKey);
                     return (
                       <TouchableOpacity
@@ -1027,6 +1033,13 @@ export default function AddTransactionSheet({ route }: Props) {
                         >
                           {cat.name}
                         </Text>
+                        {isAutoSelected && (
+                          <Text
+                            style={[styles.catChipAiMark, { color: cs.text }]}
+                          >
+                            ✦
+                          </Text>
+                        )}
                       </TouchableOpacity>
                     );
                   })}
@@ -1496,6 +1509,12 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.primary,
       fontFamily: 'Inter_700Bold',
     },
+    acctChipAiMark: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 11,
+      color: colors.primary,
+      marginLeft: 2,
+    },
     catChip: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1511,6 +1530,11 @@ const createStyles = (colors: any, isDark: boolean) =>
       fontFamily: 'Inter_600SemiBold',
       fontSize: 12,
       color: colors.textSecondary,
+    },
+    catChipAiMark: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 11,
+      marginLeft: 2,
     },
     chipIconWrap: {
       width: 26,
