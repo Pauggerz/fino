@@ -82,7 +82,7 @@ Rules:
 
 If a field cannot be found, set value to null and confidence to 0.`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     const geminiBody = JSON.stringify({
       contents: [{
         parts: [
@@ -90,7 +90,7 @@ If a field cannot be found, set value to null and confidence to 0.`;
           { text: prompt },
         ],
       }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 700 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 700, thinkingConfig: { thinkingBudget: 0 } },
     });
 
     // Retry once on 429 (rate-limit), waiting the suggested delay (capped at 10 s).

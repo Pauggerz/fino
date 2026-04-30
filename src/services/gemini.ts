@@ -49,10 +49,13 @@ const getModel = async (): Promise<GenerativeModel> => {
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(apiKey);
   cachedModel = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash',
     systemInstruction: SYSTEM_INSTRUCTION,
     generationConfig: {
       maxOutputTokens: 400,
+      // @ts-ignore — thinkingBudget: 0 disables hidden thinking tokens on gemini-2.5-flash,
+      // preventing rapid quota burn on the free tier
+      thinkingConfig: { thinkingBudget: 0 },
     },
   });
   return cachedModel;
