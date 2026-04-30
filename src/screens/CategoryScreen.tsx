@@ -31,6 +31,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Q } from '@nozbe/watermelondb';
 import { combineLatest, type Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
@@ -105,6 +106,7 @@ function findColorIdx(hex: string | null | undefined): number {
 
 export default function CategoryScreen() {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const userId = user?.id;
@@ -280,20 +282,44 @@ export default function CategoryScreen() {
     );
   }, []);
 
+  // ── Summary ────────────────────────────────────────────────────────────────
+  const totalBudget = rows.reduce(
+    (s, r) => s + (r.budget_limit ?? 0),
+    0,
+  );
+  const totalSpent = rows.reduce(
+    (s, r) => s + (spendByName[r.name.toLowerCase()] ?? 0),
+    0,
+  );
+  const budgetedCount = rows.filter((r) => r.budget_limit != null).length;
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <View style={[styles.screen, { backgroundColor: colors.white }]}>
-      {/* Handle + header */}
-      <View style={styles.handle} />
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.title}>Categories & Budget</Text>
         <TouchableOpacity
           onPress={closeScreen}
           activeOpacity={0.7}
-          style={styles.closeBtn}
-          hitSlop={12}
+          style={styles.backBtn}
+          hitSlop={8}
         >
-          <Ionicons name="close" size={22} color={colors.textSecondary} />
+          <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Categories & Budget</Text>
+          <Text style={styles.headerSub} numberOfLines={1}>
+            {rows.length} {rows.length === 1 ? 'category' : 'categories'}
+            {budgetedCount > 0 ? ` · ${budgetedCount} with budget` : ''}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => setAdding(true)}
+          activeOpacity={0.7}
+          style={styles.backBtn}
+          hitSlop={8}
+        >
+          <Ionicons name="add" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -304,24 +330,84 @@ export default function CategoryScreen() {
         />
       ) : (
         <ScrollView
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{
+            paddingHorizontal: spacing.screenPadding,
+            paddingBottom: 40,
+          }}
           showsVerticalScrollIndicator={false}
         >
+          {/* ── Summary card (matches HomeScreen onTrack info box) ── */}
+          {totalBudget > 0 && (
+            <View style={styles.summaryCard}>
+              <View style={styles.summaryAvatar}>
+                <Ionicons
+                  name="wallet-outline"
+                  size={20}
+                  color={colors.primary}
+                />
+              </View>
+
+              <View style={styles.summaryBody}>
+                <Text style={styles.summaryLabel}>SPENT THIS MONTH</Text>
+                <Text style={styles.summaryHeadline}>
+                  ₱{Math.round(totalSpent).toLocaleString('en-PH')}
+                  <Text style={styles.summaryHeadlineSub}>
+                    {' '}
+                    / ₱{Math.round(totalBudget).toLocaleString('en-PH')}
+                  </Text>
+                </Text>
+                <Text style={styles.summarySub}>
+                  {totalSpent >= totalBudget
+                    ? `Over budget by ₱${Math.round(totalSpent - totalBudget).toLocaleString('en-PH')}`
+                    : `₱${Math.round(totalBudget - totalSpent).toLocaleString('en-PH')} left across ${budgetedCount} ${budgetedCount === 1 ? 'category' : 'categories'}`}
+                </Text>
+
+                <View style={styles.summaryBarTrack}>
+                  <View
+                    style={[
+                      styles.summaryBarFill,
+                      {
+                        width: `${Math.min(100, (totalSpent / totalBudget) * 100)}%`,
+                        backgroundColor:
+                          totalSpent >= totalBudget
+                            ? colors.expenseRed
+                            : colors.primary,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            </View>
+          )}
+
           <Text style={styles.sectionLabel}>YOUR CATEGORIES</Text>
 
-          {rows.map((row) => {
-            const spent = spendByName[row.name.toLowerCase()] ?? 0;
-            return (
-              <CategoryListRow
-                key={row.id}
-                row={row}
-                spent={spent}
-                styles={styles}
-                colors={colors}
-                onPress={() => setEditing(row)}
-              />
-            );
-          })}
+          <View
+            style={[
+              styles.listCard,
+              {
+                backgroundColor: isDark
+                  ? colors.surfaceSubdued
+                  : colors.white,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            {rows.map((row, i) => {
+              const spent = spendByName[row.name.toLowerCase()] ?? 0;
+              return (
+                <CategoryListRow
+                  key={row.id}
+                  row={row}
+                  spent={spent}
+                  isLast={i === rows.length - 1}
+                  styles={styles}
+                  colors={colors}
+                  onPress={() => setEditing(row)}
+                />
+              );
+            })}
+          </View>
 
           <TouchableOpacity
             onPress={() => setAdding(true)}
@@ -384,21 +470,31 @@ export default function CategoryScreen() {
 function CategoryListRow({
   row,
   spent,
+  isLast,
   styles,
   colors,
   onPress,
 }: {
   row: CategoryRow;
   spent: number;
+  isLast: boolean;
   styles: ReturnType<typeof createStyles>;
   colors: ThemeColors;
   onPress: () => void;
 }) {
   const limit = row.budget_limit;
+  const pct = limit && limit > 0 ? Math.min(1, spent / limit) : 0;
+  const overBudget = limit != null && spent >= limit;
+  const nearing = limit != null && !overBudget && pct >= 0.7;
+  const barColor = overBudget
+    ? colors.expenseRed
+    : nearing
+      ? colors.statWarnBar
+      : row.text_colour;
   return (
     <TouchableOpacity
       activeOpacity={0.7}
-      style={styles.row}
+      style={[styles.row, isLast && { borderBottomWidth: 0 }]}
       onPress={onPress}
     >
       <CategoryIcon
@@ -408,20 +504,63 @@ function CategoryListRow({
         wrapperSize={36}
       />
       <View style={styles.rowMeta}>
-        <Text
-          style={[styles.rowName, { color: colors.textPrimary }]}
-          numberOfLines={1}
-        >
-          {row.name}
-        </Text>
-        <Text
-          style={[styles.rowSub, { color: colors.textSecondary }]}
-          numberOfLines={1}
-        >
-          {limit != null
-            ? `₱${spent.toLocaleString('en-PH', { maximumFractionDigits: 0 })} of ₱${limit.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`
-            : `₱${spent.toLocaleString('en-PH', { maximumFractionDigits: 0 })} spent · No limit`}
-        </Text>
+        <View style={styles.rowTopLine}>
+          <Text
+            style={[styles.rowName, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
+            {row.name}
+          </Text>
+          <Text
+            style={[
+              styles.rowAmount,
+              {
+                color: overBudget ? colors.expenseRed : colors.textPrimary,
+              },
+            ]}
+            numberOfLines={1}
+          >
+            ₱{spent.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+            {limit != null && (
+              <Text
+                style={[
+                  styles.rowAmountSub,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                {' '}
+                / ₱{limit.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+              </Text>
+            )}
+          </Text>
+        </View>
+        {limit != null ? (
+          <View
+            style={[
+              styles.rowBarTrack,
+              {
+                backgroundColor: colors.border,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.rowBarFill,
+                {
+                  width: `${pct * 100}%`,
+                  backgroundColor: barColor,
+                },
+              ]}
+            />
+          </View>
+        ) : (
+          <Text
+            style={[styles.rowSub, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            No monthly limit
+          </Text>
+        )}
       </View>
       <Ionicons
         name="chevron-forward"
@@ -512,30 +651,50 @@ function CategoryFormModal({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1, backgroundColor: colors.white }}
+        style={[styles.container, { backgroundColor: isDark ? colors.background : '#F7F5F2' }]}
       >
-        <View style={styles.handle} />
-        <View style={styles.header}>
-          <Text style={styles.title}>
-            {mode === 'add' ? 'New category' : 'Edit category'}
-          </Text>
+        <View style={styles.formTopBar}>
+          <View style={styles.formHandle} />
+        </View>
+        <View style={styles.formHeader}>
           <TouchableOpacity
             onPress={onClose}
             activeOpacity={0.7}
-            style={styles.closeBtn}
-            hitSlop={12}
+            style={styles.backBtn}
+            hitSlop={8}
           >
-            <Ionicons name="close" size={22} color={colors.textSecondary} />
+            <Ionicons name="close" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>
+              {mode === 'add' ? 'New category' : 'Edit category'}
+            </Text>
+            <Text style={styles.headerSub} numberOfLines={1}>
+              {mode === 'add'
+                ? 'Set a name, icon, and monthly budget'
+                : 'Update name, icon, color, or budget'}
+            </Text>
+          </View>
         </View>
 
         <ScrollView
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{
+            paddingHorizontal: spacing.screenPadding,
+            paddingBottom: 40,
+          }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           {/* Live preview */}
-          <View style={styles.previewWrap}>
+          <View
+            style={[
+              styles.previewCard,
+              {
+                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+                borderColor: colors.border,
+              },
+            ]}
+          >
             <CategoryIcon
               categoryKey={draft.iconKey}
               color={swatch}
@@ -545,6 +704,19 @@ function CategoryFormModal({
             <Text style={[styles.previewName, { color: colors.textPrimary }]}>
               {draft.name.trim() || 'Category name'}
             </Text>
+            {draft.budgetLimit ? (
+              <Text style={[styles.previewSub, { color: colors.textSecondary }]}>
+                ₱
+                {parseFloat(draft.budgetLimit || '0').toLocaleString('en-PH', {
+                  maximumFractionDigits: 0,
+                })}{' '}
+                / month
+              </Text>
+            ) : (
+              <Text style={[styles.previewSub, { color: colors.textSecondary }]}>
+                No monthly limit
+              </Text>
+            )}
           </View>
 
           {/* Name */}
@@ -555,72 +727,115 @@ function CategoryFormModal({
             placeholder="e.g. Coffee, Pets"
             placeholderTextColor={colors.textSecondary}
             maxLength={50}
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+              },
+            ]}
           />
 
-          {/* Icon picker */}
+          {/* Icon picker — horizontal scroll keeps the row compact and
+              scales gracefully as more icons are added to ICON_LIBRARY. */}
           <Text style={styles.fieldLabel}>ICON</Text>
-          <View style={styles.iconGrid}>
-            {ICON_LIBRARY.map((entry) => {
-              const active = draft.iconKey === entry.key;
-              return (
-                <TouchableOpacity
-                  key={entry.key}
-                  activeOpacity={0.75}
-                  onPress={() =>
-                    setDraft((d) => ({ ...d, iconKey: entry.key }))
-                  }
-                  style={[
-                    styles.iconCell,
-                    {
-                      backgroundColor: active
-                        ? swatch
-                        : isDark
-                          ? colors.surfaceSubdued
-                          : '#F4F4F8',
-                    },
-                  ]}
-                >
-                  <CategoryIcon
-                    categoryKey={entry.key}
-                    color={active ? '#FFFFFF' : colors.textSecondary}
-                    size={20}
-                    wrapperSize={36}
-                  />
-                </TouchableOpacity>
-              );
-            })}
+          <View
+            style={[
+              styles.pickerCard,
+              {
+                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pickerScrollContent}
+            >
+              {ICON_LIBRARY.map((entry) => {
+                const active = draft.iconKey === entry.key;
+                return (
+                  <TouchableOpacity
+                    key={entry.key}
+                    activeOpacity={0.75}
+                    onPress={() =>
+                      setDraft((d) => ({ ...d, iconKey: entry.key }))
+                    }
+                    style={[
+                      styles.iconCell,
+                      {
+                        backgroundColor: active
+                          ? swatch
+                          : isDark
+                            ? colors.background
+                            : '#F4F4F8',
+                      },
+                    ]}
+                  >
+                    <CategoryIcon
+                      categoryKey={entry.key}
+                      color={active ? '#FFFFFF' : colors.textSecondary}
+                      size={20}
+                      wrapperSize={36}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
 
-          {/* Colour picker */}
+          {/* Colour picker — horizontal scroll mirrors the icon row. */}
           <Text style={styles.fieldLabel}>COLOR</Text>
-          <View style={styles.colorRow}>
-            {CATEGORY_SWATCHES.map((c, i) => {
-              const active = draft.colorIdx === i;
-              return (
-                <TouchableOpacity
-                  key={c}
-                  activeOpacity={0.75}
-                  onPress={() => setDraft((d) => ({ ...d, colorIdx: i }))}
-                  style={[
-                    styles.colorSwatch,
-                    {
-                      backgroundColor: c,
-                      borderColor: active ? colors.textPrimary : 'transparent',
-                    },
-                  ]}
-                >
-                  {active && (
-                    <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+          <View
+            style={[
+              styles.pickerCard,
+              {
+                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pickerScrollContent}
+            >
+              {CATEGORY_SWATCHES.map((c, i) => {
+                const active = draft.colorIdx === i;
+                return (
+                  <TouchableOpacity
+                    key={c}
+                    activeOpacity={0.75}
+                    onPress={() => setDraft((d) => ({ ...d, colorIdx: i }))}
+                    style={[
+                      styles.colorSwatch,
+                      {
+                        backgroundColor: c,
+                        borderColor: active
+                          ? colors.textPrimary
+                          : 'transparent',
+                      },
+                    ]}
+                  >
+                    {active && (
+                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
 
           {/* Budget */}
           <Text style={styles.fieldLabel}>MONTHLY BUDGET</Text>
-          <View style={styles.pesoRow}>
+          <View
+            style={[
+              styles.pesoRow,
+              {
+                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+              },
+            ]}
+          >
             <Text style={styles.pesoSign}>₱</Text>
             <TextInput
               value={draft.budgetLimit}
@@ -682,64 +897,188 @@ function CategoryFormModal({
 
 const createStyles = (colors: ThemeColors, isDark: boolean) =>
   StyleSheet.create({
-    screen: {
+    container: {
       flex: 1,
-      paddingHorizontal: spacing.screenPadding,
-      paddingTop: 12,
+      backgroundColor: isDark ? colors.background : '#F7F5F2',
     },
-    handle: {
+
+    // ── Header (matches BillSplitterScreen) ──
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      gap: 10,
+      backgroundColor: isDark ? colors.background : '#F7F5F2',
+    },
+    backBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+    },
+    headerTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 20,
+      color: colors.textPrimary,
+    },
+    headerSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+      marginTop: 1,
+    },
+
+    // ── Form modal handle (subtle, top of pageSheet) ──
+    formTopBar: {
+      paddingTop: 12,
+      paddingBottom: 8,
+      alignItems: 'center',
+    },
+    formHandle: {
       width: 36,
       height: 4,
       backgroundColor: colors.border,
       borderRadius: 2,
-      alignSelf: 'center',
-      marginTop: 8,
-      marginBottom: 16,
     },
-    header: {
+    formHeader: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: 20,
-      paddingHorizontal: spacing.screenPadding,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 16,
+      gap: 10,
     },
-    title: {
-      fontFamily: 'Nunito_700Bold',
-      fontSize: 20,
-      color: colors.textPrimary,
-    },
-    closeBtn: { padding: 8 },
+
     sectionLabel: {
       fontFamily: 'Inter_700Bold',
       fontSize: 11,
       color: colors.textSecondary,
       letterSpacing: 0.6,
-      marginTop: 4,
+      marginTop: 18,
       marginBottom: 10,
+    },
+
+    // ── Summary card (mirrors HomeScreen onTrack info box) ──
+    summaryCard: {
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.onTrackBorder,
+      backgroundColor: colors.onTrackBg1,
+      padding: 16,
+      marginTop: 16,
+      flexDirection: 'row',
+      gap: 12,
+      alignItems: 'flex-start',
+    },
+    summaryAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.onTrackBg2,
+      borderWidth: 1,
+      borderColor: colors.onTrackBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    summaryBody: { flex: 1 },
+    summaryLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      color: colors.onTrackSub,
+      textTransform: 'uppercase',
+      letterSpacing: 0.7,
+      marginBottom: 4,
+    },
+    summaryHeadline: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 18,
+      color: colors.onTrackTitle,
+      marginBottom: 4,
+    },
+    summaryHeadlineSub: {
+      fontFamily: 'DMMono_400Regular',
+      fontSize: 13,
+      color: colors.onTrackSub,
+    },
+    summarySub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.onTrackSub,
+      lineHeight: 18,
+      marginBottom: 10,
+    },
+    summaryBarTrack: {
+      height: 6,
+      borderRadius: 3,
+      overflow: 'hidden',
+      backgroundColor: isDark
+        ? 'rgba(255,255,255,0.06)'
+        : 'rgba(45,106,79,0.12)',
+    },
+    summaryBarFill: {
+      height: '100%',
+      borderRadius: 3,
+    },
+
+    // ── List ──
+    listCard: {
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      overflow: 'hidden',
     },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
       paddingVertical: 12,
+      paddingHorizontal: 14,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: isDark ? colors.border : 'rgba(0,0,0,0.06)',
     },
-    rowMeta: { flex: 1, minWidth: 0, gap: 2 },
+    rowMeta: { flex: 1, minWidth: 0, gap: 6 },
+    rowTopLine: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'baseline',
+      gap: 8,
+    },
     rowName: {
       fontFamily: 'Inter_600SemiBold',
       fontSize: 14,
+      flexShrink: 1,
+    },
+    rowAmount: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 12,
+    },
+    rowAmountSub: {
+      fontFamily: 'DMMono_400Regular',
+      fontSize: 11,
     },
     rowSub: {
-      fontFamily: 'DMMono_400Regular',
+      fontFamily: 'Inter_400Regular',
       fontSize: 11.5,
     },
+    rowBarTrack: {
+      height: 4,
+      borderRadius: 2,
+      overflow: 'hidden',
+    },
+    rowBarFill: {
+      height: '100%',
+      borderRadius: 2,
+    },
+
     addRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
       paddingVertical: 14,
-      marginTop: 4,
+      marginTop: 8,
     },
     addIconWrap: {
       width: 36,
@@ -754,51 +1093,59 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
     },
 
     // ── Form modal ─────────────────────────────────────────────────────────
-    previewWrap: {
+    previewCard: {
       alignItems: 'center',
-      gap: 8,
-      paddingVertical: 18,
-      marginBottom: 8,
+      gap: 6,
+      paddingVertical: 22,
+      paddingHorizontal: 20,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginTop: 12,
+      marginBottom: 4,
     },
     previewName: {
       fontFamily: 'Nunito_700Bold',
       fontSize: 17,
+      marginTop: 6,
+    },
+    previewSub: {
+      fontFamily: 'DMMono_400Regular',
+      fontSize: 12,
     },
     fieldLabel: {
       fontFamily: 'Inter_700Bold',
       fontSize: 11,
       color: colors.textSecondary,
       letterSpacing: 0.6,
-      marginTop: 16,
+      marginTop: 18,
       marginBottom: 8,
     },
     input: {
-      borderWidth: 1,
+      borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       borderRadius: 12,
       paddingHorizontal: 14,
-      paddingVertical: 12,
+      paddingVertical: 14,
       fontFamily: 'Inter_400Regular',
       fontSize: 15,
       color: colors.textPrimary,
-      backgroundColor: colors.catTileEmptyBg,
     },
-    iconGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
+    pickerCard: {
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      paddingVertical: 12,
+    },
+    pickerScrollContent: {
+      paddingHorizontal: 12,
       gap: 10,
+      alignItems: 'center',
     },
     iconCell: {
-      width: 56,
-      height: 56,
+      width: 52,
+      height: 52,
       borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    colorRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 12,
     },
     colorSwatch: {
       width: 36,
@@ -811,7 +1158,7 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
     pesoRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      borderWidth: 1,
+      borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       borderRadius: 12,
       overflow: 'hidden',
@@ -820,14 +1167,13 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
       fontFamily: 'DMMono_500Medium',
       fontSize: 15,
       color: colors.textSecondary,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      backgroundColor: colors.catTileEmptyBg,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
     },
     pesoInput: {
       flex: 1,
       paddingHorizontal: 12,
-      paddingVertical: 12,
+      paddingVertical: 14,
       fontFamily: 'Inter_400Regular',
       fontSize: 15,
       color: colors.textPrimary,
