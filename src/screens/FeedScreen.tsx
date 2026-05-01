@@ -79,8 +79,14 @@ function tagBg(hex: string): string {
 }
 
 function getMonthRange(year: number, month: number): DateRange {
-  const from = new Date(year, month, 1).toISOString();
-  const to = new Date(year, month + 1, 0, 23, 59, 59, 999).toISOString();
+  // Local `date` column stores 'YYYY-MM-DD' (per the sync layer's toDayString),
+  // so the bounds must be in the same format. Returning ISO timestamps would
+  // make day-1 transactions fail `>=` because '2026-05-01' < '2026-05-01T...'
+  // under string comparison.
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const from = `${year}-${pad(month + 1)}-01`;
+  const to = `${year}-${pad(month + 1)}-${pad(lastDay)}`;
   return { from, to };
 }
 
@@ -808,6 +814,8 @@ const FeedControls = React.memo(
     totalEntries,
     sectionsLength,
     searchQuery,
+    monthLabel,
+    onAddTransaction,
   }: {
     styles: FeedStyles;
     colors: any;
@@ -821,6 +829,8 @@ const FeedControls = React.memo(
     totalEntries: number;
     sectionsLength: number;
     searchQuery: string;
+    monthLabel: string;
+    onAddTransaction: () => void;
   }) => {
     if (loading) {
       return <FeedSkeletonList styles={styles} />;
@@ -888,65 +898,135 @@ const FeedControls = React.memo(
 
         {!loading && sectionsLength === 0 && (
           <View style={styles.emptyState}>
-            {/* Branded receipt illustration */}
+            {/* Stats-themed illustration: ghost bar chart with trend line.
+                Suggests "this is where your insights will appear once you
+                start logging." Last bar is hollow to imply "next entry → you". */}
             <Svg
-              width={56}
-              height={64}
-              viewBox="0 0 56 64"
-              style={{ opacity: 0.55 }}
+              width={220}
+              height={120}
+              viewBox="0 0 220 120"
+              style={{ opacity: 0.9 }}
             >
-              {/* Receipt body */}
+              {/* Baseline axis */}
               <SvgPath
-                d="M6 2 L50 2 L50 58 L44 54 L38 58 L32 54 L26 58 L20 54 L14 58 L8 54 L6 58 Z"
-                fill={colors.primary}
-                opacity={0.12}
-                stroke={colors.primary}
-                strokeWidth="1.5"
-              />
-              {/* Lines */}
-              <SvgPath
-                d="M14 16 H42"
+                d="M10 100 H210"
                 stroke={colors.textSecondary}
-                strokeWidth="2"
-                strokeLinecap="round"
-                opacity="0.5"
-              />
-              <SvgPath
-                d="M14 24 H36"
-                stroke={colors.textSecondary}
-                strokeWidth="2"
-                strokeLinecap="round"
-                opacity="0.35"
-              />
-              <SvgPath
-                d="M14 32 H39"
-                stroke={colors.textSecondary}
-                strokeWidth="2"
-                strokeLinecap="round"
+                strokeWidth="1"
                 opacity="0.25"
               />
-              {/* Amount */}
+              {/* Dotted gridline */}
               <SvgPath
-                d="M14 42 H28"
-                stroke={colors.primary}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                opacity="0.6"
+                d="M10 60 H210"
+                stroke={colors.textSecondary}
+                strokeWidth="1"
+                strokeDasharray="3 5"
+                opacity="0.18"
+              />
+              {/* Filled bars (ghosted history) */}
+              <SvgPath
+                d="M22 100 V72 H40 V100 Z"
+                fill={colors.primary}
+                opacity="0.18"
               />
               <SvgPath
-                d="M34 42 H42"
+                d="M52 100 V52 H70 V100 Z"
+                fill={colors.primary}
+                opacity="0.28"
+              />
+              <SvgPath
+                d="M82 100 V64 H100 V100 Z"
+                fill={colors.primary}
+                opacity="0.22"
+              />
+              <SvgPath
+                d="M112 100 V40 H130 V100 Z"
+                fill={colors.primary}
+                opacity="0.34"
+              />
+              <SvgPath
+                d="M142 100 V58 H160 V100 Z"
+                fill={colors.primary}
+                opacity="0.26"
+              />
+              {/* Last bar — outlined, signals "your next entry goes here" */}
+              <SvgPath
+                d="M172 100 V32 H190 V100 Z"
+                fill="none"
                 stroke={colors.primary}
-                strokeWidth="2.5"
+                strokeWidth="1.5"
+                strokeDasharray="3 3"
+                opacity="0.7"
+              />
+              {/* Trend line over the bars */}
+              <SvgPath
+                d="M31 76 L61 56 L91 68 L121 44 L151 62 L181 36"
+                fill="none"
+                stroke={colors.primary}
+                strokeWidth="2"
                 strokeLinecap="round"
-                opacity="0.6"
+                strokeLinejoin="round"
+                opacity="0.85"
+              />
+              {/* Trend dots */}
+              <SvgPath
+                d="M31 76 m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"
+                fill={colors.primary}
+                opacity="0.85"
+              />
+              <SvgPath
+                d="M61 56 m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"
+                fill={colors.primary}
+                opacity="0.85"
+              />
+              <SvgPath
+                d="M91 68 m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"
+                fill={colors.primary}
+                opacity="0.85"
+              />
+              <SvgPath
+                d="M121 44 m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"
+                fill={colors.primary}
+                opacity="0.85"
+              />
+              <SvgPath
+                d="M151 62 m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"
+                fill={colors.primary}
+                opacity="0.85"
+              />
+              {/* Final dot — hollow, matches the outlined bar */}
+              <SvgPath
+                d="M181 36 m-3 0 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0"
+                fill={colors.white ?? '#FFFFFF'}
+                stroke={colors.primary}
+                strokeWidth="1.8"
+                opacity="0.9"
               />
             </Svg>
-            <Text style={styles.emptyStateTitle}>No transactions</Text>
+            <Text style={styles.emptyStateTitle}>
+              {searchQuery.length > 0
+                ? 'No matches'
+                : `Nothing in ${monthLabel} yet`}
+            </Text>
             <Text style={styles.emptyStateText}>
               {searchQuery.length > 0
                 ? 'No results for your search.'
-                : 'No transactions recorded for this period.'}
+                : `You don't have any transactions in ${monthLabel}. Use the month picker above to view another month, or add one now.`}
             </Text>
+            {searchQuery.length === 0 && (
+              <TouchableOpacity
+                style={[
+                  styles.emptyStateCta,
+                  { backgroundColor: colors.primary },
+                ]}
+                activeOpacity={0.85}
+                onPress={onAddTransaction}
+              >
+                <Ionicons name="add" size={16} color="#FFFFFF" />
+                <Text style={styles.emptyStateCtaText}>
+                  Add transaction for {monthLabel}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>
@@ -1279,13 +1359,18 @@ function FeedScreen() {
   // ── Filter chip options ──
   // Fresh arrays per render previously broke FeedControls' React.memo — every
   // keystroke in the search box re-rendered the chip carousel.
-  const filterOptions = useMemo<string[]>(
-    () =>
-      viewType === 'income'
-        ? INCOME_FILTER_OPTIONS
-        : ['All', ...categories.map((c) => c.name)],
-    [viewType, categories]
-  );
+  const filterOptions = useMemo<string[]>(() => {
+    if (viewType === 'income') return INCOME_FILTER_OPTIONS;
+    const seen = new Set<string>();
+    const names: string[] = ['All'];
+    for (const c of categories) {
+      const k = c.name.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      names.push(c.name);
+    }
+    return names;
+  }, [viewType, categories]);
 
   // O(1) category lookup for FeedTransactionRow. Was a linear .find() per row,
   // per render — the single biggest scroll-frame cost in the profiler.
@@ -1551,6 +1636,11 @@ function FeedScreen() {
     [navigation]
   );
 
+  const handleAddTransaction = useCallback(
+    () => navigation.navigate('AddTransaction'),
+    [navigation]
+  );
+
   const totalEntries = useMemo(
     () => sections.reduce((s, sec) => s + sec.data.length, 0),
     [sections]
@@ -1624,6 +1714,8 @@ function FeedScreen() {
             totalEntries={totalEntries}
             sectionsLength={sections.length}
             searchQuery={searchQuery}
+            monthLabel={monthLabel}
+            onAddTransaction={handleAddTransaction}
           />
         );
       }
@@ -1682,6 +1774,7 @@ function FeedScreen() {
       periodRanges.deltaLabel,
       handleTxPress,
       handleDeleteTransaction,
+      handleAddTransaction,
     ]
   );
 
@@ -2434,6 +2527,20 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       color: colors.textSecondary,
       textAlign: 'center' as const,
       paddingHorizontal: 32,
+    },
+    emptyStateCta: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      gap: 6,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 999,
+      marginTop: 16,
+    },
+    emptyStateCtaText: {
+      fontFamily: 'Nunito_700Bold',
+      fontSize: 13,
+      color: '#FFFFFF',
     },
   });
 

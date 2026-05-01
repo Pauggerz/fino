@@ -126,8 +126,15 @@ export const useCategories = () => {
           spendMap[key] = (spendMap[key] ?? 0) + tx.amount;
         }
 
+        const seenNames = new Set<string>();
         const enriched: CategoryWithSpend[] = categoryRecords
-          .filter((cat) => !INCOME_CATEGORY_NAMES.has(cat.name.toLowerCase()))
+          .filter((cat) => {
+            const lower = cat.name.toLowerCase();
+            if (INCOME_CATEGORY_NAMES.has(lower)) return false;
+            if (seenNames.has(lower)) return false;
+            seenNames.add(lower);
+            return true;
+          })
           .map((cat) => {
             const plain = toPlain(cat);
             const spent = spendMap[plain.name.toLowerCase()] ?? 0;
