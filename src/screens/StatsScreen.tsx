@@ -25,6 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSharedValue, withTiming } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Q } from '@nozbe/watermelondb';
+import Svg, { Path as SvgPath, Circle as SvgCircle } from 'react-native-svg';
 
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -667,6 +668,34 @@ function InsightsScreen() {
     );
   }
 
+  if (!loading && bundle.txCount === 0) {
+    return (
+      <InsightsEmptyState
+        styles={styles}
+        colors={colors}
+        monthLabel={monthNavLabel}
+        isCurrentMonth={isCurrentMonth}
+        onAdd={() => navigation.navigate('AddTransaction')}
+        onPrevMonth={handlePrevMonth}
+        onNextMonth={handleNextMonth}
+        onPickMonth={() => setMonthPickerVisible(true)}
+        monthPickerModal={
+          <MonthPickerModal
+            visible={monthPickerVisible}
+            year={selectedYear}
+            month={selectedMonth}
+            onConfirm={(y, m) => {
+              setSelectedYear(y);
+              setSelectedMonth(m);
+              setMonthPickerVisible(false);
+            }}
+            onClose={() => setMonthPickerVisible(false)}
+          />
+        }
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -772,27 +801,44 @@ function InsightsScreen() {
             txCount={bundle.txCount}
             daysElapsed={daysElapsed}
           />
-          <MoneyFlowSankey
-            income={bundle.totalIncome}
-            savings={bundle.totalIncome - bundle.totalExpense}
-            expenseNodes={sankeyExpenseNodes}
-            onExpand={() =>
-              navigation.navigate('SankeyFullscreen', {
-                income: bundle.totalIncome,
-                savings: bundle.totalIncome - bundle.totalExpense,
-                expenseNodes: sankeyExpenseNodes,
-              })
+          <NeedMoreData
+            enough={bundle.totalIncome > 0 && bundle.totalExpense > 0}
+            needed={2}
+            current={
+              (bundle.totalIncome > 0 ? 1 : 0) +
+              (bundle.totalExpense > 0 ? 1 : 0)
             }
-          />
-          <TrajectoryChart
-            cumulative={bundle.cumulativeByDay}
-            budget={bundle.totalBudget}
-            daysInMonth={daysInMonth}
-            daysElapsed={daysElapsed}
-            dailyData={bundle.dailySeries}
-            dailyMax={bundle.dailyMax}
-            isCurrentMonth={isCurrentMonth}
-          />
+            colors={colors}
+          >
+            <MoneyFlowSankey
+              income={bundle.totalIncome}
+              savings={bundle.totalIncome - bundle.totalExpense}
+              expenseNodes={sankeyExpenseNodes}
+              onExpand={() =>
+                navigation.navigate('SankeyFullscreen', {
+                  income: bundle.totalIncome,
+                  savings: bundle.totalIncome - bundle.totalExpense,
+                  expenseNodes: sankeyExpenseNodes,
+                })
+              }
+            />
+          </NeedMoreData>
+          <NeedMoreData
+            enough={bundle.txCount >= 5}
+            needed={5}
+            current={bundle.txCount}
+            colors={colors}
+          >
+            <TrajectoryChart
+              cumulative={bundle.cumulativeByDay}
+              budget={bundle.totalBudget}
+              daysInMonth={daysInMonth}
+              daysElapsed={daysElapsed}
+              dailyData={bundle.dailySeries}
+              dailyMax={bundle.dailyMax}
+              isCurrentMonth={isCurrentMonth}
+            />
+          </NeedMoreData>
         </View>
 
         {/* 4: SECTION 02 — Where it went */}
@@ -826,7 +872,14 @@ function InsightsScreen() {
                 DAY-OF-WEEK PATTERN
               </Text>
             </View>
-            <DowPatternChart dowAvg={bundle.dowAvg} colors={colors} />
+            <NeedMoreData
+              enough={bundle.txCount >= 5}
+              needed={5}
+              current={bundle.txCount}
+              colors={colors}
+            >
+              <DowPatternChart dowAvg={bundle.dowAvg} colors={colors} />
+            </NeedMoreData>
           </View>
           <View
             style={[
@@ -839,11 +892,18 @@ function InsightsScreen() {
                 TIME-OF-DAY PATTERN
               </Text>
             </View>
-            <TimeOfDayChart
-              todTotals={bundle.todTotals}
-              todCounts={bundle.todCounts}
+            <NeedMoreData
+              enough={bundle.txCount >= 5}
+              needed={5}
+              current={bundle.txCount}
               colors={colors}
-            />
+            >
+              <TimeOfDayChart
+                todTotals={bundle.todTotals}
+                todCounts={bundle.todCounts}
+                colors={colors}
+              />
+            </NeedMoreData>
           </View>
         </View>
 
@@ -866,6 +926,288 @@ function InsightsScreen() {
 }
 
 // ─── Subcomponents ──────────────────────────────────────────────────────────
+
+function InsightsEmptyState({
+  styles,
+  colors,
+  monthLabel,
+  isCurrentMonth,
+  onAdd,
+  onPrevMonth,
+  onNextMonth,
+  onPickMonth,
+  monthPickerModal,
+}: {
+  styles: ReturnType<typeof createStyles>;
+  colors: any;
+  monthLabel: string;
+  isCurrentMonth: boolean;
+  onAdd: () => void;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
+  onPickMonth: () => void;
+  monthPickerModal: React.ReactNode;
+}) {
+  return (
+    <View style={styles.container}>
+      <View style={styles.headerRow}>
+        <Text style={styles.headerTitle}>Insights</Text>
+      </View>
+
+      <View style={[styles.monthPillRow, emptyStyles.monthPillRowOverride]}>
+        <View
+          style={[
+            styles.monthPill,
+            { backgroundColor: colors.white, borderColor: colors.border },
+          ]}
+        >
+          <Pressable
+            onPress={onPrevMonth}
+            style={[
+              styles.monthArrow,
+              { backgroundColor: colors.surfaceSubdued },
+            ]}
+          >
+            <Ionicons name="chevron-back" size={14} color={colors.textSecondary} />
+          </Pressable>
+          <Pressable onPress={onPickMonth} style={styles.monthLabelBtn}>
+            <Text style={[styles.monthLabel, { color: colors.textPrimary }]}>
+              {monthLabel}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={onNextMonth}
+            style={[
+              styles.monthArrow,
+              { backgroundColor: colors.surfaceSubdued },
+            ]}
+          >
+            <Ionicons
+              name="chevron-forward"
+              size={14}
+              color={colors.textSecondary}
+            />
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={emptyStyles.wrap}>
+        {/* Stats-themed background — donut + bars + sparkline */}
+        <Svg width={260} height={180} viewBox="0 0 260 180" style={{ opacity: 0.95 }}>
+          {/* Donut (top-left) */}
+          <SvgPath
+            d="M50 30 a40 40 0 1 1 -0.001 0"
+            fill="none"
+            stroke={colors.primary}
+            strokeWidth="10"
+            opacity="0.18"
+          />
+          <SvgPath
+            d="M50 30 a40 40 0 0 1 36 22"
+            fill="none"
+            stroke={colors.primary}
+            strokeWidth="10"
+            strokeLinecap="round"
+            opacity="0.55"
+          />
+          <SvgPath
+            d="M86 52 a40 40 0 0 1 -8 50"
+            fill="none"
+            stroke={colors.primary}
+            strokeWidth="10"
+            strokeLinecap="round"
+            opacity="0.35"
+          />
+          <SvgCircle cx="50" cy="70" r="26" fill={colors.white ?? '#FFFFFF'} />
+          <SvgPath
+            d="M40 70 H60 M50 60 V80"
+            stroke={colors.primary}
+            strokeWidth="2"
+            strokeLinecap="round"
+            opacity="0.85"
+          />
+
+          {/* Bars (top-right) */}
+          <SvgPath d="M130 100 V70 H146 V100 Z" fill={colors.primary} opacity="0.22" />
+          <SvgPath d="M152 100 V50 H168 V100 Z" fill={colors.primary} opacity="0.34" />
+          <SvgPath d="M174 100 V60 H190 V100 Z" fill={colors.primary} opacity="0.26" />
+          <SvgPath
+            d="M196 100 V36 H212 V100 Z"
+            fill="none"
+            stroke={colors.primary}
+            strokeWidth="1.5"
+            strokeDasharray="3 3"
+            opacity="0.7"
+          />
+          <SvgPath
+            d="M124 100 H218"
+            stroke={colors.textSecondary}
+            strokeWidth="1"
+            opacity="0.25"
+          />
+
+          {/* Sparkline across the bottom */}
+          <SvgPath
+            d="M14 150 Q40 132 64 142 T120 130 T180 138 T246 118"
+            fill="none"
+            stroke={colors.primary}
+            strokeWidth="2"
+            strokeLinecap="round"
+            opacity="0.6"
+          />
+          {/* Sparkline endpoint */}
+          <SvgCircle cx="246" cy="118" r="4" fill={colors.white ?? '#FFFFFF'} stroke={colors.primary} strokeWidth="2" opacity="0.95" />
+        </Svg>
+
+        <Text style={emptyStyles.title}>
+          {isCurrentMonth
+            ? 'No insights yet'
+            : `Nothing logged in ${monthLabel}`}
+        </Text>
+        <Text style={[emptyStyles.body, { color: colors.textSecondary }]}>
+          {isCurrentMonth
+            ? `Add transactions to see your insights for ${monthLabel} — cash flow, top categories, spending patterns, and more.`
+            : `You didn't log any transactions in ${monthLabel}. Use the picker above to view another month, or add a transaction now.`}
+        </Text>
+
+        <TouchableOpacity
+          style={[emptyStyles.cta, { backgroundColor: colors.primary }]}
+          activeOpacity={0.85}
+          onPress={onAdd}
+        >
+          <Ionicons name="add" size={16} color="#FFFFFF" />
+          <Text style={emptyStyles.ctaText}>
+            Add transaction{isCurrentMonth ? '' : ` for ${monthLabel}`}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {monthPickerModal}
+    </View>
+  );
+}
+
+const emptyStyles = StyleSheet.create({
+  // The normal stats render puts monthPillRow inside a ScrollView whose
+  // contentContainer adds horizontal padding. Empty state renders it at the
+  // screen root, so it needs the same padding here to line up with the title.
+  monthPillRowOverride: {
+    paddingHorizontal: 16,
+  },
+  wrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingBottom: 80,
+    gap: 10,
+  },
+  title: {
+    fontFamily: 'Nunito_800ExtraBold',
+    fontSize: 20,
+    marginTop: 12,
+  },
+  body: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  cta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 999,
+    marginTop: 14,
+  },
+  ctaText: {
+    fontFamily: 'Nunito_700Bold',
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+});
+
+function NeedMoreData({
+  enough,
+  needed,
+  current,
+  colors,
+  children,
+}: {
+  enough: boolean;
+  needed: number;
+  current: number;
+  colors: any;
+  children: React.ReactNode;
+}) {
+  if (enough) return <>{children}</>;
+  return (
+    <View style={needMoreStyles.wrap}>
+      <View style={needMoreStyles.faded} pointerEvents="none">
+        {children}
+      </View>
+      <View
+        style={[
+          needMoreStyles.overlay,
+          {
+            backgroundColor: (colors.white ?? '#FFFFFF') + 'E6',
+            borderColor: colors.cardBorderTransparent,
+          },
+        ]}
+      >
+        <Ionicons
+          name="bar-chart-outline"
+          size={18}
+          color={colors.textSecondary}
+        />
+        <Text
+          style={[needMoreStyles.title, { color: colors.textPrimary }]}
+        >
+          Needs more data
+        </Text>
+        <Text
+          style={[needMoreStyles.sub, { color: colors.textSecondary }]}
+        >
+          Log {Math.max(needed - current, 1)} more transaction
+          {needed - current === 1 ? '' : 's'} this month to unlock this chart.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const needMoreStyles = StyleSheet.create({
+  wrap: {
+    position: 'relative',
+  },
+  faded: {
+    opacity: 0.25,
+  },
+  overlay: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    top: '50%',
+    transform: [{ translateY: -42 }],
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  title: {
+    fontFamily: 'Nunito_700Bold',
+    fontSize: 13,
+  },
+  sub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    textAlign: 'center',
+  },
+});
 
 function SectionLabel({ num, title, colors }: { num: string; title: string; colors: any }) {
   return (
