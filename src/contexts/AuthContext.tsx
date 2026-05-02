@@ -17,6 +17,7 @@ interface AuthContextData {
   profile: User | null;
   isLoading: boolean;
   profileError: boolean;
+  isPro: boolean;
   refreshProfile: () => Promise<void>;
 }
 
@@ -127,9 +128,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Memoized so every sync / unrelated re-render in the tree above us doesn't
   // recreate the value object and cascade re-renders through every useAuth()
   // consumer (and their children).
+  const isPro = profile?.is_pro ?? false;
+
   const value = useMemo<AuthContextData>(
-    () => ({ session, user, profile, isLoading, profileError, refreshProfile }),
-    [session, user, profile, isLoading, profileError, refreshProfile],
+    () => ({
+      session,
+      user,
+      profile,
+      isLoading,
+      profileError,
+      isPro,
+      refreshProfile,
+    }),
+    [session, user, profile, isLoading, profileError, isPro, refreshProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

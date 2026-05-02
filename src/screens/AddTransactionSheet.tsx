@@ -6,6 +6,7 @@ import React, {
   useMemo,
 } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   View,
   Text,
@@ -49,6 +50,7 @@ import {
   type Category,
 } from '../services/aiCategoryMap';
 import { suggestCategory } from '../services/IntelligenceEngine';
+import { suggestCategoryWithGemini } from '../services/gemini';
 import { useAuth } from '../contexts/AuthContext';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -112,7 +114,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const aiTextRef = useRef('');
 
   // Data Hooks
-  const { user } = useAuth();
+  const { user, isPro } = useAuth();
   const { accounts, loading: accountsLoading } = useAccounts();
   const { categories, loading: categoriesLoading } = useCategories();
 
@@ -167,6 +169,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>(
     'manual'
   );
+  const [geminiPending, setGeminiPending] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardPrompt, setShowDiscardPrompt] = useState(false);
   const [showAmountLimitToast, setShowAmountLimitToast] = useState(false);
@@ -447,6 +450,7 @@ export default function AddTransactionSheet({ route }: Props) {
     if (!trimmed) {
       analyzer.cancel();
       setSignalSource('manual');
+      setGeminiPending(false);
       setAiAccountSurface(null);
       // Clear any auto-filled amount once the description is empty.
       if (amountAutoFilled) {
@@ -483,8 +487,7 @@ export default function AddTransactionSheet({ route }: Props) {
       // overwrite when the user hasn't manually entered an amount yet
       // (or the existing amount was itself auto-filled).
       const safeToFill =
-        amountAutoFilled ||
-        (!amount && !firstOperand && operator === null);
+        amountAutoFilled || (!amount && !firstOperand && operator === null);
       if (result.extractedAmounts.length > 0) {
         if (safeToFill) {
           const calc = buildAmountState(result.extractedAmounts);
@@ -512,7 +515,10 @@ export default function AddTransactionSheet({ route }: Props) {
         tokenText,
         accounts.map((a) => ({ id: a.id, name: a.name }))
       );
-      if (acctHit && (accountAutoSet || !accountId || accountId === accounts[0]?.id)) {
+      if (
+        acctHit &&
+        (accountAutoSet || !accountId || accountId === accounts[0]?.id)
+      ) {
         if (acctHit.accountId !== accountId) {
           setAccountId(acctHit.accountId);
         }
@@ -543,6 +549,28 @@ export default function AddTransactionSheet({ route }: Props) {
         .catch(() => {
           /* silent — keyword fallback already applied */
         });
+    }
+
+    // 3) Gemini refinement — Pro only. Fires after the keyword dict gives
+    //    instant feedback, then overwrites if Gemini finds a better match.
+    //    Handles custom categories the keyword dict doesn't know about.
+    if (isPro) {
+      const catNames = categories.map((c) => c.name);
+      setGeminiPending(true);
+      suggestCategoryWithGemini(tokenText, catNames)
+        .then((suggestion) => {
+          if (tokenText !== aiTextRef.current) return;
+          setGeminiPending(false);
+          if (!suggestion) return;
+          const matched = categories.find(
+            (c) => c.name.toLowerCase() === suggestion.toLowerCase()
+          );
+          if (matched) {
+            setCategory(matched.name);
+            setSignalSource('ai_description');
+          }
+        })
+        .catch(() => setGeminiPending(false));
     }
   };
 
@@ -619,8 +647,7 @@ export default function AddTransactionSheet({ route }: Props) {
             accountSurface: aiAccountSurface,
           })
         : '';
-    const finalDisplayName =
-      structuredName || aiText || category || 'Other';
+    const finalDisplayName = structuredName || aiText || category || 'Other';
 
     try {
       const txId = await createTransaction({
@@ -793,9 +820,7 @@ export default function AddTransactionSheet({ route }: Props) {
                 {pendingTotal !== null &&
                 Number.isFinite(pendingTotal) &&
                 amount.length > 0 ? (
-                  <Text
-                    style={[styles.amountExpr, { color: amountColor }]}
-                  >
+                  <Text style={[styles.amountExpr, { color: amountColor }]}>
                     = ₱{pendingTotal.toFixed(2)}
                   </Text>
                 ) : null}
@@ -1033,13 +1058,20 @@ export default function AddTransactionSheet({ route }: Props) {
                         >
                           {cat.name}
                         </Text>
-                        {isAutoSelected && (
-                          <Text
-                            style={[styles.catChipAiMark, { color: cs.text }]}
-                          >
-                            ✦
-                          </Text>
-                        )}
+                        {isAutoSelected &&
+                          (geminiPending ? (
+                            <ActivityIndicator
+                              size="small"
+                              color={cs.text}
+                              style={{ width: 12, height: 12 }}
+                            />
+                          ) : (
+                            <Text
+                              style={[styles.catChipAiMark, { color: cs.text }]}
+                            >
+                              ✦
+                            </Text>
+                          ))}
                       </TouchableOpacity>
                     );
                   })}

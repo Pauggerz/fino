@@ -31,6 +31,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Q } from '@nozbe/watermelondb';
 import { combineLatest, type Subscription } from 'rxjs';
@@ -51,6 +52,7 @@ import {
   DEFAULT_EXPENSE_KEYS,
   INCOME_KEYS,
 } from '@/constants/categoryMappings';
+import type { RootStackParamList } from '../navigation/RootNavigator';
 import {
   CATEGORY_SWATCHES,
   CATEGORY_TILE_BGS,
@@ -91,7 +93,7 @@ function monthBounds() {
     23,
     59,
     59,
-    999,
+    999
   ).toISOString();
   return { start, end };
 }
@@ -105,10 +107,11 @@ function findColorIdx(hex: string | null | undefined): number {
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function CategoryScreen() {
-  const navigation = useNavigation<any>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { user } = useAuth();
+  const { user, isPro } = useAuth();
   const userId = user?.id;
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
@@ -134,7 +137,7 @@ export default function CategoryScreen() {
       .query(
         Q.where('user_id', userId),
         Q.where('is_active', true),
-        Q.sortBy('sort_order', Q.asc),
+        Q.sortBy('sort_order', Q.asc)
       );
     const txQ = database
       .get<TransactionModel>('transactions')
@@ -142,7 +145,7 @@ export default function CategoryScreen() {
         Q.where('user_id', userId),
         Q.where('type', 'expense'),
         Q.where('date', Q.gte(start)),
-        Q.where('date', Q.lte(end)),
+        Q.where('date', Q.lte(end))
       );
 
     const sub: Subscription = combineLatest([
@@ -156,14 +159,21 @@ export default function CategoryScreen() {
         'is_default',
         'sort_order',
       ]),
-      txQ.observeWithColumns(['amount', 'category', 'type', 'is_transfer', 'date']),
+      txQ.observeWithColumns([
+        'amount',
+        'category',
+        'type',
+        'is_transfer',
+        'date',
+      ]),
     ])
       .pipe(debounceTime(50))
       .subscribe(([catRecords, txRecords]) => {
         // Compute month-to-date spend per category name (lowercased).
         const spend: Record<string, number> = {};
         for (const tx of txRecords) {
-          if (tx.isTransfer || (tx.category ?? '').toLowerCase() === 'transfer') continue;
+          if (tx.isTransfer || (tx.category ?? '').toLowerCase() === 'transfer')
+            continue;
           if (!tx.category) continue;
           const k = tx.category.toLowerCase();
           spend[k] = (spend[k] ?? 0) + tx.amount;
@@ -197,7 +207,7 @@ export default function CategoryScreen() {
 
   const otherNames = useMemo(
     () => rows.map((r) => r.name.toLowerCase()),
-    [rows],
+    [rows]
   );
 
   const handleSaveEdit = useCallback(
@@ -209,7 +219,7 @@ export default function CategoryScreen() {
       }
       // Uniqueness — exclude the row being edited.
       const collision = rows.some(
-        (r) => r.id !== id && r.name.toLowerCase() === name.toLowerCase(),
+        (r) => r.id !== id && r.name.toLowerCase() === name.toLowerCase()
       );
       if (collision) {
         Alert.alert('Already exists', `"${name}" is already a category.`);
@@ -225,7 +235,7 @@ export default function CategoryScreen() {
       });
       setEditing(null);
     },
-    [rows],
+    [rows]
   );
 
   const handleAdd = useCallback(
@@ -254,20 +264,16 @@ export default function CategoryScreen() {
       });
       setAdding(false);
     },
-    [userId, rows, otherNames],
+    [userId, rows, otherNames]
   );
 
   const handleDelete = useCallback(async (row: CategoryRow) => {
-    if (DEFAULT_EXPENSE_KEYS.has(row.emoji.toLowerCase())) {
-      Alert.alert(
-        'Cannot delete',
-        'Default categories can be edited but not deleted.',
-      );
-      return;
-    }
+    const isDefault = DEFAULT_EXPENSE_KEYS.has(row.emoji.toLowerCase());
     Alert.alert(
       'Delete category',
-      `Remove "${row.name}"? Past transactions tagged with this category keep their tag.`,
+      isDefault
+        ? `Remove "${row.name}"? This is a default category — auto-categorization will stop assigning transactions to it. Past transactions keep their tag.`
+        : `Remove "${row.name}"? Past transactions tagged with this category keep their tag.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -278,18 +284,15 @@ export default function CategoryScreen() {
             setEditing(null);
           },
         },
-      ],
+      ]
     );
   }, []);
 
   // ── Summary ────────────────────────────────────────────────────────────────
-  const totalBudget = rows.reduce(
-    (s, r) => s + (r.budget_limit ?? 0),
-    0,
-  );
+  const totalBudget = rows.reduce((s, r) => s + (r.budget_limit ?? 0), 0);
   const totalSpent = rows.reduce(
     (s, r) => s + (spendByName[r.name.toLowerCase()] ?? 0),
-    0,
+    0
   );
   const budgetedCount = rows.filter((r) => r.budget_limit != null).length;
 
@@ -314,7 +317,13 @@ export default function CategoryScreen() {
           </Text>
         </View>
         <TouchableOpacity
-          onPress={() => setAdding(true)}
+          onPress={() => {
+            if (!isPro) {
+              navigation.navigate('ProUpgrade', { source: 'add_category' });
+              return;
+            }
+            setAdding(true);
+          }}
           activeOpacity={0.7}
           style={styles.backBtn}
           hitSlop={8}
@@ -324,10 +333,7 @@ export default function CategoryScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator
-          color={colors.primary}
-          style={{ marginTop: 40 }}
-        />
+        <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
         <ScrollView
           contentContainerStyle={{
@@ -386,9 +392,7 @@ export default function CategoryScreen() {
             style={[
               styles.listCard,
               {
-                backgroundColor: isDark
-                  ? colors.surfaceSubdued
-                  : colors.white,
+                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
                 borderColor: colors.border,
               },
             ]}
@@ -410,7 +414,13 @@ export default function CategoryScreen() {
           </View>
 
           <TouchableOpacity
-            onPress={() => setAdding(true)}
+            onPress={() => {
+              if (!isPro) {
+                navigation.navigate('ProUpgrade', { source: 'add_category' });
+                return;
+              }
+              setAdding(true);
+            }}
             activeOpacity={0.7}
             style={styles.addRow}
           >
@@ -437,10 +447,8 @@ export default function CategoryScreen() {
         styles={styles}
         colors={colors}
         isDark={isDark}
-        canDelete={
-          editing !== null &&
-          !DEFAULT_EXPENSE_KEYS.has(editing.emoji.toLowerCase())
-        }
+        isPro={isPro}
+        canDelete={editing !== null}
         onClose={() => setEditing(null)}
         onSave={(draft) => {
           if (editing) return handleSaveEdit(editing.id, draft);
@@ -456,6 +464,7 @@ export default function CategoryScreen() {
         styles={styles}
         colors={colors}
         isDark={isDark}
+        isPro={isPro}
         canDelete={false}
         onClose={() => setAdding(false)}
         onSave={handleAdd}
@@ -523,10 +532,7 @@ function CategoryListRow({
             ₱{spent.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
             {limit != null && (
               <Text
-                style={[
-                  styles.rowAmountSub,
-                  { color: colors.textSecondary },
-                ]}
+                style={[styles.rowAmountSub, { color: colors.textSecondary }]}
               >
                 {' '}
                 / ₱{limit.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
@@ -581,6 +587,7 @@ function CategoryFormModal({
   styles,
   colors,
   isDark,
+  isPro,
   canDelete,
   onClose,
   onSave,
@@ -592,11 +599,15 @@ function CategoryFormModal({
   styles: ReturnType<typeof createStyles>;
   colors: ThemeColors;
   isDark: boolean;
+  isPro: boolean;
   canDelete: boolean;
   onClose: () => void;
   onSave: (draft: DraftState) => void | Promise<void>;
   onDelete: () => void;
 }) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
   const [draft, setDraft] = useState<DraftState>({
     name: '',
     iconKey: ICON_LIBRARY[0].key,
@@ -651,7 +662,10 @@ function CategoryFormModal({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={[styles.container, { backgroundColor: isDark ? colors.background : '#F7F5F2' }]}
+        style={[
+          styles.container,
+          { backgroundColor: isDark ? colors.background : '#F7F5F2' },
+        ]}
       >
         <View style={styles.formTopBar}>
           <View style={styles.formHandle} />
@@ -705,7 +719,9 @@ function CategoryFormModal({
               {draft.name.trim() || 'Category name'}
             </Text>
             {draft.budgetLimit ? (
-              <Text style={[styles.previewSub, { color: colors.textSecondary }]}>
+              <Text
+                style={[styles.previewSub, { color: colors.textSecondary }]}
+              >
                 ₱
                 {parseFloat(draft.budgetLimit || '0').toLocaleString('en-PH', {
                   maximumFractionDigits: 0,
@@ -713,7 +729,9 @@ function CategoryFormModal({
                 / month
               </Text>
             ) : (
-              <Text style={[styles.previewSub, { color: colors.textSecondary }]}>
+              <Text
+                style={[styles.previewSub, { color: colors.textSecondary }]}
+              >
                 No monthly limit
               </Text>
             )}
@@ -727,103 +745,159 @@ function CategoryFormModal({
             placeholder="e.g. Coffee, Pets"
             placeholderTextColor={colors.textSecondary}
             maxLength={50}
+            editable={!(mode === 'edit' && initial?.is_default)}
             style={[
               styles.input,
               {
                 backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
               },
+              mode === 'edit' && initial?.is_default && { opacity: 0.5 },
             ]}
           />
+          {mode === 'edit' && initial?.is_default && (
+            <Text style={[styles.fieldHint, { color: colors.textSecondary }]}>
+              Default category names are fixed so auto-categorization stays
+              accurate.
+            </Text>
+          )}
 
           {/* Icon picker — horizontal scroll keeps the row compact and
               scales gracefully as more icons are added to ICON_LIBRARY. */}
-          <Text style={styles.fieldLabel}>ICON</Text>
-          <View
-            style={[
-              styles.pickerCard,
-              {
-                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.pickerScrollContent}
+          <Text style={styles.fieldLabel}>
+            ICON
+            {!isPro && <Text style={styles.proLockLabel}>{' · Pro'}</Text>}
+          </Text>
+          <View style={{ position: 'relative' }}>
+            <View
+              style={[
+                styles.pickerCard,
+                !isPro && { opacity: 0.45 },
+                {
+                  backgroundColor: isDark
+                    ? colors.surfaceSubdued
+                    : colors.white,
+                  borderColor: colors.border,
+                },
+              ]}
+              pointerEvents={isPro ? 'auto' : 'none'}
             >
-              {ICON_LIBRARY.map((entry) => {
-                const active = draft.iconKey === entry.key;
-                return (
-                  <TouchableOpacity
-                    key={entry.key}
-                    activeOpacity={0.75}
-                    onPress={() =>
-                      setDraft((d) => ({ ...d, iconKey: entry.key }))
-                    }
-                    style={[
-                      styles.iconCell,
-                      {
-                        backgroundColor: active
-                          ? swatch
-                          : isDark
-                            ? colors.background
-                            : '#F4F4F8',
-                      },
-                    ]}
-                  >
-                    <CategoryIcon
-                      categoryKey={entry.key}
-                      color={active ? '#FFFFFF' : colors.textSecondary}
-                      size={20}
-                      wrapperSize={36}
-                    />
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.pickerScrollContent}
+              >
+                {ICON_LIBRARY.map((entry) => {
+                  const active = draft.iconKey === entry.key;
+                  return (
+                    <TouchableOpacity
+                      key={entry.key}
+                      activeOpacity={0.75}
+                      onPress={() =>
+                        setDraft((d) => ({ ...d, iconKey: entry.key }))
+                      }
+                      style={[
+                        styles.iconCell,
+                        {
+                          backgroundColor: active
+                            ? swatch
+                            : isDark
+                              ? colors.background
+                              : '#F4F4F8',
+                        },
+                      ]}
+                    >
+                      <CategoryIcon
+                        categoryKey={entry.key}
+                        color={active ? '#FFFFFF' : colors.textSecondary}
+                        size={20}
+                        wrapperSize={36}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+            {!isPro && (
+              <TouchableOpacity
+                style={styles.pickerLockOverlay}
+                activeOpacity={0.7}
+                onPress={() =>
+                  navigation.navigate('ProUpgrade', { source: 'icon_picker' })
+                }
+              >
+                <Ionicons
+                  name="lock-closed"
+                  size={18}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Colour picker — horizontal scroll mirrors the icon row. */}
-          <Text style={styles.fieldLabel}>COLOR</Text>
-          <View
-            style={[
-              styles.pickerCard,
-              {
-                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.pickerScrollContent}
+          <Text style={styles.fieldLabel}>
+            COLOR
+            {!isPro && <Text style={styles.proLockLabel}>{' · Pro'}</Text>}
+          </Text>
+          <View style={{ position: 'relative' }}>
+            <View
+              style={[
+                styles.pickerCard,
+                !isPro && { opacity: 0.45 },
+                {
+                  backgroundColor: isDark
+                    ? colors.surfaceSubdued
+                    : colors.white,
+                  borderColor: colors.border,
+                },
+              ]}
+              pointerEvents={isPro ? 'auto' : 'none'}
             >
-              {CATEGORY_SWATCHES.map((c, i) => {
-                const active = draft.colorIdx === i;
-                return (
-                  <TouchableOpacity
-                    key={c}
-                    activeOpacity={0.75}
-                    onPress={() => setDraft((d) => ({ ...d, colorIdx: i }))}
-                    style={[
-                      styles.colorSwatch,
-                      {
-                        backgroundColor: c,
-                        borderColor: active
-                          ? colors.textPrimary
-                          : 'transparent',
-                      },
-                    ]}
-                  >
-                    {active && (
-                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.pickerScrollContent}
+              >
+                {CATEGORY_SWATCHES.map((c, i) => {
+                  const active = draft.colorIdx === i;
+                  return (
+                    <TouchableOpacity
+                      key={c}
+                      activeOpacity={0.75}
+                      onPress={() => setDraft((d) => ({ ...d, colorIdx: i }))}
+                      style={[
+                        styles.colorSwatch,
+                        {
+                          backgroundColor: c,
+                          borderColor: active
+                            ? colors.textPrimary
+                            : 'transparent',
+                        },
+                      ]}
+                    >
+                      {active && (
+                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+            {!isPro && (
+              <TouchableOpacity
+                style={styles.pickerLockOverlay}
+                activeOpacity={0.7}
+                onPress={() =>
+                  navigation.navigate('ProUpgrade', { source: 'color_picker' })
+                }
+              >
+                <Ionicons
+                  name="lock-closed"
+                  size={18}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Budget */}
@@ -880,9 +954,7 @@ function CategoryFormModal({
                 size={16}
                 color={colors.expenseRed}
               />
-              <Text
-                style={[styles.deleteText, { color: colors.expenseRed }]}
-              >
+              <Text style={[styles.deleteText, { color: colors.expenseRed }]}>
                 Delete category
               </Text>
             </TouchableOpacity>
@@ -1201,5 +1273,26 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
     deleteText: {
       fontFamily: 'Inter_600SemiBold',
       fontSize: 14,
+    },
+    fieldHint: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11.5,
+      marginTop: 6,
+      lineHeight: 16,
+    },
+    proLockLabel: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 10,
+      letterSpacing: 0,
+    },
+    pickerLockOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
   });

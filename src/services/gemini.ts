@@ -31,6 +31,10 @@ Language rules:
 // Lazily instantiate the Gemini client on first use so cold start
 // doesn't pay for SDK initialization the user may never trigger.
 let cachedModel: GenerativeModel | null = null;
+
+// Separate model instance for single-turn category classification — kept apart
+// from the chat model so the Fino Intelligence system prompt never leaks in.
+let cachedCatModel: GenerativeModel | null = null;
 let apiKeyWarned = false;
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -59,6 +63,53 @@ const getModel = async (): Promise<GenerativeModel> => {
     },
   });
   return cachedModel;
+};
+
+const getCatModel = async (): Promise<GenerativeModel> => {
+  if (cachedCatModel) return cachedCatModel;
+  const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? '';
+  const { GoogleGenerativeAI } = await import('@google/generative-ai');
+  const genAI = new GoogleGenerativeAI(apiKey);
+  cachedCatModel = genAI.getGenerativeModel({
+    model: 'gemini-2.0-flash',
+    generationConfig: {
+      maxOutputTokens: 20,
+      temperature: 0,
+      // @ts-ignore
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+  });
+  return cachedCatModel;
+};
+
+/**
+ * Ask Gemini to pick the best-matching expense category for a transaction
+ * description. Returns the exact category name from `categoryNames` or null.
+ * Always validates the response against the provided list — never returns a
+ * hallucinated name. Silent on error so callers can treat null as "no match".
+ */
+export const suggestCategoryWithGemini = async (
+  description: string,
+  categoryNames: string[]
+): Promise<string | null> => {
+  if (!description.trim() || categoryNames.length === 0) return null;
+  try {
+    const model = await getCatModel();
+    const prompt =
+      `You are a Filipino expense categorizer. ` +
+      `Given a transaction description, reply with ONLY the single best-matching category name from the list below. ` +
+      `If nothing matches well, reply with the word null.\n\n` +
+      `Categories: ${categoryNames.join(', ')}\n\n` +
+      `Description: ${description.trim().slice(0, 200)}`;
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text().trim();
+    const match = categoryNames.find(
+      (n) => n.toLowerCase() === raw.toLowerCase()
+    );
+    return match ?? null;
+  } catch {
+    return null;
+  }
 };
 
 const MAX_USER_MESSAGE_LEN = 2000;

@@ -1,4 +1,10 @@
-import React, { lazy, startTransition, Suspense, useEffect, useState } from 'react';
+import React, {
+  lazy,
+  startTransition,
+  Suspense,
+  useEffect,
+  useState,
+} from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -37,6 +43,7 @@ const CategoryScreen = lazy(() => import('../screens/CategoryScreen'));
 const SankeyFullscreenScreen = lazy(
   () => import('../screens/SankeyFullscreenScreen')
 );
+const ProUpgradeScreen = lazy(() => import('../screens/ProUpgradeScreen'));
 
 function ModalLoadingShim() {
   const { colors } = useTheme();
@@ -100,6 +107,9 @@ export type RootStackParamList = {
   SavingsGoal: undefined;
   CashFlow: { accountId?: string } | undefined;
   Categories: undefined;
+  ProUpgrade:
+    | { source?: 'add_category' | 'icon_picker' | 'color_picker' }
+    | undefined;
   TransactionDetail: { id: string };
   SankeyFullscreen: {
     income: number;
@@ -223,95 +233,100 @@ export default function RootNavigator() {
       <ShareIntentHandler />
       <Suspense fallback={<ModalLoadingShim />}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!hasOnboarded ? (
-          <Stack.Screen name="Onboarding">
-            {(props) => (
-              <OnboardingScreen
-                {...props}
-                onComplete={() => setHasOnboarded(true)}
-              />
-            )}
-          </Stack.Screen>
-        ) : !session ? (
-          // ── Unauthenticated ───────────────────────────────────────────────
-          <Stack.Screen
-            name={'Login' as any}
-            component={LoginScreen}
-            options={{ animation: 'fade' }}
-          />
-        ) : (
-          // ── Authenticated ─────────────────────────────────────────────────
-          <>
-            <Stack.Screen name="Tabs" component={TabNavigator} />
+          {!hasOnboarded ? (
+            <Stack.Screen name="Onboarding">
+              {(props) => (
+                <OnboardingScreen
+                  {...props}
+                  onComplete={() => setHasOnboarded(true)}
+                />
+              )}
+            </Stack.Screen>
+          ) : !session ? (
+            // ── Unauthenticated ───────────────────────────────────────────────
+            <Stack.Screen
+              name={'Login' as any}
+              component={LoginScreen}
+              options={{ animation: 'fade' }}
+            />
+          ) : (
+            // ── Authenticated ─────────────────────────────────────────────────
+            <>
+              <Stack.Screen name="Tabs" component={TabNavigator} />
 
-            <Stack.Screen
-              name="FABActionSheet"
-              component={FABActionSheet}
-              options={{
-                presentation: 'transparentModal',
-                animation: 'none',
-                contentStyle: { backgroundColor: 'transparent' },
-              }}
-            />
-            <Stack.Screen
-              name="AddTransaction"
-              component={AddTransactionSheet}
-              options={{
-                presentation: 'transparentModal',
-                animation: 'none',
-                contentStyle: { backgroundColor: 'transparent' },
-              }}
-            />
-            <Stack.Screen
-              name="ScreenshotScreen"
-              component={ScreenshotScreen}
-              options={{ headerShown: false, presentation: 'modal' }}
-            />
-            <Stack.Screen
-              name="ChatScreen"
-              component={ChatScreen}
-              options={{ headerShown: false, presentation: 'modal' }}
-            />
-            <Stack.Screen
-              name="BillSplitter"
-              component={BillSplitterScreen}
-              options={{ headerShown: false, presentation: 'modal' }}
-            />
-            <Stack.Screen
-              name="UtangTracker"
-              component={UtangTrackerScreen}
-              options={{ headerShown: false, presentation: 'modal' }}
-            />
-            <Stack.Screen
-              name="SavingsGoal"
-              component={SavingsGoalScreen}
-              options={{ headerShown: false, presentation: 'modal' }}
-            />
-            <Stack.Screen
-              name="CashFlow"
-              component={CashFlowScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="Categories"
-              component={CategoryScreen}
-              options={{ headerShown: false, presentation: 'modal' }}
-            />
-            <Stack.Screen
-              name="TransactionDetail"
-              component={TransactionDetailScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="SankeyFullscreen"
-              component={SankeyFullscreenScreen}
-              options={{
-                headerShown: false,
-                presentation: 'fullScreenModal',
-              }}
-            />
-          </>
-        )}
+              <Stack.Screen
+                name="FABActionSheet"
+                component={FABActionSheet}
+                options={{
+                  presentation: 'transparentModal',
+                  animation: 'none',
+                  contentStyle: { backgroundColor: 'transparent' },
+                }}
+              />
+              <Stack.Screen
+                name="AddTransaction"
+                component={AddTransactionSheet}
+                options={{
+                  presentation: 'transparentModal',
+                  animation: 'none',
+                  contentStyle: { backgroundColor: 'transparent' },
+                }}
+              />
+              <Stack.Screen
+                name="ScreenshotScreen"
+                component={ScreenshotScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="ChatScreen"
+                component={ChatScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="BillSplitter"
+                component={BillSplitterScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="UtangTracker"
+                component={UtangTrackerScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="SavingsGoal"
+                component={SavingsGoalScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="CashFlow"
+                component={CashFlowScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Categories"
+                component={CategoryScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="TransactionDetail"
+                component={TransactionDetailScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="ProUpgrade"
+                component={ProUpgradeScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="SankeyFullscreen"
+                component={SankeyFullscreenScreen}
+                options={{
+                  headerShown: false,
+                  presentation: 'fullScreenModal',
+                }}
+              />
+            </>
+          )}
         </Stack.Navigator>
       </Suspense>
     </NavigationContainer>
