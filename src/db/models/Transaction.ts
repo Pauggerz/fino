@@ -19,6 +19,7 @@ export default class Transaction extends Model {
   @text('transaction_note') transactionNote?: string;
   @text('signal_source') signalSource?: string;
   @text('date') date!: string;
+  @text('transaction_datetime') transactionDatetime?: string;
   @text('receipt_url') receiptUrl?: string;
   @field('account_deleted') accountDeleted!: boolean;
   @field('is_transfer') isTransfer!: boolean;

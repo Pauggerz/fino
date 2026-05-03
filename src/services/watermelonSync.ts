@@ -75,21 +75,30 @@ function toIsoString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
+  // Midnight UTC means Supabase stored a date-only value — no real time info.
+  // Return null so the UI doesn't show a misleading "8:00 AM" in UTC+8.
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0) {
+    return null;
+  }
   return d.toISOString();
 }
 
 // Columns that must be stored locally as 'YYYY-MM-DD' so Q.where comparisons
-// against date-only literals work. Server stores these as DATE,
+// against date-only literals work. Server stores these as TIMESTAMPTZ/DATE,
 // the client treats them as day strings.
-// `transactions.date` is intentionally excluded — it's a TIMESTAMPTZ on the
-// server and feed rows render the time component (`formatRowTime`). Truncating
-// to a day string round-trips through midnight UTC and renders as 08:00 in PHT.
 const DATE_ONLY_COLUMNS: Partial<Record<TableName, readonly string[]>> = {
+  transactions: ['date'],
   debts: ['due_date'],
   savings_goals: ['target_date'],
   bill_reminders: ['due_date'],
   recurring_incomes: ['anchor_date', 'next_due_at', 'last_posted_at'],
   recurring_bills: ['anchor_date', 'next_due_at', 'last_paid_at'],
+};
+
+// When a date-only column is truncated, keep the full ISO timestamp in a
+// companion column so the UI can display the real time.
+const DATETIME_COMPANION: Partial<Record<TableName, Record<string, string>>> = {
+  transactions: { date: 'transaction_datetime' },
 };
 
 function toDayString(value: unknown): string | null {
@@ -120,6 +129,11 @@ function remoteRowToRaw(table: TableName, row: RemoteRow): Record<string, unknow
       continue;
     }
     if (dateCols && dateCols.includes(key)) {
+      // Preserve full timestamp in companion column before truncating to day.
+      const companions = DATETIME_COMPANION[table];
+      if (companions && companions[key]) {
+        raw[companions[key]] = toIsoString(value);
+      }
       raw[key] = toDayString(value);
       continue;
     }
@@ -146,6 +160,12 @@ const SERVER_OWNED_COLUMNS: Partial<Record<TableName, readonly string[]>> = {
  * Watermelon-only fields and restores the Supabase `created_at` column from
  * `server_created_at`.
  */
+// Companion columns are local-only — collect their names so pushChanges skips them.
+const LOCAL_ONLY_COLUMNS = new Set<string>();
+for (const companions of Object.values(DATETIME_COMPANION)) {
+  if (companions) for (const col of Object.values(companions)) LOCAL_ONLY_COLUMNS.add(col);
+}
+
 function rawToRemoteRow(table: TableName, raw: Record<string, unknown>): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   const dateCols = DATE_ONLY_COLUMNS[table];
@@ -153,6 +173,7 @@ function rawToRemoteRow(table: TableName, raw: Record<string, unknown>): Record<
   for (const [key, value] of Object.entries(raw)) {
     if (key === '_status' || key === '_changed') continue;
     if (serverOwned && serverOwned.includes(key)) continue;
+    if (LOCAL_ONLY_COLUMNS.has(key)) continue;
     if (key === 'server_created_at') {
       if (value) body.created_at = toIsoString(value) ?? value;
       continue;

@@ -45,6 +45,7 @@ export default appSchema({
         { name: 'transaction_note', type: 'string', isOptional: true },
         { name: 'signal_source', type: 'string', isOptional: true },
         { name: 'date', type: 'string', isIndexed: true },
+        { name: 'transaction_datetime', type: 'string', isOptional: true },
         { name: 'receipt_url', type: 'string', isOptional: true },
         { name: 'account_deleted', type: 'boolean' },
         { name: 'is_transfer', type: 'boolean' },

@@ -24,8 +24,13 @@ export default schemaMigrations({
       ],
     },
     {
+      // v3 — recurring tables + transaction_datetime companion column
       toVersion: 3,
       steps: [
+        addColumns({
+          table: 'transactions',
+          columns: [{ name: 'transaction_datetime', type: 'string', isOptional: true }],
+        }),
         createTable({
           name: 'recurring_incomes',
           columns: [

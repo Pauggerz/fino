@@ -35,6 +35,7 @@ export interface Transaction {
   transaction_note: string | null;
   signal_source: 'description' | 'merchant' | 'time_history' | 'manual' | null;
   date: string;
+  transaction_datetime?: string | null;
   receipt_url: string | null;
   account_deleted: boolean;
   merchant_confidence: number | null;

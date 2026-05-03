@@ -300,7 +300,9 @@ export default function TransactionDetailScreen() {
     setEditedCategory((row.category ?? 'food').toLowerCase());
     setEditedAmount(String(row.amount));
     setEditedType((row.type as 'expense' | 'income') ?? 'expense');
-    const d = new Date(row.date);
+    const d = row.transaction_datetime
+      ? new Date(row.transaction_datetime)
+      : new Date(row.date + 'T00:00:00');
     const h = d.getHours();
     setEditedDate(d);
     setDraftMonth(d.getMonth());
@@ -342,6 +344,7 @@ export default function TransactionDetailScreen() {
         receipt_url: record.receiptUrl ?? null,
         account_deleted: record.accountDeleted,
         date: record.date,
+        transaction_datetime: record.transactionDatetime ?? null,
         merchant_confidence: record.merchantConfidence ?? null,
         amount_confidence: record.amountConfidence ?? null,
         date_confidence: record.dateConfidence ?? null,
@@ -510,11 +513,20 @@ export default function TransactionDetailScreen() {
     ? (accounts.find((a) => a.id === editedAccountId)?.name ?? tx.account_name)
     : tx.account_name;
 
-  const displayDate = isEditing ? editedDate : new Date(tx.date);
-  const formattedDate = displayDate.toLocaleDateString('en-PH', {
-    month: 'long', day: 'numeric', year: 'numeric',
-    hour: 'numeric', minute: '2-digit', hour12: true,
-  });
+  const hasTime = isEditing || !!tx.transaction_datetime;
+  const displayDate = isEditing
+    ? editedDate
+    : tx.transaction_datetime
+      ? new Date(tx.transaction_datetime)
+      : new Date(tx.date + 'T00:00:00');
+  const formattedDate = hasTime
+    ? displayDate.toLocaleDateString('en-PH', {
+        month: 'long', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit', hour12: true,
+      })
+    : displayDate.toLocaleDateString('en-PH', {
+        month: 'long', day: 'numeric', year: 'numeric',
+      });
 
   const daysInMonth = new Date(draftYear, draftMonth + 1, 0).getDate();
 

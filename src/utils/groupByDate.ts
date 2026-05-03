@@ -38,7 +38,9 @@ export function formatSectionTitle(isoDate: string): string {
   return SECTION_DATE_FMT.format(date);
 }
 
-export function formatRowTime(isoDate: string): string {
+export function formatRowTime(isoDate: string | null | undefined): string {
+  if (!isoDate) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return '';
   return TIME_FMT.format(new Date(isoDate));
 }
 

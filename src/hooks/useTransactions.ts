@@ -78,6 +78,7 @@ function modelToPlain(
     signal_source:
       (tx.signalSource as 'description' | 'merchant' | 'time_history' | 'manual' | null) ?? null,
     date: tx.date,
+    transaction_datetime: tx.transactionDatetime ?? null,
     receipt_url: tx.receiptUrl ?? null,
     account_deleted: tx.accountDeleted,
     merchant_confidence: tx.merchantConfidence ?? null,
@@ -87,7 +88,7 @@ function modelToPlain(
     account_name: acct?.name ?? 'Unknown',
     account_brand_colour: acct?.brandColour ?? '#888888',
     account_letter_avatar: acct?.letterAvatar ?? '?',
-    time: formatRowTime(tx.date),
+    time: formatRowTime(tx.transactionDatetime ?? null),
   };
 }
 
