@@ -15,10 +15,9 @@ import Svg, { Path } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import type { RootStackParamList } from '@/navigation/RootNavigator';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
-import { createTransaction } from '@/services/localMutations';
 import { useAccounts } from '@/hooks/useAccounts';
 import { Account } from '@/types';
 import {
@@ -150,8 +149,20 @@ function Stepper({
 
 export default function ScreenshotScreen() {
   const navigation = useNavigation<any>();
-  const route = useRoute<RouteProp<RootStackParamList, 'ScreenshotScreen'>>();
   const { accounts } = useAccounts();
+
+  const [lastUsedAccountId, setLastUsedAccountId] = useState<string | null>(
+    null
+  );
+
+  useEffect(() => {
+    AsyncStorage.getItem('@fino/recent_accounts').then((v) => {
+      if (v) {
+        const ids: string[] = JSON.parse(v);
+        if (ids.length > 0) setLastUsedAccountId(ids[0]);
+      }
+    });
+  }, []);
 
   const [selectedSource, setSelectedSource] = useState<'camera' | 'upload'>(
     'upload'
@@ -183,16 +194,6 @@ export default function ScreenshotScreen() {
   const [fixedFields, setFixedFields] = useState<string[]>([]);
 
   const daysInMonth = new Date(draftYear, draftMonth + 1, 0).getDate();
-
-  // Auto-parse when opened from iOS share sheet
-  useEffect(() => {
-    const uri = route.params?.sharedImageUri;
-    if (!uri) return;
-    setSelectedImage(uri);
-    setSelectedSource('upload');
-    processReceipt(uri);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const hasUnresolvedCheck = parsedData
     ? Object.values(parsedData).some((f) => f.status === 'check')
@@ -264,7 +265,11 @@ export default function ScreenshotScreen() {
       const detectedAccountConf: number = detectedWalletName
         ? detectedWalletConf
         : (data.account?.confidence ?? 0);
-      let matchedAccountId = accounts[0]?.id ?? '';
+      const fallbackAccount =
+        lastUsedAccountId && accounts.find((a) => a.id === lastUsedAccountId)
+          ? lastUsedAccountId
+          : (accounts[0]?.id ?? '');
+      let matchedAccountId = fallbackAccount;
       let accountConf = detectedAccountConf > 0 ? detectedAccountConf : 0.4;
       let matchedAccount: (typeof accounts)[0] | undefined;
 
@@ -331,19 +336,23 @@ export default function ScreenshotScreen() {
           confidence: dateConf,
           status: toStatus(dateConf),
         },
-        wallet: detectedWalletName
-          ? {
+        wallet: (() => {
+          if (detectedWalletName) {
+            return {
               value: detectedWalletName,
               confidence: detectedWalletConf,
               status: toStatus(detectedWalletConf),
-            }
-          : data.account?.value
-            ? {
-                value: data.account.value,
-                confidence: data.account.confidence ?? 0,
-                status: toStatus(data.account.confidence ?? 0),
-              }
-            : undefined,
+            };
+          }
+          if (data.account?.value) {
+            return {
+              value: data.account.value,
+              confidence: data.account.confidence ?? 0,
+              status: toStatus(data.account.confidence ?? 0),
+            };
+          }
+          return undefined;
+        })(),
       };
       setParsedData(result);
 
@@ -454,33 +463,44 @@ export default function ScreenshotScreen() {
         ? new Date().toISOString()
         : rawDate.toISOString();
 
-      const targetAccountId =
-        selectedAccount?.id ??
-        (parsedData.account.value
-          ? String(parsedData.account.value)
-          : undefined) ??
-        accounts[0]?.id;
-
-      if (!userId || !targetAccountId) {
-        throw new Error('Missing user or account context — cannot save.');
-      }
-
-      await createTransaction({
-        userId,
-        accountId: targetAccountId,
-        merchantName: parsedData.merchant.value
-          ? String(parsedData.merchant.value)
-          : undefined,
+      const { error } = await supabase.from('transactions').insert({
+        user_id: userId,
+        account_id:
+          selectedAccount?.id ??
+          parsedData.account.value ??
+          (lastUsedAccountId && accounts.some((a) => a.id === lastUsedAccountId)
+            ? lastUsedAccountId
+            : accounts[0]?.id),
+        merchant_name: parsedData.merchant.value,
         amount: Number(parsedData.amount.value),
         date: isoDate,
         type: 'expense',
         category: selectedCategory,
-        signalSource: 'merchant',
-        merchantConfidence: parsedData.merchant.confidence,
-        amountConfidence: parsedData.amount.confidence,
-        dateConfidence: parsedData.date.confidence,
-        receiptUrl: selectedImage ?? undefined,
+        signal_source: 'merchant',
+        merchant_confidence: parsedData.merchant.confidence,
+        amount_confidence: parsedData.amount.confidence,
+        date_confidence: parsedData.date.confidence,
+        receipt_url: selectedImage,
       });
+
+      if (error) throw error;
+
+      // Update account balance
+      const accountId =
+        selectedAccount?.id ?? String(parsedData.account.value ?? '');
+      if (accountId) {
+        const { data: acct } = await supabase
+          .from('accounts')
+          .select('balance')
+          .eq('id', accountId)
+          .single();
+        if (acct) {
+          await supabase
+            .from('accounts')
+            .update({ balance: acct.balance - Number(parsedData.amount.value) })
+            .eq('id', accountId);
+        }
+      }
 
       navigation.goBack();
     } catch (err: any) {
@@ -733,7 +753,7 @@ export default function ScreenshotScreen() {
                   color: '#B4B2A9',
                 }}
               >
-                GCash ┬╖ Maya ┬╖ BDO ┬╖ BPI
+                GCash · Maya · BDO · BPI
               </Text>
             </TouchableOpacity>
           )}
@@ -969,21 +989,17 @@ export default function ScreenshotScreen() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             overflow: 'hidden',
-                          }}
-                        >
-                          <Image
-                            source={logo}
-                            style={{ width: 20, height: 20 }}
-                            contentFit="contain"
-                            transition={150}
-                          />
-                        </View>
-                      ) : (
-                        <View
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: 14,
+                          }}>
+                            <Image
+                              source={logo}
+                              style={{ width: 20, height: 20 }}
+                              contentFit="contain"
+                              transition={150}
+                            />
+                          </View>
+                        ) : (
+                          <View style={{
+                            width: 28, height: 28, borderRadius: 14,
                             backgroundColor: brandColour,
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -1051,7 +1067,7 @@ export default function ScreenshotScreen() {
               lineHeight: 16,
             }}
           >
-            Tap to confirm ┬╖ Long press to edit
+            Tap to confirm · Long press to edit
           </Text>
         )}
 

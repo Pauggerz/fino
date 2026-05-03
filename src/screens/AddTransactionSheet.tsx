@@ -309,12 +309,16 @@ export default function AddTransactionSheet({ route }: Props) {
   );
 
   // ─── Effects ──────────────────────────────────────────────────────────────
+  const [recentsLoaded, setRecentsLoaded] = useState(false);
+
   useEffect(() => {
-    AsyncStorage.getItem('@fino/recent_accounts').then((v) => {
-      if (v) setRecentAccountIds(JSON.parse(v));
-    });
-    AsyncStorage.getItem('@fino/recent_categories').then((v) => {
-      if (v) setRecentCategoryNames(JSON.parse(v));
+    Promise.all([
+      AsyncStorage.getItem('@fino/recent_accounts'),
+      AsyncStorage.getItem('@fino/recent_categories'),
+    ]).then(([acctJson, catJson]) => {
+      if (acctJson) setRecentAccountIds(JSON.parse(acctJson));
+      if (catJson) setRecentCategoryNames(JSON.parse(catJson));
+      setRecentsLoaded(true);
     });
   }, []);
 

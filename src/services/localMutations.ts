@@ -86,6 +86,7 @@ export async function createTransaction(input: NewTransactionInput): Promise<str
       tx.transactionNote = input.transactionNote ?? undefined;
       tx.signalSource = input.signalSource ?? undefined;
       tx.date = input.date;
+      tx.transactionDatetime = input.date;
       tx.receiptUrl = input.receiptUrl ?? undefined;
       tx.accountDeleted = false;
       tx.merchantConfidence = input.merchantConfidence ?? undefined;
@@ -169,7 +170,10 @@ export async function updateTransaction(
       if (patch.category !== undefined) t.category = patch.category ?? undefined;
       if (patch.merchantName !== undefined) t.merchantName = patch.merchantName ?? undefined;
       if (patch.accountId !== undefined) t.accountId = patch.accountId;
-      if (patch.date !== undefined) t.date = patch.date;
+      if (patch.date !== undefined) {
+        t.date = patch.date;
+        t.transactionDatetime = patch.date;
+      }
       if (patch.amount !== undefined) t.amount = nextAmount;
       if (patch.type !== undefined) t.type = patch.type;
     });
@@ -221,6 +225,7 @@ export async function saveAdjustment(params: {
       tx.displayName = params.note || 'Balance Reconciliation';
       tx.transactionNote = params.note || undefined;
       tx.date = today;
+      tx.transactionDatetime = today;
       tx.accountDeleted = false;
     });
     const accountPrepared = account.prepareUpdate((a) => {
@@ -257,6 +262,7 @@ export async function saveTransfer(params: {
       tx.category = 'transfer';
       tx.displayName = `Transfer to ${params.destAccountName}`;
       tx.date = today;
+      tx.transactionDatetime = today;
       tx.accountDeleted = false;
       tx.isTransfer = true;
     });
@@ -269,6 +275,7 @@ export async function saveTransfer(params: {
       tx.category = 'transfer';
       tx.displayName = `Transfer from ${params.sourceAccountName}`;
       tx.date = today;
+      tx.transactionDatetime = today;
       tx.accountDeleted = false;
       tx.isTransfer = true;
     });
