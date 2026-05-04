@@ -1076,7 +1076,13 @@ const FeedTransactionRow = React.memo(
     let iconColor = colors.textSecondary;
 
     const catKey = (tx.category ?? '').toLowerCase();
-    if (isExpense) {
+    if (catKey === 'transfer') {
+      iconKey = 'transfer';
+      iconColor = CATEGORY_COLOR.transfer;
+    } else if (catKey === 'adjustment') {
+      iconKey = 'adjustment';
+      iconColor = CATEGORY_COLOR.adjustment;
+    } else if (isExpense) {
       const catData = categoryByName.get(catKey);
       iconKey = catData?.emoji ?? 'default';
       iconColor = catData?.text_colour ?? colors.textSecondary;

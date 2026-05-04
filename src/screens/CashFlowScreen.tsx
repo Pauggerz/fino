@@ -44,6 +44,15 @@ function isTransferRow(t: TransactionModel): boolean {
   return t.isTransfer || (t.category ?? '').toLowerCase() === 'transfer';
 }
 
+// Reconciliation rows are real money so they belong in income/expense totals
+// + 6-month trend + the visible transaction list. They DON'T belong in the
+// top-categories breakdown (would surface as a fake "Adjustment" category)
+// or in the txCount / largestExpense headline metrics (which are meant to
+// describe spending behavior, not bookkeeping drift).
+function isAdjustmentRow(t: TransactionModel): boolean {
+  return (t.category ?? '').toLowerCase() === 'adjustment';
+}
+
 type CategoryRow = { key: string; label: string; amount: number };
 type TxnRow = {
   id: string;
@@ -209,14 +218,19 @@ export default function CashFlowScreen() {
       monthTx.forEach((t) => {
         if (isTransferRow(t)) return;
         const catKey = (t.category ?? '').trim().toLowerCase();
+        const isAdjust = isAdjustmentRow(t);
         if (t.type === 'income') {
           income += t.amount;
-          if (catKey) inflowByCat[catKey] = (inflowByCat[catKey] ?? 0) + t.amount;
+          if (catKey && !isAdjust)
+            inflowByCat[catKey] = (inflowByCat[catKey] ?? 0) + t.amount;
         } else if (t.type === 'expense') {
           expense += t.amount;
-          txCount += 1;
-          if (t.amount > largestExpense) largestExpense = t.amount;
-          if (catKey) outflowByCat[catKey] = (outflowByCat[catKey] ?? 0) + t.amount;
+          if (!isAdjust) {
+            txCount += 1;
+            if (t.amount > largestExpense) largestExpense = t.amount;
+            if (catKey)
+              outflowByCat[catKey] = (outflowByCat[catKey] ?? 0) + t.amount;
+          }
         } else {
           return;
         }

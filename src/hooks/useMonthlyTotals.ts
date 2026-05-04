@@ -120,10 +120,14 @@ export const useMonthlyTotals = (): MonthlyTotals => {
         // The string check handles rows created before migration 013 backfilled is_transfer.
         const isTransfer = tx.isTransfer || (tx.category ?? '').toLowerCase() === 'transfer';
         if (isTransfer) continue;
+        // Reconciliation rows are real money (kept in totals) but not real
+        // spending events — exclude from the 7-day sparkline so a one-shot
+        // adjustment doesn't show up as a fake daily spike.
+        const isAdjustment = (tx.category ?? '').toLowerCase() === 'adjustment';
         if (tx.type === 'income') income += tx.amount;
         if (tx.type === 'expense') {
           expense += tx.amount;
-          if (tx.date) {
+          if (!isAdjustment && tx.date) {
             const txStart = startOfLocalDay(new Date(tx.date));
             const dayDiff = Math.floor((todayStart - txStart) / MS_PER_DAY);
             if (dayDiff >= 0 && dayDiff < 7) buckets[6 - dayDiff] += tx.amount;
