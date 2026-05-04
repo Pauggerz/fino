@@ -527,7 +527,6 @@ export default function TransactionDetailScreen() {
     : displayDate.toLocaleDateString('en-PH', {
         month: 'long', day: 'numeric', year: 'numeric',
       });
-
   const daysInMonth = new Date(draftYear, draftMonth + 1, 0).getDate();
 
   return (
