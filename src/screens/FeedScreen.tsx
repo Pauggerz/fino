@@ -373,57 +373,70 @@ const FeedHero = React.memo(
     deltaPercent: number | null;
     deltaLabel: string;
   }) => (
-    <LinearGradient
-      colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
-      style={styles.heroCard}
-    >
-      <LinearGradient
-        colors={[colors.primaryLight60, 'transparent']}
-        style={[
-          styles.heroBlob,
-          { top: -30, right: -20, width: 160, height: 160 },
-        ]}
-      />
-      <LinearGradient
-        colors={[colors.primaryTransparent50, 'transparent']}
-        style={[
-          styles.heroBlob,
-          { bottom: 44, left: -20, width: 110, height: 110, opacity: 0.6 },
-        ]}
-      />
-
-      <View style={styles.heroTopRow}>
-        <View style={styles.monthNavPill}>
-          <TouchableOpacity
-            style={styles.monthArrow}
-            activeOpacity={0.75}
+    <View>
+      <View style={styles.monthPillRow}>
+        <View
+          style={[
+            styles.monthPill,
+            { backgroundColor: colors.white, borderColor: colors.border },
+          ]}
+        >
+          <Pressable
             onPress={handlePrevMonth}
+            style={[
+              styles.monthArrow,
+              { backgroundColor: colors.surfaceSubdued },
+            ]}
           >
             <Ionicons
               name="chevron-back"
               size={14}
-              color={colors.whiteTransparent80}
+              color={colors.textSecondary}
             />
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.75} onPress={onOpenMonthPicker}>
-            <Text style={styles.monthNavLabel}>{monthLabel}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.monthArrow, isAtMaxMonth && { opacity: 0.35 }]}
-            activeOpacity={0.75}
+          </Pressable>
+          <Pressable onPress={onOpenMonthPicker} style={styles.monthLabelBtn}>
+            <Text style={[styles.monthLabel, { color: colors.textPrimary }]}>
+              {monthLabel}
+            </Text>
+          </Pressable>
+          <Pressable
             onPress={handleNextMonth}
             disabled={isAtMaxMonth}
+            style={[
+              styles.monthArrow,
+              { backgroundColor: colors.surfaceSubdued },
+              isAtMaxMonth && { opacity: 0.35 },
+            ]}
           >
             <Ionicons
               name="chevron-forward"
               size={14}
-              color={colors.whiteTransparent80}
+              color={colors.textSecondary}
             />
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </View>
 
-      <View style={styles.heroTotalBlock}>
+      <LinearGradient
+        colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
+        style={styles.heroCard}
+      >
+        <LinearGradient
+          colors={[colors.primaryLight60, 'transparent']}
+          style={[
+            styles.heroBlob,
+            { top: -30, right: -20, width: 160, height: 160 },
+          ]}
+        />
+        <LinearGradient
+          colors={[colors.primaryTransparent50, 'transparent']}
+          style={[
+            styles.heroBlob,
+            { bottom: 44, left: -20, width: 110, height: 110, opacity: 0.6 },
+          ]}
+        />
+
+        <View style={styles.heroTotalBlock}>
         <Text style={styles.heroTotalLabel}>{totalLabel}</Text>
         <Text style={styles.heroTotalAmount}>
           {heroAmountPrefix}
@@ -488,7 +501,8 @@ const FeedHero = React.memo(
           No {viewType} transactions for this period
         </Text>
       )}
-    </LinearGradient>
+      </LinearGradient>
+    </View>
   )
 );
 
@@ -509,7 +523,6 @@ const FeedSticky = React.memo(
     resetFilters,
     draftDatePreset,
     setDraftDatePreset,
-    onOpenMonthPicker,
     draftAccountId,
     setDraftAccountId,
     accounts,
@@ -531,7 +544,6 @@ const FeedSticky = React.memo(
     resetFilters: () => void;
     draftDatePreset: DatePreset;
     setDraftDatePreset: (preset: DatePreset) => void;
-    onOpenMonthPicker: () => void;
     draftAccountId?: string;
     setDraftAccountId: (id: string | undefined) => void;
     accounts: any[];
@@ -642,12 +654,11 @@ const FeedSticky = React.memo(
             style={{ marginBottom: 12 }}
           >
             <View style={{ flexDirection: 'row', gap: 6 }}>
-              {(['month', '30d', '90d', 'custom'] as const).map((preset) => {
+              {(['month', '30d', '90d'] as const).map((preset) => {
                 const labels = {
                   month: 'This Month',
                   '30d': 'Last 30 Days',
                   '90d': 'Last 3 Months',
-                  custom: 'Custom…',
                 };
                 const isSelected = draftDatePreset === preset;
                 return (
@@ -658,14 +669,7 @@ const FeedSticky = React.memo(
                       isSelected && styles.filterChipSelected,
                     ]}
                     activeOpacity={0.8}
-                    onPress={() => {
-                      if (preset === 'custom') {
-                        setDraftDatePreset('custom');
-                        onOpenMonthPicker();
-                      } else {
-                        setDraftDatePreset(preset);
-                      }
-                    }}
+                    onPress={() => setDraftDatePreset(preset)}
                   >
                     <Text
                       style={[
@@ -1688,7 +1692,6 @@ function FeedScreen() {
             resetFilters={resetFilters}
             draftDatePreset={draftDatePreset}
             setDraftDatePreset={setDraftDatePreset}
-            onOpenMonthPicker={openMonthPicker}
             draftAccountId={draftAccountId}
             setDraftAccountId={setDraftAccountId}
             accounts={accounts}
@@ -1985,17 +1988,20 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
     container: {
       flex: 1,
       backgroundColor: colors.background,
-      paddingTop: Math.max(topInset + 8, 20),
+      paddingTop: topInset,
     },
 
     // ── StatsScreen-style title row ──
     screenTitleRow: {
-      paddingTop: 8,
-      paddingBottom: 12,
-      paddingHorizontal: spacing.screenPadding,
+      paddingTop: 12,
+      paddingBottom: 4,
+      paddingHorizontal: 16,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      // Match Insights headerRow so the month pill below sits at the same Y
+      // when switching between Transactions and Insights tabs.
+      minHeight: 54,
     },
     headerTitle: {
       fontFamily: 'Nunito_800ExtraBold',
@@ -2038,36 +2044,34 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       position: 'absolute',
       borderRadius: 999,
     },
-    heroTopRow: {
+    monthPillRow: {
       flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 16,
-      zIndex: 2,
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      paddingBottom: 6,
     },
-    monthNavPill: {
+    monthPill: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 6,
       borderRadius: 999,
-      paddingVertical: 4,
-      paddingHorizontal: 4,
-      backgroundColor: colors.whiteTransparent12,
-      borderWidth: 1,
-      borderColor: colors.whiteTransparent18,
-      gap: 2,
+      borderWidth: StyleSheet.hairlineWidth,
     },
     monthArrow: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
+      width: 26,
+      height: 26,
+      borderRadius: 999,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    monthNavLabel: {
+    monthLabelBtn: {
+      paddingHorizontal: 4,
+    },
+    monthLabel: {
       fontFamily: 'Inter_600SemiBold',
       fontSize: 13,
-      color: colors.whiteTransparent80,
-      paddingHorizontal: 6,
     },
     // ── Hero total + delta block ──
     heroTotalBlock: {

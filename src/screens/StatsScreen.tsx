@@ -1340,6 +1340,9 @@ function createStyles(colors: any, topInset: number) {
       paddingHorizontal: 16,
       paddingTop: 12,
       paddingBottom: 4,
+      // Keep height stable across states so the month pill below doesn't
+      // jump 4px when the empty-state hides the Ask Fino button (38px tall).
+      minHeight: 54,
     },
     headerTitle: {
       fontFamily: 'Nunito_800ExtraBold',
