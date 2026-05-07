@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { ViewStyle, StyleSheet, DimensionValue } from 'react-native';
+import { ViewStyle, DimensionValue } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -8,6 +8,7 @@ import Animated, {
   withSequence,
   Easing,
 } from 'react-native-reanimated';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface SkeletonProps {
   width?: DimensionValue;
@@ -22,17 +23,17 @@ export const Skeleton: React.FC<SkeletonProps> = ({
   style,
   borderRadius = 8,
 }) => {
+  const { isDark } = useTheme();
   const opacity = useSharedValue(0.3);
 
   useEffect(() => {
-    // Creates a continuous smooth pulsing shimmer effect
     opacity.value = withRepeat(
       withSequence(
         withTiming(0.7, { duration: 800, easing: Easing.inOut(Easing.ease) }),
         withTiming(0.3, { duration: 800, easing: Easing.inOut(Easing.ease) })
       ),
-      -1, // Infinite loop
-      true // Reverse sequence
+      -1,
+      true
     );
   }, [opacity]);
 
@@ -43,7 +44,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
   return (
     <Animated.View
       style={[
-        styles.skeleton,
+        { backgroundColor: isDark ? '#2C2C30' : '#E1E1E1' },
         { width, height, borderRadius },
         style,
         animatedStyle,
@@ -51,9 +52,3 @@ export const Skeleton: React.FC<SkeletonProps> = ({
     />
   );
 };
-
-const styles = StyleSheet.create({
-  skeleton: {
-    backgroundColor: '#E1E1E1', // Neutral placeholder color
-  },
-});

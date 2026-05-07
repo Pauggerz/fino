@@ -7,7 +7,7 @@ import {
   Animated,
   Platform,
 } from 'react-native';
-import { colors } from '../constants/theme';
+import { useTheme } from '../contexts/ThemeContext';
 import { transitions } from '../constants/transitions';
 
 export type ToastType = 'success' | 'undo';
@@ -30,7 +30,7 @@ export default function Toast({
   onUndo,
   onDismiss,
 }: ToastProps) {
-  // spec: entry slides from translateY(-40) → 0, 220ms spring overshoot
+  const { colors, isDark } = useTheme();
   const translateY = useRef(new Animated.Value(-40)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -80,6 +80,9 @@ export default function Toast({
 
   const isSuccess = type === 'success';
 
+  const iconSuccessBg = isDark ? 'rgba(93,184,126,0.18)' : colors.primaryLight;
+  const iconUndoBg = isDark ? 'rgba(232,133,106,0.18)' : colors.coralLight;
+
   return (
     <Animated.View
       style={[
@@ -95,7 +98,10 @@ export default function Toast({
       <View
         style={[
           styles.toastIcon,
-          isSuccess ? styles.toastIconSuccess : styles.toastIconUndo,
+          {
+            backgroundColor: isSuccess ? iconSuccessBg : iconUndoBg,
+            borderColor: isSuccess ? colors.primary : colors.coral,
+          },
         ]}
       >
         <Text
@@ -131,20 +137,19 @@ export default function Toast({
 const styles = StyleSheet.create({
   toastContainer: {
     position: 'absolute',
-    // spec: top:56 — using platform offset for safe area
     top: Platform.OS === 'ios' ? 56 : 56,
     left: 12,
     right: 12,
-    backgroundColor: colors.textPrimary, // #1E1E2E
+    backgroundColor: '#1E1E2E',
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    shadowColor: '#1E1E2E',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 24,
     elevation: 10,
     zIndex: 300,
@@ -157,14 +162,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.5,
   },
-  toastIconSuccess: {
-    backgroundColor: colors.primaryLight,
-    borderColor: colors.primary,
-  },
-  toastIconUndo: {
-    backgroundColor: colors.coralLight,
-    borderColor: colors.coral,
-  },
   toastIconText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 13,
@@ -175,7 +172,7 @@ const styles = StyleSheet.create({
   toastTitle: {
     fontFamily: 'Nunito_700Bold',
     fontSize: 14,
-    color: colors.white,
+    color: '#FFFFFF',
   },
   toastSub: {
     fontFamily: 'Inter_400Regular',
