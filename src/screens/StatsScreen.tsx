@@ -82,6 +82,14 @@ function isTransferRow(t: TransactionModel): boolean {
   return t.isTransfer || (t.category ?? '').toLowerCase() === 'transfer';
 }
 
+// Balance-reconciliation rows are real money (so they belong in income/expense
+// totals + 6-month trend) but they're not real spending events — exclude them
+// from category breakdowns, top merchants, top transactions, by-account spend,
+// daily/DOW/TOD distributions, txCount, and the largest-expense headline.
+function isAdjustmentRow(t: TransactionModel): boolean {
+  return (t.category ?? '').toLowerCase() === 'adjustment';
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type StatsBundle = {
@@ -342,6 +350,9 @@ function InsightsScreen() {
           }
           if (t.type !== 'expense') return;
           totalExpense += t.amount;
+          // Adjustments stay in totalExpense above (they're real money) but
+          // bow out of every behavioral aggregation below.
+          if (isAdjustmentRow(t)) return;
           txCount += 1;
           if (t.amount > largestExpense) largestExpense = t.amount;
 
@@ -445,7 +456,7 @@ function InsightsScreen() {
 
         // Top single transactions (top 5 by amount)
         const topTransactions: TopTxRow[] = topExpenseRecords
-          .filter((t) => !isTransferRow(t))
+          .filter((t) => !isTransferRow(t) && !isAdjustmentRow(t))
           .slice(0, 5)
           .map((t) => {
             const name = t.displayName ?? t.merchantName ?? cap(t.category ?? 'Expense');
@@ -1340,6 +1351,9 @@ function createStyles(colors: any, topInset: number) {
       paddingHorizontal: 16,
       paddingTop: 12,
       paddingBottom: 4,
+      // Keep height stable across states so the month pill below doesn't
+      // jump 4px when the empty-state hides the Ask Fino button (38px tall).
+      minHeight: 54,
     },
     headerTitle: {
       fontFamily: 'Nunito_800ExtraBold',

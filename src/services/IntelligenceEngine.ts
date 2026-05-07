@@ -112,6 +112,13 @@ function isTransferRow(t: TransactionModel): boolean {
   return t.isTransfer || (t.category ?? '').toLowerCase() === 'transfer';
 }
 
+// Reconciliation rows are real money (kept in income/expense totals) but they
+// don't represent spending behavior — exclude them from category breakdowns,
+// merchant patterns, and trend/anomaly comparisons that drive insight chips.
+function isAdjustmentRow(t: TransactionModel): boolean {
+  return (t.category ?? '').toLowerCase() === 'adjustment';
+}
+
 function startOfMonthIso(year: number, month: number): string {
   return new Date(year, month, 1).toISOString();
 }
@@ -130,7 +137,7 @@ function cap(s: string): string {
 function sumExpensesByCategory(txns: TransactionModel[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const t of txns) {
-    if (isTransferRow(t) || t.type !== 'expense') continue;
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
     const key = (t.category ?? '').trim().toLowerCase();
     if (!key) continue;
     out[key] = (out[key] ?? 0) + t.amount;
@@ -146,7 +153,7 @@ function sumByMerchant(
     { total: number; count: number; category: string | null }
   > = {};
   for (const t of txns) {
-    if (isTransferRow(t) || t.type !== 'expense') continue;
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
     const raw =
       (t.merchantName ?? '').trim() ||
       (t.displayName ?? '').trim();
@@ -208,7 +215,7 @@ function dayOfWeekAverages(
     new Set(),
   ];
   for (const t of txns) {
-    if (isTransferRow(t) || t.type !== 'expense') continue;
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
     const dow = (new Date(t.date).getDay() + 6) % 7; // 0 = Mon
     totals[dow] += t.amount;
     seenByDow[dow].add(t.date.slice(0, 10));
@@ -311,7 +318,7 @@ function detectRecurring(
   };
   const groups = new Map<string, Hit[]>();
   for (const t of prior3MoTx) {
-    if (isTransferRow(t) || t.type !== 'expense') continue;
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
     const merchant =
       ((t.merchantName ?? '').trim() ||
         (t.displayName ?? '').trim()).toLowerCase();
@@ -429,7 +436,7 @@ function buildCoachMessage(args: {
   let weekdayDays = new Set<string>();
   let weekendDays = new Set<string>();
   for (const t of monthTx) {
-    if (isTransferRow(t) || t.type !== 'expense') continue;
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
     const d = new Date(t.date);
     const dow = d.getDay(); // 0 = Sun, 6 = Sat
     const dateKey = t.date.slice(0, 10);
@@ -578,7 +585,7 @@ function computeWeekDeltas(
   const cur: Record<string, number> = {};
   const prev: Record<string, number> = {};
   for (const t of txns) {
-    if (isTransferRow(t) || t.type !== 'expense') continue;
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
     const ts = new Date(t.date).getTime();
     const cat = (t.category ?? '').trim().toLowerCase();
     if (!cat) continue;
@@ -650,7 +657,7 @@ export async function getInsights(
   let prior3MoTotal = 0;
   const prior3MoMonthsSeen = new Set<string>();
   for (const t of prior3MoTx) {
-    if (isTransferRow(t) || t.type !== 'expense') continue;
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
     const cat = (t.category ?? '').trim().toLowerCase();
     if (cat) prior3MoByCat[cat] = (prior3MoByCat[cat] ?? 0) + t.amount;
     prior3MoTotal += t.amount;
@@ -808,7 +815,7 @@ function composeWhenChip(args: {
   const dowTotals = [0, 0, 0, 0, 0, 0, 0];
   const dowCounts = [0, 0, 0, 0, 0, 0, 0];
   for (const t of monthTx) {
-    if (isTransferRow(t) || t.type !== 'expense') continue;
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
     const dow = (new Date(t.date).getDay() + 6) % 7;
     dowTotals[dow] += t.amount;
     dowCounts[dow] += 1;

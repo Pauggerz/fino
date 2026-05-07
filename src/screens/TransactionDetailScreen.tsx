@@ -188,6 +188,10 @@ export default function TransactionDetailScreen() {
           return { bg: colors.catBillsBg, text: colors.catBillsText };
         case 'health':
           return { bg: colors.catHealthBg, text: colors.catHealthText };
+        case 'transfer':
+          return { bg: 'rgba(15,118,110,0.12)', text: '#0F766E' };
+        case 'adjustment':
+          return { bg: 'rgba(92,85,80,0.14)', text: '#5C5550' };
         default:
           return { bg: colors.catTileEmptyBg, text: colors.textSecondary };
       }

@@ -67,7 +67,7 @@ export default function TabBar({
     onFabPress();
   };
 
-  const pillBg = isDark ? '#1C1C1E' : '#FFFFFF';
+  const pillBg = colors.white;
   const fabBg = isDark ? '#FFFFFF' : '#1C1C1E';
   const fabColor = isDark ? '#1C1C1E' : '#FFFFFF';
 

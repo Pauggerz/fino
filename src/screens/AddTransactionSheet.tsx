@@ -1178,8 +1178,17 @@ export default function AddTransactionSheet({ route }: Props) {
               maxDate={getLocalDateString(new Date())}
               markedDates={{ [tempSelectedDate]: { selected: true } }}
               theme={{
+                backgroundColor: colors.white,
+                calendarBackground: colors.white,
+                textSectionTitleColor: colors.textSecondary,
                 selectedDayBackgroundColor: colors.primary,
+                selectedDayTextColor: '#FFFFFF',
                 todayTextColor: colors.primary,
+                dayTextColor: colors.textPrimary,
+                textDisabledColor: isDark ? '#44444A' : '#d0cec9',
+                arrowColor: colors.textPrimary,
+                monthTextColor: colors.textPrimary,
+                dotColor: colors.primary,
               }}
             />
             <View style={styles.dateModalActions}>
@@ -1220,7 +1229,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     sheetHandle: {
       width: 36,
       height: 4,
-      backgroundColor: isDark ? '#444' : '#D8D6D0',
+      backgroundColor: colors.border,
       marginTop: 10,
     },
     sheetContent: {
@@ -1270,7 +1279,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       marginBottom: 10,
       height: 42,
       borderRadius: 12,
-      backgroundColor: isDark ? '#1E1E1E' : '#F0EEE9',
+      backgroundColor: isDark ? colors.surfaceSubdued : '#F0EEE9',
       padding: 3,
       gap: 3,
     },
@@ -1379,9 +1388,9 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: isDark ? '#2A2A2A' : '#FFFFFF',
+      backgroundColor: colors.white,
       borderWidth: 1,
-      borderColor: isDark ? '#3A3A3A' : '#E8E6E0',
+      borderColor: colors.border,
     },
     opKeyClear: {
       /* unused — C moved to calcActionRow */ height: 46,
@@ -1468,12 +1477,12 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     numKey: {
       height: 46,
-      backgroundColor: colors.white ?? colors.background,
+      backgroundColor: colors.white,
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
-      borderColor: isDark ? '#333' : '#EEECE8',
+      borderColor: colors.border,
     },
     numKeyDel: {
       backgroundColor: isDark ? 'rgba(192,57,42,0.12)' : 'rgba(192,57,42,0.07)',
@@ -1497,7 +1506,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     skeletonChip: {
       height: 34,
       borderRadius: 10,
-      backgroundColor: isDark ? '#2A2A2A' : '#E8E6E0',
+      backgroundColor: isDark ? colors.surfaceSubdued : '#E8E6E0',
     },
     chipSectionLabel: {
       fontFamily: 'Inter_700Bold',
@@ -1519,9 +1528,9 @@ const createStyles = (colors: any, isDark: boolean) =>
       height: 36,
       borderRadius: 999,
       paddingHorizontal: 10,
-      backgroundColor: isDark ? '#1E1E1E' : '#FFFFFF',
+      backgroundColor: colors.white,
       borderWidth: 1.5,
-      borderColor: isDark ? '#333' : '#E8E6E0',
+      borderColor: colors.border,
     },
     acctChipActive: {
       backgroundColor: isDark
@@ -1554,7 +1563,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       height: 34,
       borderRadius: 999,
       paddingHorizontal: 10,
-      backgroundColor: isDark ? '#2A2A2A' : '#F5F4F0',
+      backgroundColor: isDark ? colors.surfaceSubdued : '#F5F4F0',
       borderWidth: 1.5,
       borderColor: 'transparent',
     },
@@ -1584,10 +1593,10 @@ const createStyles = (colors: any, isDark: boolean) =>
       gap: 8,
       marginHorizontal: 20,
       marginBottom: 10,
-      backgroundColor: colors.white ?? colors.background,
+      backgroundColor: colors.white,
       borderRadius: 12,
       borderWidth: 1.5,
-      borderColor: isDark ? '#333' : '#EEECE8',
+      borderColor: colors.border,
       paddingHorizontal: 12,
       height: 44,
     },
@@ -1658,7 +1667,7 @@ const createStyles = (colors: any, isDark: boolean) =>
       padding: 12,
       borderRadius: 10,
       borderWidth: 1,
-      borderColor: isDark ? '#333' : '#EEE',
+      borderColor: colors.border,
       alignItems: 'center',
     },
     discardKeepText: { fontFamily: 'Inter_700Bold', color: colors.textPrimary },

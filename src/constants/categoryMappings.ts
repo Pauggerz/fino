@@ -608,6 +608,10 @@ export const CATEGORY_COLOR: Record<string, string> = {
   business: '#C97A20',
   gifts: '#C0503A',
   investment: '#1a7a6e',
+  // System categories — reserved for auto-generated transfer & reconciliation
+  // rows. Distinct from real spending colors so they read as neutral movement.
+  transfer: '#0F766E',
+  adjustment: '#5C5550',
   default: '#888780',
 };
 

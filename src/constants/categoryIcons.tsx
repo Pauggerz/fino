@@ -314,6 +314,29 @@ export const CATEGORY_ICON_PATHS: Record<string, CategoryIconConfig> = {
       />
     ),
   },
+  // ── System categories (transfer, adjustment) ───────────────────────────────
+  // Reserved keys produced by AdjustBalanceSheet / TransferModal. Users can't
+  // create these via the picker; they only appear on auto-generated rows.
+  transfer: {
+    viewBox: '0 0 24 24',
+    // swap_horiz — two arrows pointing opposite directions
+    paths: (
+      <Path
+        fill="#CURRENT"
+        d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"
+      />
+    ),
+  },
+  adjustment: {
+    viewBox: '0 0 24 24',
+    // balance — scales (reconciliation = weighing books vs reality)
+    paths: (
+      <Path
+        fill="#CURRENT"
+        d="M12 3c-1.1 0-2 .9-2 2H3v2h1.4l-2.4 6c0 1.66 1.57 3 3.5 3s3.5-1.34 3.5-3L6.6 7H10v13H6v2h12v-2h-4V7h3.4l-2.4 6c0 1.66 1.57 3 3.5 3s3.5-1.34 3.5-3l-2.4-6H22V5h-7c0-1.1-.9-2-2-2zm-7.5 6.5L6.5 14h-3l1-4.5zm14 0L20.5 14h-3l1-4.5z"
+      />
+    ),
+  },
   // Fallback for any custom category the user creates whose key isn't in
   // the picker library (e.g. legacy data) — same triangle/circle/square as `others`.
   default: {
