@@ -9,7 +9,7 @@
     "web": "expo start --web",
     "lint": "eslint . --ext .ts,.tsx",
     "prepare": "husky install",
-    "test:taxonomy": "tsx scripts/test-taxonomy.ts"
+    "test:taxonomy": "npx --yes tsx scripts/test-taxonomy.ts"
   },
   "dependencies": {
     "@babel/plugin-proposal-decorators": "^7.29.0",

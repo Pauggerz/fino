@@ -43,7 +43,6 @@ const CategoryScreen = lazy(() => import('../screens/CategoryScreen'));
 const SankeyFullscreenScreen = lazy(
   () => import('../screens/SankeyFullscreenScreen')
 );
-const ProUpgradeScreen = lazy(() => import('../screens/ProUpgradeScreen'));
 
 function ModalLoadingShim() {
   const { colors } = useTheme();
@@ -107,9 +106,6 @@ export type RootStackParamList = {
   SavingsGoal: undefined;
   CashFlow: { accountId?: string } | undefined;
   Categories: undefined;
-  ProUpgrade:
-    | { source?: 'add_category' | 'icon_picker' | 'color_picker' }
-    | undefined;
   TransactionDetail: { id: string };
   SankeyFullscreen: {
     income: number;
@@ -311,11 +307,6 @@ export default function RootNavigator() {
                 name="TransactionDetail"
                 component={TransactionDetailScreen}
                 options={{ headerShown: false }}
-              />
-              <Stack.Screen
-                name="ProUpgrade"
-                component={ProUpgradeScreen}
-                options={{ headerShown: false, presentation: 'modal' }}
               />
               <Stack.Screen
                 name="SankeyFullscreen"

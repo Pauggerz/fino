@@ -60,29 +60,30 @@ export const CATEGORY_COLOR: Record<string, string> = {
   default: '#888780',
 };
 
-// Default expense categories — DB key + display name. New signups receive
-// these via the seed trigger; existing users get them backfilled by migration.
-// CategoryScreen uses this list to mark rows non-deletable (only customs
-// can be deleted) and to validate uniqueness against new-category names.
-export interface DefaultExpenseCategoryDef {
+// Starter expense categories — shown as opt-in chips on the onboarding
+// `CategoriesSlide`. The user picks which (if any) to begin with; nothing
+// is auto-seeded except "Others", which is mandatory and locked from
+// rename/delete via each row's `is_default` flag (see seed_user_defaults
+// in supabase/onboarding_category_picker.sql).
+export interface StarterCategoryDef {
   key: string;
   name: string;
   sortOrder: number;
+  /** Tile background colour used by CategoryIcon previews. Mirrors
+   *  CATEGORY_TILE_BG above so onboarding chips look identical to the
+   *  CategoryScreen tiles. */
+  tileBg: string;
+  /** Glyph / text colour. Mirrors CATEGORY_COLOR above. */
+  textColor: string;
 }
 
-export const DEFAULT_EXPENSE_CATEGORIES: DefaultExpenseCategoryDef[] = [
-  { key: 'food', name: 'Food', sortOrder: 0 },
-  { key: 'transport', name: 'Transport', sortOrder: 1 },
-  { key: 'shopping', name: 'Shopping', sortOrder: 2 },
-  { key: 'bills', name: 'Bills', sortOrder: 3 },
-  { key: 'health', name: 'Health', sortOrder: 4 },
-  { key: 'others', name: 'Others', sortOrder: 5 },
+export const STARTER_EXPENSE_CATEGORIES: StarterCategoryDef[] = [
+  { key: 'food',      name: 'Food',      sortOrder: 0, tileBg: '#FDF6E3', textColor: '#C97A20' },
+  { key: 'transport', name: 'Transport', sortOrder: 1, tileBg: '#EEF6FF', textColor: '#3A80C0' },
+  { key: 'shopping',  name: 'Shopping',  sortOrder: 2, tileBg: '#FFF0F3', textColor: '#C0503A' },
+  { key: 'bills',     name: 'Bills',     sortOrder: 3, tileBg: '#F3EFFF', textColor: '#7A4AB8' },
+  { key: 'health',    name: 'Health',    sortOrder: 4, tileBg: '#EFF8F2', textColor: '#2d6a4f' },
 ];
-
-/** Set of default expense keys — used to gate the Delete action in CategoryScreen. */
-export const DEFAULT_EXPENSE_KEYS: ReadonlySet<string> = new Set(
-  DEFAULT_EXPENSE_CATEGORIES.map((c) => c.key),
-);
 
 // Income category definitions (used in AddTransactionSheet + FeedScreen)
 export interface IncomeCategoryDef {
