@@ -16,6 +16,8 @@
 import {
   analyzeTransactionText,
   aiMappings,
+  buildDisplayName,
+  extractItems,
   type AIAnalysisResult,
   type Category,
 } from '../src/services/aiCategoryMap';
@@ -66,6 +68,25 @@ function runCase(c: Case): void {
   if (c.expectResolved !== undefined) {
     check(`${c.desc} (resolved)`, r.resolvedCategory === c.expectResolved, ctx);
   }
+}
+
+// ─── Display-name / alias-filter tests ──────────────────────────────────────
+
+type DisplayCase = {
+  desc: string;
+  text: string;
+  /** Master category to use for the formatter. Aliases for this master get
+   *  filtered from the item list. */
+  category: Category;
+  /** Expected output of `buildDisplayName(text, category)`. */
+  expectDisplay: string;
+};
+
+function runDisplayCase(c: DisplayCase): void {
+  const got = buildDisplayName(c.text, c.category);
+  const items = extractItems(c.text, { category: c.category });
+  const ctx = `text="${c.text}" category=${c.category} → display="${got}" items=[${items.join(',')}]`;
+  check(c.desc, got === c.expectDisplay, ctx);
 }
 
 // ─── Cases ──────────────────────────────────────────────────────────────────
@@ -161,10 +182,17 @@ const cases: Case[] = [
     expectMaster: 'bills',
   },
   {
-    desc: 'substring match — "foodpanda" → food (token contains keyword)',
+    desc: 'substring match — "coffeeshop" → coffee (token contains keyword)',
+    text: 'coffeeshop visit',
+    active: DEFAULTS,
+    expectKeyword: 'coffee',
+    expectMaster: 'food',
+  },
+  {
+    desc: 'foodpanda is now an explicit Delivery keyword, exact-matches',
     text: 'foodpanda delivery',
     active: DEFAULTS,
-    expectKeyword: 'food',
+    expectKeyword: 'foodpanda',
     expectMaster: 'food',
   },
   {
@@ -224,35 +252,449 @@ const cases: Case[] = [
     active: ['cOfFeE'],
     expectResolved: 'cOfFeE',
   },
+
+  // ── User's example: school → Education ────────────────────────────────────
+  {
+    desc: 'school → Education when user has it',
+    text: 'school',
+    active: ['Education', 'Bills'],
+    expectResolved: 'Education',
+    expectMaster: 'bills',
+  },
+  {
+    desc: 'enrollment → Education',
+    text: 'enrollment fee for college',
+    active: ['Education', 'Bills'],
+    expectResolved: 'Education',
+  },
+  {
+    desc: 'textbook → Education',
+    text: 'textbook',
+    active: ['Education', 'Bills'],
+    expectResolved: 'Education',
+  },
+
+  // ── Newly-added sub-categories ────────────────────────────────────────────
+  {
+    desc: 'shampoo → Personal Care',
+    text: 'shampoo',
+    active: ['Personal Care', 'Shopping'],
+    expectResolved: 'Personal Care',
+    expectMaster: 'shopping',
+  },
+  {
+    desc: 'salon → Personal Care',
+    text: 'salon haircut',
+    active: ['Personal Care', 'Shopping'],
+    expectResolved: 'Personal Care',
+  },
+  {
+    desc: 'pa-gupit → Personal Care',
+    text: 'pa-gupit',
+    active: ['Personal Care', 'Shopping'],
+    expectResolved: 'Personal Care',
+  },
+  {
+    desc: 'dog food → Pets',
+    text: 'dog food',
+    active: ['Pets', 'Shopping'],
+    expectResolved: 'Pets',
+    expectMaster: 'shopping',
+  },
+  {
+    desc: 'vet → Pets',
+    text: 'vet checkup for puppy',
+    active: ['Pets', 'Shopping'],
+    expectResolved: 'Pets',
+  },
+  {
+    desc: 'foodpanda → Food Delivery',
+    text: 'foodpanda',
+    active: ['Food Delivery', 'Food'],
+    expectResolved: 'Food Delivery',
+    expectMaster: 'food',
+  },
+  {
+    desc: 'foodpanda → Food when no Delivery sub-cat',
+    text: 'foodpanda',
+    active: DEFAULTS,
+    expectResolved: 'Food',
+    expectMaster: 'food',
+  },
+  {
+    desc: 'lbc → Remittance',
+    text: 'lbc padala',
+    active: ['Remittance', 'Bills'],
+    expectResolved: 'Remittance',
+    expectMaster: 'bills',
+  },
+  {
+    desc: 'cebuana lhuillier → Remittance',
+    text: 'cebuana lhuillier transaction',
+    active: ['Remittance', 'Bills'],
+    expectResolved: 'Remittance',
+  },
+
+  // ── Entertainment master ──────────────────────────────────────────────────
+  {
+    desc: 'gym → Sports & Fitness',
+    text: 'gym membership',
+    active: ['Sports & Fitness', 'Entertainment'],
+    expectResolved: 'Sports & Fitness',
+    expectMaster: 'entertainment',
+  },
+  {
+    desc: 'gym → Entertainment when only master is active',
+    text: 'gym',
+    active: ['Entertainment'],
+    expectResolved: 'Entertainment',
+    expectMaster: 'entertainment',
+  },
+  {
+    desc: 'hotel → Travel',
+    text: 'hotel booking',
+    active: ['Travel', 'Entertainment'],
+    expectResolved: 'Travel',
+    expectMaster: 'entertainment',
+  },
+  {
+    desc: 'cinema → Cinema',
+    text: 'sm cinema',
+    active: ['Cinema', 'Entertainment'],
+    expectResolved: 'Cinema',
+    expectMaster: 'entertainment',
+  },
+  {
+    desc: 'concert → Events',
+    text: 'concert tonight',
+    active: ['Events', 'Entertainment'],
+    expectResolved: 'Events',
+  },
+  {
+    desc: 'karaoke → Amusement',
+    text: 'karaoke session',
+    active: ['Amusement', 'Entertainment'],
+    expectResolved: 'Amusement',
+  },
+  {
+    desc: 'beach → Outdoor',
+    text: 'beach trip',
+    active: ['Outdoor', 'Entertainment'],
+    expectResolved: 'Outdoor',
+  },
+  {
+    desc: 'mobile legends diamonds → Gaming',
+    text: 'mobile legends diamond',
+    active: ['Gaming', 'Entertainment'],
+    expectResolved: 'Gaming',
+    expectMaster: 'entertainment',
+  },
+  {
+    desc: 'genshin → Gaming',
+    text: 'genshin primogems',
+    active: ['Gaming', 'Entertainment'],
+    expectResolved: 'Gaming',
+  },
+  {
+    desc: 'roblox → Gaming',
+    text: 'roblox robux',
+    active: ['Gaming', 'Entertainment'],
+    expectResolved: 'Gaming',
+  },
+
+  // ── Conflict disambiguation ───────────────────────────────────────────────
+  {
+    desc: 'movie ticket → Cinema (NOT Transport)',
+    text: 'movie ticket',
+    active: ['Cinema', 'Tickets', 'Transport', 'Entertainment'],
+    expectResolved: 'Cinema',
+    expectMaster: 'entertainment',
+  },
+  {
+    desc: 'concert ticket → Events (NOT Transport)',
+    text: 'concert ticket',
+    active: ['Events', 'Tickets', 'Transport', 'Entertainment'],
+    expectResolved: 'Events',
+    expectMaster: 'entertainment',
+  },
+  {
+    desc: 'plain "ticket" → Transport (default fallback)',
+    text: 'ticket',
+    active: ['Tickets', 'Transport'],
+    expectResolved: 'Tickets',
+    expectMaster: 'transport',
+  },
+  {
+    desc: 'rubbing alcohol → Medication (NOT Drinks)',
+    text: 'rubbing alcohol',
+    active: ['Medication', 'Health', 'Drinks', 'Food'],
+    expectResolved: 'Medication',
+    expectMaster: 'health',
+  },
+  {
+    desc: 'plain "alcohol" → Drinks (default)',
+    text: 'alcohol',
+    active: ['Drinks', 'Medication', 'Food', 'Health'],
+    expectResolved: 'Drinks',
+    expectMaster: 'food',
+  },
+  {
+    desc: 'tiger balm → Medication (NOT Drinks)',
+    text: 'tiger balm',
+    active: ['Medication', 'Drinks', 'Health', 'Food'],
+    expectResolved: 'Medication',
+  },
+  {
+    desc: 'tiger beer → Drinks',
+    text: 'tiger beer',
+    active: ['Drinks', 'Medication', 'Food', 'Health'],
+    expectResolved: 'Drinks',
+    expectMaster: 'food',
+  },
+  {
+    desc: 'pa-pasta → Medical Services (NOT Food)',
+    text: 'pa-pasta sa ngipin',
+    active: ['Medical Services', 'Health', 'Food'],
+    expectResolved: 'Medical Services',
+    expectMaster: 'health',
+  },
+  {
+    desc: 'plain "pasta" → Food umbrella',
+    text: 'pasta dinner',
+    active: ['Food', 'Medical Services'],
+    expectResolved: 'Food',
+    expectMaster: 'food',
+  },
+  {
+    desc: 'adidas → Retailers (the brand, not penoy)',
+    text: 'adidas',
+    active: ['Retailers', 'Shopping'],
+    expectResolved: 'Retailers',
+    expectMaster: 'shopping',
+  },
+
+  // ── Bubble-up specificity for new content ────────────────────────────────
+  {
+    desc: 'lalamove → Ride Hailing',
+    text: 'lalamove delivery',
+    active: ['Ride Hailing', 'Transport'],
+    expectResolved: 'Ride Hailing',
+    expectMaster: 'transport',
+  },
+  {
+    desc: 'crunchyroll → Subscriptions',
+    text: 'crunchyroll',
+    active: ['Subscriptions', 'Bills'],
+    expectResolved: 'Subscriptions',
+    expectMaster: 'bills',
+  },
+  {
+    desc: 'chatgpt plus → Subscriptions',
+    text: 'chatgpt plus',
+    active: ['Subscriptions', 'Bills'],
+    expectResolved: 'Subscriptions',
+  },
+  {
+    desc: 'cebupacific → Flights',
+    text: 'cebupacific',
+    active: ['Flights', 'Transport'],
+    expectResolved: 'Flights',
+    expectMaster: 'transport',
+  },
+  {
+    desc: 'mechanic → Vehicle Upkeep',
+    text: 'mechanic visit',
+    active: ['Vehicle Upkeep', 'Transport'],
+    expectResolved: 'Vehicle Upkeep',
+  },
+  {
+    desc: 'condo rent → Rent',
+    text: 'condo rent',
+    active: ['Rent', 'Bills'],
+    expectResolved: 'Rent',
+  },
+  {
+    desc: 'glutathione → Vitamins',
+    text: 'glutathione tablets',
+    active: ['Vitamins', 'Health'],
+    expectResolved: 'Vitamins',
+    expectMaster: 'health',
+  },
+  {
+    desc: 'pap smear → Medical Services',
+    text: 'pap smear',
+    active: ['Medical Services', 'Health'],
+    expectResolved: 'Medical Services',
+  },
+
+  // ── User-named-by-alias bubble-up ────────────────────────────────────────
+  // The user can name their category by an alias (e.g. "School" instead of
+  // the canonical "Education") and the bubble-up still resolves to it.
+  {
+    desc: 'tuition fee → "School" when user has School (alias of Education)',
+    text: 'tuition fee',
+    active: ['School', 'Bills', 'Others'],
+    expectResolved: 'School',
+    expectMaster: 'bills',
+  },
+  {
+    desc: 'tuition fee → "Education" when user has Education (canonical)',
+    text: 'tuition fee',
+    active: ['Education', 'Bills'],
+    expectResolved: 'Education',
+    expectMaster: 'bills',
+  },
+  {
+    desc: 'tuition fee → "Bills" when user has neither School nor Education',
+    text: 'tuition fee',
+    active: ['Bills', 'Others'],
+    expectResolved: 'Bills',
+    expectMaster: 'bills',
+  },
+  {
+    desc: 'tuition fee → "Education" when user has BOTH (canonical wins)',
+    text: 'tuition fee',
+    active: ['School', 'Education', 'Bills'],
+    expectResolved: 'Education',
+    expectMaster: 'bills',
+  },
+  {
+    desc: 'doctor consultation → "Doctor" (alias of Medical Services)',
+    text: 'doctor consultation',
+    active: ['Doctor', 'Health'],
+    expectResolved: 'Doctor',
+    expectMaster: 'health',
+  },
+  {
+    desc: 'gym membership → "Gym" (alias of Sports & Fitness)',
+    text: 'gym membership',
+    active: ['Gym', 'Entertainment'],
+    expectResolved: 'Gym',
+    expectMaster: 'entertainment',
+  },
+  {
+    desc: 'meralco bill → "Kuryente" (alias of Utilities, Tagalog)',
+    text: 'meralco bill',
+    active: ['Kuryente', 'Bills'],
+    expectResolved: 'Kuryente',
+    expectMaster: 'bills',
+  },
+  {
+    desc: 'starbucks → "Kape" (alias of Coffee, Tagalog)',
+    text: 'starbucks',
+    active: ['Kape', 'Food'],
+    expectResolved: 'Kape',
+    expectMaster: 'food',
+  },
+  {
+    desc: 'tuition fee preserves user casing — "school" lowercase',
+    text: 'tuition fee',
+    active: ['school', 'bills'],
+    expectResolved: 'school',
+  },
+];
+
+// ─── Display-name cases ────────────────────────────────────────────────────
+// Verifying alias filtering: words tagged as `aliases` get stripped from the
+// item list, while `keywords` come through as line items.
+
+const displayCases: DisplayCase[] = [
+  // The user's example — `school` is an alias, `enrollment` is a keyword
+  // (a paid event), so the formatter drops "school" and keeps "Enrollment".
+  {
+    desc: 'school enrollment → "Bills - Enrollment" (school filtered)',
+    text: 'school enrollment',
+    category: 'bills',
+    expectDisplay: 'Bills - Enrollment',
+  },
+  {
+    desc: 'school 1500 alone → "Bills" (no item, school is alias)',
+    text: 'school',
+    category: 'bills',
+    expectDisplay: 'Bills',
+  },
+  {
+    desc: 'doctor consultation → "Health - Consultation" (doctor filtered)',
+    text: 'doctor consultation',
+    category: 'health',
+    expectDisplay: 'Health - Consultation',
+  },
+  {
+    // Word-level alias filter: "gym" is alias for Sports & Fitness, so it
+    // gets stripped and only "Membership" remains as the line item. This
+    // matches the user's intent for "school enrollment" → "Enrollment".
+    desc: 'gym membership → "Entertainment - Membership" (gym alias filtered)',
+    text: 'gym membership',
+    category: 'entertainment',
+    expectDisplay: 'Entertainment - Membership',
+  },
+  {
+    desc: 'tuition fee → "Bills - Tuition Fee" (keyword kept)',
+    text: 'tuition fee',
+    category: 'bills',
+    expectDisplay: 'Bills - Tuition Fee',
+  },
+  {
+    desc: 'hospital surgery → "Health - Surgery" (hospital filtered)',
+    text: 'hospital surgery',
+    category: 'health',
+    expectDisplay: 'Health - Surgery',
+  },
+  {
+    desc: 'restaurant adobo → "Food - Adobo" (restaurant filtered)',
+    text: 'restaurant adobo',
+    category: 'food',
+    expectDisplay: 'Food - Adobo',
+  },
+  {
+    desc: 'bayad meralco → "Bills - Meralco" (bayad filtered)',
+    text: 'bayad meralco',
+    category: 'bills',
+    expectDisplay: 'Bills - Meralco',
+  },
 ];
 
 // ─── Static taxonomy invariants ────────────────────────────────────────────
 
 function checkInvariants(): void {
-  // Every leaf keyword should be reachable via aiMappings.
-  let totalKw = 0;
+  // Every surface form (keywords + aliases) should be reachable via aiMappings.
+  let totalSurface = 0;
   let unique = new Set<string>();
+  let aliasCount = 0;
   function walk(node: any, depth: number) {
     for (const k of node.keywords ?? []) {
-      totalKw++;
+      totalSurface++;
       unique.add(k.toLowerCase());
+    }
+    for (const a of node.aliases ?? []) {
+      totalSurface++;
+      aliasCount++;
+      unique.add(a.toLowerCase());
     }
     for (const c of node.children ?? []) walk(c, depth + 1);
   }
   for (const m of TAXONOMY) walk(m, 0);
 
   check(
-    `taxonomy has ≥200 unique keywords (got ${unique.size})`,
-    unique.size >= 200
+    `taxonomy has ≥1000 unique surface forms (got ${unique.size})`,
+    unique.size >= 1000
   );
   check(
-    `aiMappings dict size matches unique keywords (${Object.keys(aiMappings).length} vs ${unique.size})`,
+    `taxonomy has ≥100 aliases (got ${aliasCount})`,
+    aliasCount >= 100
+  );
+  check(
+    `aiMappings dict size matches unique surface forms (${Object.keys(aiMappings).length} vs ${unique.size})`,
     Object.keys(aiMappings).length === unique.size
   );
   check(
-    'every master category is represented in aiMappings',
-    new Set(Object.values(aiMappings)).size >= 5,
+    'all 6 master categories are represented in aiMappings',
+    new Set(Object.values(aiMappings)).size >= 6,
     `unique masters: ${[...new Set(Object.values(aiMappings))].join(',')}`
+  );
+  check(
+    `total surface entries ≥ unique count (no dropped on dedupe)`,
+    totalSurface >= unique.size
   );
 }
 
@@ -261,6 +703,7 @@ function checkInvariants(): void {
 console.log('Running taxonomy tests...\n');
 
 for (const c of cases) runCase(c);
+for (const d of displayCases) runDisplayCase(d);
 checkInvariants();
 
 console.log(`Passed: ${passed}`);

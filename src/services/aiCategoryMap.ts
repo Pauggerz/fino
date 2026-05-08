@@ -21,22 +21,43 @@ type KeywordPath = TaxonomyNode[]; // index 0 = leaf, last = master
 const KEYWORD_PATHS: Record<string, KeywordPath> = {};
 const _aiMappings: Record<string, Category> = {};
 
+// Aliases per master — used by extractItems / buildDisplayName to strip
+// category-naming words from item lists ("school enrollment" → "Enrollment",
+// not "School Enrollment"). Auto-derived from each TaxonomyNode's `aliases`.
+const _aliasesByMaster: Record<MasterCategory, Set<string>> = {
+  food: new Set(),
+  transport: new Set(),
+  bills: new Set(),
+  health: new Set(),
+  shopping: new Set(),
+  entertainment: new Set(),
+  other: new Set(),
+};
+
 function indexNode(node: TaxonomyNode, ancestors: TaxonomyNode[]): void {
+  // Index children FIRST so leaf surface forms claim their slot before the
+  // master's umbrella terms. Combined with first-registration-wins below,
+  // this guarantees that "more specific node wins" on accidental duplicates
+  // — matching the bubble-up philosophy.
+  if (node.children) {
+    for (const child of node.children) {
+      indexNode(child, [node, ...ancestors]);
+    }
+  }
   const path: KeywordPath = [node, ...ancestors];
-  for (const kw of node.keywords) {
+  // Both aliases and keywords resolve to the same node for *matching*
+  // purposes — the difference only matters for display-name formatting.
+  const allTerms = [...node.keywords, ...(node.aliases ?? [])];
+  for (const kw of allTerms) {
     const key = kw.toLowerCase();
-    // First registration wins — masters are indexed AFTER their children
-    // (see traversal below), so children always claim their keywords first.
     if (!KEYWORD_PATHS[key]) {
       KEYWORD_PATHS[key] = path;
       _aiMappings[key] = node.master;
     }
   }
-  if (node.children) {
-    // Index children FIRST so leaves win conflicts.
-    for (const child of node.children) {
-      indexNode(child, [node, ...ancestors]);
-    }
+  // Aliases also feed the master-level umbrella set used by extractItems.
+  for (const alias of node.aliases ?? []) {
+    _aliasesByMaster[node.master].add(alias.toLowerCase());
   }
 }
 
@@ -47,27 +68,60 @@ for (const master of TAXONOMY) indexNode(master, []);
 export const aiMappings: Readonly<Record<string, Category>> = _aiMappings;
 
 /**
- * Walk a keyword's path from leaf → master and return the first node whose
- * `name` matches an entry in `activeCategoryNames` (case-insensitive). When
- * `activeCategoryNames` is empty/undefined, returns the leaf — preserving
- * back-compat for callers that don't yet pass user categories.
+ * Walk a keyword's path from leaf → master and return the first node that
+ * matches an entry in `activeCategoryNames` (case-insensitive). A node
+ * "matches" when EITHER:
+ *   1. its canonical `name` matches a user category, OR
+ *   2. one of its `aliases` matches a user category.
+ *
+ * Canonical-name matches win over alias matches at the same path step (the
+ * user's literal naming choice is most explicit). Walking proceeds leaf →
+ * master, so a more-specific node always wins over a less-specific one.
+ *
+ * Returns `userEntry` — the user's exact category name (preserving their
+ * casing) — so callers can surface it in the UI without round-tripping
+ * through the taxonomy's canonical names.
+ *
+ * Example: user has only `["School", "Bills", "Others"]` and types
+ * "tuition fee" (taxonomy path = [Education, Bills]).
+ *   - Education.name = "Education" — not in user list. Skip.
+ *   - Education.aliases includes "school" — matches user's "School". Return.
+ * → resolvedCategory = "School" (the user's casing). Without this alias
+ *   fallback, the resolver would jump past Education and land on "Bills",
+ *   which is wrong: the user clearly means their School category.
  */
 function bubbleUp(
   path: KeywordPath,
   activeCategoryNames: string[] | undefined
-): { node: TaxonomyNode; pathNames: string[] } {
+): { node: TaxonomyNode; userEntry: string | null; pathNames: string[] } {
   const pathNames = path.map((n) => n.name);
   if (!activeCategoryNames || activeCategoryNames.length === 0) {
-    return { node: path[0], pathNames };
+    return { node: path[0], userEntry: null, pathNames };
   }
-  const allowed = new Set(activeCategoryNames.map((n) => n.toLowerCase()));
+  // Map lowercase form → user's exact casing, so we can return their
+  // preferred capitalization regardless of how the taxonomy spells it.
+  const userByLower = new Map<string, string>();
+  for (const name of activeCategoryNames) {
+    userByLower.set(name.toLowerCase(), name);
+  }
+
   for (const node of path) {
-    if (allowed.has(node.name.toLowerCase())) {
-      return { node, pathNames };
+    // 1) Canonical name first — user's literal naming choice wins.
+    const canonHit = userByLower.get(node.name.toLowerCase());
+    if (canonHit) {
+      return { node, userEntry: canonHit, pathNames };
+    }
+    // 2) Then aliases — lets the user name their category by an alternative
+    //    name (e.g. "School" instead of "Education") and still resolve.
+    for (const alias of node.aliases ?? []) {
+      const aliasHit = userByLower.get(alias.toLowerCase());
+      if (aliasHit) {
+        return { node, userEntry: aliasHit, pathNames };
+      }
     }
   }
-  // Nothing along the path matched — caller decides the fallback.
-  return { node: path[path.length - 1], pathNames };
+  // Nothing along the path matched — caller falls back to "Others" / blank.
+  return { node: path[path.length - 1], userEntry: null, pathNames };
 }
 
 export interface AIAnalysisResult {
@@ -447,19 +501,13 @@ export function analyzeTransactionText(
     if (path) {
       const bubble = bubbleUp(path, activeCategoryNames);
       taxonomyPath = bubble.pathNames;
-      // Only report a resolvedCategory when the bubble-up actually landed on
-      // an active user category. If `activeCategoryNames` was empty/undefined
-      // the resolver returns the leaf — but we treat that as "no user
-      // resolution attempted" to avoid silently suggesting a sub-category
-      // the user didn't ask for.
-      if (activeCategoryNames && activeCategoryNames.length > 0) {
-        const target = bubble.node.name.toLowerCase();
-        // Return the user's exact casing, not the taxonomy's canonical
-        // form — keeps the UI badge consistent with their category name.
-        const userEntry = activeCategoryNames.find(
-          (n) => n.toLowerCase() === target
-        );
-        if (userEntry) resolvedCategory = userEntry;
+      // bubbleUp matches user categories against both canonical names AND
+      // aliases, then returns the user's exact casing as `userEntry`. So
+      // typing "tuition fee" with active=["School", "Bills"] resolves to
+      // "School" (alias of Education) rather than skipping past Education
+      // and landing on Bills.
+      if (bubble.userEntry) {
+        resolvedCategory = bubble.userEntry;
       }
     }
     return {
@@ -623,34 +671,11 @@ const ITEM_CONNECTOR_PATTERN = /\b(?:and|plus|then|ug|tsaka)\b/gi;
  * Food entry just means "food", so we don't list it as an item alongside
  * "rice" and "dinuguan". Merchants/leaf items (Jollibee, Adobo, Meralco,
  * Watsons…) are kept on purpose; only the umbrella nouns/verbs sit here.
+ *
+ * Auto-derived from each TaxonomyNode's `aliases` field. To add an umbrella
+ * term, add it to the relevant node's `aliases` in `taxonomy.ts` — not here.
  */
-const CATEGORY_PARENT_TERMS: Record<Category, Set<string>> = {
-  food: new Set([
-    'food', 'pagkain', 'pagkaon', 'kainan', 'kain', 'kaon', 'eat', 'ate',
-    'eating', 'eats', 'drink', 'drinks', 'meal', 'meals', 'ulam', 'baon',
-    'snack', 'snacks', 'breakfast', 'lunch', 'dinner', 'brunch',
-    'agahan', 'tanghalian', 'hapunan', 'merienda', 'meryenda',
-    'pamahaw', 'paniudto', 'panihapon', 'painit', 'pangaon', 'bahog',
-    'restaurant', 'resto', 'cafe', 'cafeteria', 'bakery', 'bakeshop',
-    'panaderia', 'carinderia', 'fastfood', 'fast', 'food court',
-  ]),
-  transport: new Set([
-    // For Transport the umbrella verbs/nouns are stripped *only* from items;
-    // the formatter picks vehicle keywords directly.
-    'transport', 'transpo', 'pasahe', 'pamasahe', 'plete', 'sakay',
-    'sakyanan', 'ride', 'commute',
-  ]),
-  bills: new Set([
-    'bill', 'bills', 'bayad', 'subscription', 'prepaid', 'postpaid',
-    'load', 'eload', 'paload',
-  ]),
-  health: new Set([
-    'medicine', 'medisina', 'gamot', 'meds', 'tambal', 'consult',
-    'consultation', 'checkup', 'check-up', 'prescription',
-  ]),
-  shopping: new Set(['shop', 'shopping']),
-  other: new Set(),
-};
+const CATEGORY_PARENT_TERMS: Record<Category, Set<string>> = _aliasesByMaster;
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -670,6 +695,7 @@ const CATEGORY_LABELS: Record<Category, string> = {
   shopping: 'Shopping',
   bills: 'Bills',
   health: 'Health',
+  entertainment: 'Entertainment',
   other: 'Other',
 };
 
