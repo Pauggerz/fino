@@ -4,7 +4,6 @@ export interface User {
   currency: string;
   auth_mode: 'local' | 'cloud';
   total_budget: number | null;
-  is_pro: boolean;
   created_at: string;
 }
 

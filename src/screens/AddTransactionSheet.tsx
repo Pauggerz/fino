@@ -6,7 +6,6 @@ import React, {
   useMemo,
 } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   View,
   Text,
@@ -50,7 +49,6 @@ import {
   type Category,
 } from '../services/aiCategoryMap';
 import { suggestCategory } from '../services/IntelligenceEngine';
-import { suggestCategoryWithGemini } from '../services/gemini';
 import { useAuth } from '../contexts/AuthContext';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -114,7 +112,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const aiTextRef = useRef('');
 
   // Data Hooks
-  const { user, isPro } = useAuth();
+  const { user } = useAuth();
   const { accounts, loading: accountsLoading } = useAccounts();
   const { categories, loading: categoriesLoading } = useCategories();
 
@@ -169,7 +167,6 @@ export default function AddTransactionSheet({ route }: Props) {
   const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>(
     'manual'
   );
-  const [geminiPending, setGeminiPending] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardPrompt, setShowDiscardPrompt] = useState(false);
   const [showAmountLimitToast, setShowAmountLimitToast] = useState(false);
@@ -450,7 +447,6 @@ export default function AddTransactionSheet({ route }: Props) {
     if (!trimmed) {
       analyzer.cancel();
       setSignalSource('manual');
-      setGeminiPending(false);
       setAiAccountSurface(null);
       // Clear any auto-filled amount once the description is empty.
       if (amountAutoFilled) {
@@ -566,27 +562,6 @@ export default function AddTransactionSheet({ route }: Props) {
         });
     }
 
-    // 3) Gemini refinement — Pro only. Fires after the keyword dict gives
-    //    instant feedback, then overwrites if Gemini finds a better match.
-    //    Handles custom categories the keyword dict doesn't know about.
-    if (isPro) {
-      const catNames = categories.map((c) => c.name);
-      setGeminiPending(true);
-      suggestCategoryWithGemini(tokenText, catNames)
-        .then((suggestion) => {
-          if (tokenText !== aiTextRef.current) return;
-          setGeminiPending(false);
-          if (!suggestion) return;
-          const matched = categories.find(
-            (c) => c.name.toLowerCase() === suggestion.toLowerCase()
-          );
-          if (matched) {
-            setCategory(matched.name);
-            setSignalSource('ai_description');
-          }
-        })
-        .catch(() => setGeminiPending(false));
-    }
   };
 
   const handleSave = async () => {
@@ -1073,20 +1048,13 @@ export default function AddTransactionSheet({ route }: Props) {
                         >
                           {cat.name}
                         </Text>
-                        {isAutoSelected &&
-                          (geminiPending ? (
-                            <ActivityIndicator
-                              size="small"
-                              color={cs.text}
-                              style={{ width: 12, height: 12 }}
-                            />
-                          ) : (
-                            <Text
-                              style={[styles.catChipAiMark, { color: cs.text }]}
-                            >
-                              ✦
-                            </Text>
-                          ))}
+                        {isAutoSelected && (
+                          <Text
+                            style={[styles.catChipAiMark, { color: cs.text }]}
+                          >
+                            ✦
+                          </Text>
+                        )}
                       </TouchableOpacity>
                     );
                   })}
@@ -1124,8 +1092,7 @@ export default function AddTransactionSheet({ route }: Props) {
           {aiText.trim().length > 0 &&
           aiResult &&
           !aiResult.matchedKeyword &&
-          signalSource === 'manual' &&
-          !geminiPending ? (
+          signalSource === 'manual' ? (
             <Text style={styles.aiFallbackHint}>
               Fino doesn’t recognize this yet. Pick a category to teach it for
               next time.

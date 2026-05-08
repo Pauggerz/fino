@@ -593,9 +593,6 @@ function CategoryFormModal({
   onSave: (draft: DraftState) => void | Promise<void>;
   onDelete: () => void;
 }) {
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-
   const [draft, setDraft] = useState<DraftState>({
     name: '',
     iconKey: ICON_LIBRARY[0].key,
@@ -1223,20 +1220,5 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
       fontSize: 11.5,
       marginTop: 6,
       lineHeight: 16,
-    },
-    proLockLabel: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 10,
-      letterSpacing: 0,
-    },
-    pickerLockOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
   });
