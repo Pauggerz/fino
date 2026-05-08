@@ -1,32 +1,36 @@
 import type { GenerativeModel } from '@google/generative-ai';
 
-const SYSTEM_INSTRUCTION = `You are Fino Intelligence, a personal
-finance assistant built into the Fino budgeting app for
-Filipino users.
+const SYSTEM_INSTRUCTION = `You are Fino Intelligence, a personal finance assistant built into the Fino budgeting app for Filipino users.
 
 Your role:
-- Answer questions about the user's spending, income,
-  and budgets based on the financial data provided in
-  each message
+- Answer questions about the user's spending, income, and budgets based on the financial data provided in each message
 - Give practical, friendly financial insights
-- Keep responses short and conversational — 2 to 3
-  sentences unless the user asks for detail
-- Never make up transaction data — only use what is
-  provided in the context below
+- Keep responses short and conversational — 2 to 3 sentences unless the user asks for detail
+- Never make up transaction data — only use what is provided in the context below
 - Use ₱ for all amounts
-- When the user asks about spending, reference specific
-  categories and amounts from their data
-- Tone: friendly and encouraging, like a kuya or ate
-  who knows finance — not formal, not robotic
+- Tone: friendly and encouraging, like a kuya or ate who knows finance — not formal, not robotic
+
+Data available to you (use it proactively):
+- Current month spending by category with optional budget limits
+- Last 10 recent transactions
+- Spending anomalies: categories spiking above the user's 3-month baseline — always mention these by name with exact amounts
+- End-of-month spending trajectory: projected total vs 3-month average, days remaining
+- Upcoming recurring bills: subscriptions/bills detected from the user's history
+- Spending habits: frequent small merchants and their estimated monthly cost
+- A pre-computed financial coach assessment with a sentiment rating
+
+Behavior guidelines:
+- When asked a general finance question, lead with the most important signal: anomaly > trajectory overpace > habits
+- When asked about upcoming expenses, reference the recurring bills section
+- When asked how to save, cite the habits merchants and top categories by spend
+- When pacing over the 3-month average, mention the exact projected overshoot
+- When there are anomalies, always name the category and quote the overspend percentage
+- Never repeat the entire dataset back verbatim — synthesize it into conversational answers
 
 Language rules:
-- Default language is ENGLISH. Always respond in English
-  unless the user clearly writes in Filipino or Taglish.
+- Default language is ENGLISH. Respond in English unless the user clearly writes in Filipino or Taglish.
 - If the user writes in Filipino (Tagalog), respond in Filipino.
-- If the user mixes English and Tagalog (Taglish), match
-  that same mix.
-- You can understand Filipino, Tagalog, and Taglish input
-  regardless of what language you reply in.`;
+- If the user mixes English and Tagalog (Taglish), match that same mix.`;
 
 // Lazily instantiate the Gemini client on first use so cold start
 // doesn't pay for SDK initialization the user may never trigger.
@@ -144,6 +148,21 @@ export interface UserFinancialContext {
     category: string | null;
     date: string;
   }[];
+  /** Pre-computed IntelligenceEngine data — optional so ChatScreen can pass
+   *  it once loaded without blocking the initial render. */
+  anomalies?: { category: string; current: number; baseline: number; pctOver: number }[];
+  trajectory?: {
+    projected: number;
+    spent: number;
+    dailyAvg: number;
+    daysRemaining: number;
+    rolling3MoAvg: number;
+    pacingOver: boolean;
+  } | null;
+  recurringBills?: { merchant: string; amount: number; daysUntilNext: number | null }[];
+  habits?: { merchant: string; visitsPerMonth: number; avgAmount: number; monthlySpend: number }[];
+  coachMessage?: { sentiment: string; message: string };
+  weekDeltas?: { category: string; currentWeek: number; prevWeek: number; pctChange: number }[];
 }
 
 export const sendMessage = async (
@@ -151,18 +170,75 @@ export const sendMessage = async (
   history: ChatMessage[],
   financialContext: UserFinancialContext
 ): Promise<string> => {
+  const fmt = (n: number) => n.toLocaleString('en-PH', { minimumFractionDigits: 2 });
+
+  const anomaliesBlock =
+    financialContext.anomalies && financialContext.anomalies.length > 0
+      ? financialContext.anomalies
+          .map(
+            (a) =>
+              `- ${a.category}: ₱${fmt(a.current)} this month (${(a.pctOver * 100).toFixed(0)}% above usual ₱${a.baseline.toLocaleString('en-PH', { maximumFractionDigits: 0 })})`
+          )
+          .join('\n')
+      : 'None detected';
+
+  const trajectoryBlock = financialContext.trajectory
+    ? `Projected end-of-month: ₱${fmt(financialContext.trajectory.projected)} | ` +
+      `Spent so far: ₱${fmt(financialContext.trajectory.spent)} | ` +
+      `3-month average: ₱${fmt(financialContext.trajectory.rolling3MoAvg)} | ` +
+      `Days remaining: ${financialContext.trajectory.daysRemaining} | ` +
+      `Pacing over average: ${financialContext.trajectory.pacingOver ? 'YES' : 'NO'}`
+    : 'Not available';
+
+  const recurringBlock =
+    financialContext.recurringBills && financialContext.recurringBills.length > 0
+      ? financialContext.recurringBills
+          .slice(0, 5)
+          .map(
+            (r) =>
+              `- ${r.merchant}: ₱${fmt(r.amount)} in ${r.daysUntilNext != null ? `${r.daysUntilNext} days` : 'unknown timing'}`
+          )
+          .join('\n')
+      : 'None detected';
+
+  const habitsBlock =
+    financialContext.habits && financialContext.habits.length > 0
+      ? financialContext.habits
+          .slice(0, 4)
+          .map(
+            (h) =>
+              `- ${h.merchant}: ~${h.visitsPerMonth.toFixed(0)}x/month at ₱${h.avgAmount.toFixed(0)} avg (₱${h.monthlySpend.toFixed(0)}/month)`
+          )
+          .join('\n')
+      : 'None detected';
+
+  const coachBlock = financialContext.coachMessage
+    ? `Sentiment: ${financialContext.coachMessage.sentiment}\nSummary: ${financialContext.coachMessage.message}`
+    : 'Not available';
+
+  const weekDeltaBlock =
+    financialContext.weekDeltas && financialContext.weekDeltas.length > 0
+      ? financialContext.weekDeltas
+          .slice(0, 3)
+          .map(
+            (d) =>
+              `- ${d.category}: ${d.pctChange > 0 ? '+' : ''}${(d.pctChange * 100).toFixed(0)}% vs last week (₱${fmt(d.currentWeek)} vs ₱${fmt(d.prevWeek)})`
+          )
+          .join('\n')
+      : 'No significant shifts this week';
+
   const contextBlock = `
 CURRENT USER FINANCIAL DATA (use this to answer questions):
-- Total balance across all accounts: ₱${financialContext.totalBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-- Income this month: ₱${financialContext.monthlyIncome.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-- Spent this month: ₱${financialContext.monthlySpent.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+- Total balance across all accounts: ₱${fmt(financialContext.totalBalance)}
+- Income this month: ₱${fmt(financialContext.monthlyIncome)}
+- Spent this month: ₱${fmt(financialContext.monthlySpent)}
 - Monthly budget limit: ${financialContext.totalBudget ? `₱${financialContext.totalBudget.toLocaleString('en-PH')}` : 'Not set'}
 
 SPENDING BY CATEGORY THIS MONTH:
 ${financialContext.categoryBreakdown
   .map(
     (c) =>
-      `- ${c.name}: ₱${c.spent.toLocaleString('en-PH', { minimumFractionDigits: 2 })}${c.budget ? ` (budget: ₱${c.budget.toLocaleString('en-PH')})` : ''}`
+      `- ${c.name}: ₱${fmt(c.spent)}${c.budget ? ` (budget: ₱${c.budget.toLocaleString('en-PH')})` : ''}`
   )
   .join('\n')}
 
@@ -170,9 +246,27 @@ RECENT TRANSACTIONS (last 10):
 ${financialContext.recentTransactions
   .map(
     (t) =>
-      `- ${t.display_name || t.category || 'Unknown'}: ${t.type === 'expense' ? '-' : '+'}₱${t.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })} (${t.category ?? 'uncategorized'}, ${new Date(t.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })})`
+      `- ${t.display_name || t.category || 'Unknown'}: ${t.type === 'expense' ? '-' : '+'}₱${fmt(t.amount)} (${t.category ?? 'uncategorized'}, ${new Date(t.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })})`
   )
   .join('\n')}
+
+SPENDING ANOMALIES (categories spiking above 3-month baseline):
+${anomaliesBlock}
+
+SPENDING TRAJECTORY (end-of-month forecast):
+${trajectoryBlock}
+
+WEEK-OVER-WEEK SHIFTS:
+${weekDeltaBlock}
+
+UPCOMING RECURRING BILLS:
+${recurringBlock}
+
+SPENDING HABITS (frequent small purchases):
+${habitsBlock}
+
+FINANCIAL COACH ASSESSMENT:
+${coachBlock}
   `.trim();
 
   const model = await getModel();

@@ -468,17 +468,32 @@ export default function AddTransactionSheet({ route }: Props) {
     const tokenText = trimmed;
 
     // 1) Immediate keyword analyzer — fast UI feedback.
-    analyzer.analyze(text, (result) => {
+    //    Pass the user's active category names so the analyzer's bubble-up
+    //    resolver can pick the most-specific match (e.g. "starbucks" →
+    //    "Coffee" if the user has that custom category, otherwise "Food").
+    const userCategoryNames = categories.map((c) => c.name);
+    analyzer.analyze(text, userCategoryNames, (result) => {
       if (tokenText !== aiTextRef.current) return;
       setAiResult(result);
-      if (result.suggestedCategory) {
+      // Bubble-up result wins — already in the user's exact category-name
+      // form. Fall back to master-name match for safety (e.g. legacy paths
+      // where activeCategoryNames was empty).
+      let pickedName: string | null = null;
+      if (result.resolvedCategory) {
+        const matched = categories.find(
+          (c) => c.name.toLowerCase() === result.resolvedCategory!.toLowerCase()
+        );
+        if (matched) pickedName = matched.name;
+      }
+      if (!pickedName && result.suggestedCategory) {
         const matched = categories.find(
           (c) => c.name.toLowerCase() === result.suggestedCategory
         );
-        if (matched) {
-          setCategory(matched.name);
-          setSignalSource('ai_description');
-        }
+        if (matched) pickedName = matched.name;
+      }
+      if (pickedName) {
+        setCategory(pickedName);
+        setSignalSource('ai_description');
       }
       // Auto-fill amount from extracted numbers in the description. Multiple
       // numbers (e.g. "20 for rice and 10 for chicken") populate the
@@ -1096,11 +1111,26 @@ export default function AddTransactionSheet({ route }: Props) {
             {aiResult?.suggestedCategory ? (
               <View style={styles.noteAiBadge}>
                 <Text style={styles.noteAiBadgeText}>
-                  ✦ {aiResult.suggestedCategory}
+                  ✦ {aiResult.resolvedCategory ?? aiResult.suggestedCategory}
                 </Text>
               </View>
             ) : null}
           </View>
+
+          {/* Fallback hint — fires when the user typed something but the
+              taxonomy didn't recognise it. Stays subtle and disappears once
+              they pick a category manually (signalSource flips to anything
+              non-manual). */}
+          {aiText.trim().length > 0 &&
+          aiResult &&
+          !aiResult.matchedKeyword &&
+          signalSource === 'manual' &&
+          !geminiPending ? (
+            <Text style={styles.aiFallbackHint}>
+              Fino doesn’t recognize this yet. Pick a category to teach it for
+              next time.
+            </Text>
+          ) : null}
 
           {/* ── Save Button ─────────────────────────────────────────────── */}
           <TouchableOpacity
@@ -1624,6 +1654,14 @@ const createStyles = (colors: any, isDark: boolean) =>
       fontSize: 11,
       fontFamily: 'Inter_700Bold',
       color: colors.primary,
+    },
+    aiFallbackHint: {
+      fontSize: 11,
+      fontFamily: 'Inter_400Regular',
+      color: colors.textSecondary,
+      marginTop: 6,
+      marginHorizontal: 24,
+      lineHeight: 15,
     },
 
     // ── Save Button

@@ -1,18 +1,78 @@
-import categoryMappings from '../constants/categoryMappings';
+import { TAXONOMY, type TaxonomyNode, type MasterCategory } from '../constants/taxonomy';
 import { transitions } from '../constants/transitions';
 
-export type Category =
-  | 'food'
-  | 'transport'
-  | 'shopping'
-  | 'bills'
-  | 'health'
-  | 'other';
+export type Category = MasterCategory;
 
-/** Expose the mapping dict for external use (e.g. tests). */
-export const aiMappings = categoryMappings;
+// ─── Taxonomy index — built once at module load ─────────────────────────────
+//
+// We flatten the tree into two structures:
+//   1. `aiMappings` — backward-compatible flat `{ keyword → master }` dict.
+//      Used by `buildDisplayName` (which iterates transport keywords) and
+//      external callers/tests that expect the old shape.
+//   2. `KEYWORD_PATHS` — `{ keyword → leaf-to-root path[] }`, used by the
+//      bubble-up resolver to find the most specific user-active category.
+//
+// When two nodes share a keyword (e.g. "tea" could in theory be in both
+// food/drinks and bills), the deeper / first-registered node wins — but in
+// practice the taxonomy avoids duplicates so this is purely defensive.
+
+type KeywordPath = TaxonomyNode[]; // index 0 = leaf, last = master
+
+const KEYWORD_PATHS: Record<string, KeywordPath> = {};
+const _aiMappings: Record<string, Category> = {};
+
+function indexNode(node: TaxonomyNode, ancestors: TaxonomyNode[]): void {
+  const path: KeywordPath = [node, ...ancestors];
+  for (const kw of node.keywords) {
+    const key = kw.toLowerCase();
+    // First registration wins — masters are indexed AFTER their children
+    // (see traversal below), so children always claim their keywords first.
+    if (!KEYWORD_PATHS[key]) {
+      KEYWORD_PATHS[key] = path;
+      _aiMappings[key] = node.master;
+    }
+  }
+  if (node.children) {
+    // Index children FIRST so leaves win conflicts.
+    for (const child of node.children) {
+      indexNode(child, [node, ...ancestors]);
+    }
+  }
+}
+
+for (const master of TAXONOMY) indexNode(master, []);
+
+/** Backward-compatible flat keyword → master dictionary. Derived from the
+ *  taxonomy at module load. Don't add to it directly — extend the taxonomy. */
+export const aiMappings: Readonly<Record<string, Category>> = _aiMappings;
+
+/**
+ * Walk a keyword's path from leaf → master and return the first node whose
+ * `name` matches an entry in `activeCategoryNames` (case-insensitive). When
+ * `activeCategoryNames` is empty/undefined, returns the leaf — preserving
+ * back-compat for callers that don't yet pass user categories.
+ */
+function bubbleUp(
+  path: KeywordPath,
+  activeCategoryNames: string[] | undefined
+): { node: TaxonomyNode; pathNames: string[] } {
+  const pathNames = path.map((n) => n.name);
+  if (!activeCategoryNames || activeCategoryNames.length === 0) {
+    return { node: path[0], pathNames };
+  }
+  const allowed = new Set(activeCategoryNames.map((n) => n.toLowerCase()));
+  for (const node of path) {
+    if (allowed.has(node.name.toLowerCase())) {
+      return { node, pathNames };
+    }
+  }
+  // Nothing along the path matched — caller decides the fallback.
+  return { node: path[path.length - 1], pathNames };
+}
 
 export interface AIAnalysisResult {
+  /** Master expense category — used for display-name formatting and the legacy
+   *  Pro Gemini suggestion path. Always set when `matchedKeyword` is set. */
   suggestedCategory: Category | null;
   confidence: 'high' | 'medium' | 'low';
   matchedKeyword: string | null;
@@ -22,6 +82,15 @@ export interface AIAnalysisResult {
   suggestedAmount: number | null;
   /** Individual amounts pulled out of the text, in the order they appeared. */
   extractedAmounts: number[];
+  /** Bubble-up result — the most-specific user-active category name the
+   *  matched keyword resolves to. `null` when nothing along the path
+   *  matched the user's active categories (UI should fall back to "Others").
+   *  Only populated when `analyzeTransactionText` is called with the user's
+   *  active category list. */
+  resolvedCategory: string | null;
+  /** Full taxonomy path for the matched keyword, leaf → master. Useful for
+   *  debugging and the optional "why this category?" tutorial. */
+  taxonomyPath: string[];
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -327,10 +396,22 @@ function fuzzyKeywordFor(
  *   3. Substring match — keyword found inside a token (e.g. "grabcar" → "grab")
  *   4. Fuzzy match — Levenshtein within 1–2 edits (handles typos)
  *
+ * When `activeCategoryNames` is provided, the matched keyword's taxonomy
+ * path is bubbled up: the most-specific node whose `name` matches an active
+ * user category wins. e.g. typing "starbucks" with active categories
+ * ["Coffee", "Food"] resolves to "Coffee"; with only ["Food"] it resolves to
+ * "Food"; with neither, `resolvedCategory` is null and the UI falls back to
+ * "Others". When `activeCategoryNames` is omitted, `resolvedCategory` stays
+ * null and only `suggestedCategory` (master) is populated — preserving
+ * back-compat for callers that don't track user categories.
+ *
  * Also extracts numeric amounts from the text via {@link extractAmounts} so
  * the UI can auto-fill the amount field.
  */
-export function analyzeTransactionText(text: string): AIAnalysisResult {
+export function analyzeTransactionText(
+  text: string,
+  activeCategoryNames?: string[]
+): AIAnalysisResult {
   const empty: AIAnalysisResult = {
     suggestedCategory: null,
     confidence: 'low',
@@ -338,6 +419,8 @@ export function analyzeTransactionText(text: string): AIAnalysisResult {
     signal_source: 'none',
     suggestedAmount: null,
     extractedAmounts: [],
+    resolvedCategory: null,
+    taxonomyPath: [],
   };
 
   if (!text || text.trim() === '') return empty;
@@ -354,48 +437,62 @@ export function analyzeTransactionText(text: string): AIAnalysisResult {
       : null;
 
   const finalize = (
-    partial: Omit<
-      AIAnalysisResult,
-      'suggestedAmount' | 'extractedAmounts' | 'signal_source'
-    > & { signal_source?: AIAnalysisResult['signal_source'] }
-  ): AIAnalysisResult => ({
-    ...partial,
-    signal_source: partial.signal_source ?? 'ai_description',
-    suggestedAmount,
-    extractedAmounts,
-  });
+    matchedKeyword: string,
+    confidence: 'high' | 'medium' | 'low'
+  ): AIAnalysisResult => {
+    const path = KEYWORD_PATHS[matchedKeyword];
+    const master = aiMappings[matchedKeyword] ?? null;
+    let resolvedCategory: string | null = null;
+    let taxonomyPath: string[] = [];
+    if (path) {
+      const bubble = bubbleUp(path, activeCategoryNames);
+      taxonomyPath = bubble.pathNames;
+      // Only report a resolvedCategory when the bubble-up actually landed on
+      // an active user category. If `activeCategoryNames` was empty/undefined
+      // the resolver returns the leaf — but we treat that as "no user
+      // resolution attempted" to avoid silently suggesting a sub-category
+      // the user didn't ask for.
+      if (activeCategoryNames && activeCategoryNames.length > 0) {
+        const target = bubble.node.name.toLowerCase();
+        // Return the user's exact casing, not the taxonomy's canonical
+        // form — keeps the UI badge consistent with their category name.
+        const userEntry = activeCategoryNames.find(
+          (n) => n.toLowerCase() === target
+        );
+        if (userEntry) resolvedCategory = userEntry;
+      }
+    }
+    return {
+      suggestedCategory: master,
+      confidence,
+      matchedKeyword,
+      signal_source: 'ai_description',
+      suggestedAmount,
+      extractedAmounts,
+      resolvedCategory,
+      taxonomyPath,
+    };
+  };
 
   // 1) Multi-word phrase match (e.g. "milk tea", "piso wifi")
   const multiWordMatch = Object.keys(aiMappings).find(
     (key) => key.includes(' ') && normalizedText.includes(key)
   );
   if (multiWordMatch) {
-    return finalize({
-      suggestedCategory: aiMappings[multiWordMatch],
-      confidence: 'high',
-      matchedKeyword: multiWordMatch,
-    });
+    return finalize(multiWordMatch, 'high');
   }
 
   // 2) Exact single-word match
   const wordMatch = words.find((w) => aiMappings[w]);
   if (wordMatch) {
-    return finalize({
-      suggestedCategory: aiMappings[wordMatch],
-      confidence: 'high',
-      matchedKeyword: wordMatch,
-    });
+    return finalize(wordMatch, 'high');
   }
 
   // 3) Substring match — handles compounds like "grabcar", "foodpanda"
   for (const key of Object.keys(aiMappings)) {
     if (key.length < 4 || key.includes(' ') || key.includes('-')) continue;
     if (words.some((w) => w !== key && w.includes(key))) {
-      return finalize({
-        suggestedCategory: aiMappings[key],
-        confidence: 'high',
-        matchedKeyword: key,
-      });
+      return finalize(key, 'high');
     }
   }
 
@@ -409,11 +506,7 @@ export function analyzeTransactionText(text: string): AIAnalysisResult {
     }
   }
   if (bestFuzzy) {
-    return finalize({
-      suggestedCategory: aiMappings[bestFuzzy.keyword],
-      confidence: bestFuzzy.distance === 0 ? 'high' : 'medium',
-      matchedKeyword: bestFuzzy.keyword,
-    });
+    return finalize(bestFuzzy.keyword, bestFuzzy.distance === 0 ? 'high' : 'medium');
   }
 
   // No category — but still return any extracted amount so the UI can
@@ -433,20 +526,28 @@ export type AIAnalysisCallback = (result: AIAnalysisResult) => void;
  *
  * Usage:
  *   const analyzer = useRef(createDebouncedAnalyzer()).current;
- *   analyzer.analyze(text, (result) => { ... });
+ *   analyzer.analyze(text, userCategoryNames, (result) => { ... });
  *   // call analyzer.cancel() on unmount
+ *
+ * `activeCategoryNames` is forwarded to {@link analyzeTransactionText} so
+ * the bubble-up resolver can pick the most-specific user category. Pass
+ * `[]` (or undefined) to skip bubble-up and only get the master category.
  */
 export function createDebouncedAnalyzer(): {
-  analyze: (text: string, cb: AIAnalysisCallback) => void;
+  analyze: (
+    text: string,
+    activeCategoryNames: string[] | undefined,
+    cb: AIAnalysisCallback
+  ) => void;
   cancel: () => void;
 } {
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   return {
-    analyze(text: string, cb: AIAnalysisCallback) {
+    analyze(text, activeCategoryNames, cb) {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        cb(analyzeTransactionText(text));
+        cb(analyzeTransactionText(text, activeCategoryNames));
         timer = null;
       }, transitions.AI_MAPPING_DEBOUNCE); // 300 ms
     },

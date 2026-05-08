@@ -925,8 +925,17 @@ export async function suggestCategory(
     // Swallow DB errors — keyword fallback below still works.
   }
 
-  // 2) Keyword fallback via static dictionary.
-  const keyword = analyzeTransactionText(trimmed);
+  // 2) Keyword fallback via static taxonomy.
+  //    Pass `availableCategories` so the analyzer's bubble-up resolver can
+  //    return the most-specific match against the user's category list
+  //    (e.g. "starbucks" → "Coffee" if they have it, else "Food").
+  const keyword = analyzeTransactionText(trimmed, availableCategories);
+  if (keyword.resolvedCategory) {
+    const matched = findInAllowed(keyword.resolvedCategory);
+    if (matched) {
+      return { category: matched, confidence: 'high', source: 'keyword' };
+    }
+  }
   if (keyword.suggestedCategory) {
     const matched = findInAllowed(keyword.suggestedCategory);
     if (matched) {
