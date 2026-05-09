@@ -31,9 +31,20 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import BottomSheet, {
   BottomSheetBackdrop,
+  BottomSheetFooter,
   BottomSheetScrollView,
   BottomSheetTextInput,
 } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Reanimated, {
+  LinearTransition,
+  FadeIn,
+  FadeOut,
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
@@ -89,8 +100,9 @@ function evaluateExpr(a: string, op: string, b: string): string {
 export default function AddTransactionSheet({ route }: Props) {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
@@ -102,6 +114,7 @@ export default function AddTransactionSheet({ route }: Props) {
 
   // Refs
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const scrollViewRef = useRef<any>(null);
   const allowCloseRef = useRef(false);
   const hasOpenedRef = useRef(false);
   const amountLimitToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -110,6 +123,27 @@ export default function AddTransactionSheet({ route }: Props) {
   const discardShakeX = useRef(new Animated.Value(0)).current;
   const analyzer = useRef(createDebouncedAnalyzer()).current;
   const aiTextRef = useRef('');
+
+  // ─── Collapse animations ────────────────────────────────────────────────
+  // When the AI input is focused, retract the calculator keys to make room
+  // for the keyboard. The amount display stays visible above.
+  const numpadProgress = useSharedValue(1); // 1 = fully visible, 0 = collapsed
+  const numpadAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: numpadProgress.value,
+    maxHeight: numpadProgress.value * 240, // > numpad height (213) so no clip
+    transform: [{ scaleY: 0.6 + numpadProgress.value * 0.4 }],
+    overflow: 'hidden',
+  }));
+
+  // Same idea for the Expense/Income segmented toggle — it retracts when the
+  // AI input is focused so the description field has more room to breathe.
+  const segmentProgress = useSharedValue(1);
+  const segmentAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: segmentProgress.value,
+    maxHeight: segmentProgress.value * 60, // > toggle height (42 + margins)
+    marginBottom: segmentProgress.value * 10,
+    overflow: 'hidden',
+  }));
 
   // Data Hooks
   const { user } = useAuth();
@@ -218,6 +252,30 @@ export default function AddTransactionSheet({ route }: Props) {
     });
   }, [allCategories, recentCategoryNames]);
 
+  // When the AI auto-selects a category, promote it to the front so the
+  // chip slides into position 0. Reanimated's LinearTransition wrapper on
+  // each chip handles the actual move animation (transform-only, native
+  // thread). Manual taps don't reorder — only AI does.
+  const displayedCategories = useMemo(() => {
+    if (signalSource !== 'ai_description' || !category) return sortedCategories;
+    const idx = sortedCategories.findIndex((c: any) => c.name === category);
+    if (idx <= 0) return sortedCategories;
+    const next = [...sortedCategories];
+    const [picked] = next.splice(idx, 1);
+    next.unshift(picked);
+    return next;
+  }, [sortedCategories, signalSource, category]);
+
+  const displayedAccounts = useMemo(() => {
+    if (!accountAutoSet || !accountId) return sortedAccounts;
+    const idx = sortedAccounts.findIndex((a) => a.id === accountId);
+    if (idx <= 0) return sortedAccounts;
+    const next = [...sortedAccounts];
+    const [picked] = next.splice(idx, 1);
+    next.unshift(picked);
+    return next;
+  }, [sortedAccounts, accountAutoSet, accountId]);
+
   const resolveCategoryStyle = useCallback(
     (key: string) => {
       const map: Record<string, { bg: string; text: string }> = {
@@ -262,18 +320,61 @@ export default function AddTransactionSheet({ route }: Props) {
     [analyzer]
   );
 
+  // Drive the numpad + segment toggle collapse from AI input focus state.
   useEffect(() => {
-    if (accounts.length > 0 && !accountId) {
-      const prefillId = route.params?.prefill?.account;
-      const initial =
-        prefillId && accounts.some((a) => a.id === prefillId)
-          ? prefillId
-          : accounts[0].id;
-      setAccountId(initial);
-    }
-  }, [accounts, accountId]);
+    const opts = {
+      duration: 240,
+      easing: Easing.bezier(0.22, 1, 0.36, 1),
+    };
+    numpadProgress.value = withTiming(aiInputFocused ? 0 : 1, opts);
+    segmentProgress.value = withTiming(aiInputFocused ? 0 : 1, opts);
+  }, [aiInputFocused, numpadProgress, segmentProgress]);
+
+  // When the keyboard hides — even if the input keeps focus (e.g. user
+  // dismissed via the back button) — snap the sheet back to its resting
+  // 92% so we don't leave an awkward gap above the now-empty footer area.
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidHide', () => {
+      bottomSheetRef.current?.snapToIndex(0);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // First-mount-only initialisation. After the user explicitly unselects a
+  // chip, we leave it cleared instead of auto-snapping back to the default.
+  const didInitAccountRef = useRef(false);
+  const didInitCategoryRef = useRef(false);
 
   useEffect(() => {
+    if (didInitAccountRef.current) return;
+    if (accounts.length === 0) return;
+    const prefillId = route.params?.prefill?.account;
+    const initial =
+      prefillId && accounts.some((a) => a.id === prefillId)
+        ? prefillId
+        : accounts[0].id;
+    setAccountId(initial);
+    didInitAccountRef.current = true;
+  }, [accounts]);
+
+  useEffect(() => {
+    if (didInitCategoryRef.current) return;
+    if (type === 'inc') {
+      setCategory(INCOME_CATEGORIES[0].name);
+      didInitCategoryRef.current = true;
+    } else if (categories.length > 0) {
+      setCategory(categories[0].name);
+      didInitCategoryRef.current = true;
+    }
+  }, [type, categories]);
+
+  // When the user toggles between Expense/Income, still pick a sane default
+  // (income and expense use different category sets), but only if the user
+  // hasn't manually cleared their selection in the meantime.
+  const prevTypeRef = useRef(type);
+  useEffect(() => {
+    if (prevTypeRef.current === type) return;
+    prevTypeRef.current = type;
     if (type === 'inc') {
       setCategory(INCOME_CATEGORIES[0].name);
     } else if (categories.length > 0) {
@@ -704,14 +805,53 @@ export default function AddTransactionSheet({ route }: Props) {
       : null;
   const hasAmountInput = amount.length > 0 || firstOperand.length > 0;
 
+  // Footer is rendered via gorhom's <BottomSheetFooter>, which floats above
+  // the scroll content and automatically lifts above the keyboard.
+  const renderFooter = useCallback(
+    (props: any) => (
+      <BottomSheetFooter {...props} bottomInset={insets.bottom}>
+        <View style={styles.stickyFooter} pointerEvents="box-none">
+          <TouchableOpacity
+            disabled={!hasAmountInput || isSaving}
+            onPress={handleSave}
+            style={styles.saveBtnWrap}
+          >
+            <LinearGradient
+              colors={['#4a7a5e', '#5B8C6E']}
+              style={[
+                styles.saveBtn,
+                (!hasAmountInput || isSaving) && { opacity: 0.45 },
+              ]}
+            >
+              <Text style={styles.saveBtnText}>
+                {isSaving
+                  ? 'Saving…'
+                  : type === 'exp'
+                    ? 'Save Expense'
+                    : 'Save Income'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </BottomSheetFooter>
+    ),
+    [hasAmountInput, isSaving, type, insets.bottom, styles, handleSave]
+  );
+
   return (
     <View style={styles.container}>
       <BottomSheet
         ref={bottomSheetRef}
         index={0}
-        enableDynamicSizing
-        maxDynamicContentSize={windowHeight * 0.94}
+        // Fixed snap point keeps the sheet at a tall height so collapsing the
+        // numpad doesn't shrink the sheet — the AI input simply moves up
+        // within the fixed sheet area when the numpad retracts.
+        snapPoints={['92%', '100%']}
+        topInset={insets.top}
         enablePanDownToClose
+        keyboardBehavior="extend"
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustPan"
         onChange={handleSheetChanges}
         backdropComponent={(props) => (
           <BottomSheetBackdrop
@@ -721,10 +861,20 @@ export default function AddTransactionSheet({ route }: Props) {
             onPress={requestClose}
           />
         )}
+        footerComponent={renderFooter}
         backgroundStyle={styles.sheetBackground}
         handleIndicatorStyle={styles.sheetHandle}
       >
-        <BottomSheetScrollView contentContainerStyle={styles.sheetContent}>
+        <BottomSheetScrollView
+          ref={scrollViewRef}
+          style={styles.sheetScroll}
+          contentContainerStyle={[
+            styles.sheetContent,
+            // Reserve room for the floating footer so the AI input clears it.
+            { paddingBottom: 88 + insets.bottom },
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* ── Header ─────────────────────────────────────────────────── */}
           <View style={styles.newHeader}>
             <TouchableOpacity style={styles.dismissBtn} onPress={requestClose}>
@@ -750,31 +900,38 @@ export default function AddTransactionSheet({ route }: Props) {
           </View>
 
           {/* ── Type Toggle (segmented) ──────────────────────────────── */}
-          <View style={styles.segmentTrack}>
-            {(['exp', 'inc'] as const).map((t) => (
-              <Pressable
-                key={t}
-                onPress={() => setType(t)}
-                style={[
-                  styles.segmentBtn,
-                  type === t &&
-                    (t === 'exp'
-                      ? styles.segmentExpActive
-                      : styles.segmentIncActive),
-                ]}
-              >
-                <Text
+          {/* Collapses while the AI input is focused so the description
+              field has more vertical room. */}
+          <Reanimated.View
+            style={segmentAnimatedStyle}
+            pointerEvents={aiInputFocused ? 'none' : 'auto'}
+          >
+            <View style={styles.segmentTrack}>
+              {(['exp', 'inc'] as const).map((t) => (
+                <Pressable
+                  key={t}
+                  onPress={() => setType(t)}
                   style={[
-                    styles.segmentText,
+                    styles.segmentBtn,
                     type === t &&
-                      (t === 'exp' ? styles.textExp : styles.textInc),
+                      (t === 'exp'
+                        ? styles.segmentExpActive
+                        : styles.segmentIncActive),
                   ]}
                 >
-                  {t === 'exp' ? '↓ Expense' : '↑ Income'}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      type === t &&
+                        (t === 'exp' ? styles.textExp : styles.textInc),
+                    ]}
+                  >
+                    {t === 'exp' ? '↓ Expense' : '↑ Income'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </Reanimated.View>
 
           {/* ── Amount Box ──────────────────────────────────────────────── */}
           <View style={[styles.amountBox, { borderColor: amountBorderColor }]}>
@@ -820,7 +977,12 @@ export default function AddTransactionSheet({ route }: Props) {
           )}
 
           {/* ── Numpad ──────────────────────────────────────────────────── */}
-          <View style={styles.numpadWrap}>
+          {/* Collapses while the AI input is focused — amount display above
+              stays visible. Pure transform/opacity animation, native thread. */}
+          <Reanimated.View
+            style={[styles.numpadWrap, numpadAnimatedStyle]}
+            pointerEvents={aiInputFocused ? 'none' : 'auto'}
+          >
             {/* Operator column — C / − / + / = aligned with 4 number rows */}
             <View style={styles.opCol}>
               <TouchableOpacity
@@ -901,7 +1063,7 @@ export default function AddTransactionSheet({ route }: Props) {
                 </TouchableOpacity>
               ))}
             </View>
-          </View>
+          </Reanimated.View>
 
           {/* ── Account Chips ────────────────────────────────────────────── */}
           <View style={styles.chipSection}>
@@ -921,56 +1083,69 @@ export default function AddTransactionSheet({ route }: Props) {
                       ]}
                     />
                   ))
-                : sortedAccounts.map((acc) => {
+                : displayedAccounts.map((acc, i) => {
                     const isSel = accountId === acc.id;
-                    const isAutoSelected = isSel && accountAutoSet;
+                    const isRecent =
+                      i === 0 &&
+                      recentAccountIds.length > 0 &&
+                      recentAccountIds[0] === acc.id;
                     const logo = ACCOUNT_LOGOS[acc.name];
+                    // Tint the selected chip with the account's own brand
+                    // colour so custom accounts surface their own shade
+                    // instead of the global primary green.
+                    const brand = acc.brand_colour ?? colors.primary;
                     return (
-                      <TouchableOpacity
+                      <Reanimated.View
                         key={acc.id}
-                        style={[
-                          styles.acctChip,
-                          isSel && styles.acctChipActive,
-                        ]}
-                        onPress={() => {
-                          setAccountId(acc.id);
-                          setAccountAutoSet(false);
-                        }}
+                        layout={LinearTransition.springify()
+                          .damping(18)
+                          .stiffness(180)
+                          .mass(0.6)}
                       >
-                        <View
+                        <TouchableOpacity
                           style={[
-                            styles.chipIconWrap,
-                            {
-                              backgroundColor:
-                                acc.brand_colour ?? colors.primaryLight,
-                            },
+                            styles.acctChip,
+                            isSel && styles.acctChipActive,
+                            isSel && { borderColor: brand },
                           ]}
+                          onPress={() => {
+                            setAccountId(isSel ? '' : acc.id);
+                            setAccountAutoSet(false);
+                          }}
                         >
-                          {logo ? (
-                            <Image
-                              source={logo}
-                              style={styles.acctChipLogo}
-                              contentFit="contain"
-                            />
-                          ) : (
-                            <Text style={styles.acctChipAvatar}>
-                              {acc.letter_avatar ?? '?'}
-                            </Text>
-                          )}
-                        </View>
-                        <Text
-                          style={[
-                            styles.acctChipName,
-                            isSel && styles.acctChipNameActive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {acc.name}
-                        </Text>
-                        {isAutoSelected && (
-                          <Text style={styles.acctChipAiMark}>✦</Text>
-                        )}
-                      </TouchableOpacity>
+                          <View
+                            style={[
+                              styles.chipIconWrap,
+                              {
+                                backgroundColor:
+                                  acc.brand_colour ?? colors.primaryLight,
+                              },
+                            ]}
+                          >
+                            {logo ? (
+                              <Image
+                                source={logo}
+                                style={styles.acctChipLogo}
+                                contentFit="contain"
+                              />
+                            ) : (
+                              <Text style={styles.acctChipAvatar}>
+                                {acc.letter_avatar ?? '?'}
+                              </Text>
+                            )}
+                          </View>
+                          <Text
+                            style={[
+                              styles.acctChipName,
+                              isSel && styles.acctChipNameActive,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {acc.name}
+                          </Text>
+                          {isRecent && <View style={styles.chipRecentDot} />}
+                        </TouchableOpacity>
+                      </Reanimated.View>
                     );
                   })}
             </GHScrollView>
@@ -994,88 +1169,136 @@ export default function AddTransactionSheet({ route }: Props) {
                       ]}
                     />
                   ))
-                : sortedCategories.map((cat: any) => {
+                : displayedCategories.map((cat: any, i: number) => {
                     const catKey =
                       type === 'inc'
                         ? cat.key
                         : (cat.emoji ?? '').toLowerCase();
                     const isSel = category === cat.name;
-                    const isAutoSelected =
-                      isSel && signalSource === 'ai_description';
-                    const cs = resolveCategoryStyle(catKey);
+                    const isRecent =
+                      i === 0 &&
+                      signalSource !== 'ai_description' &&
+                      recentCategoryNames.length > 0 &&
+                      recentCategoryNames[0] === cat.name;
+                    // Prefer the user-defined colours saved on the category
+                    // record (custom categories created in Settings) and fall
+                    // back to the static keyword map for the default set.
+                    const fallback = resolveCategoryStyle(catKey);
+                    const cs = {
+                      bg: cat.tile_bg_colour ?? fallback.bg,
+                      text: cat.text_colour ?? fallback.text,
+                    };
                     return (
-                      <TouchableOpacity
+                      <Reanimated.View
                         key={cat.id || cat.key}
-                        style={[
-                          styles.catChip,
-                          isSel && {
-                            backgroundColor: cs.bg,
-                            borderColor: `${cs.text}55`,
-                          },
-                        ]}
-                        onPress={() => {
-                          setCategory(cat.name);
-                          setSignalSource('manual');
-                        }}
+                        layout={LinearTransition.springify()
+                          .damping(18)
+                          .stiffness(180)
+                          .mass(0.6)}
                       >
-                        <View
+                        <TouchableOpacity
                           style={[
-                            styles.chipIconWrap,
-                            { backgroundColor: cs.bg },
-                          ]}
-                        >
-                          <CategoryIcon
-                            categoryKey={catKey}
-                            color={isSel ? cs.text : colors.textSecondary}
-                            size={12}
-                          />
-                        </View>
-                        <Text
-                          style={[
-                            styles.catChipText,
+                            styles.catChip,
                             isSel && {
-                              color: cs.text,
-                              fontFamily: 'Inter_700Bold',
+                              backgroundColor: cs.bg,
+                              borderColor: `${cs.text}55`,
                             },
                           ]}
+                          onPress={() => {
+                            setCategory(isSel ? '' : cat.name);
+                            setSignalSource('manual');
+                          }}
                         >
-                          {cat.name}
-                        </Text>
-                        {isAutoSelected && (
-                          <Text
-                            style={[styles.catChipAiMark, { color: cs.text }]}
+                          <View
+                            style={[
+                              styles.chipIconWrap,
+                              { backgroundColor: cs.bg },
+                            ]}
                           >
-                            ✦
+                            <CategoryIcon
+                              categoryKey={catKey}
+                              color={isSel ? cs.text : colors.textSecondary}
+                              size={12}
+                            />
+                          </View>
+                          <Text
+                            style={[
+                              styles.catChipText,
+                              isSel && {
+                                color: cs.text,
+                                fontFamily: 'Inter_700Bold',
+                              },
+                            ]}
+                          >
+                            {cat.name}
                           </Text>
-                        )}
-                      </TouchableOpacity>
+                          {isRecent && <View style={styles.chipRecentDot} />}
+                        </TouchableOpacity>
+                      </Reanimated.View>
                     );
                   })}
             </GHScrollView>
           </View>
 
           {/* ── AI Description Field ────────────────────────────────────── */}
-          <View
-            style={[styles.noteRow, aiInputFocused && styles.noteRowFocused]}
-          >
-            <Text style={styles.noteSparkle}>✦</Text>
-            <BottomSheetTextInput
-              style={styles.noteInput}
-              value={aiText}
-              onChangeText={handleAiTextChange}
-              onFocus={() => setAiInputFocused(true)}
-              onBlur={() => setAiInputFocused(false)}
-              placeholder="Describe… AI will suggest a category"
-              placeholderTextColor={colors.textSecondary}
-              returnKeyType="done"
-            />
-            {aiResult?.suggestedCategory ? (
-              <View style={styles.noteAiBadge}>
-                <Text style={styles.noteAiBadgeText}>
-                  ✦ {aiResult.resolvedCategory ?? aiResult.suggestedCategory}
-                </Text>
+          <View style={styles.aiFieldWrap}>
+            <LinearGradient
+              colors={
+                aiInputFocused
+                  ? [colors.primary, colors.lavender]
+                  : [colors.border, colors.border]
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[
+                styles.aiFieldGradient,
+                aiInputFocused && styles.aiFieldGradientFocused,
+              ]}
+            >
+              <View
+                style={[
+                  styles.aiFieldInner,
+                  aiInputFocused && styles.aiFieldInnerFocused,
+                ]}
+              >
+                <Ionicons
+                  name="sparkles"
+                  size={16}
+                  color={colors.primary}
+                  style={styles.aiFieldIcon}
+                />
+                <BottomSheetTextInput
+                  style={[
+                    styles.aiFieldInput,
+                    aiInputFocused && styles.aiFieldInputFocused,
+                  ]}
+                  value={aiText}
+                  onChangeText={handleAiTextChange}
+                  onFocus={() => setAiInputFocused(true)}
+                  onBlur={() => setAiInputFocused(false)}
+                  placeholder="Describe transaction…"
+                  placeholderTextColor={colors.textSecondary}
+                  returnKeyType="done"
+                  multiline
+                />
+                {aiResult?.suggestedCategory ? (
+                  <Reanimated.View
+                    entering={FadeIn.duration(180)}
+                    exiting={FadeOut.duration(140)}
+                    style={styles.aiSuggestionTag}
+                  >
+                    <Ionicons
+                      name="sparkles"
+                      size={10}
+                      color={colors.primary}
+                    />
+                    <Text style={styles.aiSuggestionTagText}>
+                      {aiResult.resolvedCategory ?? aiResult.suggestedCategory}
+                    </Text>
+                  </Reanimated.View>
+                ) : null}
               </View>
-            ) : null}
+            </LinearGradient>
           </View>
 
           {/* Fallback hint — fires when the user typed something but the
@@ -1092,28 +1315,6 @@ export default function AddTransactionSheet({ route }: Props) {
             </Text>
           ) : null}
 
-          {/* ── Save Button ─────────────────────────────────────────────── */}
-          <TouchableOpacity
-            disabled={!hasAmountInput || isSaving}
-            onPress={handleSave}
-            style={styles.saveBtnWrap}
-          >
-            <LinearGradient
-              colors={['#4a7a5e', '#5B8C6E']}
-              style={[
-                styles.saveBtn,
-                (!hasAmountInput || isSaving) && { opacity: 0.45 },
-              ]}
-            >
-              <Text style={styles.saveBtnText}>
-                {isSaving
-                  ? 'Saving…'
-                  : type === 'exp'
-                    ? 'Save Expense'
-                    : 'Save Income'}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
         </BottomSheetScrollView>
       </BottomSheet>
 
@@ -1266,7 +1467,6 @@ const createStyles = (colors: any, isDark: boolean) =>
     segmentTrack: {
       flexDirection: 'row',
       marginHorizontal: 20,
-      marginBottom: 10,
       height: 42,
       borderRadius: 12,
       backgroundColor: isDark ? colors.surfaceSubdued : '#F0EEE9',
@@ -1491,7 +1691,7 @@ const createStyles = (colors: any, isDark: boolean) =>
 
     // ── Chip Rows (account & category)
     chipSection: {
-      marginBottom: 8,
+      marginBottom: 14, // extra room so the Recent dot doesn't clip
     },
     skeletonChip: {
       height: 34,
@@ -1540,11 +1740,15 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.primary,
       fontFamily: 'Inter_700Bold',
     },
-    acctChipAiMark: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 11,
-      color: colors.primary,
-      marginLeft: 2,
+    chipRecentDot: {
+      position: 'absolute',
+      bottom: -7,
+      left: '50%',
+      marginLeft: -2.5,
+      width: 5,
+      height: 5,
+      borderRadius: 2.5,
+      backgroundColor: colors.primary,
     },
     catChip: {
       flexDirection: 'row',
@@ -1562,11 +1766,6 @@ const createStyles = (colors: any, isDark: boolean) =>
       fontSize: 12,
       color: colors.textSecondary,
     },
-    catChipAiMark: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 11,
-      marginLeft: 2,
-    },
     chipIconWrap: {
       width: 26,
       height: 26,
@@ -1576,41 +1775,65 @@ const createStyles = (colors: any, isDark: boolean) =>
       overflow: 'hidden',
     },
 
-    // ── AI Note Field
-    noteRow: {
+    // ── AI Description Field (pill, gradient border on focus, floating tag)
+    aiFieldWrap: {
+      marginHorizontal: 20,
+      marginTop: 6,
+      marginBottom: 10,
+      position: 'relative',
+    },
+    aiFieldGradient: {
+      borderRadius: 999,
+      padding: 1.5, // creates the "border" via gradient padding
+    },
+    aiFieldGradientFocused: {
+      borderRadius: 22,
+    },
+    aiFieldInner: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
-      marginHorizontal: 20,
-      marginBottom: 10,
-      backgroundColor: colors.white,
-      borderRadius: 12,
-      borderWidth: 1.5,
-      borderColor: colors.border,
-      paddingHorizontal: 12,
-      height: 44,
-    },
-    noteRowFocused: {
-      borderColor: colors.primary,
-    },
-    noteSparkle: {
-      fontSize: 14,
-      color: colors.primary,
-      fontFamily: 'Inter_700Bold',
-    },
-    noteInput: {
-      flex: 1,
-      fontSize: 13,
-      color: colors.textPrimary,
-      fontFamily: 'Inter_400Regular',
-    },
-    noteAiBadge: {
-      backgroundColor: isDark ? 'rgba(91,140,110,0.2)' : 'rgba(91,140,110,0.1)',
+      gap: 10,
+      minHeight: 47,
       borderRadius: 999,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
+      paddingHorizontal: 14,
+      backgroundColor: colors.white,
     },
-    noteAiBadgeText: {
+    aiFieldInnerFocused: {
+      minHeight: 84,
+      borderRadius: 22,
+      paddingVertical: 10,
+      alignItems: 'flex-start',
+    },
+    aiFieldIcon: {
+      width: 18,
+    },
+    aiFieldInput: {
+      flex: 1,
+      fontSize: 14,
+      color: colors.textPrimary,
+      fontFamily: 'Inter_500Medium',
+    },
+    aiFieldInputFocused: {
+      minHeight: 64,
+      textAlignVertical: 'top',
+      paddingTop: 2,
+    },
+    aiSuggestionTag: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+      borderRadius: 999,
+      backgroundColor: isDark
+        ? 'rgba(91,140,110,0.22)'
+        : 'rgba(91,140,110,0.12)',
+      borderWidth: 1,
+      borderColor: isDark
+        ? 'rgba(91,140,110,0.5)'
+        : 'rgba(91,140,110,0.35)',
+    },
+    aiSuggestionTagText: {
       fontSize: 11,
       fontFamily: 'Inter_700Bold',
       color: colors.primary,
@@ -1624,8 +1847,20 @@ const createStyles = (colors: any, isDark: boolean) =>
       lineHeight: 15,
     },
 
-    // ── Save Button
-    saveBtnWrap: { marginHorizontal: 20 },
+    // ── Save Button (now a sticky footer)
+    sheetFlex: { flex: 1 },
+    sheetScroll: { flex: 1 },
+    stickyFooter: {
+      paddingHorizontal: 20,
+      paddingTop: 10,
+      paddingBottom: 12,
+      backgroundColor: colors.background,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: isDark
+        ? 'rgba(255,255,255,0.06)'
+        : 'rgba(0,0,0,0.05)',
+    },
+    saveBtnWrap: {},
     saveBtn: {
       height: 52,
       borderRadius: 14,
