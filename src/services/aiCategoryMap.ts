@@ -621,21 +621,46 @@ const DISPLAY_STOP_WORDS = new Set<string>([
   'a', 'an', 'the', 'and', 'or', 'plus', 'with', 'for', 'to', 'at',
   'in', 'on', 'of', 'from', 'into', 'onto', 'than', 'then', 'as',
   'this', 'that', 'these', 'those', 'so', 'just',
+  // Pronouns / reflexives
+  'myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves',
+  'themselves', 'him', 'her', 'them', 'it', 'his', 'hers', 'its', 'theirs',
+  // Adjectives / descriptors (conversational filler)
+  'very', 'really', 'quite', 'pretty', 'super', 'so', 'too', 'more',
+  'most', 'much', 'many', 'some', 'few', 'any', 'all', 'both', 'each',
+  'every', 'nice', 'good', 'great', 'cool', 'awesome', 'new', 'old',
+  'big', 'small', 'cheap', 'expensive', 'free', 'extra', 'other', 'another',
+  // Adverbs / filler
+  'also', 'even', 'still', 'already', 'again', 'often', 'now', 'here',
+  'there', 'back', 'out', 'up', 'down', 'away', 'off', 'along',
+  // Common nouns that are never the item
+  'friends', 'friend', 'family', 'kids', 'people', 'someone',
+  // Auxiliary / linking verbs
+  'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'do', 'does', 'did', 'will', 'would', 'could', 'should', 'shall',
+  'may', 'might', 'must', 'can', 'let', 'make', 'made', 'get',
+  // Prepositions
+  'about', 'above', 'after', 'before', 'between', 'by', 'during',
+  'inside', 'near', 'over', 'since', 'through', 'under', 'until', 'upon',
+  'within', 'without', 'around', 'against',
   // Tagalog / Filipino
   'na', 'ng', 'mga', 'ang', 'ako', 'ko', 'sa', 'kay', 'din', 'rin',
   'lang', 'po', 'opo', 'ay', 'ito', 'iyon', 'siya', 'kami', 'kayo', 'sila',
   'ni', 'nila', 'naming', 'natin', 'niya',
+  // Tagalog particles / markers
+  'nag', 'mag', 'um', 'in', 'an', 'pa', 'naman', 'talaga', 'pala',
+  'kasi', 'pero', 'dahil', 'kung', 'kapag', 'habang', 'bago', 'pagkatapos',
+  'pwede', 'dapat', 'gusto', 'sana', 'kaya', 'dito', 'doon', 'rin',
+  'went', 'go', 'went', 'came',
   // Cebuano / Bisaya
-  'ako', 'ikaw', 'kita', 'sila', 'nako', 'nimo', 'niya', 'namo', 'nato',
-  'ni', 'ug', 'ang', 'sa', 'ra', 'lang', 'gani', 'pud', 'pod', 'baya',
-  // Cebuano linkers / contractions / quantifiers (the bits that glue a
-  // sentence together but never describe an item)
+  'ikaw', 'kita', 'nako', 'nimo', 'namo', 'nato',
+  'ug', 'ra', 'gani', 'pud', 'pod', 'baya',
+  // Cebuano linkers / contractions / quantifiers
   'nga', 'kug', "ko'g", 'tag', 'usa', 'duha', 'tulo', 'upat', 'lima',
   'gamay', 'dako', 'gamit', 'unya', 'taas', 'naa', 'nia', 'aron',
   // Verbs / actions (English + Tagalog + Cebuano)
   'spent', 'spend', 'bought', 'buy', 'paid', 'pay', 'paying',
   'ate', 'eat', 'eats', 'eating', 'got', 'gets', 'getting', 'have',
-  'had', 'has', 'order', 'ordered', 'ordering', 'order', 'used',
+  'had', 'has', 'order', 'ordered', 'ordering', 'used',
   'kain', 'kumain', 'kakain', 'mag-kain', 'magkain',
   'kaon', 'mikaon', 'mokaon', 'mukaon', 'nagkaon', 'kumakain',
   'bumili', 'bili', 'mipalit', 'palit', 'mopalit', 'pumalit',
@@ -681,6 +706,14 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Joins item strings with Oxford-style ", " and " & " (e.g. "A, B & C"). */
+function formatItemList(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} & ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')} & ${items[items.length - 1]}`;
+}
+
 function capWords(s: string): string {
   return s
     .split(/\s+/)
@@ -703,8 +736,14 @@ const CATEGORY_LABELS: Record<Category, string> = {
  * Strip currency tokens, account-trigger phrases, and the account surface
  * itself so they don't bleed into the extracted item list.
  */
+// All known account alias surfaces (flat list, longest first for greedy matching).
+const ALL_ACCOUNT_SURFACES: string[] = Object.values(ACCOUNT_ALIASES)
+  .flat()
+  .sort((a, b) => b.length - a.length);
+
 function scrubAuxText(text: string, accountSurface?: string | null): string {
   let cleaned = ` ${text.toLowerCase()} `;
+  // Strip the caller-supplied account surface (with and without trigger word).
   if (accountSurface) {
     const acctEsc = escapeRegex(accountSurface.toLowerCase());
     const triggers = ACCOUNT_TRIGGER_WORDS.map(escapeRegex).join('|');
@@ -713,6 +752,12 @@ function scrubAuxText(text: string, accountSurface?: string | null): string {
       ' '
     );
     cleaned = cleaned.replace(new RegExp(`\\b${acctEsc}\\b`, 'gi'), ' ');
+  }
+  // Also strip every known account alias so "gcash" / "bpi" / etc. never
+  // bleed into the item name regardless of whether a trigger word preceded it.
+  for (const surface of ALL_ACCOUNT_SURFACES) {
+    const surfEsc = escapeRegex(surface);
+    cleaned = cleaned.replace(new RegExp(`\\b${surfEsc}\\b`, 'gi'), ' ');
   }
   cleaned = cleaned.replace(/₱|\bpesos?\b|\bpiso\b|\bphp\b/gi, ' ');
   return cleaned;
@@ -768,6 +813,23 @@ export function extractItems(
     seen.add(key);
     out.push(phrase);
   }
+
+  // Fallback: if all words were filtered, surface any taxonomy keywords present
+  // in the text (keywords are receipt-level items, not category umbrella aliases
+  // and are never in parentTerms, so they survive this second pass cleanly).
+  if (out.length === 0) {
+    const rawWords = tokenize(text);
+    const seen2 = new Set<string>();
+    for (const w of rawWords) {
+      if (!aiMappings[w]) continue;
+      if (DISPLAY_STOP_WORDS.has(w)) continue;
+      if (parentTerms && parentTerms.has(w)) continue;
+      if (seen2.has(w)) continue;
+      seen2.add(w);
+      out.push(w);
+    }
+  }
+
   return out;
 }
 
@@ -787,9 +849,9 @@ export function extractItems(
 export function buildDisplayName(
   text: string,
   category: Category | null,
-  options: { accountSurface?: string | null } = {}
+  options: { accountSurface?: string | null; label?: string } = {}
 ): string {
-  const label = category ? CATEGORY_LABELS[category] : 'Other';
+  const label = options.label ?? (category ? CATEGORY_LABELS[category] : 'Other');
   if (!text || !text.trim()) return label;
 
   if (category === 'transport') {
@@ -864,5 +926,5 @@ export function buildDisplayName(
 
   const items = extractItems(text, { ...options, category });
   if (items.length === 0) return label;
-  return `${label} - ${items.map(capWords).join(' + ')}`;
+  return `${label} - ${formatItemList(items.map(capWords))}`;
 }

@@ -622,19 +622,12 @@ export default function AddTransactionSheet({ route }: Props) {
     // Build a structured display name from the description + selected category.
     // Expenses use the category-aware formatter; income transactions stay with
     // the user's note (or fall back to category) so "Salary - Payday" reads OK.
-    const lowerCat = category.toLowerCase();
-    const STRUCTURED_CATS: Category[] = [
-      'food',
-      'transport',
-      'shopping',
-      'bills',
-      'health',
-    ];
-    const matchedCat = STRUCTURED_CATS.find((c) => c === lowerCat);
+    const masterCat = aiResult?.suggestedCategory ?? null;
     const structuredName =
-      txType === 'expense' && matchedCat
-        ? buildDisplayName(aiText, matchedCat, {
+      txType === 'expense' && masterCat
+        ? buildDisplayName(aiText, masterCat, {
             accountSurface: aiAccountSurface,
+            label: category || undefined,
           })
         : '';
     const finalDisplayName = structuredName || aiText || category || 'Other';

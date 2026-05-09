@@ -765,7 +765,7 @@ const bills: TaxonomyNode = {
         'online learning', 'online class', 'e-learning', 'online course',
         'school supplies', 'school uniform', 'uniform',
         'book', 'books', 'textbook', 'textbooks', 'notebook',
-        'crayons', 'pencil', 'pen', 'paper', 'bond paper',
+        'crayons', 'pencil', 'pen', 'paper', 'bond paper', 'ballpen',
         'review center', 'review', 'coaching',
         'certification', 'cert',
         'examination fee', 'exam fee', 'entrance exam', 'pet',
@@ -982,13 +982,13 @@ const shopping: TaxonomyNode = {
       key: 'clothing',
       name: 'Clothing',
       master: 'shopping',
-      aliases: ['clothing', 'damit', 'clothes', 'sapatos', 'shoes', 'apparel'],
+      aliases: ['clothing', 'damit', 'clothes', 'apparel'],
       keywords: [
         // Specific item types
-        'shirt', 'tshirt', 't-shirt',
+        'shirt', 'tshirt', 't-shirt', 'sapatos', 
         'pants', 'slacks', 'khaki', 'khakis',
         'jeans', 'jacket', 'hoodie',
-        'sneakers', 'slippers', 'tsinelas',
+        'shoes', 'sneakers', 'slippers', 'tsinelas',
         // Underwear / inner
         'lingerie', 'underwear', 'socks', 'medyas', 'brief', 'briefs',
         'panties', 'bra', 'sport bra', 'sports bra',
