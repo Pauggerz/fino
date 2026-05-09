@@ -166,7 +166,10 @@ function TabNavigator() {
               }
             });
           }}
-          onFabPress={() => props.navigation.navigate('FABActionSheet')}
+          onAddManual={() =>
+            props.navigation.navigate('AddTransaction', { mode: 'expense' })
+          }
+          onScan={() => props.navigation.navigate('ScreenshotScreen')}
         />
       )}
       screenOptions={{
