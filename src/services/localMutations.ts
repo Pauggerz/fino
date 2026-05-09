@@ -9,6 +9,8 @@ import type DebtModel from '../db/models/Debt';
 import type SavingsGoalModel from '../db/models/SavingsGoal';
 import type BillReminderModel from '../db/models/BillReminder';
 import type MerchantMappingModel from '../db/models/MerchantMapping';
+import type RecurringIncomeModel from '../db/models/RecurringIncome';
+import type RecurringBillModel from '../db/models/RecurringBill';
 import { triggerSync } from './watermelonSync';
 
 const accounts = () => database.get<AccountModel>('accounts');
@@ -18,6 +20,8 @@ const debts = () => database.get<DebtModel>('debts');
 const savingsGoals = () => database.get<SavingsGoalModel>('savings_goals');
 const billReminders = () => database.get<BillReminderModel>('bill_reminders');
 const merchantMappings = () => database.get<MerchantMappingModel>('merchant_mappings');
+const recurringIncomes = () => database.get<RecurringIncomeModel>('recurring_incomes');
+const recurringBills = () => database.get<RecurringBillModel>('recurring_bills');
 
 function uuidv4(): string {
   return Crypto.randomUUID();
@@ -577,6 +581,186 @@ export async function upsertMerchantMapping(input: {
       m.merchantRaw = input.merchantRaw;
       m.category = input.category;
     });
+  });
+  syncInBackground();
+}
+
+// ─── Recurring incomes ──────────────────────────────────────────────────────
+
+export type RecurringCadence = 'weekly' | 'monthly' | 'yearly';
+
+/**
+ * Compute the next due date for a recurring schedule, given the anchor and a
+ * reference "today". Always returns a date strictly in the future relative to
+ * `from` so a missed cycle rolls forward to the next one.
+ */
+export function computeNextDueDate(
+  cadence: RecurringCadence,
+  anchorDate: string,
+  from: Date = new Date(),
+): string {
+  const fromDay = from.toISOString().slice(0, 10);
+  const next = new Date(`${anchorDate}T00:00:00`);
+  while (next.toISOString().slice(0, 10) <= fromDay) {
+    if (cadence === 'weekly') next.setDate(next.getDate() + 7);
+    else if (cadence === 'monthly') next.setMonth(next.getMonth() + 1);
+    else next.setFullYear(next.getFullYear() + 1);
+  }
+  return next.toISOString().slice(0, 10);
+}
+
+export async function createRecurringIncome(input: {
+  userId: string;
+  title: string;
+  amount: number;
+  accountId?: string;
+  cadence: RecurringCadence;
+  anchorDate: string;
+}): Promise<string> {
+  const id = uuidv4();
+  const next = computeNextDueDate(input.cadence, input.anchorDate);
+  await database.write(async () => {
+    await recurringIncomes().create((r) => {
+      r._raw.id = id;
+      r.userId = input.userId;
+      r.title = input.title;
+      r.amount = toCents(input.amount);
+      r.accountId = input.accountId;
+      r.cadence = input.cadence;
+      r.anchorDate = input.anchorDate;
+      r.nextDueAt = next;
+      r.isActive = true;
+    });
+  });
+  syncInBackground();
+  return id;
+}
+
+export async function updateRecurringIncome(
+  id: string,
+  patch: Partial<{
+    title: string;
+    amount: number;
+    accountId: string | undefined;
+    cadence: RecurringCadence;
+    anchorDate: string;
+    isActive: boolean;
+    lastPostedAt: string | undefined;
+  }>,
+): Promise<void> {
+  await database.write(async () => {
+    const r = await recurringIncomes().find(id);
+    await r.update((rec) => {
+      if (patch.title !== undefined) rec.title = patch.title;
+      if (patch.amount !== undefined) rec.amount = toCents(patch.amount);
+      if (patch.accountId !== undefined) rec.accountId = patch.accountId;
+      if (patch.cadence !== undefined) rec.cadence = patch.cadence;
+      if (patch.anchorDate !== undefined) rec.anchorDate = patch.anchorDate;
+      if (patch.isActive !== undefined) rec.isActive = patch.isActive;
+      if (patch.lastPostedAt !== undefined) rec.lastPostedAt = patch.lastPostedAt;
+      // Keep nextDueAt aligned whenever schedule changes.
+      if (patch.cadence !== undefined || patch.anchorDate !== undefined) {
+        rec.nextDueAt = computeNextDueDate(
+          patch.cadence ?? rec.cadence,
+          patch.anchorDate ?? rec.anchorDate,
+        );
+      }
+    });
+  });
+  syncInBackground();
+}
+
+export async function deleteRecurringIncome(id: string): Promise<void> {
+  await database.write(async () => {
+    const r = await recurringIncomes().find(id);
+    await r.markAsDeleted();
+  });
+  syncInBackground();
+}
+
+// ─── Recurring bills ────────────────────────────────────────────────────────
+
+export async function createRecurringBill(input: {
+  userId: string;
+  title: string;
+  amount: number;
+  accountId?: string;
+  category?: string;
+  cadence: RecurringCadence;
+  anchorDate: string;
+}): Promise<string> {
+  const id = uuidv4();
+  const next = computeNextDueDate(input.cadence, input.anchorDate);
+  await database.write(async () => {
+    await recurringBills().create((r) => {
+      r._raw.id = id;
+      r.userId = input.userId;
+      r.title = input.title;
+      r.amount = toCents(input.amount);
+      r.accountId = input.accountId;
+      r.category = input.category;
+      r.cadence = input.cadence;
+      r.anchorDate = input.anchorDate;
+      r.nextDueAt = next;
+      r.isActive = true;
+    });
+  });
+  syncInBackground();
+  return id;
+}
+
+export async function updateRecurringBill(
+  id: string,
+  patch: Partial<{
+    title: string;
+    amount: number;
+    accountId: string | undefined;
+    category: string | undefined;
+    cadence: RecurringCadence;
+    anchorDate: string;
+    isActive: boolean;
+    lastPaidAt: string | undefined;
+  }>,
+): Promise<void> {
+  await database.write(async () => {
+    const r = await recurringBills().find(id);
+    await r.update((rec) => {
+      if (patch.title !== undefined) rec.title = patch.title;
+      if (patch.amount !== undefined) rec.amount = toCents(patch.amount);
+      if (patch.accountId !== undefined) rec.accountId = patch.accountId;
+      if (patch.category !== undefined) rec.category = patch.category;
+      if (patch.cadence !== undefined) rec.cadence = patch.cadence;
+      if (patch.anchorDate !== undefined) rec.anchorDate = patch.anchorDate;
+      if (patch.isActive !== undefined) rec.isActive = patch.isActive;
+      if (patch.lastPaidAt !== undefined) rec.lastPaidAt = patch.lastPaidAt;
+      if (patch.cadence !== undefined || patch.anchorDate !== undefined) {
+        rec.nextDueAt = computeNextDueDate(
+          patch.cadence ?? rec.cadence,
+          patch.anchorDate ?? rec.anchorDate,
+        );
+      }
+    });
+  });
+  syncInBackground();
+}
+
+export async function markRecurringBillPaid(id: string): Promise<void> {
+  await database.write(async () => {
+    const r = await recurringBills().find(id);
+    const today = new Date().toISOString().slice(0, 10);
+    const next = computeNextDueDate(r.cadence, r.anchorDate, new Date());
+    await r.update((rec) => {
+      rec.lastPaidAt = today;
+      rec.nextDueAt = next;
+    });
+  });
+  syncInBackground();
+}
+
+export async function deleteRecurringBill(id: string): Promise<void> {
+  await database.write(async () => {
+    const r = await recurringBills().find(id);
+    await r.markAsDeleted();
   });
   syncInBackground();
 }

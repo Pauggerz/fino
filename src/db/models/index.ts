@@ -5,8 +5,20 @@ import Debt from './Debt';
 import SavingsGoal from './SavingsGoal';
 import BillReminder from './BillReminder';
 import MerchantMapping from './MerchantMapping';
+import RecurringIncome from './RecurringIncome';
+import RecurringBill from './RecurringBill';
 
-export { Account, Transaction, Category, Debt, SavingsGoal, BillReminder, MerchantMapping };
+export {
+  Account,
+  Transaction,
+  Category,
+  Debt,
+  SavingsGoal,
+  BillReminder,
+  MerchantMapping,
+  RecurringIncome,
+  RecurringBill,
+};
 
 export const modelClasses = [
   Account,
@@ -16,4 +28,6 @@ export const modelClasses = [
   SavingsGoal,
   BillReminder,
   MerchantMapping,
+  RecurringIncome,
+  RecurringBill,
 ];

@@ -35,7 +35,9 @@ type TableName =
   | 'debts'
   | 'savings_goals'
   | 'bill_reminders'
-  | 'merchant_mappings';
+  | 'merchant_mappings'
+  | 'recurring_incomes'
+  | 'recurring_bills';
 
 const SYNCED_TABLES: TableName[] = [
   'accounts',
@@ -45,6 +47,8 @@ const SYNCED_TABLES: TableName[] = [
   'savings_goals',
   'bill_reminders',
   'merchant_mappings',
+  'recurring_incomes',
+  'recurring_bills',
 ];
 
 /**
@@ -60,6 +64,8 @@ const SERVER_CREATED_COLUMN: Record<TableName, boolean> = {
   savings_goals: true,
   bill_reminders: true,
   merchant_mappings: true,
+  recurring_incomes: true,
+  recurring_bills: true,
 };
 
 const toMs = (iso?: string | null): number => (iso ? new Date(iso).getTime() : 0);
@@ -73,13 +79,17 @@ function toIsoString(value: unknown): string | null {
 }
 
 // Columns that must be stored locally as 'YYYY-MM-DD' so Q.where comparisons
-// against date-only literals work. Server stores these as TIMESTAMPTZ/DATE,
+// against date-only literals work. Server stores these as DATE,
 // the client treats them as day strings.
+// `transactions.date` is intentionally excluded — it's a TIMESTAMPTZ on the
+// server and feed rows render the time component (`formatRowTime`). Truncating
+// to a day string round-trips through midnight UTC and renders as 08:00 in PHT.
 const DATE_ONLY_COLUMNS: Partial<Record<TableName, readonly string[]>> = {
-  transactions: ['date'],
   debts: ['due_date'],
   savings_goals: ['target_date'],
   bill_reminders: ['due_date'],
+  recurring_incomes: ['anchor_date', 'next_due_at', 'last_posted_at'],
+  recurring_bills: ['anchor_date', 'next_due_at', 'last_paid_at'],
 };
 
 function toDayString(value: unknown): string | null {

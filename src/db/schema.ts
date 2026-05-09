@@ -12,7 +12,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
  * WatermelonDB can compare it cheaply during pullChanges.
  */
 export default appSchema({
-  version: 2,
+  version: 3,
   tables: [
     tableSchema({
       name: 'accounts',
@@ -108,6 +108,39 @@ export default appSchema({
         { name: 'due_date', type: 'string' },
         { name: 'is_recurring', type: 'boolean' },
         { name: 'is_paid', type: 'boolean' },
+        { name: 'server_created_at', type: 'string', isOptional: true },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'recurring_incomes',
+      columns: [
+        { name: 'user_id', type: 'string', isIndexed: true },
+        { name: 'title', type: 'string' },
+        { name: 'amount', type: 'number' },
+        { name: 'account_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'cadence', type: 'string' },
+        { name: 'anchor_date', type: 'string' },
+        { name: 'next_due_at', type: 'string', isIndexed: true },
+        { name: 'is_active', type: 'boolean' },
+        { name: 'last_posted_at', type: 'string', isOptional: true },
+        { name: 'server_created_at', type: 'string', isOptional: true },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'recurring_bills',
+      columns: [
+        { name: 'user_id', type: 'string', isIndexed: true },
+        { name: 'title', type: 'string' },
+        { name: 'amount', type: 'number' },
+        { name: 'account_id', type: 'string', isOptional: true, isIndexed: true },
+        { name: 'category', type: 'string', isOptional: true },
+        { name: 'cadence', type: 'string' },
+        { name: 'anchor_date', type: 'string' },
+        { name: 'next_due_at', type: 'string', isIndexed: true },
+        { name: 'is_active', type: 'boolean' },
+        { name: 'last_paid_at', type: 'string', isOptional: true },
         { name: 'server_created_at', type: 'string', isOptional: true },
         { name: 'updated_at', type: 'number' },
       ],

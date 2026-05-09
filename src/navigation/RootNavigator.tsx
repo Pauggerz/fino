@@ -36,6 +36,15 @@ const ChatScreen = lazy(() => import('../screens/ChatScreen'));
 const BillSplitterScreen = lazy(() => import('../screens/BillSplitterScreen'));
 const UtangTrackerScreen = lazy(() => import('../screens/UtangTrackerScreen'));
 const SavingsGoalScreen = lazy(() => import('../screens/SavingsGoalScreen'));
+const FinancialEducationScreen = lazy(
+  () => import('../screens/FinancialEducationScreen')
+);
+const RecurringIncomeScreen = lazy(
+  () => import('../screens/RecurringIncomeScreen')
+);
+const RecurringBillsScreen = lazy(
+  () => import('../screens/RecurringBillsScreen')
+);
 const ScreenshotScreen = lazy(() => import('../screens/ScreenshotScreen'));
 const OnboardingScreen = lazy(() => import('../screens/OnboardingScreen'));
 const CashFlowScreen = lazy(() => import('../screens/CashFlowScreen'));
@@ -104,6 +113,9 @@ export type RootStackParamList = {
   BillSplitter: undefined;
   UtangTracker: undefined;
   SavingsGoal: undefined;
+  FinancialEducation: undefined;
+  RecurringIncome: undefined;
+  RecurringBills: undefined;
   CashFlow: { accountId?: string } | undefined;
   Categories: undefined;
   TransactionDetail: { id: string };
@@ -166,7 +178,10 @@ function TabNavigator() {
               }
             });
           }}
-          onFabPress={() => props.navigation.navigate('FABActionSheet')}
+          onAddManual={() =>
+            props.navigation.navigate('AddTransaction', { mode: 'expense' })
+          }
+          onScan={() => props.navigation.navigate('ScreenshotScreen')}
         />
       )}
       screenOptions={{
@@ -291,6 +306,21 @@ export default function RootNavigator() {
               <Stack.Screen
                 name="SavingsGoal"
                 component={SavingsGoalScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="FinancialEducation"
+                component={FinancialEducationScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="RecurringIncome"
+                component={RecurringIncomeScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="RecurringBills"
+                component={RecurringBillsScreen}
                 options={{ headerShown: false, presentation: 'modal' }}
               />
               <Stack.Screen

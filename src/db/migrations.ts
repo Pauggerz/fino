@@ -1,4 +1,4 @@
-import { schemaMigrations, addColumns } from '@nozbe/watermelondb/Schema/migrations';
+import { schemaMigrations, addColumns, createTable } from '@nozbe/watermelondb/Schema/migrations';
 
 /**
  * WatermelonDB schema migration registry.
@@ -20,6 +20,44 @@ export default schemaMigrations({
         addColumns({
           table: 'transactions',
           columns: [{ name: 'is_transfer', type: 'boolean' }],
+        }),
+      ],
+    },
+    {
+      toVersion: 3,
+      steps: [
+        createTable({
+          name: 'recurring_incomes',
+          columns: [
+            { name: 'user_id', type: 'string', isIndexed: true },
+            { name: 'title', type: 'string' },
+            { name: 'amount', type: 'number' },
+            { name: 'account_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'cadence', type: 'string' },
+            { name: 'anchor_date', type: 'string' },
+            { name: 'next_due_at', type: 'string', isIndexed: true },
+            { name: 'is_active', type: 'boolean' },
+            { name: 'last_posted_at', type: 'string', isOptional: true },
+            { name: 'server_created_at', type: 'string', isOptional: true },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'recurring_bills',
+          columns: [
+            { name: 'user_id', type: 'string', isIndexed: true },
+            { name: 'title', type: 'string' },
+            { name: 'amount', type: 'number' },
+            { name: 'account_id', type: 'string', isOptional: true, isIndexed: true },
+            { name: 'category', type: 'string', isOptional: true },
+            { name: 'cadence', type: 'string' },
+            { name: 'anchor_date', type: 'string' },
+            { name: 'next_due_at', type: 'string', isIndexed: true },
+            { name: 'is_active', type: 'boolean' },
+            { name: 'last_paid_at', type: 'string', isOptional: true },
+            { name: 'server_created_at', type: 'string', isOptional: true },
+            { name: 'updated_at', type: 'number' },
+          ],
         }),
       ],
     },
