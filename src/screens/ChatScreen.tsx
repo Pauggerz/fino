@@ -29,11 +29,12 @@ import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { useCategories } from '@/hooks/useCategories';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
+import { getInsights, type Insights } from '@/services/IntelligenceEngine';
 
-const SUGGESTED_PROMPTS = [
+const DEFAULT_PROMPTS = [
+  'Summarize my month',
   'How much did I spend on food?',
   'What is my biggest expense?',
-  'Summarize my month',
   'Did I get paid yet?',
 ];
 
@@ -82,6 +83,7 @@ export default function ChatScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [geminiHistory, setGeminiHistory] = useState<ChatMessage[]>([]);
   const [recentTxns, setRecentTxns] = useState<RecentTx[]>([]);
+  const [insights, setInsights] = useState<Insights | null>(null);
 
   // ─── KEYBOARD & LAYOUT STATE ───
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -131,6 +133,14 @@ export default function ChatScreen() {
   }, [userId]);
 
   useEffect(() => {
+    if (!userId) return;
+    const today = new Date();
+    getInsights(userId, today.getFullYear(), today.getMonth())
+      .then(setInsights)
+      .catch(() => {}); // chat still works without insights
+  }, [userId]);
+
+  useEffect(() => {
     setMessages([
       {
         id: 'msg-welcome',
@@ -174,8 +184,45 @@ export default function ChatScreen() {
         budget: c.budget_limit ?? null,
       })),
       recentTransactions: recentTxns,
+      anomalies: insights?.anomalies,
+      trajectory: insights?.trajectory,
+      recurringBills: insights?.recurring.slice(0, 5).map((r) => ({
+        merchant: r.merchant,
+        amount: r.amount,
+        daysUntilNext: r.daysUntilNext,
+      })),
+      habits: insights?.habits.map((h) => ({
+        merchant: h.merchant,
+        visitsPerMonth: h.visitsPerMonth,
+        avgAmount: h.avgAmount,
+        monthlySpend: h.monthlySpend,
+      })),
+      coachMessage: insights?.coach,
+      weekDeltas: insights?.weekDeltas,
     };
-  }, [totalBalance, totalIncome, monthlySpent, categories, recentTxns]);
+  }, [totalBalance, totalIncome, monthlySpent, categories, recentTxns, insights]);
+
+  const suggestedPrompts = useMemo(() => {
+    const prompts: string[] = [];
+    if (insights?.anomalies?.[0]) {
+      const cat = insights.anomalies[0].category;
+      prompts.push(`Why is my ${cat} spending so high?`);
+    }
+    if (insights?.trajectory?.pacingOver) {
+      prompts.push('How can I cut back this month?');
+    }
+    if (insights?.recurring && insights.recurring.length > 0) {
+      prompts.push('What bills are coming up?');
+    }
+    if (insights?.habits?.[0]) {
+      prompts.push(`Am I overspending on ${insights.habits[0].merchant}?`);
+    }
+    for (const d of DEFAULT_PROMPTS) {
+      if (prompts.length >= 4) break;
+      if (!prompts.includes(d)) prompts.push(d);
+    }
+    return prompts.slice(0, 4);
+  }, [insights]);
 
   const hasTransactions = recentTxns.length > 0 || monthlySpent > 0;
   const isSendDisabled = !inputText.trim() || isTyping;
@@ -260,7 +307,7 @@ export default function ChatScreen() {
       <View style={styles.suggestedContainer}>
         <Text style={styles.suggestedLabel}>TRY ASKING</Text>
         <View style={styles.suggestedChipsWrapper}>
-          {SUGGESTED_PROMPTS.map((prompt) => (
+          {suggestedPrompts.map((prompt) => (
             <TouchableOpacity
               key={prompt}
               style={styles.suggestedChip}

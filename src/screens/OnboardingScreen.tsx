@@ -11,11 +11,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../navigation/RootNavigator';
+import { useAuth } from '../contexts/AuthContext';
+import { createCategory } from '../services/localMutations';
+import { STARTER_EXPENSE_CATEGORIES } from '../constants/categoryMappings';
+
 import SplashSlide from './onboarding/SplashSlide';
 import WelcomeSlide from './onboarding/WelcomeSlide';
 import AccountsSlide from './onboarding/AccountsSlide';
 import PaymentSlide from './onboarding/PaymentSlide';
 import AskFinoSlide from './onboarding/AskFinoSlide';
+import CategoriesSlide from './onboarding/CategoriesSlide';
 import AuthSlide from './onboarding/AuthSlide';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'> & {
@@ -24,15 +29,54 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'> & {
 
 const { width: W } = Dimensions.get('window');
 
-// 0 Splash → 1 Welcome → 2 Accounts → 3 Payment → 4 AskFino → 5 Auth
-const SLIDE_COUNT = 6;
-const DOT_SLIDES = [0, 1, 2, 3, 4]; // nav dots shown on tour slides
-const SKIP_SLIDES = [1, 2, 3, 4]; // skip + next shown on tour slides
+// 0 Splash → 1 Welcome → 2 Accounts → 3 Payment → 4 AskFino → 5 Categories → 6 Auth
+const SLIDE_COUNT = 7;
+const DOT_SLIDES = [0, 1, 2, 3, 4, 5]; // nav dots shown on tour slides
+const SKIP_SLIDES = [1, 2, 3, 4, 5]; // skip + next shown on tour slides
+const AUTH_INDEX = 6;
+
+// Default fallback colours for custom-named categories created during
+// onboarding. Mirrors the "Others" tile so they look neutral until the user
+// styles them in CategoryScreen.
+const CUSTOM_DEFAULT_TILE = '#F2EFEC';
+const CUSTOM_DEFAULT_TEXT = '#5C5550';
 
 export default function OnboardingScreen({ onComplete }: Props) {
   const [current, setCurrent] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
+  // ─── Category picker state ─────────────────────────────────────────────
+  // All 5 starters toggled ON by default — single tap "Next" through the
+  // slide gets you the friendly preset.
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
+    () => new Set(STARTER_EXPENSE_CATEGORIES.map((s) => s.key))
+  );
+  const [customs, setCustoms] = useState<string[]>([]);
+  // Flips true when AuthSlide reports a successful sign-in/up. The actual
+  // category insert + completion happens in a useEffect that waits for
+  // AuthContext to populate `user`.
+  const [pendingComplete, setPendingComplete] = useState(false);
+
+  const { user } = useAuth();
+
+  const toggleStarter = useCallback((key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const addCustom = useCallback((name: string) => {
+    setCustoms((prev) => [...prev, name]);
+  }, []);
+
+  const removeCustom = useCallback((name: string) => {
+    setCustoms((prev) => prev.filter((n) => n !== name));
+  }, []);
+
+  // ─── Slide transitions ────────────────────────────────────────────────
   const translations = useRef(
     Array.from({ length: SLIDE_COUNT }, () => new Animated.Value(0))
   ).current;
@@ -80,10 +124,72 @@ export default function OnboardingScreen({ onComplete }: Props) {
     return () => clearTimeout(timer);
   }, [current]);
 
-  const completeOnboarding = useCallback(async () => {
-    await AsyncStorage.setItem('hasOnboarded', 'true');
-    onComplete();
-  }, [onComplete]);
+  // ─── Completion ───────────────────────────────────────────────────────
+  // AuthSlide calls this the moment auth succeeds. We don't run the
+  // category inserts here directly because AuthContext.user might still be
+  // catching up to the new session — instead we flip `pendingComplete` and
+  // let the effect below fire once `user.id` is available.
+  const completeOnboarding = useCallback(() => {
+    setPendingComplete(true);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingComplete) return;
+    if (!user?.id) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const userId = user.id;
+        const inserts: Promise<string>[] = [];
+
+        for (const def of STARTER_EXPENSE_CATEGORIES) {
+          if (!selectedKeys.has(def.key)) continue;
+          inserts.push(
+            createCategory({
+              userId,
+              name: def.name,
+              emoji: def.key,
+              tileBgColour: def.tileBg,
+              textColour: def.textColor,
+              sortOrder: def.sortOrder,
+            })
+          );
+        }
+
+        const customStartSort = STARTER_EXPENSE_CATEGORIES.length;
+        for (let i = 0; i < customs.length; i++) {
+          inserts.push(
+            createCategory({
+              userId,
+              name: customs[i],
+              emoji: 'others',
+              tileBgColour: CUSTOM_DEFAULT_TILE,
+              textColour: CUSTOM_DEFAULT_TEXT,
+              sortOrder: customStartSort + i,
+            })
+          );
+        }
+
+        await Promise.all(inserts);
+      } catch (err) {
+        // Soft-fail — proceed to the app anyway. The user always has
+        // "Others" (auto-seeded by the Supabase trigger) and can add the
+        // rest manually in CategoryScreen.
+        if (__DEV__)
+          // eslint-disable-next-line no-console
+          console.warn('[Onboarding] Category insert failed:', err);
+      } finally {
+        if (cancelled) return;
+        await AsyncStorage.setItem('hasOnboarded', 'true');
+        onComplete();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingComplete, user, selectedKeys, customs, onComplete]);
 
   const showDots = DOT_SLIDES.includes(current);
   const showSkip = SKIP_SLIDES.includes(current);
@@ -103,8 +209,18 @@ export default function OnboardingScreen({ onComplete }: Props) {
           {i === 3 && <PaymentSlide isActive={current === 3} />}
           {i === 4 && <AskFinoSlide isActive={current === 4} />}
           {i === 5 && (
-            <AuthSlide
+            <CategoriesSlide
               isActive={current === 5}
+              selectedKeys={selectedKeys}
+              customs={customs}
+              onToggleStarter={toggleStarter}
+              onAddCustom={addCustom}
+              onRemoveCustom={removeCustom}
+            />
+          )}
+          {i === 6 && (
+            <AuthSlide
+              isActive={current === 6}
               onComplete={completeOnboarding}
             />
           )}
@@ -116,7 +232,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
         <View style={s.navOverlay} pointerEvents="box-none">
           {showSkip && (
             <TouchableOpacity
-              onPress={() => goTo(5)}
+              onPress={() => goTo(AUTH_INDEX)}
               style={s.skipBtn}
               activeOpacity={0.7}
             >
@@ -139,7 +255,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
           {showNext && (
             <TouchableOpacity
-              onPress={() => goTo(Math.min(current + 1, 5))}
+              onPress={() => goTo(Math.min(current + 1, AUTH_INDEX))}
               style={s.nextBtn}
               activeOpacity={0.8}
             >

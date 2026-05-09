@@ -1,18 +1,132 @@
-import categoryMappings from '../constants/categoryMappings';
+import { TAXONOMY, type TaxonomyNode, type MasterCategory } from '../constants/taxonomy';
 import { transitions } from '../constants/transitions';
 
-export type Category =
-  | 'food'
-  | 'transport'
-  | 'shopping'
-  | 'bills'
-  | 'health'
-  | 'other';
+export type Category = MasterCategory;
 
-/** Expose the mapping dict for external use (e.g. tests). */
-export const aiMappings = categoryMappings;
+// ─── Taxonomy index — built once at module load ─────────────────────────────
+//
+// We flatten the tree into two structures:
+//   1. `aiMappings` — backward-compatible flat `{ keyword → master }` dict.
+//      Used by `buildDisplayName` (which iterates transport keywords) and
+//      external callers/tests that expect the old shape.
+//   2. `KEYWORD_PATHS` — `{ keyword → leaf-to-root path[] }`, used by the
+//      bubble-up resolver to find the most specific user-active category.
+//
+// When two nodes share a keyword (e.g. "tea" could in theory be in both
+// food/drinks and bills), the deeper / first-registered node wins — but in
+// practice the taxonomy avoids duplicates so this is purely defensive.
+
+type KeywordPath = TaxonomyNode[]; // index 0 = leaf, last = master
+
+const KEYWORD_PATHS: Record<string, KeywordPath> = {};
+const _aiMappings: Record<string, Category> = {};
+
+// Aliases per master — used by extractItems / buildDisplayName to strip
+// category-naming words from item lists ("school enrollment" → "Enrollment",
+// not "School Enrollment"). Auto-derived from each TaxonomyNode's `aliases`.
+const _aliasesByMaster: Record<MasterCategory, Set<string>> = {
+  food: new Set(),
+  transport: new Set(),
+  bills: new Set(),
+  health: new Set(),
+  shopping: new Set(),
+  entertainment: new Set(),
+  other: new Set(),
+};
+
+function indexNode(node: TaxonomyNode, ancestors: TaxonomyNode[]): void {
+  // Index children FIRST so leaf surface forms claim their slot before the
+  // master's umbrella terms. Combined with first-registration-wins below,
+  // this guarantees that "more specific node wins" on accidental duplicates
+  // — matching the bubble-up philosophy.
+  if (node.children) {
+    for (const child of node.children) {
+      indexNode(child, [node, ...ancestors]);
+    }
+  }
+  const path: KeywordPath = [node, ...ancestors];
+  // Both aliases and keywords resolve to the same node for *matching*
+  // purposes — the difference only matters for display-name formatting.
+  const allTerms = [...node.keywords, ...(node.aliases ?? [])];
+  for (const kw of allTerms) {
+    const key = kw.toLowerCase();
+    if (!KEYWORD_PATHS[key]) {
+      KEYWORD_PATHS[key] = path;
+      _aiMappings[key] = node.master;
+    }
+  }
+  // Aliases also feed the master-level umbrella set used by extractItems.
+  for (const alias of node.aliases ?? []) {
+    _aliasesByMaster[node.master].add(alias.toLowerCase());
+  }
+}
+
+for (const master of TAXONOMY) indexNode(master, []);
+
+/** Backward-compatible flat keyword → master dictionary. Derived from the
+ *  taxonomy at module load. Don't add to it directly — extend the taxonomy. */
+export const aiMappings: Readonly<Record<string, Category>> = _aiMappings;
+
+/**
+ * Walk a keyword's path from leaf → master and return the first node that
+ * matches an entry in `activeCategoryNames` (case-insensitive). A node
+ * "matches" when EITHER:
+ *   1. its canonical `name` matches a user category, OR
+ *   2. one of its `aliases` matches a user category.
+ *
+ * Canonical-name matches win over alias matches at the same path step (the
+ * user's literal naming choice is most explicit). Walking proceeds leaf →
+ * master, so a more-specific node always wins over a less-specific one.
+ *
+ * Returns `userEntry` — the user's exact category name (preserving their
+ * casing) — so callers can surface it in the UI without round-tripping
+ * through the taxonomy's canonical names.
+ *
+ * Example: user has only `["School", "Bills", "Others"]` and types
+ * "tuition fee" (taxonomy path = [Education, Bills]).
+ *   - Education.name = "Education" — not in user list. Skip.
+ *   - Education.aliases includes "school" — matches user's "School". Return.
+ * → resolvedCategory = "School" (the user's casing). Without this alias
+ *   fallback, the resolver would jump past Education and land on "Bills",
+ *   which is wrong: the user clearly means their School category.
+ */
+function bubbleUp(
+  path: KeywordPath,
+  activeCategoryNames: string[] | undefined
+): { node: TaxonomyNode; userEntry: string | null; pathNames: string[] } {
+  const pathNames = path.map((n) => n.name);
+  if (!activeCategoryNames || activeCategoryNames.length === 0) {
+    return { node: path[0], userEntry: null, pathNames };
+  }
+  // Map lowercase form → user's exact casing, so we can return their
+  // preferred capitalization regardless of how the taxonomy spells it.
+  const userByLower = new Map<string, string>();
+  for (const name of activeCategoryNames) {
+    userByLower.set(name.toLowerCase(), name);
+  }
+
+  for (const node of path) {
+    // 1) Canonical name first — user's literal naming choice wins.
+    const canonHit = userByLower.get(node.name.toLowerCase());
+    if (canonHit) {
+      return { node, userEntry: canonHit, pathNames };
+    }
+    // 2) Then aliases — lets the user name their category by an alternative
+    //    name (e.g. "School" instead of "Education") and still resolve.
+    for (const alias of node.aliases ?? []) {
+      const aliasHit = userByLower.get(alias.toLowerCase());
+      if (aliasHit) {
+        return { node, userEntry: aliasHit, pathNames };
+      }
+    }
+  }
+  // Nothing along the path matched — caller falls back to "Others" / blank.
+  return { node: path[path.length - 1], userEntry: null, pathNames };
+}
 
 export interface AIAnalysisResult {
+  /** Master expense category — used for display-name formatting and the legacy
+   *  Pro Gemini suggestion path. Always set when `matchedKeyword` is set. */
   suggestedCategory: Category | null;
   confidence: 'high' | 'medium' | 'low';
   matchedKeyword: string | null;
@@ -22,6 +136,15 @@ export interface AIAnalysisResult {
   suggestedAmount: number | null;
   /** Individual amounts pulled out of the text, in the order they appeared. */
   extractedAmounts: number[];
+  /** Bubble-up result — the most-specific user-active category name the
+   *  matched keyword resolves to. `null` when nothing along the path
+   *  matched the user's active categories (UI should fall back to "Others").
+   *  Only populated when `analyzeTransactionText` is called with the user's
+   *  active category list. */
+  resolvedCategory: string | null;
+  /** Full taxonomy path for the matched keyword, leaf → master. Useful for
+   *  debugging and the optional "why this category?" tutorial. */
+  taxonomyPath: string[];
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -327,10 +450,22 @@ function fuzzyKeywordFor(
  *   3. Substring match — keyword found inside a token (e.g. "grabcar" → "grab")
  *   4. Fuzzy match — Levenshtein within 1–2 edits (handles typos)
  *
+ * When `activeCategoryNames` is provided, the matched keyword's taxonomy
+ * path is bubbled up: the most-specific node whose `name` matches an active
+ * user category wins. e.g. typing "starbucks" with active categories
+ * ["Coffee", "Food"] resolves to "Coffee"; with only ["Food"] it resolves to
+ * "Food"; with neither, `resolvedCategory` is null and the UI falls back to
+ * "Others". When `activeCategoryNames` is omitted, `resolvedCategory` stays
+ * null and only `suggestedCategory` (master) is populated — preserving
+ * back-compat for callers that don't track user categories.
+ *
  * Also extracts numeric amounts from the text via {@link extractAmounts} so
  * the UI can auto-fill the amount field.
  */
-export function analyzeTransactionText(text: string): AIAnalysisResult {
+export function analyzeTransactionText(
+  text: string,
+  activeCategoryNames?: string[]
+): AIAnalysisResult {
   const empty: AIAnalysisResult = {
     suggestedCategory: null,
     confidence: 'low',
@@ -338,6 +473,8 @@ export function analyzeTransactionText(text: string): AIAnalysisResult {
     signal_source: 'none',
     suggestedAmount: null,
     extractedAmounts: [],
+    resolvedCategory: null,
+    taxonomyPath: [],
   };
 
   if (!text || text.trim() === '') return empty;
@@ -354,48 +491,56 @@ export function analyzeTransactionText(text: string): AIAnalysisResult {
       : null;
 
   const finalize = (
-    partial: Omit<
-      AIAnalysisResult,
-      'suggestedAmount' | 'extractedAmounts' | 'signal_source'
-    > & { signal_source?: AIAnalysisResult['signal_source'] }
-  ): AIAnalysisResult => ({
-    ...partial,
-    signal_source: partial.signal_source ?? 'ai_description',
-    suggestedAmount,
-    extractedAmounts,
-  });
+    matchedKeyword: string,
+    confidence: 'high' | 'medium' | 'low'
+  ): AIAnalysisResult => {
+    const path = KEYWORD_PATHS[matchedKeyword];
+    const master = aiMappings[matchedKeyword] ?? null;
+    let resolvedCategory: string | null = null;
+    let taxonomyPath: string[] = [];
+    if (path) {
+      const bubble = bubbleUp(path, activeCategoryNames);
+      taxonomyPath = bubble.pathNames;
+      // bubbleUp matches user categories against both canonical names AND
+      // aliases, then returns the user's exact casing as `userEntry`. So
+      // typing "tuition fee" with active=["School", "Bills"] resolves to
+      // "School" (alias of Education) rather than skipping past Education
+      // and landing on Bills.
+      if (bubble.userEntry) {
+        resolvedCategory = bubble.userEntry;
+      }
+    }
+    return {
+      suggestedCategory: master,
+      confidence,
+      matchedKeyword,
+      signal_source: 'ai_description',
+      suggestedAmount,
+      extractedAmounts,
+      resolvedCategory,
+      taxonomyPath,
+    };
+  };
 
   // 1) Multi-word phrase match (e.g. "milk tea", "piso wifi")
   const multiWordMatch = Object.keys(aiMappings).find(
     (key) => key.includes(' ') && normalizedText.includes(key)
   );
   if (multiWordMatch) {
-    return finalize({
-      suggestedCategory: aiMappings[multiWordMatch],
-      confidence: 'high',
-      matchedKeyword: multiWordMatch,
-    });
+    return finalize(multiWordMatch, 'high');
   }
 
   // 2) Exact single-word match
   const wordMatch = words.find((w) => aiMappings[w]);
   if (wordMatch) {
-    return finalize({
-      suggestedCategory: aiMappings[wordMatch],
-      confidence: 'high',
-      matchedKeyword: wordMatch,
-    });
+    return finalize(wordMatch, 'high');
   }
 
   // 3) Substring match — handles compounds like "grabcar", "foodpanda"
   for (const key of Object.keys(aiMappings)) {
     if (key.length < 4 || key.includes(' ') || key.includes('-')) continue;
     if (words.some((w) => w !== key && w.includes(key))) {
-      return finalize({
-        suggestedCategory: aiMappings[key],
-        confidence: 'high',
-        matchedKeyword: key,
-      });
+      return finalize(key, 'high');
     }
   }
 
@@ -409,11 +554,7 @@ export function analyzeTransactionText(text: string): AIAnalysisResult {
     }
   }
   if (bestFuzzy) {
-    return finalize({
-      suggestedCategory: aiMappings[bestFuzzy.keyword],
-      confidence: bestFuzzy.distance === 0 ? 'high' : 'medium',
-      matchedKeyword: bestFuzzy.keyword,
-    });
+    return finalize(bestFuzzy.keyword, bestFuzzy.distance === 0 ? 'high' : 'medium');
   }
 
   // No category — but still return any extracted amount so the UI can
@@ -433,20 +574,28 @@ export type AIAnalysisCallback = (result: AIAnalysisResult) => void;
  *
  * Usage:
  *   const analyzer = useRef(createDebouncedAnalyzer()).current;
- *   analyzer.analyze(text, (result) => { ... });
+ *   analyzer.analyze(text, userCategoryNames, (result) => { ... });
  *   // call analyzer.cancel() on unmount
+ *
+ * `activeCategoryNames` is forwarded to {@link analyzeTransactionText} so
+ * the bubble-up resolver can pick the most-specific user category. Pass
+ * `[]` (or undefined) to skip bubble-up and only get the master category.
  */
 export function createDebouncedAnalyzer(): {
-  analyze: (text: string, cb: AIAnalysisCallback) => void;
+  analyze: (
+    text: string,
+    activeCategoryNames: string[] | undefined,
+    cb: AIAnalysisCallback
+  ) => void;
   cancel: () => void;
 } {
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   return {
-    analyze(text: string, cb: AIAnalysisCallback) {
+    analyze(text, activeCategoryNames, cb) {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        cb(analyzeTransactionText(text));
+        cb(analyzeTransactionText(text, activeCategoryNames));
         timer = null;
       }, transitions.AI_MAPPING_DEBOUNCE); // 300 ms
     },
@@ -472,21 +621,46 @@ const DISPLAY_STOP_WORDS = new Set<string>([
   'a', 'an', 'the', 'and', 'or', 'plus', 'with', 'for', 'to', 'at',
   'in', 'on', 'of', 'from', 'into', 'onto', 'than', 'then', 'as',
   'this', 'that', 'these', 'those', 'so', 'just',
+  // Pronouns / reflexives
+  'myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves',
+  'themselves', 'him', 'her', 'them', 'it', 'his', 'hers', 'its', 'theirs',
+  // Adjectives / descriptors (conversational filler)
+  'very', 'really', 'quite', 'pretty', 'super', 'so', 'too', 'more',
+  'most', 'much', 'many', 'some', 'few', 'any', 'all', 'both', 'each',
+  'every', 'nice', 'good', 'great', 'cool', 'awesome', 'new', 'old',
+  'big', 'small', 'cheap', 'expensive', 'free', 'extra', 'other', 'another',
+  // Adverbs / filler
+  'also', 'even', 'still', 'already', 'again', 'often', 'now', 'here',
+  'there', 'back', 'out', 'up', 'down', 'away', 'off', 'along',
+  // Common nouns that are never the item
+  'friends', 'friend', 'family', 'kids', 'people', 'someone',
+  // Auxiliary / linking verbs
+  'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'do', 'does', 'did', 'will', 'would', 'could', 'should', 'shall',
+  'may', 'might', 'must', 'can', 'let', 'make', 'made', 'get',
+  // Prepositions
+  'about', 'above', 'after', 'before', 'between', 'by', 'during',
+  'inside', 'near', 'over', 'since', 'through', 'under', 'until', 'upon',
+  'within', 'without', 'around', 'against',
   // Tagalog / Filipino
   'na', 'ng', 'mga', 'ang', 'ako', 'ko', 'sa', 'kay', 'din', 'rin',
   'lang', 'po', 'opo', 'ay', 'ito', 'iyon', 'siya', 'kami', 'kayo', 'sila',
   'ni', 'nila', 'naming', 'natin', 'niya',
+  // Tagalog particles / markers
+  'nag', 'mag', 'um', 'in', 'an', 'pa', 'naman', 'talaga', 'pala',
+  'kasi', 'pero', 'dahil', 'kung', 'kapag', 'habang', 'bago', 'pagkatapos',
+  'pwede', 'dapat', 'gusto', 'sana', 'kaya', 'dito', 'doon', 'rin',
+  'went', 'go', 'went', 'came',
   // Cebuano / Bisaya
-  'ako', 'ikaw', 'kita', 'sila', 'nako', 'nimo', 'niya', 'namo', 'nato',
-  'ni', 'ug', 'ang', 'sa', 'ra', 'lang', 'gani', 'pud', 'pod', 'baya',
-  // Cebuano linkers / contractions / quantifiers (the bits that glue a
-  // sentence together but never describe an item)
+  'ikaw', 'kita', 'nako', 'nimo', 'namo', 'nato',
+  'ug', 'ra', 'gani', 'pud', 'pod', 'baya',
+  // Cebuano linkers / contractions / quantifiers
   'nga', 'kug', "ko'g", 'tag', 'usa', 'duha', 'tulo', 'upat', 'lima',
   'gamay', 'dako', 'gamit', 'unya', 'taas', 'naa', 'nia', 'aron',
   // Verbs / actions (English + Tagalog + Cebuano)
   'spent', 'spend', 'bought', 'buy', 'paid', 'pay', 'paying',
   'ate', 'eat', 'eats', 'eating', 'got', 'gets', 'getting', 'have',
-  'had', 'has', 'order', 'ordered', 'ordering', 'order', 'used',
+  'had', 'has', 'order', 'ordered', 'ordering', 'used',
   'kain', 'kumain', 'kakain', 'mag-kain', 'magkain',
   'kaon', 'mikaon', 'mokaon', 'mukaon', 'nagkaon', 'kumakain',
   'bumili', 'bili', 'mipalit', 'palit', 'mopalit', 'pumalit',
@@ -522,37 +696,22 @@ const ITEM_CONNECTOR_PATTERN = /\b(?:and|plus|then|ug|tsaka)\b/gi;
  * Food entry just means "food", so we don't list it as an item alongside
  * "rice" and "dinuguan". Merchants/leaf items (Jollibee, Adobo, Meralco,
  * Watsons…) are kept on purpose; only the umbrella nouns/verbs sit here.
+ *
+ * Auto-derived from each TaxonomyNode's `aliases` field. To add an umbrella
+ * term, add it to the relevant node's `aliases` in `taxonomy.ts` — not here.
  */
-const CATEGORY_PARENT_TERMS: Record<Category, Set<string>> = {
-  food: new Set([
-    'food', 'pagkain', 'pagkaon', 'kainan', 'kain', 'kaon', 'eat', 'ate',
-    'eating', 'eats', 'drink', 'drinks', 'meal', 'meals', 'ulam', 'baon',
-    'snack', 'snacks', 'breakfast', 'lunch', 'dinner', 'brunch',
-    'agahan', 'tanghalian', 'hapunan', 'merienda', 'meryenda',
-    'pamahaw', 'paniudto', 'panihapon', 'painit', 'pangaon', 'bahog',
-    'restaurant', 'resto', 'cafe', 'cafeteria', 'bakery', 'bakeshop',
-    'panaderia', 'carinderia', 'fastfood', 'fast', 'food court',
-  ]),
-  transport: new Set([
-    // For Transport the umbrella verbs/nouns are stripped *only* from items;
-    // the formatter picks vehicle keywords directly.
-    'transport', 'transpo', 'pasahe', 'pamasahe', 'plete', 'sakay',
-    'sakyanan', 'ride', 'commute',
-  ]),
-  bills: new Set([
-    'bill', 'bills', 'bayad', 'subscription', 'prepaid', 'postpaid',
-    'load', 'eload', 'paload',
-  ]),
-  health: new Set([
-    'medicine', 'medisina', 'gamot', 'meds', 'tambal', 'consult',
-    'consultation', 'checkup', 'check-up', 'prescription',
-  ]),
-  shopping: new Set(['shop', 'shopping']),
-  other: new Set(),
-};
+const CATEGORY_PARENT_TERMS: Record<Category, Set<string>> = _aliasesByMaster;
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Joins item strings with Oxford-style ", " and " & " (e.g. "A, B & C"). */
+function formatItemList(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} & ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')} & ${items[items.length - 1]}`;
 }
 
 function capWords(s: string): string {
@@ -569,6 +728,7 @@ const CATEGORY_LABELS: Record<Category, string> = {
   shopping: 'Shopping',
   bills: 'Bills',
   health: 'Health',
+  entertainment: 'Entertainment',
   other: 'Other',
 };
 
@@ -576,8 +736,14 @@ const CATEGORY_LABELS: Record<Category, string> = {
  * Strip currency tokens, account-trigger phrases, and the account surface
  * itself so they don't bleed into the extracted item list.
  */
+// All known account alias surfaces (flat list, longest first for greedy matching).
+const ALL_ACCOUNT_SURFACES: string[] = Object.values(ACCOUNT_ALIASES)
+  .flat()
+  .sort((a, b) => b.length - a.length);
+
 function scrubAuxText(text: string, accountSurface?: string | null): string {
   let cleaned = ` ${text.toLowerCase()} `;
+  // Strip the caller-supplied account surface (with and without trigger word).
   if (accountSurface) {
     const acctEsc = escapeRegex(accountSurface.toLowerCase());
     const triggers = ACCOUNT_TRIGGER_WORDS.map(escapeRegex).join('|');
@@ -586,6 +752,12 @@ function scrubAuxText(text: string, accountSurface?: string | null): string {
       ' '
     );
     cleaned = cleaned.replace(new RegExp(`\\b${acctEsc}\\b`, 'gi'), ' ');
+  }
+  // Also strip every known account alias so "gcash" / "bpi" / etc. never
+  // bleed into the item name regardless of whether a trigger word preceded it.
+  for (const surface of ALL_ACCOUNT_SURFACES) {
+    const surfEsc = escapeRegex(surface);
+    cleaned = cleaned.replace(new RegExp(`\\b${surfEsc}\\b`, 'gi'), ' ');
   }
   cleaned = cleaned.replace(/₱|\bpesos?\b|\bpiso\b|\bphp\b/gi, ' ');
   return cleaned;
@@ -641,6 +813,23 @@ export function extractItems(
     seen.add(key);
     out.push(phrase);
   }
+
+  // Fallback: if all words were filtered, surface any taxonomy keywords present
+  // in the text (keywords are receipt-level items, not category umbrella aliases
+  // and are never in parentTerms, so they survive this second pass cleanly).
+  if (out.length === 0) {
+    const rawWords = tokenize(text);
+    const seen2 = new Set<string>();
+    for (const w of rawWords) {
+      if (!aiMappings[w]) continue;
+      if (DISPLAY_STOP_WORDS.has(w)) continue;
+      if (parentTerms && parentTerms.has(w)) continue;
+      if (seen2.has(w)) continue;
+      seen2.add(w);
+      out.push(w);
+    }
+  }
+
   return out;
 }
 
@@ -660,9 +849,9 @@ export function extractItems(
 export function buildDisplayName(
   text: string,
   category: Category | null,
-  options: { accountSurface?: string | null } = {}
+  options: { accountSurface?: string | null; label?: string } = {}
 ): string {
-  const label = category ? CATEGORY_LABELS[category] : 'Other';
+  const label = options.label ?? (category ? CATEGORY_LABELS[category] : 'Other');
   if (!text || !text.trim()) return label;
 
   if (category === 'transport') {
@@ -737,5 +926,5 @@ export function buildDisplayName(
 
   const items = extractItems(text, { ...options, category });
   if (items.length === 0) return label;
-  return `${label} - ${items.map(capWords).join(' + ')}`;
+  return `${label} - ${formatItemList(items.map(capWords))}`;
 }

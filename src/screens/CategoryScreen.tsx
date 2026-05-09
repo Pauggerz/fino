@@ -48,10 +48,7 @@ import {
   updateCategory,
   deleteCategory,
 } from '@/services/localMutations';
-import {
-  DEFAULT_EXPENSE_KEYS,
-  INCOME_KEYS,
-} from '@/constants/categoryMappings';
+import { INCOME_KEYS } from '@/constants/categoryMappings';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import {
   CATEGORY_SWATCHES,
@@ -111,7 +108,7 @@ export default function CategoryScreen() {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { user, isPro } = useAuth();
+  const { user } = useAuth();
   const userId = user?.id;
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
@@ -268,12 +265,19 @@ export default function CategoryScreen() {
   );
 
   const handleDelete = useCallback(async (row: CategoryRow) => {
-    const isDefault = DEFAULT_EXPENSE_KEYS.has(row.emoji.toLowerCase());
+    // System categories (currently just "Others") are locked — they're the
+    // catch-all that auto-categorization falls back to and that orphan
+    // transactions get filed under, so we hard-block deletion.
+    if (row.is_default) {
+      Alert.alert(
+        'Locked',
+        `"${row.name}" is a system category and can’t be deleted. It’s used as the catch-all for transactions that don’t match any other category.`
+      );
+      return;
+    }
     Alert.alert(
       'Delete category',
-      isDefault
-        ? `Remove "${row.name}"? This is a default category — auto-categorization will stop assigning transactions to it. Past transactions keep their tag.`
-        : `Remove "${row.name}"? Past transactions tagged with this category keep their tag.`,
+      `Remove "${row.name}"? Past transactions tagged with this category keep their tag.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -317,13 +321,7 @@ export default function CategoryScreen() {
           </Text>
         </View>
         <TouchableOpacity
-          onPress={() => {
-            if (!isPro) {
-              navigation.navigate('ProUpgrade', { source: 'add_category' });
-              return;
-            }
-            setAdding(true);
-          }}
+          onPress={() => setAdding(true)}
           activeOpacity={0.7}
           style={styles.backBtn}
           hitSlop={8}
@@ -414,13 +412,7 @@ export default function CategoryScreen() {
           </View>
 
           <TouchableOpacity
-            onPress={() => {
-              if (!isPro) {
-                navigation.navigate('ProUpgrade', { source: 'add_category' });
-                return;
-              }
-              setAdding(true);
-            }}
+            onPress={() => setAdding(true)}
             activeOpacity={0.7}
             style={styles.addRow}
           >
@@ -447,7 +439,6 @@ export default function CategoryScreen() {
         styles={styles}
         colors={colors}
         isDark={isDark}
-        isPro={isPro}
         canDelete={editing !== null}
         onClose={() => setEditing(null)}
         onSave={(draft) => {
@@ -464,7 +455,6 @@ export default function CategoryScreen() {
         styles={styles}
         colors={colors}
         isDark={isDark}
-        isPro={isPro}
         canDelete={false}
         onClose={() => setAdding(false)}
         onSave={handleAdd}
@@ -587,7 +577,6 @@ function CategoryFormModal({
   styles,
   colors,
   isDark,
-  isPro,
   canDelete,
   onClose,
   onSave,
@@ -599,15 +588,11 @@ function CategoryFormModal({
   styles: ReturnType<typeof createStyles>;
   colors: ThemeColors;
   isDark: boolean;
-  isPro: boolean;
   canDelete: boolean;
   onClose: () => void;
   onSave: (draft: DraftState) => void | Promise<void>;
   onDelete: () => void;
 }) {
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-
   const [draft, setDraft] = useState<DraftState>({
     name: '',
     iconKey: ICON_LIBRARY[0].key,
@@ -763,141 +748,97 @@ function CategoryFormModal({
 
           {/* Icon picker — horizontal scroll keeps the row compact and
               scales gracefully as more icons are added to ICON_LIBRARY. */}
-          <Text style={styles.fieldLabel}>
-            ICON
-            {!isPro && <Text style={styles.proLockLabel}>{' · Pro'}</Text>}
-          </Text>
-          <View style={{ position: 'relative' }}>
-            <View
-              style={[
-                styles.pickerCard,
-                !isPro && { opacity: 0.45 },
-                {
-                  backgroundColor: isDark
-                    ? colors.surfaceSubdued
-                    : colors.white,
-                  borderColor: colors.border,
-                },
-              ]}
-              pointerEvents={isPro ? 'auto' : 'none'}
+          <Text style={styles.fieldLabel}>ICON</Text>
+          <View
+            style={[
+              styles.pickerCard,
+              {
+                backgroundColor: isDark
+                  ? colors.surfaceSubdued
+                  : colors.white,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pickerScrollContent}
             >
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.pickerScrollContent}
-              >
-                {ICON_LIBRARY.map((entry) => {
-                  const active = draft.iconKey === entry.key;
-                  return (
-                    <TouchableOpacity
-                      key={entry.key}
-                      activeOpacity={0.75}
-                      onPress={() =>
-                        setDraft((d) => ({ ...d, iconKey: entry.key }))
-                      }
-                      style={[
-                        styles.iconCell,
-                        {
-                          backgroundColor: active
-                            ? swatch
-                            : isDark
-                              ? colors.background
-                              : '#F4F4F8',
-                        },
-                      ]}
-                    >
-                      <CategoryIcon
-                        categoryKey={entry.key}
-                        color={active ? '#FFFFFF' : colors.textSecondary}
-                        size={20}
-                        wrapperSize={36}
-                      />
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-            {!isPro && (
-              <TouchableOpacity
-                style={styles.pickerLockOverlay}
-                activeOpacity={0.7}
-                onPress={() =>
-                  navigation.navigate('ProUpgrade', { source: 'icon_picker' })
-                }
-              >
-                <Ionicons
-                  name="lock-closed"
-                  size={18}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-            )}
+              {ICON_LIBRARY.map((entry) => {
+                const active = draft.iconKey === entry.key;
+                return (
+                  <TouchableOpacity
+                    key={entry.key}
+                    activeOpacity={0.75}
+                    onPress={() =>
+                      setDraft((d) => ({ ...d, iconKey: entry.key }))
+                    }
+                    style={[
+                      styles.iconCell,
+                      {
+                        backgroundColor: active
+                          ? swatch
+                          : isDark
+                            ? colors.background
+                            : '#F4F4F8',
+                      },
+                    ]}
+                  >
+                    <CategoryIcon
+                      categoryKey={entry.key}
+                      color={active ? '#FFFFFF' : colors.textSecondary}
+                      size={20}
+                      wrapperSize={36}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
 
           {/* Colour picker — horizontal scroll mirrors the icon row. */}
-          <Text style={styles.fieldLabel}>
-            COLOR
-            {!isPro && <Text style={styles.proLockLabel}>{' · Pro'}</Text>}
-          </Text>
-          <View style={{ position: 'relative' }}>
-            <View
-              style={[
-                styles.pickerCard,
-                !isPro && { opacity: 0.45 },
-                {
-                  backgroundColor: isDark
-                    ? colors.surfaceSubdued
-                    : colors.white,
-                  borderColor: colors.border,
-                },
-              ]}
-              pointerEvents={isPro ? 'auto' : 'none'}
+          <Text style={styles.fieldLabel}>COLOR</Text>
+          <View
+            style={[
+              styles.pickerCard,
+              {
+                backgroundColor: isDark
+                  ? colors.surfaceSubdued
+                  : colors.white,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pickerScrollContent}
             >
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.pickerScrollContent}
-              >
-                {CATEGORY_SWATCHES.map((c, i) => {
-                  const active = draft.colorIdx === i;
-                  return (
-                    <TouchableOpacity
-                      key={c}
-                      activeOpacity={0.75}
-                      onPress={() => setDraft((d) => ({ ...d, colorIdx: i }))}
-                      style={[
-                        styles.colorSwatch,
-                        {
-                          backgroundColor: c,
-                          borderColor: active
-                            ? colors.textPrimary
-                            : 'transparent',
-                        },
-                      ]}
-                    >
-                      {active && (
-                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-            {!isPro && (
-              <TouchableOpacity
-                style={styles.pickerLockOverlay}
-                activeOpacity={0.7}
-                onPress={() =>
-                  navigation.navigate('ProUpgrade', { source: 'color_picker' })
-                }
-              >
-                <Ionicons
-                  name="lock-closed"
-                  size={18}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-            )}
+              {CATEGORY_SWATCHES.map((c, i) => {
+                const active = draft.colorIdx === i;
+                return (
+                  <TouchableOpacity
+                    key={c}
+                    activeOpacity={0.75}
+                    onPress={() => setDraft((d) => ({ ...d, colorIdx: i }))}
+                    style={[
+                      styles.colorSwatch,
+                      {
+                        backgroundColor: c,
+                        borderColor: active
+                          ? colors.textPrimary
+                          : 'transparent',
+                      },
+                    ]}
+                  >
+                    {active && (
+                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
 
           {/* Budget */}
@@ -1279,20 +1220,5 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
       fontSize: 11.5,
       marginTop: 6,
       lineHeight: 16,
-    },
-    proLockLabel: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 10,
-      letterSpacing: 0,
-    },
-    pickerLockOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
   });

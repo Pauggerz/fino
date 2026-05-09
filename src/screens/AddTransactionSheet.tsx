@@ -6,7 +6,6 @@ import React, {
   useMemo,
 } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   View,
   Text,
@@ -50,7 +49,6 @@ import {
   type Category,
 } from '../services/aiCategoryMap';
 import { suggestCategory } from '../services/IntelligenceEngine';
-import { suggestCategoryWithGemini } from '../services/gemini';
 import { useAuth } from '../contexts/AuthContext';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -114,7 +112,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const aiTextRef = useRef('');
 
   // Data Hooks
-  const { user, isPro } = useAuth();
+  const { user } = useAuth();
   const { accounts, loading: accountsLoading } = useAccounts();
   const { categories, loading: categoriesLoading } = useCategories();
 
@@ -169,7 +167,6 @@ export default function AddTransactionSheet({ route }: Props) {
   const [signalSource, setSignalSource] = useState<'manual' | 'ai_description'>(
     'manual'
   );
-  const [geminiPending, setGeminiPending] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardPrompt, setShowDiscardPrompt] = useState(false);
   const [showAmountLimitToast, setShowAmountLimitToast] = useState(false);
@@ -450,7 +447,6 @@ export default function AddTransactionSheet({ route }: Props) {
     if (!trimmed) {
       analyzer.cancel();
       setSignalSource('manual');
-      setGeminiPending(false);
       setAiAccountSurface(null);
       // Clear any auto-filled amount once the description is empty.
       if (amountAutoFilled) {
@@ -468,17 +464,32 @@ export default function AddTransactionSheet({ route }: Props) {
     const tokenText = trimmed;
 
     // 1) Immediate keyword analyzer — fast UI feedback.
-    analyzer.analyze(text, (result) => {
+    //    Pass the user's active category names so the analyzer's bubble-up
+    //    resolver can pick the most-specific match (e.g. "starbucks" →
+    //    "Coffee" if the user has that custom category, otherwise "Food").
+    const userCategoryNames = categories.map((c) => c.name);
+    analyzer.analyze(text, userCategoryNames, (result) => {
       if (tokenText !== aiTextRef.current) return;
       setAiResult(result);
-      if (result.suggestedCategory) {
+      // Bubble-up result wins — already in the user's exact category-name
+      // form. Fall back to master-name match for safety (e.g. legacy paths
+      // where activeCategoryNames was empty).
+      let pickedName: string | null = null;
+      if (result.resolvedCategory) {
+        const matched = categories.find(
+          (c) => c.name.toLowerCase() === result.resolvedCategory!.toLowerCase()
+        );
+        if (matched) pickedName = matched.name;
+      }
+      if (!pickedName && result.suggestedCategory) {
         const matched = categories.find(
           (c) => c.name.toLowerCase() === result.suggestedCategory
         );
-        if (matched) {
-          setCategory(matched.name);
-          setSignalSource('ai_description');
-        }
+        if (matched) pickedName = matched.name;
+      }
+      if (pickedName) {
+        setCategory(pickedName);
+        setSignalSource('ai_description');
       }
       // Auto-fill amount from extracted numbers in the description. Multiple
       // numbers (e.g. "20 for rice and 10 for chicken") populate the
@@ -551,27 +562,6 @@ export default function AddTransactionSheet({ route }: Props) {
         });
     }
 
-    // 3) Gemini refinement — Pro only. Fires after the keyword dict gives
-    //    instant feedback, then overwrites if Gemini finds a better match.
-    //    Handles custom categories the keyword dict doesn't know about.
-    if (isPro) {
-      const catNames = categories.map((c) => c.name);
-      setGeminiPending(true);
-      suggestCategoryWithGemini(tokenText, catNames)
-        .then((suggestion) => {
-          if (tokenText !== aiTextRef.current) return;
-          setGeminiPending(false);
-          if (!suggestion) return;
-          const matched = categories.find(
-            (c) => c.name.toLowerCase() === suggestion.toLowerCase()
-          );
-          if (matched) {
-            setCategory(matched.name);
-            setSignalSource('ai_description');
-          }
-        })
-        .catch(() => setGeminiPending(false));
-    }
   };
 
   const handleSave = async () => {
@@ -632,19 +622,12 @@ export default function AddTransactionSheet({ route }: Props) {
     // Build a structured display name from the description + selected category.
     // Expenses use the category-aware formatter; income transactions stay with
     // the user's note (or fall back to category) so "Salary - Payday" reads OK.
-    const lowerCat = category.toLowerCase();
-    const STRUCTURED_CATS: Category[] = [
-      'food',
-      'transport',
-      'shopping',
-      'bills',
-      'health',
-    ];
-    const matchedCat = STRUCTURED_CATS.find((c) => c === lowerCat);
+    const masterCat = aiResult?.suggestedCategory ?? null;
     const structuredName =
-      txType === 'expense' && matchedCat
-        ? buildDisplayName(aiText, matchedCat, {
+      txType === 'expense' && masterCat
+        ? buildDisplayName(aiText, masterCat, {
             accountSurface: aiAccountSurface,
+            label: category || undefined,
           })
         : '';
     const finalDisplayName = structuredName || aiText || category || 'Other';
@@ -1058,20 +1041,13 @@ export default function AddTransactionSheet({ route }: Props) {
                         >
                           {cat.name}
                         </Text>
-                        {isAutoSelected &&
-                          (geminiPending ? (
-                            <ActivityIndicator
-                              size="small"
-                              color={cs.text}
-                              style={{ width: 12, height: 12 }}
-                            />
-                          ) : (
-                            <Text
-                              style={[styles.catChipAiMark, { color: cs.text }]}
-                            >
-                              ✦
-                            </Text>
-                          ))}
+                        {isAutoSelected && (
+                          <Text
+                            style={[styles.catChipAiMark, { color: cs.text }]}
+                          >
+                            ✦
+                          </Text>
+                        )}
                       </TouchableOpacity>
                     );
                   })}
@@ -1096,11 +1072,25 @@ export default function AddTransactionSheet({ route }: Props) {
             {aiResult?.suggestedCategory ? (
               <View style={styles.noteAiBadge}>
                 <Text style={styles.noteAiBadgeText}>
-                  ✦ {aiResult.suggestedCategory}
+                  ✦ {aiResult.resolvedCategory ?? aiResult.suggestedCategory}
                 </Text>
               </View>
             ) : null}
           </View>
+
+          {/* Fallback hint — fires when the user typed something but the
+              taxonomy didn't recognise it. Stays subtle and disappears once
+              they pick a category manually (signalSource flips to anything
+              non-manual). */}
+          {aiText.trim().length > 0 &&
+          aiResult &&
+          !aiResult.matchedKeyword &&
+          signalSource === 'manual' ? (
+            <Text style={styles.aiFallbackHint}>
+              Fino doesn’t recognize this yet. Pick a category to teach it for
+              next time.
+            </Text>
+          ) : null}
 
           {/* ── Save Button ─────────────────────────────────────────────── */}
           <TouchableOpacity
@@ -1624,6 +1614,14 @@ const createStyles = (colors: any, isDark: boolean) =>
       fontSize: 11,
       fontFamily: 'Inter_700Bold',
       color: colors.primary,
+    },
+    aiFallbackHint: {
+      fontSize: 11,
+      fontFamily: 'Inter_400Regular',
+      color: colors.textSecondary,
+      marginTop: 6,
+      marginHorizontal: 24,
+      lineHeight: 15,
     },
 
     // ── Save Button
