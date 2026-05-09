@@ -14,7 +14,6 @@ import {
   StyleSheet,
   Keyboard,
   Vibration,
-  Alert,
   useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -50,6 +49,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
 import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import { CategoryIcon } from '@/components/CategoryIcon';
+import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
 import {
   createDebouncedAnalyzer,
@@ -203,6 +203,13 @@ export default function AddTransactionSheet({ route }: Props) {
   );
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardPrompt, setShowDiscardPrompt] = useState(false);
+  // Same-style modal as the discard prompt, surfaced when validation fails
+  // on Save (e.g. missing account or category). Uses the discard card UI
+  // and shake animation for visual consistency.
+  const [validationPrompt, setValidationPrompt] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
   const [showAmountLimitToast, setShowAmountLimitToast] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [tempSelectedDate, setTempSelectedDate] = useState<string>(
@@ -669,13 +676,11 @@ export default function AddTransactionSheet({ route }: Props) {
     if (isSaving) return;
     const acc = accounts.find((a) => a.id === accountId);
     if (!acc) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
-        () => {}
-      );
-      Alert.alert(
-        'No account selected',
-        'Please select an account before saving.'
-      );
+      triggerBlockedFeedback();
+      setValidationPrompt({
+        title: 'Select an account',
+        body: 'Please pick an account before saving this transaction.',
+      });
       return;
     }
     // Auto-evaluate any pending operator so the saved amount is the SUM
@@ -686,34 +691,28 @@ export default function AddTransactionSheet({ route }: Props) {
         : parseFloat(amount || firstOperand || '0');
 
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
-        () => {}
-      );
-      Alert.alert(
-        'Invalid amount',
-        'Please enter an amount greater than zero.'
-      );
+      triggerBlockedFeedback();
+      setValidationPrompt({
+        title: 'Enter an amount',
+        body: 'Please type an amount greater than zero before saving.',
+      });
       return;
     }
     if (!category) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
-        () => {}
-      );
-      Alert.alert(
-        'No category selected',
-        'Please select a category before saving.'
-      );
+      triggerBlockedFeedback();
+      setValidationPrompt({
+        title: 'Select a category',
+        body: 'Please pick a category before saving this transaction.',
+      });
       return;
     }
 
     if (parsedAmount > 9_999_999) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
-        () => {}
-      );
-      Alert.alert(
-        'Amount too large',
-        'Please enter an amount under ₱9,999,999.'
-      );
+      triggerBlockedFeedback();
+      setValidationPrompt({
+        title: 'Amount too large',
+        body: 'Please enter an amount under ₱9,999,999.',
+      });
       return;
     }
 
@@ -1261,12 +1260,9 @@ export default function AddTransactionSheet({ route }: Props) {
                   aiInputFocused && styles.aiFieldInnerFocused,
                 ]}
               >
-                <Ionicons
-                  name="sparkles"
-                  size={16}
-                  color={colors.primary}
-                  style={styles.aiFieldIcon}
-                />
+                <View style={styles.aiFieldIcon}>
+                  <FinoIntelIcon size={16} color={colors.primary} />
+                </View>
                 <BottomSheetTextInput
                   style={[
                     styles.aiFieldInput,
@@ -1349,6 +1345,33 @@ export default function AddTransactionSheet({ route }: Props) {
                 }}
               >
                 <Text style={styles.discardDropText}>Discard</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </View>
+      )}
+
+      {/* ── Validation Prompt (same look + shake as Discard) ──────────────── */}
+      {validationPrompt && (
+        <View style={styles.discardOverlay}>
+          <Pressable
+            style={styles.discardOverlayTap}
+            onPress={() => setValidationPrompt(null)}
+          />
+          <Animated.View
+            style={[
+              styles.discardCard,
+              { transform: [{ translateX: discardShakeX }] },
+            ]}
+          >
+            <Text style={styles.discardTitle}>{validationPrompt.title}</Text>
+            <Text style={styles.discardBody}>{validationPrompt.body}</Text>
+            <View style={styles.discardActions}>
+              <Pressable
+                style={styles.discardDropBtn}
+                onPress={() => setValidationPrompt(null)}
+              >
+                <Text style={styles.discardDropText}>Got it</Text>
               </Pressable>
             </View>
           </Animated.View>
