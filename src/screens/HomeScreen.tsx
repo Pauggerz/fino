@@ -901,9 +901,7 @@ function HomeScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.insightCard}
               >
-                <View style={styles.insightAvatar}>
-                  <FinoIntelIcon size={28} color={colors.lavenderDark} />
-                </View>
+                <FinoIntelIcon size={28} color={colors.lavenderDark} />
 
                 <View style={styles.insightBody}>
                   <Text style={styles.insightLabel}>Fino Intelligence</Text>
@@ -1253,17 +1251,6 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       gap: 12,
       alignItems: 'flex-start',
       ...appleShadow,
-    },
-    insightAvatar: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: colors.lavenderLight,
-      borderWidth: 1,
-      borderColor: colors.lavender,
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexShrink: 0,
     },
     insightBody: { flex: 1 },
     insightLabel: {
