@@ -1414,7 +1414,22 @@ export default function AddTransactionSheet({ route }: Props) {
               </Pressable>
               <Pressable
                 onPress={() => {
-                  setSelectedDate(new Date(tempSelectedDate));
+                  // Combine the picked day with the current local time of day,
+                  // not midnight. `new Date("YYYY-MM-DD")` parses as midnight
+                  // UTC, which in UTC+ timezones renders as 08:00 (PHT) etc.
+                  const [yy, mm, dd] = tempSelectedDate.split('-').map(Number);
+                  const now = new Date();
+                  setSelectedDate(
+                    new Date(
+                      yy,
+                      mm - 1,
+                      dd,
+                      now.getHours(),
+                      now.getMinutes(),
+                      now.getSeconds(),
+                      now.getMilliseconds(),
+                    ),
+                  );
                   setShowDatePickerModal(false);
                 }}
                 style={styles.dateModalApplyBtn}

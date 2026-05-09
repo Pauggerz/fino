@@ -79,10 +79,12 @@ function toIsoString(value: unknown): string | null {
 }
 
 // Columns that must be stored locally as 'YYYY-MM-DD' so Q.where comparisons
-// against date-only literals work. Server stores these as TIMESTAMPTZ/DATE,
+// against date-only literals work. Server stores these as DATE,
 // the client treats them as day strings.
+// `transactions.date` is intentionally excluded — it's a TIMESTAMPTZ on the
+// server and feed rows render the time component (`formatRowTime`). Truncating
+// to a day string round-trips through midnight UTC and renders as 08:00 in PHT.
 const DATE_ONLY_COLUMNS: Partial<Record<TableName, readonly string[]>> = {
-  transactions: ['date'],
   debts: ['due_date'],
   savings_goals: ['target_date'],
   bill_reminders: ['due_date'],
