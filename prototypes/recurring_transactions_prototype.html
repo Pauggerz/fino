@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fino · Recurring Transactions Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito:wght@700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ─── Tokens (mirrored from DESIGN_LANGUAGE.md) ─────────────────────────── */
+  :root {
+    --bg: #F7F5F2;
+    --surface: #FFFFFF;
+    --surface-subdued: #F0EFEA;
+    --border: #e0dfd7;
+    --border-card: rgba(30,30,46,0.08);
+    --text-primary: #1E1E2E;
+    --text-secondary: #8A8A9A;
+
+    --primary: #5B8C6E;
+    --primary-dark: #3f6b52;
+    --primary-light: #EBF2EE;
+
+    --income: #3f6b52;
+    --income-bg: #e8f5ee;
+    --income-border: #2d6a4f;
+
+    --bills: #7A4AB8;
+    --bills-bg: #ede5ff;
+    --bills-border: #7A4AB8;
+
+    --insight-purple: #4B2DA3;
+    --lavender-light: #F0ECFD;
+
+    --shadow-card: 0 4px 12px rgba(0,0,0,0.08);
+    --shadow-deep: 0 16px 24px rgba(0,0,0,0.10);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #ECEAE5;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  .page-title {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 800;
+    font-size: 26px;
+    letter-spacing: -0.4px;
+    margin: 0 0 6px;
+  }
+  .page-sub {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0 0 32px;
+  }
+
+  .frames {
+    display: grid;
+    grid-template-columns: repeat(3, 390px);
+    gap: 28px;
+    justify-content: center;
+  }
+
+  /* ─── Phone frame ─────────────────────────────────────────────────────── */
+  .phone {
+    width: 390px;
+    height: 820px;
+    background: var(--bg);
+    border-radius: 44px;
+    border: 10px solid #1B1B1F;
+    overflow: hidden;
+    position: relative;
+    box-shadow: var(--shadow-deep);
+    display: flex;
+    flex-direction: column;
+  }
+  .phone .notch {
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 120px; height: 28px;
+    background: #1B1B1F;
+    border-bottom-left-radius: 18px;
+    border-bottom-right-radius: 18px;
+    z-index: 30;
+  }
+  .frame-label {
+    text-align: center;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .status-bar {
+    height: 47px; flex-shrink: 0;
+  }
+  .scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 90px;
+  }
+  .scroll::-webkit-scrollbar { width: 0; }
+
+  /* ─── Headers ─────────────────────────────────────────────────────────── */
+  .screen-header {
+    padding: 8px 20px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .screen-title {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 800;
+    font-size: 27px;
+    letter-spacing: -0.4px;
+  }
+  .icon-btn {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border-card);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--text-primary);
+  }
+
+  .back-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 20px 12px;
+  }
+  .back-btn {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border-card);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .back-row .spacer { flex: 1; }
+  .back-row .screen-title { font-size: 22px; }
+  .add-btn {
+    width: 38px; height: 38px; border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.16);
+  }
+  .add-btn.income { background: var(--income); }
+  .add-btn.bills { background: var(--bills); }
+
+  /* ─── Tools list ──────────────────────────────────────────────────────── */
+  .section-label {
+    padding: 0 20px;
+    font-size: 11px;
+    letter-spacing: 1.2px;
+    color: var(--text-secondary);
+    font-weight: 700;
+    margin: 14px 0 10px;
+  }
+  .tool-tile {
+    margin: 0 20px 10px;
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 14px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: var(--shadow-card);
+    border: 1px solid var(--border-card);
+  }
+  .tool-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .tool-meta { flex: 1; min-width: 0; }
+  .tool-name {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 800;
+    font-size: 14px;
+    color: var(--text-primary);
+  }
+  .tool-desc {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+  .chev {
+    color: var(--text-secondary);
+    opacity: 0.55;
+    font-size: 13px;
+    transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .chev.open { transform: rotate(90deg); }
+
+  /* Dropdown panel inside tools list */
+  .dropdown {
+    margin: -4px 20px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
+  }
+  .dropdown-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--border-card);
+  }
+  .dropdown-row:first-child { border-top: 0; }
+  .dot-tag {
+    width: 8px; height: 8px; border-radius: 4px;
+  }
+  .row-name {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    flex: 1;
+  }
+  .row-sub {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  /* ─── Recurring screens ───────────────────────────────────────────────── */
+  .summary-card {
+    margin: 4px 20px 16px;
+    border-radius: 24px;
+    padding: 18px 18px 16px;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--shadow-deep);
+  }
+  .summary-card.income {
+    background: linear-gradient(135deg, #3f6b52 0%, #2d5440 100%);
+  }
+  .summary-card.bills {
+    background: linear-gradient(135deg, #5e3a99 0%, #3a1f6b 100%);
+  }
+  .summary-card .blob1, .summary-card .blob2 {
+    position: absolute; border-radius: 999px; pointer-events: none;
+  }
+  .summary-card .blob1 {
+    width: 160px; height: 160px;
+    top: -40px; right: -40px;
+    background: rgba(255,255,255,0.12);
+  }
+  .summary-card .blob2 {
+    width: 110px; height: 110px;
+    bottom: -30px; left: -10px;
+    background: rgba(255,255,255,0.07);
+  }
+  .summary-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.85);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .summary-label {
+    margin-top: 10px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.65);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+  }
+  .summary-amount {
+    font-family: 'DM Mono', monospace;
+    font-weight: 500;
+    font-size: 38px;
+    letter-spacing: -1.5px;
+    margin-top: 2px;
+  }
+  .summary-amount .curr {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 16px;
+    color: rgba(255,255,255,0.65);
+    margin-right: 4px;
+    vertical-align: top;
+  }
+  .summary-meta {
+    margin-top: 10px;
+    display: flex; gap: 18px;
+    background: rgba(0,0,0,0.18);
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+  .summary-meta div { flex: 1; }
+  .summary-meta .lbl {
+    font-size: 10px;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .summary-meta .val {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    color: #fff;
+    margin-top: 2px;
+  }
+
+  /* List of recurring entries */
+  .list-section {
+    padding: 0 20px;
+  }
+  .list-head {
+    display: flex; align-items: center; gap: 6px;
+    margin: 8px 0 10px;
+  }
+  .list-dot {
+    width: 7px; height: 7px; border-radius: 3.5px;
+    background: var(--primary);
+  }
+  .list-title {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.3px;
+  }
+  .recur-card {
+    background: var(--surface);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: var(--shadow-card);
+  }
+  .recur-icon {
+    width: 42px; height: 42px;
+    border-radius: 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .recur-body { flex: 1; min-width: 0; }
+  .recur-name {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 800;
+    font-size: 14px;
+  }
+  .recur-meta {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 3px;
+  }
+  .pill {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+  }
+  .pill.cadence {
+    background: var(--surface-subdued);
+    color: var(--text-secondary);
+  }
+  .pill.next-income {
+    background: var(--income-bg);
+    color: var(--income);
+  }
+  .pill.next-bill {
+    background: var(--bills-bg);
+    color: var(--bills);
+  }
+  .recur-amount {
+    font-family: 'DM Mono', monospace;
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text-primary);
+    flex-shrink: 0;
+  }
+  .recur-amount.income { color: var(--income); }
+  .recur-amount.expense { color: #C0503A; }
+
+  /* FAB */
+  .fab {
+    position: absolute;
+    right: 22px; bottom: 28px;
+    width: 56px; height: 56px;
+    border-radius: 28px;
+    color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.28);
+  }
+  .fab.income { background: var(--income); }
+  .fab.bills { background: var(--bills); }
+
+  /* Empty state hint (kept commented for both screens) */
+  .empty-hint {
+    margin: 14px 20px;
+    background: var(--lavender-light);
+    border: 1px solid rgba(75,45,163,0.12);
+    border-radius: 16px;
+    padding: 12px 14px;
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  .empty-hint .ico {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    background: rgba(75,45,163,0.12);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--insight-purple);
+    flex-shrink: 0;
+  }
+  .empty-hint .txt {
+    font-size: 12px;
+    color: var(--insight-purple);
+    line-height: 17px;
+  }
+
+  /* SVG icon helper */
+  .ico-svg { width: 20px; height: 20px; }
+
+  /* Caption row above frames */
+  .caption {
+    text-align: center;
+    margin-bottom: 10px;
+    font-family: 'Nunito', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--text-primary);
+  }
+  .caption span {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <h1 class="page-title">Recurring Transactions — Prototype</h1>
+    <p class="page-sub">Tools list dropdown · Recurring Income screen · Recurring Bills screen. Tokens, type, radii, and shadows from DESIGN_LANGUAGE.md.</p>
+
+    <div class="frames">
+
+      <!-- ───────────── Frame 1 — Tools list with dropdown open ───────────── -->
+      <div>
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="status-bar"></div>
+          <div class="scroll">
+            <div class="screen-header">
+              <div class="screen-title">Tools</div>
+              <div class="icon-btn">
+                <!-- search -->
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              </div>
+            </div>
+
+            <div class="section-label">QUICK ACTIONS</div>
+
+            <!-- Category & budget -->
+            <div class="tool-tile">
+              <div class="tool-icon" style="background: var(--primary-light); color: var(--primary);">
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M21 12A9 9 0 0 0 12 3v9z" fill="currentColor" opacity=".25"/></svg>
+              </div>
+              <div class="tool-meta">
+                <div class="tool-name">Category and Budget Set-up</div>
+                <div class="tool-desc">Manage categories and monthly limits</div>
+              </div>
+              <span class="chev">▸</span>
+            </div>
+
+            <!-- Recurring transactions (renamed) -->
+            <div class="tool-tile" style="margin-bottom: 6px;">
+              <div class="tool-icon" style="background: #FFF8F0; color: #BA7517;">
+                <!-- repeat icon -->
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+              </div>
+              <div class="tool-meta">
+                <div class="tool-name">Recurring Transactions</div>
+                <div class="tool-desc">Income that comes in, bills that go out</div>
+              </div>
+              <span class="chev open">▸</span>
+            </div>
+
+            <!-- Dropdown panel -->
+            <div class="dropdown">
+              <div class="dropdown-row">
+                <div class="tool-icon" style="background: var(--income-bg); color: var(--income); width:36px; height:36px; border-radius:10px;">
+                  <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m5 12 7-7 7 7"/></svg>
+                </div>
+                <div style="flex:1;">
+                  <div class="row-name">Recurring Income</div>
+                  <div class="row-sub">Salary, allowance, freelance retainers</div>
+                </div>
+                <span class="chev">▸</span>
+              </div>
+              <div class="dropdown-row">
+                <div class="tool-icon" style="background: var(--bills-bg); color: var(--bills); width:36px; height:36px; border-radius:10px;">
+                  <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m19 12-7 7-7-7"/></svg>
+                </div>
+                <div style="flex:1;">
+                  <div class="row-name">Recurring Bills</div>
+                  <div class="row-sub">Rent, subscriptions, utilities</div>
+                </div>
+                <span class="chev">▸</span>
+              </div>
+            </div>
+
+            <!-- Bill splitter -->
+            <div class="tool-tile">
+              <div class="tool-icon" style="background: #EAF1FB; color: #3A7BD5;">
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              </div>
+              <div class="tool-meta">
+                <div class="tool-name">Bill Splitter</div>
+                <div class="tool-desc">Split a receipt between friends</div>
+              </div>
+              <span class="chev">▸</span>
+            </div>
+
+            <!-- Debt tracker -->
+            <div class="tool-tile">
+              <div class="tool-icon" style="background: #ECFDF5; color: #10B981;">
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+              </div>
+              <div class="tool-meta">
+                <div class="tool-name">Debt Tracker</div>
+                <div class="tool-desc">Track who owes you money</div>
+              </div>
+              <span class="chev">▸</span>
+            </div>
+
+          </div>
+        </div>
+        <div class="frame-label">1 · Tools list (dropdown open)</div>
+      </div>
+
+      <!-- ───────────── Frame 2 — Recurring Income screen ───────────── -->
+      <div>
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="status-bar"></div>
+          <div class="scroll">
+            <div class="back-row">
+              <div class="back-btn">
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              </div>
+              <div class="screen-title">Recurring Income</div>
+              <div class="spacer"></div>
+              <div class="add-btn income" title="Add recurring income">
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              </div>
+            </div>
+
+            <div class="summary-card income">
+              <div class="blob1"></div>
+              <div class="blob2"></div>
+              <span class="summary-tag">Monthly inflow</span>
+              <div class="summary-label">Expected this month</div>
+              <div class="summary-amount"><span class="curr">₱</span>52,500</div>
+              <div class="summary-meta">
+                <div>
+                  <div class="lbl">Sources</div>
+                  <div class="val">3 active</div>
+                </div>
+                <div>
+                  <div class="lbl">Next deposit</div>
+                  <div class="val">May 15</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="list-section">
+              <div class="list-head">
+                <span class="list-dot" style="background: var(--income);"></span>
+                <span class="list-title">Active sources</span>
+              </div>
+
+              <div class="recur-card">
+                <div class="recur-icon" style="background: var(--income-bg); color: var(--income);">
+                  <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01"/><path d="M6 12h.01"/><path d="M18 12h.01"/></svg>
+                </div>
+                <div class="recur-body">
+                  <div class="recur-name">Day-job salary</div>
+                  <div class="recur-meta">
+                    <span class="pill cadence">Monthly · 15th</span>
+                    <span class="pill next-income">Next May 15</span>
+                  </div>
+                </div>
+                <div class="recur-amount income">+₱45,000</div>
+              </div>
+
+              <div class="recur-card">
+                <div class="recur-icon" style="background: var(--income-bg); color: var(--income);">
+                  <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H5l-4 4V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <div class="recur-body">
+                  <div class="recur-name">Freelance retainer</div>
+                  <div class="recur-meta">
+                    <span class="pill cadence">Monthly · 1st</span>
+                    <span class="pill next-income">Next Jun 1</span>
+                  </div>
+                </div>
+                <div class="recur-amount income">+₱6,500</div>
+              </div>
+
+              <div class="recur-card">
+                <div class="recur-icon" style="background: var(--income-bg); color: var(--income);">
+                  <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 22h20z"/></svg>
+                </div>
+                <div class="recur-body">
+                  <div class="recur-name">Allowance from parents</div>
+                  <div class="recur-meta">
+                    <span class="pill cadence">Weekly · Sun</span>
+                    <span class="pill next-income">Next May 12</span>
+                  </div>
+                </div>
+                <div class="recur-amount income">+₱1,000</div>
+              </div>
+            </div>
+
+            <div class="empty-hint">
+              <div class="ico">
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6z"/></svg>
+              </div>
+              <div class="txt">Recurring income auto-posts on its scheduled date. You'll see it in the feed and balance on the day it runs.</div>
+            </div>
+          </div>
+        </div>
+        <div class="frame-label">2 · Recurring Income</div>
+      </div>
+
+      <!-- ───────────── Frame 3 — Recurring Bills screen ───────────── -->
+      <div>
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="status-bar"></div>
+          <div class="scroll">
+            <div class="back-row">
+              <div class="back-btn">
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              </div>
+              <div class="screen-title">Recurring Bills</div>
+              <div class="spacer"></div>
+              <div class="add-btn bills" title="Add recurring bill">
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              </div>
+            </div>
+
+            <div class="summary-card bills">
+              <div class="blob1"></div>
+              <div class="blob2"></div>
+              <span class="summary-tag">Monthly outflow</span>
+              <div class="summary-label">Committed this month</div>
+              <div class="summary-amount"><span class="curr">₱</span>14,840</div>
+              <div class="summary-meta">
+                <div>
+                  <div class="lbl">Bills</div>
+                  <div class="val">5 active</div>
+                </div>
+                <div>
+                  <div class="lbl">Next due</div>
+                  <div class="val">May 12</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="list-section">
+              <div class="list-head">
+                <span class="list-dot" style="background: var(--bills);"></span>
+                <span class="list-title">Upcoming bills</span>
+              </div>
+
+              <div class="recur-card">
+                <div class="recur-icon" style="background: var(--bills-bg); color: var(--bills);">
+                  <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 12 2l9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                </div>
+                <div class="recur-body">
+                  <div class="recur-name">Rent</div>
+                  <div class="recur-meta">
+                    <span class="pill cadence">Monthly · 5th</span>
+                    <span class="pill next-bill">Due May 12</span>
+                  </div>
+                </div>
+                <div class="recur-amount expense">−₱9,000</div>
+              </div>
+
+              <div class="recur-card">
+                <div class="recur-icon" style="background: var(--bills-bg); color: var(--bills);">
+                  <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                </div>
+                <div class="recur-body">
+                  <div class="recur-name">Spotify Family</div>
+                  <div class="recur-meta">
+                    <span class="pill cadence">Monthly · 18th</span>
+                    <span class="pill next-bill">Due May 18</span>
+                  </div>
+                </div>
+                <div class="recur-amount expense">−₱194</div>
+              </div>
+
+              <div class="recur-card">
+                <div class="recur-icon" style="background: var(--bills-bg); color: var(--bills);">
+                  <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>
+                </div>
+                <div class="recur-body">
+                  <div class="recur-name">Meralco (electricity)</div>
+                  <div class="recur-meta">
+                    <span class="pill cadence">Monthly · 22nd</span>
+                    <span class="pill next-bill">Due May 22</span>
+                  </div>
+                </div>
+                <div class="recur-amount expense">−₱2,400</div>
+              </div>
+
+              <div class="recur-card">
+                <div class="recur-icon" style="background: var(--bills-bg); color: var(--bills);">
+                  <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13a8 8 0 0 1 14 0"/><path d="M2 8a13 13 0 0 1 20 0"/><path d="M8 17a4 4 0 0 1 8 0"/><circle cx="12" cy="20" r="1"/></svg>
+                </div>
+                <div class="recur-body">
+                  <div class="recur-name">Globe Fiber</div>
+                  <div class="recur-meta">
+                    <span class="pill cadence">Monthly · 28th</span>
+                    <span class="pill next-bill">Due May 28</span>
+                  </div>
+                </div>
+                <div class="recur-amount expense">−₱1,899</div>
+              </div>
+
+              <div class="recur-card">
+                <div class="recur-icon" style="background: var(--bills-bg); color: var(--bills);">
+                  <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                </div>
+                <div class="recur-body">
+                  <div class="recur-name">Gym membership</div>
+                  <div class="recur-meta">
+                    <span class="pill cadence">Monthly · 1st</span>
+                    <span class="pill next-bill">Paid · next Jun 1</span>
+                  </div>
+                </div>
+                <div class="recur-amount expense">−₱1,347</div>
+              </div>
+            </div>
+
+            <div class="empty-hint">
+              <div class="ico">
+                <svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              </div>
+              <div class="txt">Bills nudge you 2 days before they're due. Mark as paid to advance the next due date.</div>
+            </div>
+          </div>
+        </div>
+        <div class="frame-label">3 · Recurring Bills</div>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>

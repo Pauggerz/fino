@@ -907,6 +907,7 @@ function MoreScreen() {
 
   const [showBillReminders, setShowBillReminders] = useState(false);
   const [quickViewBill, setQuickViewBill] = useState<BillReminder | null>(null);
+  const [recurringExpanded, setRecurringExpanded] = useState(false);
   const { forceSync } = useSync();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -921,7 +922,9 @@ function MoreScreen() {
   const handleToolPress = (id: string) => {
     if (id === 'fino') navigation.navigate('ChatScreen');
     else if (id === 'budget') navigation.navigate('Categories');
-    else if (id === 'bills') setShowBillReminders(true);
+    else if (id === 'recurring') setRecurringExpanded((v) => !v);
+    else if (id === 'recurring-income') navigation.navigate('RecurringIncome');
+    else if (id === 'recurring-bills') navigation.navigate('RecurringBills');
     else if (id === 'settings') setShowAppSettings(true);
     else if (id === 'splitter') navigation.navigate('BillSplitter');
     else if (id === 'utang') navigation.navigate('UtangTracker');
@@ -947,11 +950,11 @@ function MoreScreen() {
       bg: colors.primaryLight,
     },
     {
-      id: 'bills',
-      label: 'Bills',
-      desc: 'Manage upcoming reminders',
-      icon: 'receipt',
-      color: colors.statWarnBar,
+      id: 'recurring',
+      label: 'Recurring Transactions',
+      desc: 'Income that comes in, bills that go out',
+      icon: 'repeat',
+      color: '#BA7517',
       bg: isDark ? '#3A2E1D' : '#FFF8F0',
     },
     {
@@ -1024,32 +1027,131 @@ function MoreScreen() {
         {/* ── Other tools ── */}
         <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
         <View style={styles.toolsGrid}>
-          {otherTools.map((tool) => (
-            <TouchableOpacity
-              key={tool.id}
-              style={[styles.toolTile, { backgroundColor: colors.white }]}
-              onPress={() => handleToolPress(tool.id)}
-              activeOpacity={0.75}
-            >
-              <View style={[styles.toolIconBox, { backgroundColor: tool.bg }]}>
-                <Ionicons
-                  name={tool.icon as any}
-                  size={22}
-                  color={tool.color}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.toolName}>{tool.label}</Text>
-                <Text style={styles.toolDesc}>{tool.desc}</Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={14}
-                color={colors.textSecondary}
-                style={{ opacity: 0.5 }}
-              />
-            </TouchableOpacity>
-          ))}
+          {otherTools.map((tool) => {
+            const isRecurring = tool.id === 'recurring';
+            return (
+              <React.Fragment key={tool.id}>
+                <TouchableOpacity
+                  style={[styles.toolTile, { backgroundColor: colors.white }]}
+                  onPress={() => handleToolPress(tool.id)}
+                  activeOpacity={0.75}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: tool.bg }]}>
+                    <Ionicons
+                      name={tool.icon as any}
+                      size={22}
+                      color={tool.color}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.toolName}>{tool.label}</Text>
+                    <Text style={styles.toolDesc}>{tool.desc}</Text>
+                  </View>
+                  <Ionicons
+                    name={
+                      isRecurring && recurringExpanded
+                        ? 'chevron-down'
+                        : 'chevron-forward'
+                    }
+                    size={14}
+                    color={colors.textSecondary}
+                    style={{ opacity: 0.5 }}
+                  />
+                </TouchableOpacity>
+
+                {isRecurring && recurringExpanded && (
+                  <View
+                    style={[
+                      styles.recurringDropdown,
+                      {
+                        backgroundColor: colors.white,
+                        borderColor: isDark
+                          ? colors.border
+                          : 'rgba(30,30,46,0.07)',
+                      },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={styles.recurringRow}
+                      onPress={() => handleToolPress('recurring-income')}
+                      activeOpacity={0.75}
+                    >
+                      <View
+                        style={[
+                          styles.recurringIconBox,
+                          {
+                            backgroundColor: isDark ? '#0D2E23' : '#e8f5ee',
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name="trending-up"
+                          size={18}
+                          color="#3f6b52"
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.recurringRowName}>
+                          Recurring Income
+                        </Text>
+                        <Text style={styles.recurringRowSub}>
+                          Salary, allowance, freelance retainers
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={14}
+                        color={colors.textSecondary}
+                        style={{ opacity: 0.5 }}
+                      />
+                    </TouchableOpacity>
+
+                    <View
+                      style={[
+                        styles.recurringDivider,
+                        { backgroundColor: colors.border },
+                      ]}
+                    />
+
+                    <TouchableOpacity
+                      style={styles.recurringRow}
+                      onPress={() => handleToolPress('recurring-bills')}
+                      activeOpacity={0.75}
+                    >
+                      <View
+                        style={[
+                          styles.recurringIconBox,
+                          {
+                            backgroundColor: isDark ? '#231640' : '#ede5ff',
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name="receipt"
+                          size={18}
+                          color="#7A4AB8"
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.recurringRowName}>
+                          Recurring Bills
+                        </Text>
+                        <Text style={styles.recurringRowSub}>
+                          Rent, subscriptions, utilities
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={14}
+                        color={colors.textSecondary}
+                        style={{ opacity: 0.5 }}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </React.Fragment>
+            );
+          })}
         </View>
       </ScrollView>
 
@@ -1371,6 +1473,41 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       color: colors.textSecondary,
       lineHeight: 16,
       marginTop: 1,
+    },
+    recurringDropdown: {
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      overflow: 'hidden',
+      marginTop: -4,
+    },
+    recurringRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      gap: 12,
+    },
+    recurringIconBox: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    recurringRowName: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+      color: colors.textPrimary,
+    },
+    recurringRowSub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    recurringDivider: {
+      height: StyleSheet.hairlineWidth,
+      marginHorizontal: 14,
     },
 
     // App Settings Segments

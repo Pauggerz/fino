@@ -1,0 +1,18 @@
+import { Model } from '@nozbe/watermelondb';
+import { field, text, date } from '@nozbe/watermelondb/decorators';
+
+export default class RecurringIncome extends Model {
+  static table = 'recurring_incomes';
+
+  @text('user_id') userId!: string;
+  @text('title') title!: string;
+  @field('amount') amount!: number;
+  @text('account_id') accountId?: string;
+  @text('cadence') cadence!: 'weekly' | 'monthly' | 'yearly';
+  @text('anchor_date') anchorDate!: string;
+  @text('next_due_at') nextDueAt!: string;
+  @field('is_active') isActive!: boolean;
+  @text('last_posted_at') lastPostedAt?: string;
+  @text('server_created_at') serverCreatedAt?: string;
+  @date('updated_at') updatedAt!: Date;
+}
