@@ -18,7 +18,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Q } from '@nozbe/watermelondb';
@@ -38,6 +37,7 @@ import {
 } from '@/services/localMutations';
 import { getCanonicalBrandName } from '@/components/WalletCard';
 import { Skeleton } from '@/components/Skeleton';
+import { ToolsCarousel } from '@/components/ToolsCarousel';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Global Theme Context
 import { useSync } from '@/contexts/SyncContext';
@@ -926,6 +926,7 @@ function MoreScreen() {
     else if (id === 'splitter') navigation.navigate('BillSplitter');
     else if (id === 'utang') navigation.navigate('UtangTracker');
     else if (id === 'savings') navigation.navigate('SavingsGoal');
+    else if (id === 'education') navigation.navigate('FinancialEducation');
   };
 
   const TOOLS = [
@@ -963,7 +964,7 @@ function MoreScreen() {
     },
     {
       id: 'utang',
-      label: 'Utang Tracker',
+      label: 'Debt Tracker',
       desc: 'Track who owes you money',
       icon: 'cash',
       color: '#10B981',
@@ -976,6 +977,14 @@ function MoreScreen() {
       icon: 'flag',
       color: '#F59E0B',
       bg: isDark ? '#2E2208' : '#FFFBEB',
+    },
+    {
+      id: 'education',
+      label: 'Financial Education',
+      desc: 'Bite-sized money literacy modules',
+      icon: 'book',
+      color: '#3A80C0',
+      bg: isDark ? '#0D1825' : '#EAF2FB',
     },
     {
       id: 'settings',
@@ -1009,98 +1018,8 @@ function MoreScreen() {
           />
         }
       >
-        {/* ── Ask Fino hero card ── */}
-        <TouchableOpacity
-          style={styles.finoHero}
-          onPress={() => handleToolPress('fino')}
-          activeOpacity={0.88}
-        >
-          {/* gradient bg */}
-          <View style={StyleSheet.absoluteFillObject}>
-            <View
-              style={[
-                StyleSheet.absoluteFillObject,
-                { backgroundColor: isDark ? '#1A1426' : colors.lavenderLight },
-              ]}
-            />
-            {/* decorative blobs */}
-            <View style={styles.heroBlob1} />
-            <View style={styles.heroBlob2} />
-          </View>
-
-          {/* Left content */}
-          <View style={{ flex: 1 }}>
-            <View style={styles.finoBadge}>
-              <Text
-                style={[styles.finoBadgeText, { color: colors.insightPurple }]}
-              >
-                Powered by Fino Intelligence
-              </Text>
-            </View>
-            <Text
-              style={[
-                styles.finoTitle,
-                { color: isDark ? '#E8E0FF' : colors.lavenderDark },
-              ]}
-            >
-              Ask Fino
-            </Text>
-            <Text
-              style={[
-                styles.finoSub,
-                {
-                  color: isDark
-                    ? 'rgba(220,210,255,0.65)'
-                    : colors.insightPurple,
-                },
-              ]}
-            >
-              Your personal AI money coach. Ask insights about your finances.
-            </Text>
-            <View
-              style={[
-                styles.finoBtn,
-                {
-                  backgroundColor: isDark
-                    ? 'rgba(176,154,224,0.18)'
-                    : 'rgba(75,45,163,0.1)',
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.finoBtnText,
-                  { color: isDark ? '#C9B8F5' : colors.lavenderDark },
-                ]}
-              >
-                Start chatting
-              </Text>
-              <Ionicons
-                name="arrow-forward"
-                size={13}
-                color={isDark ? '#C9B8F5' : colors.lavenderDark}
-              />
-            </View>
-          </View>
-
-          {/* Right icon */}
-          <View
-            style={[
-              styles.finoIconWrap,
-              {
-                backgroundColor: isDark
-                  ? 'rgba(176,154,224,0.15)'
-                  : 'rgba(75,45,163,0.08)',
-              },
-            ]}
-          >
-            <FinoIntelIcon
-              size={56}
-              color={isDark ? '#C9B8F5' : colors.lavenderDark}
-              filled
-            />
-          </View>
-        </TouchableOpacity>
+        {/* ── Features carousel (replaces the Ask Fino hero) ── */}
+        <ToolsCarousel />
 
         {/* ── Other tools ── */}
         <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>

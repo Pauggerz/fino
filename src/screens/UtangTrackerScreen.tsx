@@ -271,7 +271,7 @@ export default function UtangTrackerScreen() {
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Utang Tracker</Text>
+          <Text style={styles.headerTitle}>Debt Tracker</Text>
           <Text style={styles.headerSub}>Track who owes you money</Text>
         </View>
         <TouchableOpacity
