@@ -9,6 +9,7 @@ Your role:
 - Never make up transaction data — only use what is provided in the context below
 - Use ₱ for all amounts
 - Tone: friendly and encouraging, like a kuya or ate who knows finance — not formal, not robotic
+- When the user describes a transaction they just made (e.g. "I ate fries worth 20 pesos", "spent 50 on Grab", "nagbayad ako ng load"), respond with a brief friendly acknowledgement like "Got it, logging that now! 🧾" — the app handles the actual logging, so never say you cannot log it
 
 Data available to you (use it proactively):
 - Current month spending by category with optional budget limits
@@ -240,6 +241,99 @@ ${coachBlock}
   const result = await chat.sendMessage(messageWithContext);
   return result.response.text();
 };
+
+// ─── TRANSACTION DETECTION ────────────────────────────────────────────────────
+
+export interface DetectedTransaction {
+  isTransaction: boolean;
+  amount: number | null;
+  displayName: string | null;
+  category: string | null;
+  type: 'expense' | 'income';
+  /** Wallet/bank name mentioned by the user ("GCash", "Maya", "BDO", …) or null */
+  accountHint: string | null;
+}
+
+let cachedDetectModel: import('@google/generative-ai').GenerativeModel | null = null;
+
+const getDetectModel = async () => {
+  if (cachedDetectModel) return cachedDetectModel;
+  const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? '';
+  const { GoogleGenerativeAI } = await import('@google/generative-ai');
+  const genAI = new GoogleGenerativeAI(apiKey);
+  cachedDetectModel = genAI.getGenerativeModel({
+    model: 'gemini-2.0-flash',
+    generationConfig: {
+      maxOutputTokens: 150,
+      temperature: 0.1,
+      // @ts-ignore
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+  });
+  return cachedDetectModel;
+};
+
+/**
+ * Lightweight parallel call that inspects whether the user's message is
+ * logging a personal transaction. Runs alongside sendMessage so there's no
+ * added latency from the user's perspective.
+ */
+export async function detectTransaction(
+  userMessage: string,
+  categoryNames: string[]
+): Promise<DetectedTransaction> {
+  const fallback: DetectedTransaction = {
+    isTransaction: false,
+    amount: null,
+    displayName: null,
+    category: null,
+    type: 'expense',
+    accountHint: null,
+  };
+
+  try {
+    const model = await getDetectModel();
+    const prompt = `You are a transaction detector for a Filipino budgeting app.
+
+User message: "${userMessage.slice(0, 400)}"
+
+Available categories: ${categoryNames.join(', ')}
+
+Is the user logging a specific expense or income they just made? Examples that ARE transactions:
+"I ate fries worth 20 pesos", "spent 50 on Grab", "bayad ko ng load 99", "received salary 5000", "nagbayad ng Meralco 1200"
+
+Examples that are NOT transactions:
+"how much did I spend?", "summarize my month", "am I over budget?"
+
+Return ONLY raw JSON (no markdown, no explanation):
+{
+  "isTransaction": boolean,
+  "amount": number or null,
+  "displayName": string or null,
+  "category": string or null,
+  "type": "expense" or "income",
+  "accountHint": string or null
+}
+
+Rules:
+- isTransaction: true only when a specific peso amount is clearly spent or received
+- displayName: short label (e.g. "Fries", "Grab ride", "Meralco bill", "Salary") — 1-4 words
+- category: must be one of the available categories listed above, or null
+- accountHint: if a wallet or bank is mentioned (GCash, Maya, BDO, BPI, GoTyme, UnionBank), extract it; else null
+- If isTransaction is false, set all other fields to null`;
+
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text().trim();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]) as DetectedTransaction;
+      return parsed;
+    }
+  } catch {
+    // silently fall back — chat still works without transaction detection
+  }
+  return fallback;
+}
 
 export const generateBulletInsights = async (
   prompt: string

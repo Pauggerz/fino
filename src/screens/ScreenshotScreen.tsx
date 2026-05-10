@@ -16,7 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
 import { useAccounts } from '@/hooks/useAccounts';
 import { Account } from '@/types';
@@ -149,6 +149,7 @@ function Stepper({
 
 export default function ScreenshotScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { accounts } = useAccounts();
 
   const [lastUsedAccountId, setLastUsedAccountId] = useState<string | null>(
@@ -163,6 +164,17 @@ export default function ScreenshotScreen() {
       }
     });
   }, []);
+
+  // Auto-process an image shared from another app (e-wallet share sheet).
+  // RootNavigator passes the file path as `sharedImageUri` when the user
+  // taps "Fino" from the OS share sheet — skip the manual upload step.
+  useEffect(() => {
+    const sharedUri: string | undefined = route.params?.sharedImageUri;
+    if (sharedUri) {
+      setSelectedImage(sharedUri);
+      processReceipt(sharedUri);
+    }
+  }, [route.params?.sharedImageUri]);
 
   const [selectedSource, setSelectedSource] = useState<'camera' | 'upload'>(
     'upload'
