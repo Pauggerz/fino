@@ -24,13 +24,14 @@ export default schemaMigrations({
       ],
     },
     {
-      // v3 — recurring tables + transaction_datetime companion column
+      // v3 — recurring tables.
+      // NOTE: do not add steps here. An earlier revision of this entry also
+      // added `transaction_datetime` to `transactions`, but devices that
+      // already ran v3 against the original (pre-amend) version skip this
+      // block on relaunch, leaving the column missing. The column is added
+      // in v4 instead so those devices pick it up.
       toVersion: 3,
       steps: [
-        addColumns({
-          table: 'transactions',
-          columns: [{ name: 'transaction_datetime', type: 'string', isOptional: true }],
-        }),
         createTable({
           name: 'recurring_incomes',
           columns: [
@@ -63,6 +64,18 @@ export default schemaMigrations({
             { name: 'server_created_at', type: 'string', isOptional: true },
             { name: 'updated_at', type: 'number' },
           ],
+        }),
+      ],
+    },
+    {
+      // v4 — add transaction_datetime to transactions. Split out from v3 so
+      // devices already stamped at v3 (which never received this column)
+      // pick it up on next launch.
+      toVersion: 4,
+      steps: [
+        addColumns({
+          table: 'transactions',
+          columns: [{ name: 'transaction_datetime', type: 'string', isOptional: true }],
         }),
       ],
     },

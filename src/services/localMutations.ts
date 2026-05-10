@@ -36,6 +36,14 @@ function toCents(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// Local contract (see watermelonSync.ts): `date` columns must be 'YYYY-MM-DD'
+// so Q.where range comparisons against day literals work. Callers commonly
+// pass a full ISO timestamp — slice it to the day part. If they passed a
+// day-only string, return it unchanged.
+function toDayString(value: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : value.slice(0, 10);
+}
+
 /** Fire-and-forget sync — never blocks the caller's UI. */
 function syncInBackground(): void {
   triggerSync().catch((err) => {
@@ -85,7 +93,7 @@ export async function createTransaction(input: NewTransactionInput): Promise<str
       tx.displayName = input.displayName ?? undefined;
       tx.transactionNote = input.transactionNote ?? undefined;
       tx.signalSource = input.signalSource ?? undefined;
-      tx.date = input.date;
+      tx.date = toDayString(input.date);
       tx.transactionDatetime = input.date;
       tx.receiptUrl = input.receiptUrl ?? undefined;
       tx.accountDeleted = false;
@@ -171,7 +179,7 @@ export async function updateTransaction(
       if (patch.merchantName !== undefined) t.merchantName = patch.merchantName ?? undefined;
       if (patch.accountId !== undefined) t.accountId = patch.accountId;
       if (patch.date !== undefined) {
-        t.date = patch.date;
+        t.date = toDayString(patch.date);
         t.transactionDatetime = patch.date;
       }
       if (patch.amount !== undefined) t.amount = nextAmount;
@@ -224,7 +232,7 @@ export async function saveAdjustment(params: {
       tx.category = 'adjustment';
       tx.displayName = params.note || 'Balance Reconciliation';
       tx.transactionNote = params.note || undefined;
-      tx.date = today;
+      tx.date = toDayString(today);
       tx.transactionDatetime = today;
       tx.accountDeleted = false;
     });
@@ -261,7 +269,7 @@ export async function saveTransfer(params: {
       tx.type = 'expense';
       tx.category = 'transfer';
       tx.displayName = `Transfer to ${params.destAccountName}`;
-      tx.date = today;
+      tx.date = toDayString(today);
       tx.transactionDatetime = today;
       tx.accountDeleted = false;
       tx.isTransfer = true;
@@ -274,7 +282,7 @@ export async function saveTransfer(params: {
       tx.type = 'income';
       tx.category = 'transfer';
       tx.displayName = `Transfer from ${params.sourceAccountName}`;
-      tx.date = today;
+      tx.date = toDayString(today);
       tx.transactionDatetime = today;
       tx.accountDeleted = false;
       tx.isTransfer = true;

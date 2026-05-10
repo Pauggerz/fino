@@ -55,6 +55,16 @@ const MONTHS_SHORT = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
+// Resolve a transaction's display moment. Prefers the full ISO companion when
+// present, otherwise parses `date`. `date` is contractually 'YYYY-MM-DD' but
+// older locally-created rows stored a full ISO there before the companion
+// column existed — handle both so neither path produces Invalid Date.
+function resolveTxMoment(date: string | null | undefined, datetime: string | null | undefined): Date {
+  if (datetime) return new Date(datetime);
+  if (!date) return new Date(NaN);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(date + 'T00:00:00') : new Date(date);
+}
+
 // ─── Numpad ───────────────────────────────────────────────────────────────────
 
 const NUMPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
@@ -300,9 +310,7 @@ export default function TransactionDetailScreen() {
     setEditedCategory((row.category ?? 'food').toLowerCase());
     setEditedAmount(String(row.amount));
     setEditedType((row.type as 'expense' | 'income') ?? 'expense');
-    const d = row.transaction_datetime
-      ? new Date(row.transaction_datetime)
-      : new Date(row.date + 'T00:00:00');
+    const d = resolveTxMoment(row.date, row.transaction_datetime);
     const h = d.getHours();
     setEditedDate(d);
     setDraftMonth(d.getMonth());
@@ -516,9 +524,7 @@ export default function TransactionDetailScreen() {
   const hasTime = isEditing || !!tx.transaction_datetime;
   const displayDate = isEditing
     ? editedDate
-    : tx.transaction_datetime
-      ? new Date(tx.transaction_datetime)
-      : new Date(tx.date + 'T00:00:00');
+    : resolveTxMoment(tx.date, tx.transaction_datetime);
   const formattedDate = hasTime
     ? displayDate.toLocaleDateString('en-PH', {
         month: 'long', day: 'numeric', year: 'numeric',

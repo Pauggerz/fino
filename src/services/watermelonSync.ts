@@ -170,6 +170,7 @@ function rawToRemoteRow(table: TableName, raw: Record<string, unknown>): Record<
   const body: Record<string, unknown> = {};
   const dateCols = DATE_ONLY_COLUMNS[table];
   const serverOwned = SERVER_OWNED_COLUMNS[table];
+  const companions = DATETIME_COMPANION[table];
   for (const [key, value] of Object.entries(raw)) {
     if (key === '_status' || key === '_changed') continue;
     if (serverOwned && serverOwned.includes(key)) continue;
@@ -180,7 +181,23 @@ function rawToRemoteRow(table: TableName, raw: Record<string, unknown>): Record<
     }
     if (key === 'updated_at') continue; // Supabase trigger owns this column
     if (dateCols && dateCols.includes(key)) {
-      body[key] = toDayString(value) ?? value;
+      // Server's date columns are TIMESTAMPTZ. Prefer the full ISO from the
+      // companion so the time-of-day survives the roundtrip — pushing only
+      // the day string lands midnight UTC on the server, which the next pull
+      // treats as "no time info" and nulls the companion locally. If the
+      // companion is empty but `value` itself is already a full ISO (pre-
+      // companion legacy rows), keep it as-is for the same reason.
+      const companionKey = companions?.[key];
+      const companionValue = companionKey ? raw[companionKey] : undefined;
+      const valueHasTime =
+        typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value);
+      if (typeof companionValue === 'string' && companionValue) {
+        body[key] = companionValue;
+      } else if (valueHasTime) {
+        body[key] = value;
+      } else {
+        body[key] = toDayString(value) ?? value;
+      }
       continue;
     }
     body[key] = value;

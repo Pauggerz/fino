@@ -1130,8 +1130,12 @@ const FeedTransactionRow = React.memo(
               {tx.display_name ?? tx.merchant_name ?? tx.category ?? '—'}
             </Text>
             <View style={styles.txSubtitleRow}>
-              <Text style={styles.txTime}>{time}</Text>
-              <View style={styles.metaDot} />
+              {time ? (
+                <>
+                  <Text style={styles.txTime}>{time}</Text>
+                  <View style={styles.metaDot} />
+                </>
+              ) : null}
               <View
                 style={[
                   styles.acctTag,
