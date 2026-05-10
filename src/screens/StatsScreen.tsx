@@ -685,7 +685,6 @@ function InsightsScreen() {
         colors={colors}
         monthLabel={monthNavLabel}
         isCurrentMonth={isCurrentMonth}
-        onAdd={() => navigation.navigate('AddTransaction')}
         onPrevMonth={handlePrevMonth}
         onNextMonth={handleNextMonth}
         onPickMonth={() => setMonthPickerVisible(true)}
@@ -942,7 +941,6 @@ function InsightsEmptyState({
   colors,
   monthLabel,
   isCurrentMonth,
-  onAdd,
   onPrevMonth,
   onNextMonth,
   onPickMonth,
@@ -952,7 +950,6 @@ function InsightsEmptyState({
   colors: any;
   monthLabel: string;
   isCurrentMonth: boolean;
-  onAdd: () => void;
   onPrevMonth: () => void;
   onNextMonth: () => void;
   onPickMonth: () => void;
@@ -1006,13 +1003,9 @@ function InsightsEmptyState({
         body={
           isCurrentMonth
             ? 'Add a transaction and we’ll surface trends, top categories, and spending patterns here.'
-            : `You didn't log any transactions in ${monthLabel}. Use the picker above to view another month, or add a transaction now.`
+            : `You didn't log any transactions in ${monthLabel}. Use the picker above to view another month.`
         }
-        chipLabel={isCurrentMonth ? 'Waiting on your first entry' : undefined}
-        ctaLabel={
-          isCurrentMonth ? `Add your first transaction` : `Add transaction for ${monthLabel}`
-        }
-        onPressCta={onAdd}
+        chipLabel={isCurrentMonth ? 'Waiting on your first entry' : 'No data for this month'}
       />
 
       {monthPickerModal}
