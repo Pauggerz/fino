@@ -47,7 +47,7 @@ import Reanimated, {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
-import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
+import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
@@ -149,6 +149,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const { user } = useAuth();
   const { accounts, loading: accountsLoading } = useAccounts();
   const { categories, loading: categoriesLoading } = useCategories();
+  const { categories: incomeCategories } = useIncomeCategories();
 
   // Skeleton pulse animation
   const skeletonOpacity = useRef(new Animated.Value(0.4)).current;
@@ -231,8 +232,8 @@ export default function AddTransactionSheet({ route }: Props) {
   );
 
   const allCategories = useMemo(
-    () => (type === 'inc' ? INCOME_CATEGORIES : categories),
-    [type, categories]
+    () => (type === 'inc' ? incomeCategories : categories),
+    [type, categories, incomeCategories]
   );
 
   const sortedAccounts = useMemo(() => {
@@ -371,13 +372,15 @@ export default function AddTransactionSheet({ route }: Props) {
   useEffect(() => {
     if (didInitCategoryRef.current) return;
     if (type === 'inc') {
-      setCategory(INCOME_CATEGORIES[0].name);
-      didInitCategoryRef.current = true;
+      if (incomeCategories.length > 0) {
+        setCategory(incomeCategories[0].name);
+        didInitCategoryRef.current = true;
+      }
     } else if (categories.length > 0) {
       setCategory(categories[0].name);
       didInitCategoryRef.current = true;
     }
-  }, [type, categories]);
+  }, [type, categories, incomeCategories]);
 
   // When the user toggles between Expense/Income, still pick a sane default
   // (income and expense use different category sets), but only if the user
@@ -387,11 +390,11 @@ export default function AddTransactionSheet({ route }: Props) {
     if (prevTypeRef.current === type) return;
     prevTypeRef.current = type;
     if (type === 'inc') {
-      setCategory(INCOME_CATEGORIES[0].name);
+      setCategory(incomeCategories[0]?.name ?? '');
     } else if (categories.length > 0) {
       setCategory(categories[0].name);
     }
-  }, [type, categories]);
+  }, [type, categories, incomeCategories]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const triggerBlockedFeedback = useCallback(() => {
@@ -1162,21 +1165,31 @@ export default function AddTransactionSheet({ route }: Props) {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.chipWrap}
             >
-              {categoriesLoading && categories.length === 0
-                ? [88, 68, 96, 76, 104, 72].map((w, i) => (
-                    <Animated.View
-                      key={i}
-                      style={[
-                        styles.skeletonChip,
-                        { width: w, opacity: skeletonOpacity },
-                      ]}
-                    />
-                  ))
-                : displayedCategories.map((cat: any, i: number) => {
-                    const catKey =
-                      type === 'inc'
-                        ? cat.key
-                        : (cat.emoji ?? '').toLowerCase();
+              {categoriesLoading && categories.length === 0 ? (
+                [88, 68, 96, 76, 104, 72].map((w, i) => (
+                  <Animated.View
+                    key={i}
+                    style={[
+                      styles.skeletonChip,
+                      { width: w, opacity: skeletonOpacity },
+                    ]}
+                  />
+                ))
+              ) : displayedCategories.length === 0 ? (
+                <Text style={styles.chipEmptyHint}>
+                  {type === 'inc'
+                    ? 'No income categories yet'
+                    : 'No expense categories yet'}
+                </Text>
+              ) : (
+                displayedCategories.map((cat: any, i: number) => {
+                    // Both expense and income categories store their icon key
+                    // in `emoji` now (e.g. 'salary', 'food'). Old static
+                    // income entries used `key` instead — keep it as a
+                    // fallback for any remaining call sites.
+                    const catKey = (
+                      cat.emoji ?? cat.key ?? ''
+                    ).toLowerCase();
                     const isSel = category === cat.name;
                     const isRecent =
                       i === 0 &&
@@ -1239,7 +1252,8 @@ export default function AddTransactionSheet({ route }: Props) {
                         </TouchableOpacity>
                       </Reanimated.View>
                     );
-                  })}
+                  })
+              )}
             </GHScrollView>
           </View>
 
@@ -1739,6 +1753,13 @@ const createStyles = (colors: any, isDark: boolean) =>
       height: 34,
       borderRadius: 10,
       backgroundColor: isDark ? colors.surfaceSubdued : '#E8E6E0',
+    },
+    chipEmptyHint: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      color: colors.textSecondary,
+      paddingVertical: 8,
+      paddingHorizontal: 4,
     },
     chipSectionLabel: {
       fontFamily: 'Inter_700Bold',

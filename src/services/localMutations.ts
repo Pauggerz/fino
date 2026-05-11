@@ -374,6 +374,12 @@ export async function createCategory(input: {
   textColour?: string;
   budgetLimit?: number;
   sortOrder?: number;
+  /**
+   * Reserved for the mandatory catch-all "Others" row that auto-categorization
+   * falls back to. `is_default: true` is what gates rename and delete on the
+   * client. User-created rows always pass `false` (the default).
+   */
+  isDefault?: boolean;
 }): Promise<string> {
   const id = uuidv4();
   await database.write(async () => {
@@ -387,7 +393,7 @@ export async function createCategory(input: {
       c.textColour = input.textColour;
       c.budgetLimit = input.budgetLimit;
       c.isActive = true;
-      c.isDefault = false;
+      c.isDefault = input.isDefault ?? false;
       c.sortOrder = input.sortOrder ?? 0;
     });
   });

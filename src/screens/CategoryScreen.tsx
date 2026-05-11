@@ -136,6 +136,10 @@ export default function CategoryScreen() {
   const [editing, setEditing] = useState<CategoryRow | null>(null);
   const [adding, setAdding] = useState(false);
 
+  // Guards the auto-seed below from re-firing on every emission while the
+  // newly-created row hasn't yet propagated through the observable.
+  const seededRef = useRef<Set<CategoryType>>(new Set());
+
   // ── Live data ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!userId) {
@@ -241,6 +245,38 @@ export default function CategoryScreen() {
     () => visibleRows.map((r) => r.name.toLowerCase()),
     [visibleRows]
   );
+
+  // Invariant: every type must keep at least the catch-all "Others" default —
+  // it's the locked fallback that auto-categorization writes to and that the
+  // delete handler blocks removal of. The server trigger seeds the expense
+  // side at signup; the income side has no analogous trigger, so we top it up
+  // client-side once the first sync settles. seededRef stops this from
+  // re-firing while the new row is still propagating through the observable.
+  useEffect(() => {
+    if (!userId || loading) return;
+    (['expense', 'income'] as CategoryType[]).forEach((t) => {
+      if (seededRef.current.has(t)) return;
+      const has = rows.some((r) => r.category_type === t);
+      if (has) return;
+      seededRef.current.add(t);
+      createCategory({
+        userId,
+        name: 'Others',
+        categoryType: t,
+        emoji: t === 'income' ? 'default' : 'others',
+        tileBgColour: '#F2EFEC',
+        textColour: '#5C5550',
+        sortOrder: 999,
+        isDefault: true,
+      }).catch((err) => {
+        // Roll back the guard so a retry can happen on the next render.
+        seededRef.current.delete(t);
+        if (__DEV__)
+          // eslint-disable-next-line no-console
+          console.warn('[CategoryScreen] Failed to seed Others:', t, err);
+      });
+    });
+  }, [userId, loading, rows]);
 
   const handleSaveEdit = useCallback(
     async (id: string, draft: DraftState) => {
@@ -622,8 +658,8 @@ export default function CategoryScreen() {
           {visibleRows.length === 0 && (
             <Text style={[styles.emptyHint, { color: colors.textSecondary }]}>
               {type === 'income'
-                ? 'No income sources yet. Tap + to add Salary, Allowance, or any other source.'
-                : 'No expense categories yet.'}
+                ? 'No income categories yet. Setting up "Others"…'
+                : 'No expense categories yet. Setting up "Others"…'}
             </Text>
           )}
 

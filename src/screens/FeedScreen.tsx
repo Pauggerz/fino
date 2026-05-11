@@ -48,12 +48,10 @@ import {
   SortOrder,
 } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
+import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import { useAccounts } from '@/hooks/useAccounts';
 import { CategoryIcon } from '@/components/CategoryIcon';
-import {
-  INCOME_CATEGORIES,
-  CATEGORY_COLOR,
-} from '@/constants/categoryMappings';
+import { CATEGORY_COLOR } from '@/constants/categoryMappings';
 import { deleteTransaction } from '@/services/localMutations';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
@@ -89,16 +87,6 @@ function getMonthRange(year: number, month: number): DateRange {
   const to = `${year}-${pad(month + 1)}-${pad(lastDay)}`;
   return { from, to };
 }
-
-// Static lookup — INCOME_CATEGORIES never changes at runtime, so build the
-// name→entry map once at module load instead of scanning it per row.
-const INCOME_CATEGORY_BY_NAME: Map<string, (typeof INCOME_CATEGORIES)[number]> =
-  new Map(INCOME_CATEGORIES.map((c) => [c.name.toLowerCase(), c]));
-
-const INCOME_FILTER_OPTIONS: string[] = [
-  'All',
-  ...INCOME_CATEGORIES.map((c) => c.name),
-];
 
 const MONTH_NAMES = [
   'January',
@@ -813,6 +801,7 @@ const FeedControls = React.memo(
     activeCategory,
     setActiveCategory,
     categories,
+    incomeCategories,
     loading,
     swipeHintVisible,
     totalEntries,
@@ -828,6 +817,7 @@ const FeedControls = React.memo(
     activeCategory: string;
     setActiveCategory: (value: string) => void;
     categories: any[];
+    incomeCategories: any[];
     loading: boolean;
     swipeHintVisible: boolean;
     totalEntries: number;
@@ -853,9 +843,11 @@ const FeedControls = React.memo(
               const isActive = activeCategory === chip;
               let activeBg = colors.primary;
               if (viewType === 'income' && chip !== 'All') {
-                const incCat = INCOME_CATEGORIES.find((c) => c.name === chip);
-                if (incCat) {
-                  activeBg = CATEGORY_COLOR[incCat.key] ?? colors.primary;
+                const incCat = incomeCategories.find((c) => c.name === chip);
+                if (incCat?.text_colour) {
+                  activeBg = incCat.text_colour;
+                } else if (incCat?.emoji) {
+                  activeBg = CATEGORY_COLOR[incCat.emoji] ?? colors.primary;
                 }
               } else if (viewType === 'expense' && chip !== 'All') {
                 const expCat = categories.find((c) => c.name === chip);
@@ -935,6 +927,7 @@ const FeedTransactionRow = React.memo(
   ({
     tx,
     categoryByName,
+    incomeCategoryByName,
     styles,
     swipeStyles,
     colors,
@@ -944,6 +937,7 @@ const FeedTransactionRow = React.memo(
   }: {
     tx: FeedTransaction;
     categoryByName: Map<string, any>;
+    incomeCategoryByName: Map<string, any>;
     styles: FeedStyles;
     swipeStyles: FeedSwipeStyles;
     colors: any;
@@ -968,9 +962,12 @@ const FeedTransactionRow = React.memo(
       iconKey = catData?.emoji ?? 'default';
       iconColor = catData?.text_colour ?? colors.textSecondary;
     } else {
-      const incCat = INCOME_CATEGORY_BY_NAME.get(catKey);
-      iconKey = incCat?.key ?? 'default';
-      iconColor = CATEGORY_COLOR[iconKey] ?? colors.incomeGreen;
+      const incCat = incomeCategoryByName.get(catKey);
+      iconKey = incCat?.emoji ?? 'default';
+      iconColor =
+        incCat?.text_colour ??
+        CATEGORY_COLOR[iconKey] ??
+        colors.incomeGreen;
     }
 
     // Pre-formatted upstream in useTransactions.modelToPlain — row is now pure
@@ -1165,6 +1162,7 @@ function FeedScreen() {
     error: categoriesError,
     refetch: refetchCategories,
   } = useCategories();
+  const { categories: incomeCategories } = useIncomeCategories();
   const {
     accounts,
     error: accountsError,
@@ -1255,23 +1253,28 @@ function FeedScreen() {
   // Fresh arrays per render previously broke FeedControls' React.memo — every
   // keystroke in the search box re-rendered the chip carousel.
   const filterOptions = useMemo<string[]>(() => {
-    if (viewType === 'income') return INCOME_FILTER_OPTIONS;
+    const source = viewType === 'income' ? incomeCategories : categories;
     const seen = new Set<string>();
     const names: string[] = ['All'];
-    for (const c of categories) {
+    for (const c of source) {
       const k = c.name.toLowerCase();
       if (seen.has(k)) continue;
       seen.add(k);
       names.push(c.name);
     }
     return names;
-  }, [viewType, categories]);
+  }, [viewType, categories, incomeCategories]);
 
   // O(1) category lookup for FeedTransactionRow. Was a linear .find() per row,
   // per render — the single biggest scroll-frame cost in the profiler.
   const categoryByName = useMemo(
     () => new Map(categories.map((c) => [c.name.toLowerCase(), c])),
     [categories]
+  );
+
+  const incomeCategoryByName = useMemo(
+    () => new Map(incomeCategories.map((c) => [c.name.toLowerCase(), c])),
+    [incomeCategories]
   );
 
   // ── Delete handler ──
@@ -1603,6 +1606,7 @@ function FeedScreen() {
             activeCategory={activeCategory}
             setActiveCategory={setActiveCategory}
             categories={categories}
+            incomeCategories={incomeCategories}
             loading={loading}
             swipeHintVisible={swipeHintVisible}
             totalEntries={totalEntries}
@@ -1620,6 +1624,7 @@ function FeedScreen() {
         <FeedTransactionRow
           tx={item.data}
           categoryByName={categoryByName}
+          incomeCategoryByName={incomeCategoryByName}
           styles={styles}
           swipeStyles={swipeStyles}
           colors={colors}
@@ -1655,7 +1660,9 @@ function FeedScreen() {
       filterOptions,
       activeCategory,
       categories,
+      incomeCategories,
       categoryByName,
+      incomeCategoryByName,
       loading,
       swipeHintVisible,
       totalEntries,

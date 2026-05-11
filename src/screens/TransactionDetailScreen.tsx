@@ -37,8 +37,8 @@ import {
   ACCOUNT_LOGOS,
   ACCOUNT_AVATAR_OVERRIDE,
 } from '@/constants/accountLogos';
-import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import { useCategories } from '@/hooks/useCategories';
+import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import type { Transaction } from '@/types';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { radius, spacing } from '@/constants/theme';
@@ -240,6 +240,7 @@ export default function TransactionDetailScreen() {
 
   const { accounts } = useAccounts();
   const { categories } = useCategories();
+  const { categories: incomeCategories } = useIncomeCategories();
 
   const [tx, setTx] = useState<TransactionWithAccount | null>(null);
   const [loading, setLoading] = useState(true);
@@ -451,16 +452,14 @@ export default function TransactionDetailScreen() {
 
   // Must be before early returns — hooks cannot appear after conditional returns
   const activeCategories = useMemo(() => {
-    if (editedType === 'income') {
-      return INCOME_CATEGORIES.map((c) => ({ key: c.key, name: c.name, bg: undefined, text: undefined }));
-    }
-    return categories.map((c) => ({
+    const source = editedType === 'income' ? incomeCategories : categories;
+    return source.map((c) => ({
       key: c.emoji ?? c.name.toLowerCase(),
       name: c.name,
       bg: c.tile_bg_colour ?? undefined,
       text: c.text_colour ?? undefined,
     }));
-  }, [editedType, categories]);
+  }, [editedType, categories, incomeCategories]);
 
   // ─── Loading ─────────────────────────────────────────────────────────────────
   if (loading) {
@@ -838,6 +837,21 @@ export default function TransactionDetailScreen() {
               <View style={styles.modalSheet}>
                 <View style={styles.modalHandle} />
                 <Text style={styles.modalTitle}>Select Category</Text>
+                {activeCategories.length === 0 && (
+                  <Text
+                    style={{
+                      fontFamily: 'Inter_400Regular',
+                      fontSize: 13,
+                      color: colors.textSecondary,
+                      paddingVertical: 16,
+                      paddingHorizontal: 4,
+                    }}
+                  >
+                    {editedType === 'income'
+                      ? 'No income categories yet'
+                      : 'No expense categories yet'}
+                  </Text>
+                )}
                 <View style={styles.catGrid}>
                   {activeCategories.map((cat) => {
                     const key = cat.key;
