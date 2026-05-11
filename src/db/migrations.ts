@@ -79,5 +79,17 @@ export default schemaMigrations({
         }),
       ],
     },
+    {
+      // v5 — add category to recurring_incomes (incomes can now carry a
+      // category like 'Salary' that flows into the transaction created when
+      // the user taps "Mark Received").
+      toVersion: 5,
+      steps: [
+        addColumns({
+          table: 'recurring_incomes',
+          columns: [{ name: 'category', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
   ],
 });

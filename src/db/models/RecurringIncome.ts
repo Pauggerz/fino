@@ -8,7 +8,8 @@ export default class RecurringIncome extends Model {
   @text('title') title!: string;
   @field('amount') amount!: number;
   @text('account_id') accountId?: string;
-  @text('cadence') cadence!: 'weekly' | 'monthly' | 'yearly';
+  @text('category') category?: string;
+  @text('cadence') cadence!: 'daily' | 'weekly' | 'monthly' | 'yearly';
   @text('anchor_date') anchorDate!: string;
   @text('next_due_at') nextDueAt!: string;
   @field('is_active') isActive!: boolean;
