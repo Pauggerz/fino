@@ -91,5 +91,18 @@ export default schemaMigrations({
         }),
       ],
     },
+    {
+      // v6 — promote category_type from an implicit name/key filter to a
+      // first-class column on categories. Server already has it (via
+      // supabase/add_income_categories.sql); the next sync pull fills local
+      // rows. Until then, missing values are treated as 'expense'.
+      toVersion: 6,
+      steps: [
+        addColumns({
+          table: 'categories',
+          columns: [{ name: 'category_type', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
   ],
 });

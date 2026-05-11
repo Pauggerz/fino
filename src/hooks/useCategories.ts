@@ -10,19 +10,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { triggerSync } from '@/services/watermelonSync';
 import type { Category } from '@/types';
 
-// Income category names — excluded from budget views.
-// Matched against `category.name` (lowercased). Was previously matched against
-// `cat.emoji`, which silently never fired because `emoji` holds glyphs, not
-// names — income categories were leaking into the budget UI.
-const INCOME_CATEGORY_NAMES = new Set([
-  'salary',
-  'allowance',
-  'freelance',
-  'business',
-  'gifts',
-  'investment',
-]);
-
 export interface CategoryWithSpend extends Category {
   spent: number;
   pct: number;
@@ -53,7 +40,7 @@ function monthBounds() {
     0,
     0,
     0,
-    0,
+    0
   ).toISOString();
   const end = new Date(
     now.getFullYear(),
@@ -62,7 +49,7 @@ function monthBounds() {
     23,
     59,
     59,
-    999,
+    999
   ).toISOString();
   return { start, end };
 }
@@ -79,8 +66,12 @@ export const useCategories = () => {
   const { user } = useAuth();
   const userId = user?.id;
 
-  const cached = userId ? categoriesCache.get(categoriesKey(userId)) : undefined;
-  const [categories, setCategories] = useState<CategoryWithSpend[]>(cached ?? []);
+  const cached = userId
+    ? categoriesCache.get(categoriesKey(userId))
+    : undefined;
+  const [categories, setCategories] = useState<CategoryWithSpend[]>(
+    cached ?? []
+  );
   const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
@@ -96,7 +87,7 @@ export const useCategories = () => {
       .query(
         Q.where('user_id', userId),
         Q.where('is_active', true),
-        Q.sortBy('sort_order', Q.asc),
+        Q.sortBy('sort_order', Q.asc)
       );
 
     const expensesQuery = database
@@ -105,22 +96,37 @@ export const useCategories = () => {
         Q.where('user_id', userId),
         Q.where('type', 'expense'),
         Q.where('date', Q.gte(start)),
-        Q.where('date', Q.lte(end)),
+        Q.where('date', Q.lte(end))
       );
 
     // Debounce collapses observer bursts (e.g. a sync pull writing 30 tx rows
     // fires 30 emissions; debounced, the downstream rebuild of spendMap runs
     // once per burst). 50ms is imperceptible to users but catches full pulls.
     const sub = combineLatest([
-      categoriesQuery.observeWithColumns(['name', 'emoji', 'budget_limit', 'is_active', 'sort_order']),
-      expensesQuery.observeWithColumns(['amount', 'category', 'type', 'is_transfer', 'date']),
-    ]).pipe(debounceTime(50)).subscribe(
-      ([categoryRecords, txRecords]) => {
+      categoriesQuery.observeWithColumns([
+        'name',
+        'emoji',
+        'budget_limit',
+        'is_active',
+        'sort_order',
+        'category_type',
+      ]),
+      expensesQuery.observeWithColumns([
+        'amount',
+        'category',
+        'type',
+        'is_transfer',
+        'date',
+      ]),
+    ])
+      .pipe(debounceTime(50))
+      .subscribe(([categoryRecords, txRecords]) => {
         const spendMap: Record<string, number> = {};
         for (const tx of txRecords) {
           // Transfers are account movements, not category spending. String
           // check handles pre-migration-013 rows without is_transfer set.
-          if (tx.isTransfer || (tx.category ?? '').toLowerCase() === 'transfer') continue;
+          if (tx.isTransfer || (tx.category ?? '').toLowerCase() === 'transfer')
+            continue;
           if (!tx.category) continue;
           const key = tx.category.toLowerCase();
           spendMap[key] = (spendMap[key] ?? 0) + tx.amount;
@@ -129,8 +135,10 @@ export const useCategories = () => {
         const seenNames = new Set<string>();
         const enriched: CategoryWithSpend[] = categoryRecords
           .filter((cat) => {
+            // Treat missing categoryType as 'expense' for back-compat with
+            // pre-v6 rows that synced before the column existed locally.
+            if (cat.categoryType === 'income') return false;
             const lower = cat.name.toLowerCase();
-            if (INCOME_CATEGORY_NAMES.has(lower)) return false;
             if (seenNames.has(lower)) return false;
             seenNames.add(lower);
             return true;
@@ -138,7 +146,10 @@ export const useCategories = () => {
           .map((cat) => {
             const plain = toPlain(cat);
             const spent = spendMap[plain.name.toLowerCase()] ?? 0;
-            const pct = plain.budget_limit && plain.budget_limit > 0 ? spent / plain.budget_limit : 0;
+            const pct =
+              plain.budget_limit && plain.budget_limit > 0
+                ? spent / plain.budget_limit
+                : 0;
             let state: 'under' | 'nearing' | 'over' = 'under';
             if (plain.budget_limit) {
               if (pct >= 1) state = 'over';
@@ -150,8 +161,7 @@ export const useCategories = () => {
         setCategories(enriched);
         setLoading(false);
         categoriesCache.set(categoriesKey(userId), enriched);
-      },
-    );
+      });
 
     return () => sub.unsubscribe();
   }, [userId]);

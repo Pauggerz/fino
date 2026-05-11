@@ -23,9 +23,9 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAccounts } from '@/hooks/useAccounts';
+import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { database } from '@/db';
-import type CategoryModel from '@/db/models/Category';
 import type RecurringIncomeModel from '@/db/models/RecurringIncome';
 import {
   createRecurringIncome,
@@ -56,17 +56,6 @@ type IncomeCategory = {
   emoji?: string;
   text_colour?: string;
 };
-
-// Income categories live in the same `categories` table as expense categories;
-// useCategories filters them out for budget views, so we observe directly here.
-const INCOME_CATEGORY_NAMES = new Set([
-  'salary',
-  'allowance',
-  'freelance',
-  'business',
-  'gifts',
-  'investment',
-]);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -197,10 +186,21 @@ export default function RecurringIncomeScreen() {
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   const { accounts } = useAccounts();
+  const { categories: rawIncomeCategories } = useIncomeCategories();
+
+  const categories: IncomeCategory[] = useMemo(
+    () =>
+      rawIncomeCategories.map((c) => ({
+        id: c.id,
+        name: c.name,
+        emoji: c.emoji ?? undefined,
+        text_colour: c.text_colour ?? undefined,
+      })),
+    [rawIncomeCategories],
+  );
 
   const [items, setItems] = useState<RecurringIncome[]>([]);
   const [loading, setLoading] = useState(true);
-  const [categories, setCategories] = useState<IncomeCategory[]>([]);
 
   // ── Observe recurring incomes ──────────────────────────────────────────────
   useEffect(() => {
@@ -235,31 +235,6 @@ export default function RecurringIncomeScreen() {
           })),
         );
         setLoading(false);
-      });
-    return () => sub.unsubscribe();
-  }, [userId]);
-
-  // ── Observe income categories (Salary, Allowance, Freelance, etc.) ─────────
-  useEffect(() => {
-    if (!userId) { setCategories([]); return; }
-    const sub = database
-      .get<CategoryModel>('categories')
-      .query(
-        Q.where('user_id', userId),
-        Q.where('is_active', true),
-        Q.sortBy('sort_order', Q.asc),
-      )
-      .observeWithColumns(['name', 'emoji', 'text_colour', 'is_active', 'sort_order'])
-      .subscribe((records) => {
-        const filtered = records
-          .filter((c) => INCOME_CATEGORY_NAMES.has(c.name.toLowerCase()))
-          .map((c) => ({
-            id: c.id,
-            name: c.name,
-            emoji: c.emoji ?? undefined,
-            text_colour: c.textColour ?? undefined,
-          }));
-        setCategories(filtered);
       });
     return () => sub.unsubscribe();
   }, [userId]);

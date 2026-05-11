@@ -368,6 +368,7 @@ export async function deleteAccount(accountId: string): Promise<void> {
 export async function createCategory(input: {
   userId: string;
   name: string;
+  categoryType: 'expense' | 'income';
   emoji?: string;
   tileBgColour?: string;
   textColour?: string;
@@ -380,6 +381,7 @@ export async function createCategory(input: {
       c._raw.id = id;
       c.userId = input.userId;
       c.name = input.name;
+      c.categoryType = input.categoryType;
       c.emoji = input.emoji;
       c.tileBgColour = input.tileBgColour;
       c.textColour = input.textColour;
@@ -395,7 +397,7 @@ export async function createCategory(input: {
 
 export async function updateCategory(
   categoryId: string,
-  patch: Partial<Pick<CategoryModel, 'name' | 'emoji' | 'tileBgColour' | 'textColour' | 'budgetLimit' | 'isActive' | 'sortOrder'>>,
+  patch: Partial<Pick<CategoryModel, 'name' | 'emoji' | 'tileBgColour' | 'textColour' | 'budgetLimit' | 'isActive' | 'sortOrder' | 'categoryType'>>,
 ): Promise<void> {
   await database.write(async () => {
     const cat = await categories().find(categoryId);
@@ -407,6 +409,7 @@ export async function updateCategory(
       if (patch.budgetLimit !== undefined) c.budgetLimit = patch.budgetLimit;
       if (patch.isActive !== undefined) c.isActive = patch.isActive;
       if (patch.sortOrder !== undefined) c.sortOrder = patch.sortOrder;
+      if (patch.categoryType !== undefined) c.categoryType = patch.categoryType;
     });
   });
   syncInBackground();
