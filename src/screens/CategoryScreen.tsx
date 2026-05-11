@@ -55,7 +55,8 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import {
   CATEGORY_SWATCHES,
   CATEGORY_TILE_BGS,
-  ICON_LIBRARY,
+  EXPENSE_ICON_LIBRARY,
+  INCOME_ICON_LIBRARY,
 } from '@/constants/iconLibrary';
 import { spacing } from '../constants/theme';
 import type { ThemeColors } from '../constants/theme';
@@ -922,9 +923,11 @@ function CategoryFormModal({
 }) {
   const isIncome = type === 'income';
   const accentColor = isIncome ? INCOME_GREEN : colors.primary;
+  const insets = useSafeAreaInsets();
+  const iconLibrary = isIncome ? INCOME_ICON_LIBRARY : EXPENSE_ICON_LIBRARY;
   const [draft, setDraft] = useState<DraftState>({
     name: '',
-    iconKey: ICON_LIBRARY[0].key,
+    iconKey: iconLibrary[0].key,
     colorIdx: 0,
     budgetLimit: '',
   });
@@ -948,13 +951,13 @@ function CategoryFormModal({
     } else {
       setDraft({
         name: '',
-        iconKey: ICON_LIBRARY[0].key,
+        iconKey: iconLibrary[0].key,
         colorIdx: 0,
         budgetLimit: '',
       });
     }
     setSaving(false);
-  }, [visible, initial]);
+  }, [visible, initial, iconLibrary]);
 
   const handleSubmit = useCallback(async () => {
     setSaving(true);
@@ -978,12 +981,12 @@ function CategoryFormModal({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={[
           styles.container,
-          { backgroundColor: isDark ? colors.background : '#F7F5F2' },
+          {
+            backgroundColor: isDark ? colors.background : '#F7F5F2',
+            paddingTop: insets.top,
+          },
         ]}
       >
-        <View style={styles.formTopBar}>
-          <View style={styles.formHandle} />
-        </View>
         <View style={styles.formHeader}>
           <TouchableOpacity
             onPress={onClose}
@@ -1108,7 +1111,7 @@ function CategoryFormModal({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.pickerScrollContent}
             >
-              {ICON_LIBRARY.map((entry) => {
+              {iconLibrary.map((entry) => {
                 const active = draft.iconKey === entry.key;
                 return (
                   <TouchableOpacity
@@ -1300,24 +1303,13 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
       marginTop: 1,
     },
 
-    // ── Form modal handle (subtle, top of pageSheet) ──
-    formTopBar: {
-      paddingTop: 12,
-      paddingBottom: 8,
-      alignItems: 'center',
-    },
-    formHandle: {
-      width: 36,
-      height: 4,
-      backgroundColor: colors.border,
-      borderRadius: 2,
-    },
+    // ── Form modal header — mirrors the main screen header so the modal's
+    //    top chrome lines up vertically with the surface it slid out from. ──
     formHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 16,
+      paddingVertical: 12,
       gap: 10,
     },
 

@@ -1,9 +1,9 @@
-// Picker library for the CategoryScreen — selectable icons. Every key here
+// Picker libraries for the CategoryScreen — selectable icons. Every key here
 // must also exist in CATEGORY_ICON_PATHS so CategoryIcon can render it.
 //
-// Order matters: icons are rendered top-to-bottom, left-to-right in the picker
-// grid. The first six match the six default expense categories so users see a
-// familiar set first, followed by the most commonly-requested custom themes.
+// Split per category type: expense-only icons (food, transport, …) never show
+// when editing income, and income-only icons (salary, allowance, …) never show
+// when editing expense. `others` is the shared catch-all on both sides.
 
 export interface IconLibraryEntry {
   /** Stored on the category row as `emoji`; used as the key in CATEGORY_ICON_PATHS. */
@@ -12,7 +12,7 @@ export interface IconLibraryEntry {
   label: string;
 }
 
-export const ICON_LIBRARY: readonly IconLibraryEntry[] = [
+export const EXPENSE_ICON_LIBRARY: readonly IconLibraryEntry[] = [
   // Defaults — first row mirrors the six built-in expense categories.
   { key: 'food', label: 'Food' },
   { key: 'transport', label: 'Transport' },
@@ -43,9 +43,18 @@ export const ICON_LIBRARY: readonly IconLibraryEntry[] = [
   // Personal
   { key: 'education', label: 'School' },
   { key: 'pet', label: 'Pet' },
-  { key: 'gifts', label: 'Gifts' },
   // Money
   { key: 'charity', label: 'Charity' },
+];
+
+export const INCOME_ICON_LIBRARY: readonly IconLibraryEntry[] = [
+  { key: 'salary', label: 'Salary' },
+  { key: 'allowance', label: 'Allowance' },
+  { key: 'freelance', label: 'Freelance' },
+  { key: 'business', label: 'Business' },
+  { key: 'investment', label: 'Investment' },
+  { key: 'gifts', label: 'Gifts' },
+  { key: 'others', label: 'Others' },
 ];
 
 // Swatch palette for the colour picker. Sixteen options for breadth without
