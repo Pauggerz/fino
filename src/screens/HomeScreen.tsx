@@ -48,6 +48,8 @@ import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { deleteTransaction } from '@/services/localMutations';
 import ProfileSidebar from '@/components/ProfileSidebar';
 import { ErrorBanner } from '@/components/ErrorBanner';
+import { AmbientOrb } from '@/components/empty/AnimatedAmbient';
+import { EmptyTransactions } from '@/components/empty/EmptyTransactions';
 import type { ThemeColors } from '@/constants/theme';
 
 // ─── Rolling balance (slot-machine style) ────────────────────────────────────
@@ -282,6 +284,11 @@ function HomeScreen() {
   const isFirstLoad = accountsLoading && accounts.length === 0;
   const isTotalsLoading =
     totalsLoading && totalIncome === 0 && monthlyExpense === 0;
+  // Once totals have loaded and both sides are zero, there are no transactions
+  // for the current month yet. Used to swap the budget grid for an empty state
+  // and to hide the trend / income-spent rows in the hero card.
+  const hasNoTransactions =
+    !totalsLoading && totalIncome === 0 && monthlyExpense === 0;
 
   // ── Entrance animation shared values ────────────────────────────────────────
   const greetingOpacity = useSharedValue(0);
@@ -576,20 +583,24 @@ function HomeScreen() {
 
         {/* ── Unified dark card: balance + accounts ── */}
         <RAnim.View style={[styles.unifiedCard, cardAnim]}>
-          {/* Ambient blobs */}
-          <LinearGradient
-            colors={[colors.primaryLight60, 'transparent']}
-            style={[
-              styles.blob,
-              { top: -30, right: -20, width: 160, height: 160 },
-            ]}
+          {/* Ambient orbs — soft radial fades that don't read as clipped at the
+              card edges, unlike the previous LinearGradient circles. */}
+          <AmbientOrb
+            size={200}
+            color={colors.primary}
+            baseOpacity={0.28}
+            amplitude={20}
+            durationMs={12000}
+            style={{ top: -40, right: -40 }}
           />
-          <LinearGradient
-            colors={[colors.primaryTransparent50, 'transparent']}
-            style={[
-              styles.blob,
-              { bottom: 80, left: -20, width: 110, height: 110 },
-            ]}
+          <AmbientOrb
+            size={150}
+            color={colors.primary}
+            baseOpacity={0.22}
+            amplitude={18}
+            durationMs={14000}
+            phase={0.4}
+            style={{ bottom: 60, left: -40 }}
           />
 
           {/* ── Balance section ── */}
@@ -668,42 +679,46 @@ function HomeScreen() {
               )}
             </View>
 
-            <View style={styles.trendBadge}>
-              <Text style={styles.trendText}>{deltaLabel}</Text>
-            </View>
+            {!hasNoTransactions && (
+              <>
+                <View style={styles.trendBadge}>
+                  <Text style={styles.trendText}>{deltaLabel}</Text>
+                </View>
 
-            <View style={styles.heroRow}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() =>
-                  navigation.navigate('feed', {
-                    screen: 'FeedMain',
-                    params: { initialViewType: 'income' },
-                  })
-                }
-                style={[styles.heroCol, styles.heroColBorder]}
-              >
-                <Text style={styles.heroColLabel}>Income</Text>
-                <Text style={styles.heroColVal}>
-                  {isPrivacyMode ? '₱***' : `+${fmtPeso(totalIncome)}`}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() =>
-                  navigation.navigate('feed', {
-                    screen: 'FeedMain',
-                    params: { initialViewType: 'expense' },
-                  })
-                }
-                style={styles.heroCol}
-              >
-                <Text style={styles.heroColLabel}>Spent</Text>
-                <Text style={styles.heroColVal}>
-                  {isPrivacyMode ? '₱***' : `−${fmtPeso(monthlyExpense)}`}
-                </Text>
-              </TouchableOpacity>
-            </View>
+                <View style={styles.heroRow}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      navigation.navigate('feed', {
+                        screen: 'FeedMain',
+                        params: { initialViewType: 'income' },
+                      })
+                    }
+                    style={[styles.heroCol, styles.heroColBorder]}
+                  >
+                    <Text style={styles.heroColLabel}>Income</Text>
+                    <Text style={styles.heroColVal}>
+                      {isPrivacyMode ? '₱***' : `+${fmtPeso(totalIncome)}`}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      navigation.navigate('feed', {
+                        screen: 'FeedMain',
+                        params: { initialViewType: 'expense' },
+                      })
+                    }
+                    style={styles.heroCol}
+                  >
+                    <Text style={styles.heroColLabel}>Spent</Text>
+                    <Text style={styles.heroColVal}>
+                      {isPrivacyMode ? '₱***' : `−${fmtPeso(monthlyExpense)}`}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </TouchableOpacity>
 
           {/* ── Hairline divider + accounts label ── */}
@@ -815,64 +830,15 @@ function HomeScreen() {
                 <Skeleton width="47.5%" height={120} borderRadius={24} />
                 <Skeleton width="47.5%" height={120} borderRadius={24} />
               </>
-            ) : categories.length === 0 ? (
-              <View style={styles.emptyBudget}>
-                {/* Branded pie/budget illustration */}
-                <Svg width={52} height={52} viewBox="0 0 52 52">
-                  {/* Outer ring */}
-                  <SvgPath
-                    d="M26 4 A22 22 0 0 1 48 26"
-                    stroke={colors.primary}
-                    strokeWidth="5"
-                    fill="none"
-                    strokeLinecap="round"
-                    opacity="0.9"
-                  />
-                  <SvgPath
-                    d="M48 26 A22 22 0 0 1 26 48"
-                    stroke={colors.primary}
-                    strokeWidth="5"
-                    fill="none"
-                    strokeLinecap="round"
-                    opacity="0.45"
-                  />
-                  <SvgPath
-                    d="M26 48 A22 22 0 0 1 4 26"
-                    stroke={colors.primary}
-                    strokeWidth="5"
-                    fill="none"
-                    strokeLinecap="round"
-                    opacity="0.22"
-                  />
-                  <SvgPath
-                    d="M4 26 A22 22 0 0 1 26 4"
-                    stroke={colors.primary}
-                    strokeWidth="5"
-                    fill="none"
-                    strokeLinecap="round"
-                    opacity="0.12"
-                  />
-                  {/* Center plus */}
-                  <SvgPath
-                    d="M26 18 v16 M18 26 h16"
-                    stroke={colors.primary}
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    opacity="0.7"
-                  />
-                </Svg>
-                <Text style={styles.emptyBudgetText}>
-                  No budgets set up yet
-                </Text>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('more')}
-                  style={styles.emptyBudgetCta}
-                >
-                  <Text style={styles.emptyBudgetCtaText}>
-                    Set up budgets →
-                  </Text>
-                </TouchableOpacity>
-              </View>
+            ) : hasNoTransactions ? (
+              <EmptyTransactions
+                compact
+                style={{ width: '100%' }}
+                title="No transactions yet"
+                body="Add your first transaction and your category spend will start showing up here."
+                ctaLabel="Add transaction"
+                onPressCta={() => navigation.navigate('AddTransaction')}
+              />
             ) : (
               categories.map((cat, index) => (
                 <BudgetTile
@@ -1028,10 +994,6 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       paddingTop: 20,
       paddingBottom: 16,
       ...appleShadow,
-    },
-    blob: {
-      position: 'absolute',
-      borderRadius: 999,
     },
     balanceSection: {
       paddingHorizontal: 20,
@@ -1316,29 +1278,6 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       fontFamily: 'Inter_600SemiBold',
       fontSize: 12,
       color: colors.whiteTransparent80,
-    },
-    emptyBudget: {
-      width: '100%' as const,
-      paddingVertical: 32,
-      alignItems: 'center' as const,
-      gap: 10,
-    },
-    emptyBudgetText: {
-      fontFamily: 'Inter_500Medium',
-      fontSize: 13,
-      color: colors.textSecondary,
-    },
-    emptyBudgetCta: {
-      backgroundColor: colors.primaryLight,
-      borderRadius: 20,
-      paddingVertical: 7,
-      paddingHorizontal: 16,
-      marginTop: 2,
-    },
-    emptyBudgetCtaText: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 12,
-      color: colors.primary,
     },
   });
 };

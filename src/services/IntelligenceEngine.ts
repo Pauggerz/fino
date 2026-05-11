@@ -855,17 +855,22 @@ function composeWhenChip(args: {
  * Suggests a category for a free-text merchant/description. Tries:
  *   1. **History match** — exact or substring match against past
  *      `merchant_name` / `display_name`. Picks the most-frequent category.
- *   2. **Keyword fallback** — the static `aiCategoryMap` dictionary.
+ *   2. **Keyword fallback** — the static `aiCategoryMap` dictionary (only
+ *      meaningful for `type: 'expense'`; income callers should skip it).
  *
  * `availableCategories` is the user's category list; the engine restricts
  * its suggestions to names that exist in this list (case-insensitive).
+ * `type` scopes both the history match and the keyword fallback — passing
+ * 'income' filters history to past income transactions and disables the
+ * expense-only taxonomy lookup so an income tx never gets tagged 'Food'.
  *
  * Cheap (one DB read with a `like` filter) and fully offline.
  */
 export async function suggestCategory(
   userId: string,
   text: string,
-  availableCategories: string[]
+  availableCategories: string[],
+  type: 'expense' | 'income' = 'expense'
 ): Promise<CategorySuggestion> {
   const trimmed = text.trim().toLowerCase();
   if (!trimmed) {
@@ -883,13 +888,13 @@ export async function suggestCategory(
     return idx >= 0 ? availableCategories[idx] : null;
   };
 
-  // 1) History match — pull recent expenses whose merchant/display matches.
+  // 1) History match — pull recent same-type txs whose merchant/display matches.
   try {
     const txCol = database.get<TransactionModel>('transactions');
     const hits = await txCol
       .query(
         Q.where('user_id', userId),
-        Q.where('type', 'expense'),
+        Q.where('type', type),
         Q.or(
           Q.where('merchant_name', Q.like(`%${Q.sanitizeLikeString(trimmed)}%`)),
           Q.where('display_name', Q.like(`%${Q.sanitizeLikeString(trimmed)}%`))
@@ -926,6 +931,12 @@ export async function suggestCategory(
   }
 
   // 2) Keyword fallback via static taxonomy.
+  //    The taxonomy is expense-only (food / transport / bills / health / …),
+  //    so for income transactions we stop after the history step rather than
+  //    risk tagging "client payment" with an expense category.
+  if (type === 'income') {
+    return { category: '', confidence: 'low', source: 'none' };
+  }
   //    Pass `availableCategories` so the analyzer's bubble-up resolver can
   //    return the most-specific match against the user's category list
   //    (e.g. "starbucks" → "Coffee" if they have it, else "Food").

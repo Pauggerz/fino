@@ -37,8 +37,8 @@ import {
   ACCOUNT_LOGOS,
   ACCOUNT_AVATAR_OVERRIDE,
 } from '@/constants/accountLogos';
-import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
 import { useCategories } from '@/hooks/useCategories';
+import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import type { Transaction } from '@/types';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { radius, spacing } from '@/constants/theme';
@@ -54,6 +54,16 @@ const MONTHS_SHORT = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
+
+// Resolve a transaction's display moment. Prefers the full ISO companion when
+// present, otherwise parses `date`. `date` is contractually 'YYYY-MM-DD' but
+// older locally-created rows stored a full ISO there before the companion
+// column existed — handle both so neither path produces Invalid Date.
+function resolveTxMoment(date: string | null | undefined, datetime: string | null | undefined): Date {
+  if (datetime) return new Date(datetime);
+  if (!date) return new Date(NaN);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(date + 'T00:00:00') : new Date(date);
+}
 
 // ─── Numpad ───────────────────────────────────────────────────────────────────
 
@@ -230,6 +240,7 @@ export default function TransactionDetailScreen() {
 
   const { accounts } = useAccounts();
   const { categories } = useCategories();
+  const { categories: incomeCategories } = useIncomeCategories();
 
   const [tx, setTx] = useState<TransactionWithAccount | null>(null);
   const [loading, setLoading] = useState(true);
@@ -300,9 +311,7 @@ export default function TransactionDetailScreen() {
     setEditedCategory((row.category ?? 'food').toLowerCase());
     setEditedAmount(String(row.amount));
     setEditedType((row.type as 'expense' | 'income') ?? 'expense');
-    const d = row.transaction_datetime
-      ? new Date(row.transaction_datetime)
-      : new Date(row.date + 'T00:00:00');
+    const d = resolveTxMoment(row.date, row.transaction_datetime);
     const h = d.getHours();
     setEditedDate(d);
     setDraftMonth(d.getMonth());
@@ -443,16 +452,14 @@ export default function TransactionDetailScreen() {
 
   // Must be before early returns — hooks cannot appear after conditional returns
   const activeCategories = useMemo(() => {
-    if (editedType === 'income') {
-      return INCOME_CATEGORIES.map((c) => ({ key: c.key, name: c.name, bg: undefined, text: undefined }));
-    }
-    return categories.map((c) => ({
+    const source = editedType === 'income' ? incomeCategories : categories;
+    return source.map((c) => ({
       key: c.emoji ?? c.name.toLowerCase(),
       name: c.name,
       bg: c.tile_bg_colour ?? undefined,
       text: c.text_colour ?? undefined,
     }));
-  }, [editedType, categories]);
+  }, [editedType, categories, incomeCategories]);
 
   // ─── Loading ─────────────────────────────────────────────────────────────────
   if (loading) {
@@ -516,9 +523,7 @@ export default function TransactionDetailScreen() {
   const hasTime = isEditing || !!tx.transaction_datetime;
   const displayDate = isEditing
     ? editedDate
-    : tx.transaction_datetime
-      ? new Date(tx.transaction_datetime)
-      : new Date(tx.date + 'T00:00:00');
+    : resolveTxMoment(tx.date, tx.transaction_datetime);
   const formattedDate = hasTime
     ? displayDate.toLocaleDateString('en-PH', {
         month: 'long', day: 'numeric', year: 'numeric',
@@ -832,6 +837,21 @@ export default function TransactionDetailScreen() {
               <View style={styles.modalSheet}>
                 <View style={styles.modalHandle} />
                 <Text style={styles.modalTitle}>Select Category</Text>
+                {activeCategories.length === 0 && (
+                  <Text
+                    style={{
+                      fontFamily: 'Inter_400Regular',
+                      fontSize: 13,
+                      color: colors.textSecondary,
+                      paddingVertical: 16,
+                      paddingHorizontal: 4,
+                    }}
+                  >
+                    {editedType === 'income'
+                      ? 'No income categories yet'
+                      : 'No expense categories yet'}
+                  </Text>
+                )}
                 <View style={styles.catGrid}>
                   {activeCategories.map((cat) => {
                     const key = cat.key;

@@ -36,6 +36,14 @@ function toCents(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// Local contract (see watermelonSync.ts): `date` columns must be 'YYYY-MM-DD'
+// so Q.where range comparisons against day literals work. Callers commonly
+// pass a full ISO timestamp — slice it to the day part. If they passed a
+// day-only string, return it unchanged.
+function toDayString(value: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : value.slice(0, 10);
+}
+
 /** Fire-and-forget sync — never blocks the caller's UI. */
 function syncInBackground(): void {
   triggerSync().catch((err) => {
@@ -85,7 +93,7 @@ export async function createTransaction(input: NewTransactionInput): Promise<str
       tx.displayName = input.displayName ?? undefined;
       tx.transactionNote = input.transactionNote ?? undefined;
       tx.signalSource = input.signalSource ?? undefined;
-      tx.date = input.date;
+      tx.date = toDayString(input.date);
       tx.transactionDatetime = input.date;
       tx.receiptUrl = input.receiptUrl ?? undefined;
       tx.accountDeleted = false;
@@ -171,7 +179,7 @@ export async function updateTransaction(
       if (patch.merchantName !== undefined) t.merchantName = patch.merchantName ?? undefined;
       if (patch.accountId !== undefined) t.accountId = patch.accountId;
       if (patch.date !== undefined) {
-        t.date = patch.date;
+        t.date = toDayString(patch.date);
         t.transactionDatetime = patch.date;
       }
       if (patch.amount !== undefined) t.amount = nextAmount;
@@ -224,7 +232,7 @@ export async function saveAdjustment(params: {
       tx.category = 'adjustment';
       tx.displayName = params.note || 'Balance Reconciliation';
       tx.transactionNote = params.note || undefined;
-      tx.date = today;
+      tx.date = toDayString(today);
       tx.transactionDatetime = today;
       tx.accountDeleted = false;
     });
@@ -261,7 +269,7 @@ export async function saveTransfer(params: {
       tx.type = 'expense';
       tx.category = 'transfer';
       tx.displayName = `Transfer to ${params.destAccountName}`;
-      tx.date = today;
+      tx.date = toDayString(today);
       tx.transactionDatetime = today;
       tx.accountDeleted = false;
       tx.isTransfer = true;
@@ -274,7 +282,7 @@ export async function saveTransfer(params: {
       tx.type = 'income';
       tx.category = 'transfer';
       tx.displayName = `Transfer from ${params.sourceAccountName}`;
-      tx.date = today;
+      tx.date = toDayString(today);
       tx.transactionDatetime = today;
       tx.accountDeleted = false;
       tx.isTransfer = true;
@@ -360,11 +368,18 @@ export async function deleteAccount(accountId: string): Promise<void> {
 export async function createCategory(input: {
   userId: string;
   name: string;
+  categoryType: 'expense' | 'income';
   emoji?: string;
   tileBgColour?: string;
   textColour?: string;
   budgetLimit?: number;
   sortOrder?: number;
+  /**
+   * Reserved for the mandatory catch-all "Others" row that auto-categorization
+   * falls back to. `is_default: true` is what gates rename and delete on the
+   * client. User-created rows always pass `false` (the default).
+   */
+  isDefault?: boolean;
 }): Promise<string> {
   const id = uuidv4();
   await database.write(async () => {
@@ -372,12 +387,13 @@ export async function createCategory(input: {
       c._raw.id = id;
       c.userId = input.userId;
       c.name = input.name;
+      c.categoryType = input.categoryType;
       c.emoji = input.emoji;
       c.tileBgColour = input.tileBgColour;
       c.textColour = input.textColour;
       c.budgetLimit = input.budgetLimit;
       c.isActive = true;
-      c.isDefault = false;
+      c.isDefault = input.isDefault ?? false;
       c.sortOrder = input.sortOrder ?? 0;
     });
   });
@@ -387,7 +403,7 @@ export async function createCategory(input: {
 
 export async function updateCategory(
   categoryId: string,
-  patch: Partial<Pick<CategoryModel, 'name' | 'emoji' | 'tileBgColour' | 'textColour' | 'budgetLimit' | 'isActive' | 'sortOrder'>>,
+  patch: Partial<Pick<CategoryModel, 'name' | 'emoji' | 'tileBgColour' | 'textColour' | 'budgetLimit' | 'isActive' | 'sortOrder' | 'categoryType'>>,
 ): Promise<void> {
   await database.write(async () => {
     const cat = await categories().find(categoryId);
@@ -399,6 +415,7 @@ export async function updateCategory(
       if (patch.budgetLimit !== undefined) c.budgetLimit = patch.budgetLimit;
       if (patch.isActive !== undefined) c.isActive = patch.isActive;
       if (patch.sortOrder !== undefined) c.sortOrder = patch.sortOrder;
+      if (patch.categoryType !== undefined) c.categoryType = patch.categoryType;
     });
   });
   syncInBackground();
@@ -594,12 +611,14 @@ export async function upsertMerchantMapping(input: {
 
 // ─── Recurring incomes ──────────────────────────────────────────────────────
 
-export type RecurringCadence = 'weekly' | 'monthly' | 'yearly';
+export type RecurringCadence = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 /**
- * Compute the next due date for a recurring schedule, given the anchor and a
- * reference "today". Always returns a date strictly in the future relative to
- * `from` so a missed cycle rolls forward to the next one.
+ * Setup: compute the first/next due date for a freshly-created or rescheduled
+ * recurring entry. Keeps the anchor date itself if it's today or in the future;
+ * if the anchor is in the past, rolls forward to the soonest cycle that lands
+ * today or later. Strict `<` ensures an anchor of "today" stays as "due today"
+ * rather than getting pushed to next cycle.
  */
 export function computeNextDueDate(
   cadence: RecurringCadence,
@@ -608,8 +627,30 @@ export function computeNextDueDate(
 ): string {
   const fromDay = from.toISOString().slice(0, 10);
   const next = new Date(`${anchorDate}T00:00:00`);
+  while (next.toISOString().slice(0, 10) < fromDay) {
+    if (cadence === 'daily') next.setDate(next.getDate() + 1);
+    else if (cadence === 'weekly') next.setDate(next.getDate() + 7);
+    else if (cadence === 'monthly') next.setMonth(next.getMonth() + 1);
+    else next.setFullYear(next.getFullYear() + 1);
+  }
+  return next.toISOString().slice(0, 10);
+}
+
+/**
+ * Mark-paid/received: advance the schedule strictly past `from`. Used after the
+ * user confirms a cycle so the next due date is always the next future cycle,
+ * even when today's cycle had not yet elapsed.
+ */
+export function advanceNextDueDate(
+  cadence: RecurringCadence,
+  anchorDate: string,
+  from: Date = new Date(),
+): string {
+  const fromDay = from.toISOString().slice(0, 10);
+  const next = new Date(`${anchorDate}T00:00:00`);
   while (next.toISOString().slice(0, 10) <= fromDay) {
-    if (cadence === 'weekly') next.setDate(next.getDate() + 7);
+    if (cadence === 'daily') next.setDate(next.getDate() + 1);
+    else if (cadence === 'weekly') next.setDate(next.getDate() + 7);
     else if (cadence === 'monthly') next.setMonth(next.getMonth() + 1);
     else next.setFullYear(next.getFullYear() + 1);
   }
@@ -621,6 +662,7 @@ export async function createRecurringIncome(input: {
   title: string;
   amount: number;
   accountId?: string;
+  category?: string;
   cadence: RecurringCadence;
   anchorDate: string;
 }): Promise<string> {
@@ -633,6 +675,7 @@ export async function createRecurringIncome(input: {
       r.title = input.title;
       r.amount = toCents(input.amount);
       r.accountId = input.accountId;
+      r.category = input.category;
       r.cadence = input.cadence;
       r.anchorDate = input.anchorDate;
       r.nextDueAt = next;
@@ -649,6 +692,7 @@ export async function updateRecurringIncome(
     title: string;
     amount: number;
     accountId: string | undefined;
+    category: string | undefined;
     cadence: RecurringCadence;
     anchorDate: string;
     isActive: boolean;
@@ -658,13 +702,15 @@ export async function updateRecurringIncome(
   await database.write(async () => {
     const r = await recurringIncomes().find(id);
     await r.update((rec) => {
-      if (patch.title !== undefined) rec.title = patch.title;
-      if (patch.amount !== undefined) rec.amount = toCents(patch.amount);
-      if (patch.accountId !== undefined) rec.accountId = patch.accountId;
-      if (patch.cadence !== undefined) rec.cadence = patch.cadence;
-      if (patch.anchorDate !== undefined) rec.anchorDate = patch.anchorDate;
-      if (patch.isActive !== undefined) rec.isActive = patch.isActive;
-      if (patch.lastPostedAt !== undefined) rec.lastPostedAt = patch.lastPostedAt;
+      // Use `in` not `!== undefined` so explicit clears propagate.
+      if ('title' in patch && patch.title !== undefined) rec.title = patch.title;
+      if ('amount' in patch && patch.amount !== undefined) rec.amount = toCents(patch.amount);
+      if ('accountId' in patch) rec.accountId = patch.accountId;
+      if ('category' in patch) rec.category = patch.category;
+      if ('cadence' in patch && patch.cadence !== undefined) rec.cadence = patch.cadence;
+      if ('anchorDate' in patch && patch.anchorDate !== undefined) rec.anchorDate = patch.anchorDate;
+      if ('isActive' in patch && patch.isActive !== undefined) rec.isActive = patch.isActive;
+      if ('lastPostedAt' in patch) rec.lastPostedAt = patch.lastPostedAt;
       // Keep nextDueAt aligned whenever schedule changes.
       if (patch.cadence !== undefined || patch.anchorDate !== undefined) {
         rec.nextDueAt = computeNextDueDate(
@@ -732,14 +778,14 @@ export async function updateRecurringBill(
   await database.write(async () => {
     const r = await recurringBills().find(id);
     await r.update((rec) => {
-      if (patch.title !== undefined) rec.title = patch.title;
-      if (patch.amount !== undefined) rec.amount = toCents(patch.amount);
-      if (patch.accountId !== undefined) rec.accountId = patch.accountId;
-      if (patch.category !== undefined) rec.category = patch.category;
-      if (patch.cadence !== undefined) rec.cadence = patch.cadence;
-      if (patch.anchorDate !== undefined) rec.anchorDate = patch.anchorDate;
-      if (patch.isActive !== undefined) rec.isActive = patch.isActive;
-      if (patch.lastPaidAt !== undefined) rec.lastPaidAt = patch.lastPaidAt;
+      if ('title' in patch && patch.title !== undefined) rec.title = patch.title;
+      if ('amount' in patch && patch.amount !== undefined) rec.amount = toCents(patch.amount);
+      if ('accountId' in patch) rec.accountId = patch.accountId;
+      if ('category' in patch) rec.category = patch.category;
+      if ('cadence' in patch && patch.cadence !== undefined) rec.cadence = patch.cadence;
+      if ('anchorDate' in patch && patch.anchorDate !== undefined) rec.anchorDate = patch.anchorDate;
+      if ('isActive' in patch && patch.isActive !== undefined) rec.isActive = patch.isActive;
+      if ('lastPaidAt' in patch) rec.lastPaidAt = patch.lastPaidAt;
       if (patch.cadence !== undefined || patch.anchorDate !== undefined) {
         rec.nextDueAt = computeNextDueDate(
           patch.cadence ?? rec.cadence,
@@ -755,7 +801,7 @@ export async function markRecurringBillPaid(id: string): Promise<void> {
   await database.write(async () => {
     const r = await recurringBills().find(id);
     const today = new Date().toISOString().slice(0, 10);
-    const next = computeNextDueDate(r.cadence, r.anchorDate, new Date());
+    const next = advanceNextDueDate(r.cadence, r.anchorDate, new Date());
     await r.update((rec) => {
       rec.lastPaidAt = today;
       rec.nextDueAt = next;
@@ -770,4 +816,52 @@ export async function deleteRecurringBill(id: string): Promise<void> {
     await r.markAsDeleted();
   });
   syncInBackground();
+}
+
+export async function markRecurringIncomePosted(id: string): Promise<void> {
+  await database.write(async () => {
+    const r = await recurringIncomes().find(id);
+    const today = new Date().toISOString().slice(0, 10);
+    const next = advanceNextDueDate(r.cadence, r.anchorDate, new Date());
+    await r.update((rec) => {
+      rec.lastPostedAt = today;
+      rec.nextDueAt = next;
+    });
+  });
+  syncInBackground();
+}
+
+export async function processRecurringTransaction(
+  item: {
+    id: string;
+    title: string;
+    amount: number;
+    accountId?: string;
+    category?: string;
+  },
+  type: 'bill' | 'income',
+  userId: string,
+): Promise<void> {
+  // Without an account we can't post a transaction. Fail loudly so the UI can
+  // tell the user to edit the recurring entry and pick one — previously this
+  // path silently skipped createTransaction while still advancing the cycle,
+  // which looked like "transactions aren't saved" from the user's side.
+  if (!item.accountId) {
+    throw new Error('NO_ACCOUNT');
+  }
+  const today = new Date().toISOString();
+  await createTransaction({
+    userId,
+    accountId: item.accountId,
+    amount: item.amount,
+    type: type === 'bill' ? 'expense' : 'income',
+    category: item.category ?? (type === 'bill' ? 'bills' : 'income'),
+    displayName: item.title,
+    date: today,
+  });
+  if (type === 'bill') {
+    await markRecurringBillPaid(item.id);
+  } else {
+    await markRecurringIncomePosted(item.id);
+  }
 }

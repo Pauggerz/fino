@@ -149,6 +149,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
             createCategory({
               userId,
               name: def.name,
+              categoryType: 'expense',
               emoji: def.key,
               tileBgColour: def.tileBg,
               textColour: def.textColor,
@@ -163,6 +164,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
             createCategory({
               userId,
               name: customs[i],
+              categoryType: 'expense',
               emoji: 'others',
               tileBgColour: CUSTOM_DEFAULT_TILE,
               textColour: CUSTOM_DEFAULT_TEXT,

@@ -47,7 +47,7 @@ import Reanimated, {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
-import { INCOME_CATEGORIES } from '@/constants/categoryMappings';
+import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 import { ACCOUNT_LOGOS } from '@/constants/accountLogos';
@@ -71,6 +71,37 @@ import type { Transaction } from '@/types';
 
 type TxType = 'exp' | 'inc';
 type Props = { route: RouteProp<RootStackParamList, 'AddTransaction'> };
+
+// Lightweight income keyword → canonical category-name mapping. The shared
+// expense taxonomy (aiCategoryMap) has no income masters, so this small inline
+// dict is what powers auto-categorisation when the user is in Income mode.
+// Keys are tokens we look for in the description; values are matched
+// case-insensitively against the user's actual income category list — the
+// suggestion is only applied when a real category by that name exists.
+const INCOME_KEYWORD_TO_CATEGORY: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(salary|sweldo|paycheck|payroll|payday|wages?|pay)\b/i, 'Salary'],
+  [/\b(allowance|baon|stipend|pocket\s*money)\b/i, 'Allowance'],
+  [/\b(freelance|gig|client|commission|project)\b/i, 'Freelance'],
+  [/\b(business|sales|revenue|sari[-\s]?sari|store)\b/i, 'Business'],
+  [/\b(investment|dividend|interest|stocks?|crypto|yield)\b/i, 'Investment'],
+  [/\b(gift|regalo|aguinaldo|bonus)\b/i, 'Gifts'],
+];
+
+function matchIncomeKeyword(
+  text: string,
+  available: readonly { name: string }[]
+): string | null {
+  const lower = text.toLowerCase();
+  for (const [pattern, canonical] of INCOME_KEYWORD_TO_CATEGORY) {
+    if (pattern.test(lower)) {
+      const hit = available.find(
+        (c) => c.name.toLowerCase() === canonical.toLowerCase()
+      );
+      if (hit) return hit.name;
+    }
+  }
+  return null;
+}
 
 // ─── Calculator helper ──────────────────────────────────────────────────────
 function evaluateExpr(a: string, op: string, b: string): string {
@@ -149,6 +180,7 @@ export default function AddTransactionSheet({ route }: Props) {
   const { user } = useAuth();
   const { accounts, loading: accountsLoading } = useAccounts();
   const { categories, loading: categoriesLoading } = useCategories();
+  const { categories: incomeCategories } = useIncomeCategories();
 
   // Skeleton pulse animation
   const skeletonOpacity = useRef(new Animated.Value(0.4)).current;
@@ -231,8 +263,8 @@ export default function AddTransactionSheet({ route }: Props) {
   );
 
   const allCategories = useMemo(
-    () => (type === 'inc' ? INCOME_CATEGORIES : categories),
-    [type, categories]
+    () => (type === 'inc' ? incomeCategories : categories),
+    [type, categories, incomeCategories]
   );
 
   const sortedAccounts = useMemo(() => {
@@ -371,13 +403,15 @@ export default function AddTransactionSheet({ route }: Props) {
   useEffect(() => {
     if (didInitCategoryRef.current) return;
     if (type === 'inc') {
-      setCategory(INCOME_CATEGORIES[0].name);
-      didInitCategoryRef.current = true;
+      if (incomeCategories.length > 0) {
+        setCategory(incomeCategories[0].name);
+        didInitCategoryRef.current = true;
+      }
     } else if (categories.length > 0) {
       setCategory(categories[0].name);
       didInitCategoryRef.current = true;
     }
-  }, [type, categories]);
+  }, [type, categories, incomeCategories]);
 
   // When the user toggles between Expense/Income, still pick a sane default
   // (income and expense use different category sets), but only if the user
@@ -387,11 +421,11 @@ export default function AddTransactionSheet({ route }: Props) {
     if (prevTypeRef.current === type) return;
     prevTypeRef.current = type;
     if (type === 'inc') {
-      setCategory(INCOME_CATEGORIES[0].name);
+      setCategory(incomeCategories[0]?.name ?? '');
     } else if (categories.length > 0) {
       setCategory(categories[0].name);
     }
-  }, [type, categories]);
+  }, [type, categories, incomeCategories]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const triggerBlockedFeedback = useCallback(() => {
@@ -579,29 +613,48 @@ export default function AddTransactionSheet({ route }: Props) {
     //    Pass the user's active category names so the analyzer's bubble-up
     //    resolver can pick the most-specific match (e.g. "starbucks" →
     //    "Coffee" if the user has that custom category, otherwise "Food").
+    //
+    //    The taxonomy underlying the analyzer is expense-only, so we only let
+    //    it overwrite the category when the user is on the Expense tab. On
+    //    Income we still run it (its amount & account extraction is generic),
+    //    but skip its category suggestions and use the income keyword map
+    //    further down instead.
+    const isIncome = type === 'inc';
     const userCategoryNames = categories.map((c) => c.name);
     analyzer.analyze(text, userCategoryNames, (result) => {
       if (tokenText !== aiTextRef.current) return;
       setAiResult(result);
-      // Bubble-up result wins — already in the user's exact category-name
-      // form. Fall back to master-name match for safety (e.g. legacy paths
-      // where activeCategoryNames was empty).
-      let pickedName: string | null = null;
-      if (result.resolvedCategory) {
-        const matched = categories.find(
-          (c) => c.name.toLowerCase() === result.resolvedCategory!.toLowerCase()
-        );
-        if (matched) pickedName = matched.name;
-      }
-      if (!pickedName && result.suggestedCategory) {
-        const matched = categories.find(
-          (c) => c.name.toLowerCase() === result.suggestedCategory
-        );
-        if (matched) pickedName = matched.name;
-      }
-      if (pickedName) {
-        setCategory(pickedName);
-        setSignalSource('ai_description');
+      if (!isIncome) {
+        // Bubble-up result wins — already in the user's exact category-name
+        // form. Fall back to master-name match for safety (e.g. legacy paths
+        // where activeCategoryNames was empty).
+        let pickedName: string | null = null;
+        if (result.resolvedCategory) {
+          const matched = categories.find(
+            (c) =>
+              c.name.toLowerCase() === result.resolvedCategory!.toLowerCase()
+          );
+          if (matched) pickedName = matched.name;
+        }
+        if (!pickedName && result.suggestedCategory) {
+          const matched = categories.find(
+            (c) => c.name.toLowerCase() === result.suggestedCategory
+          );
+          if (matched) pickedName = matched.name;
+        }
+        if (pickedName) {
+          setCategory(pickedName);
+          setSignalSource('ai_description');
+        }
+      } else {
+        // Income mode: use the inline income keyword map against the user's
+        // actual income categories (matches the expense bubble-up's "only
+        // apply if the user has this category" guarantee).
+        const incomeHit = matchIncomeKeyword(tokenText, incomeCategories);
+        if (incomeHit) {
+          setCategory(incomeHit);
+          setSignalSource('ai_description');
+        }
       }
       // Auto-fill amount from extracted numbers in the description. Multiple
       // numbers (e.g. "20 for rice and 10 for chicken") populate the
@@ -654,10 +707,18 @@ export default function AddTransactionSheet({ route }: Props) {
 
     // 2) IntelligenceEngine — checks user's transaction history offline.
     //    A historical match beats the static keyword dictionary because it
-    //    captures merchants the user actually buys from.
+    //    captures merchants/payers the user has actually transacted with.
+    //    Scope to the active type so an income tx matches against past income
+    //    history (and against the income category list), never against expense.
     if (user?.id) {
-      const catNames = categories.map((c) => c.name);
-      suggestCategory(user.id, tokenText, catNames)
+      const activeList = isIncome ? incomeCategories : categories;
+      const catNames = activeList.map((c) => c.name);
+      suggestCategory(
+        user.id,
+        tokenText,
+        catNames,
+        isIncome ? 'income' : 'expense'
+      )
         .then((sug) => {
           if (tokenText !== aiTextRef.current) return;
           if (
@@ -1162,21 +1223,31 @@ export default function AddTransactionSheet({ route }: Props) {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.chipWrap}
             >
-              {categoriesLoading && categories.length === 0
-                ? [88, 68, 96, 76, 104, 72].map((w, i) => (
-                    <Animated.View
-                      key={i}
-                      style={[
-                        styles.skeletonChip,
-                        { width: w, opacity: skeletonOpacity },
-                      ]}
-                    />
-                  ))
-                : displayedCategories.map((cat: any, i: number) => {
-                    const catKey =
-                      type === 'inc'
-                        ? cat.key
-                        : (cat.emoji ?? '').toLowerCase();
+              {categoriesLoading && categories.length === 0 ? (
+                [88, 68, 96, 76, 104, 72].map((w, i) => (
+                  <Animated.View
+                    key={i}
+                    style={[
+                      styles.skeletonChip,
+                      { width: w, opacity: skeletonOpacity },
+                    ]}
+                  />
+                ))
+              ) : displayedCategories.length === 0 ? (
+                <Text style={styles.chipEmptyHint}>
+                  {type === 'inc'
+                    ? 'No income categories yet'
+                    : 'No expense categories yet'}
+                </Text>
+              ) : (
+                displayedCategories.map((cat: any, i: number) => {
+                    // Both expense and income categories store their icon key
+                    // in `emoji` now (e.g. 'salary', 'food'). Old static
+                    // income entries used `key` instead — keep it as a
+                    // fallback for any remaining call sites.
+                    const catKey = (
+                      cat.emoji ?? cat.key ?? ''
+                    ).toLowerCase();
                     const isSel = category === cat.name;
                     const isRecent =
                       i === 0 &&
@@ -1239,7 +1310,8 @@ export default function AddTransactionSheet({ route }: Props) {
                         </TouchableOpacity>
                       </Reanimated.View>
                     );
-                  })}
+                  })
+              )}
             </GHScrollView>
           </View>
 
@@ -1739,6 +1811,13 @@ const createStyles = (colors: any, isDark: boolean) =>
       height: 34,
       borderRadius: 10,
       backgroundColor: isDark ? colors.surfaceSubdued : '#E8E6E0',
+    },
+    chipEmptyHint: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      color: colors.textSecondary,
+      paddingVertical: 8,
+      paddingHorizontal: 4,
     },
     chipSectionLabel: {
       fontFamily: 'Inter_700Bold',

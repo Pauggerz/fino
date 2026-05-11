@@ -88,7 +88,11 @@ function modelToPlain(
     account_name: acct?.name ?? 'Unknown',
     account_brand_colour: acct?.brandColour ?? '#888888',
     account_letter_avatar: acct?.letterAvatar ?? '?',
-    time: formatRowTime(tx.transactionDatetime ?? null),
+    // Fall back to `date` for rows written before the transaction_datetime
+    // column existed — those stored a full ISO timestamp on `date` directly.
+    // formatRowTime returns '' for day-only strings, so post-fix rows where
+    // `date` is YYYY-MM-DD safely yield no time when the companion is null.
+    time: formatRowTime(tx.transactionDatetime ?? tx.date ?? null),
   };
 }
 

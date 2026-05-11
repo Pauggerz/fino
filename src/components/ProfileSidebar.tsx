@@ -35,9 +35,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAccounts } from '../hooks/useAccounts';
 import { useCategories } from '../hooks/useCategories';
 import { supabase } from '../services/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Q } from '@nozbe/watermelondb';
 import { database } from '../db';
-import type BillReminderModel from '../db/models/BillReminder';
+import type RecurringBillModel from '../db/models/RecurringBill';
+import type RecurringIncomeModel from '../db/models/RecurringIncome';
+import { processRecurringTransaction } from '../services/localMutations';
 import {
   ACCOUNT_LOGOS,
   ACCOUNT_AVATAR_OVERRIDE,
@@ -49,6 +52,18 @@ import { AddAccountModal } from '../screens/MoreScreen';
 
 const { width: W, height: H } = Dimensions.get('window');
 const PANEL_W = Math.round(W * 0.88); // ~88% — leaves a peek on the left
+
+type RecurringDueItem = {
+  id: string;
+  title: string;
+  amount: number;
+  nextDueAt: string;
+  accountId?: string;
+  category?: string;
+  cadence: string;
+  anchorDate: string;
+  type: 'bill' | 'income';
+};
 
 interface Props {
   visible: boolean;
@@ -166,17 +181,9 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
   const [billsExpanded, setBillsExpanded] = useState(false);
   const [categoriesExpanded, setCategoriesExpanded] = useState(false);
 
-  const [bills, setBills] = useState<
-    {
-      id: string;
-      title: string;
-      amount: number | null;
-      due_date: string;
-      is_paid: boolean;
-      is_recurring: boolean;
-    }[]
-  >([]);
-  const [loadingBills, setLoadingBills] = useState(false);
+  const [recurringItems, setRecurringItems] = useState<RecurringDueItem[]>([]);
+  const [loadingRecurring, setLoadingRecurring] = useState(false);
+  const [deferredIds, setDeferredIds] = useState<Set<string>>(new Set());
 
   const [showSettings, setShowSettings] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
@@ -204,27 +211,63 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
     });
   }, [visible]);
 
-  // ── Fetch bills ──────────────────────────────────────────────────────────
+  // ── Fetch due recurring transactions ─────────────────────────────────────
   useEffect(() => {
     if (!billsExpanded || !userId) return;
-    setLoadingBills(true);
-    database
-      .get<BillReminderModel>('bill_reminders')
-      .query(Q.where('user_id', userId), Q.sortBy('due_date', Q.asc))
-      .fetch()
-      .then((records) => {
-        setBills(
-          records.map((b) => ({
+    setLoadingRecurring(true);
+    const today = new Date().toISOString().slice(0, 10);
+    const deferKey = `fino_deferred_${userId}_${today}`;
+    Promise.all([
+      database
+        .get<RecurringBillModel>('recurring_bills')
+        .query(Q.where('user_id', userId), Q.where('is_active', true))
+        .fetch(),
+      database
+        .get<RecurringIncomeModel>('recurring_incomes')
+        .query(Q.where('user_id', userId), Q.where('is_active', true))
+        .fetch(),
+      AsyncStorage.getItem(deferKey),
+    ]).then(([bills, incomes, deferredRaw]) => {
+      const deferred = new Set<string>(
+        deferredRaw ? (JSON.parse(deferredRaw) as string[]) : [],
+      );
+      setDeferredIds(deferred);
+      const items: RecurringDueItem[] = [
+        ...bills
+          .filter((b) => b.nextDueAt <= today)
+          .map((b) => ({
             id: b.id,
             title: b.title,
-            amount: b.amount ?? null,
-            due_date: b.dueDate,
-            is_paid: b.isPaid,
-            is_recurring: b.isRecurring,
+            amount: b.amount,
+            nextDueAt: b.nextDueAt,
+            accountId: b.accountId,
+            category: b.category,
+            cadence: b.cadence,
+            anchorDate: b.anchorDate,
+            type: 'bill' as const,
           })),
-        );
-        setLoadingBills(false);
+        ...incomes
+          .filter((i) => i.nextDueAt <= today)
+          .map((i) => ({
+            id: i.id,
+            title: i.title,
+            amount: i.amount,
+            nextDueAt: i.nextDueAt,
+            accountId: i.accountId,
+            cadence: i.cadence,
+            anchorDate: i.anchorDate,
+            type: 'income' as const,
+          })),
+      ];
+      items.sort((a, b) => {
+        const aD = deferred.has(a.id) ? 1 : 0;
+        const bD = deferred.has(b.id) ? 1 : 0;
+        if (aD !== bD) return aD - bD;
+        return a.nextDueAt.localeCompare(b.nextDueAt);
       });
+      setRecurringItems(items);
+      setLoadingRecurring(false);
+    });
   }, [billsExpanded, userId]);
 
   // ── Animation lifecycle ───────────────────────────────────────────────────
@@ -333,6 +376,40 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
       }
     });
   };
+
+  const handleDeferItem = useCallback(
+    async (itemId: string) => {
+      if (!userId) return;
+      const today = new Date().toISOString().slice(0, 10);
+      const deferKey = `fino_deferred_${userId}_${today}`;
+      const newDeferred = new Set(deferredIds);
+      newDeferred.add(itemId);
+      setDeferredIds(newDeferred);
+      await AsyncStorage.setItem(deferKey, JSON.stringify([...newDeferred]));
+      setRecurringItems((prev) =>
+        [...prev].sort((a, b) => {
+          const aD = newDeferred.has(a.id) ? 1 : 0;
+          const bD = newDeferred.has(b.id) ? 1 : 0;
+          if (aD !== bD) return aD - bD;
+          return a.nextDueAt.localeCompare(b.nextDueAt);
+        }),
+      );
+    },
+    [userId, deferredIds],
+  );
+
+  const handleConfirmRecurring = useCallback(
+    async (item: RecurringDueItem) => {
+      if (!userId) return;
+      try {
+        await processRecurringTransaction(item, item.type, userId);
+        setRecurringItems((prev) => prev.filter((i) => i.id !== item.id));
+      } catch {
+        Alert.alert('Error', 'Could not record transaction. Please try again.');
+      }
+    },
+    [userId],
+  );
 
   const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
 
@@ -476,8 +553,8 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 styles={styles}
               />
               <GridItem
-                icon="receipt-outline"
-                label="Bills"
+                icon="repeat-outline"
+                label="Recurrent Transactions"
                 color={colors.insightPurple}
                 bg={isDark ? colors.lavenderLight : '#F0ECFD'}
                 onPress={() => {
@@ -620,7 +697,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
               </View>
             )}
 
-            {/* ── Bills expandable ── */}
+            {/* ── Recurrent Transactions expandable ── */}
             {billsExpanded && (
               <View
                 style={[
@@ -631,7 +708,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                   },
                 ]}
               >
-                {loadingBills ? (
+                {loadingRecurring ? (
                   [0, 1, 2].map((i) => (
                     <View key={i} style={styles.billRow}>
                       <Skeleton width={36} height={36} borderRadius={10} />
@@ -639,10 +716,10 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                         <Skeleton width={110} height={11} />
                         <Skeleton width={70} height={10} />
                       </View>
-                      <Skeleton width={54} height={22} borderRadius={8} />
+                      <Skeleton width={80} height={28} borderRadius={8} />
                     </View>
                   ))
-                ) : bills.length === 0 ? (
+                ) : recurringItems.length === 0 ? (
                   <View style={[styles.billRow, { borderBottomWidth: 0 }]}>
                     <Text
                       style={[
@@ -650,181 +727,174 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                         { color: colors.textSecondary, marginLeft: 0 },
                       ]}
                     >
-                      No bills yet
+                      No due transactions
                     </Text>
                   </View>
                 ) : (
-                  bills.map((bill, i) => {
-                    const due = new Date(bill.due_date);
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const daysLeft = Math.ceil(
-                      (due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+                  recurringItems.map((item, i) => {
+                    const isDeferred = deferredIds.has(item.id);
+                    const isBill = item.type === 'bill';
+                    const today = new Date().toISOString().slice(0, 10);
+                    const daysOverdue = Math.floor(
+                      (new Date(today).getTime() -
+                        new Date(item.nextDueAt).getTime()) /
+                        (1000 * 60 * 60 * 24),
                     );
-                    const isOverdue = !bill.is_paid && daysLeft < 0;
-                    const dueSoon =
-                      !bill.is_paid && daysLeft >= 0 && daysLeft <= 3;
+                    const overdueLabel =
+                      daysOverdue === 0
+                        ? 'Due today'
+                        : `${daysOverdue}d overdue`;
 
-                    const badgeColor = bill.is_paid
-                      ? colors.primary
-                      : isOverdue
-                        ? colors.expenseRed
-                        : dueSoon
-                          ? colors.statWarnBar
-                          : colors.textSecondary;
-
-                    const badgeBg = bill.is_paid
+                    const iconBg = isDeferred
                       ? isDark
-                        ? 'rgba(52,199,89,0.15)'
-                        : '#E8F4EC'
-                      : isOverdue
-                        ? isDark
-                          ? 'rgba(224,92,92,0.15)'
-                          : '#FEF0F0'
-                        : dueSoon
-                          ? isDark
-                            ? 'rgba(255,171,0,0.15)'
-                            : '#FFF8E7'
-                          : isDark
-                            ? colors.surfaceSubdued
-                            : '#EBEBEF';
-
-                    const iconBg = bill.is_paid
-                      ? isDark
-                        ? 'rgba(52,199,89,0.12)'
-                        : '#E8F4EC'
-                      : isOverdue
+                        ? colors.surfaceSubdued
+                        : '#EBEBEF'
+                      : isBill
                         ? isDark
                           ? 'rgba(224,92,92,0.12)'
                           : '#FEF0F0'
                         : isDark
-                          ? colors.surfaceSubdued
-                          : '#EBEBEF';
+                          ? 'rgba(52,199,89,0.12)'
+                          : '#E8F4EC';
 
-                    const dueLabel = bill.is_paid
-                      ? 'Paid'
-                      : daysLeft === 0
-                        ? 'Today'
-                        : daysLeft === 1
-                          ? 'Tomorrow'
-                          : isOverdue
-                            ? `${Math.abs(daysLeft)}d ago`
-                            : `in ${daysLeft}d`;
-
-                    const monthStr = due.toLocaleString('en-PH', {
-                      month: 'short',
-                    });
-                    const dayStr = due.getDate();
+                    const iconColor = isDeferred
+                      ? colors.textSecondary
+                      : isBill
+                        ? colors.expenseRed
+                        : colors.primary;
 
                     return (
                       <View
-                        key={bill.id}
+                        key={item.id}
                         style={[
                           styles.billRow,
-                          i === bills.length - 1 && { borderBottomWidth: 0 },
+                          i === recurringItems.length - 1 && {
+                            borderBottomWidth: 0,
+                          },
+                          isDeferred && { opacity: 0.5 },
                         ]}
                       >
-                        {/* Calendar icon box */}
+                        {/* Type icon */}
                         <View
-                          style={[
-                            styles.billIconBox,
-                            { backgroundColor: iconBg },
-                          ]}
+                          style={[styles.billIconBox, { backgroundColor: iconBg }]}
                         >
-                          <Text
-                            style={[
-                              styles.billIconMonth,
-                              { color: badgeColor },
-                            ]}
-                          >
-                            {monthStr.toUpperCase()}
-                          </Text>
-                          <Text
-                            style={[styles.billIconDay, { color: badgeColor }]}
-                          >
-                            {dayStr}
-                          </Text>
+                          <Ionicons
+                            name={isBill ? 'arrow-up-outline' : 'arrow-down-outline'}
+                            size={18}
+                            color={iconColor}
+                          />
                         </View>
 
-                        {/* Title + recurring */}
-                        <View style={styles.billMeta}>
+                        {/* Title + meta */}
+                        <View style={[styles.billMeta, { gap: 2 }]}>
                           <Text
                             style={[
                               styles.billTitle,
-                              {
-                                color: bill.is_paid
-                                  ? colors.textSecondary
-                                  : colors.textPrimary,
-                              },
+                              { color: colors.textPrimary },
                             ]}
                             numberOfLines={1}
                           >
-                            {bill.title}
+                            {item.title}
                           </Text>
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 4,
-                            }}
-                          >
-                            {bill.is_recurring && (
-                              <Ionicons
-                                name="repeat"
-                                size={10}
-                                color={colors.textSecondary}
-                              />
-                            )}
-                            <Text
-                              style={[
-                                styles.billSubLabel,
-                                { color: colors.textSecondary },
-                              ]}
-                            >
-                              {bill.is_recurring ? 'Recurring' : 'One-time'}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Right: amount + badge */}
-                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                          {bill.amount != null && (
-                            <Text
-                              style={[
-                                styles.billAmount,
-                                {
-                                  color: bill.is_paid
-                                    ? colors.textSecondary
-                                    : colors.textPrimary,
-                                },
-                              ]}
-                            >
-                              ₱
-                              {bill.amount.toLocaleString('en-PH', {
-                                minimumFractionDigits: 0,
-                              })}
-                            </Text>
-                          )}
-                          <View
+                          <Text
                             style={[
-                              styles.billBadge,
-                              { backgroundColor: badgeBg },
+                              styles.billSubLabel,
+                              {
+                                color: isDeferred
+                                  ? colors.textSecondary
+                                  : isBill
+                                    ? colors.expenseRed
+                                    : colors.primary,
+                              },
                             ]}
                           >
-                            <Text
-                              style={[
-                                styles.billBadgeText,
-                                { color: badgeColor },
-                              ]}
-                            >
-                              {dueLabel}
-                            </Text>
-                          </View>
+                            {isDeferred ? 'Will notify again tomorrow' : overdueLabel}
+                          </Text>
+                        </View>
+
+                        {/* Right: amount + actions */}
+                        <View style={{ alignItems: 'flex-end', gap: 5 }}>
+                          <Text style={[styles.billAmount, { color: colors.textPrimary }]}>
+                            ₱
+                            {item.amount.toLocaleString('en-PH', {
+                              minimumFractionDigits: 0,
+                            })}
+                          </Text>
+                          {!isDeferred && (
+                            <View style={{ flexDirection: 'row', gap: 5 }}>
+                              <TouchableOpacity
+                                style={[
+                                  styles.recurringActionBtn,
+                                  {
+                                    backgroundColor: isBill
+                                      ? isDark
+                                        ? 'rgba(224,92,92,0.15)'
+                                        : '#FEF0F0'
+                                      : isDark
+                                        ? 'rgba(52,199,89,0.15)'
+                                        : '#E8F4EC',
+                                  },
+                                ]}
+                                activeOpacity={0.7}
+                                onPress={() => handleConfirmRecurring(item)}
+                              >
+                                <Text
+                                  style={[
+                                    styles.recurringActionText,
+                                    { color: isBill ? colors.expenseRed : colors.primary },
+                                  ]}
+                                >
+                                  {isBill ? 'Paid' : 'Received'}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[
+                                  styles.recurringActionBtn,
+                                  {
+                                    backgroundColor: isDark
+                                      ? colors.surfaceSubdued
+                                      : '#EBEBEF',
+                                  },
+                                ]}
+                                activeOpacity={0.7}
+                                onPress={() => handleDeferItem(item.id)}
+                              >
+                                <Text
+                                  style={[
+                                    styles.recurringActionText,
+                                    { color: colors.textSecondary },
+                                  ]}
+                                >
+                                  Not Yet
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
                         </View>
                       </View>
                     );
                   })
                 )}
+                <TouchableOpacity
+                  style={styles.addAcctRow}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    onClose();
+                    setTimeout(
+                      () => (navigation as any).navigate('RecurringBills'),
+                      260,
+                    );
+                  }}
+                >
+                  <Ionicons
+                    name="settings-outline"
+                    size={16}
+                    color={colors.primary}
+                  />
+                  <Text style={[styles.addAcctText, { color: colors.primary }]}>
+                    Manage recurring transactions
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -1676,6 +1746,12 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
       paddingVertical: 2,
     },
     billBadgeText: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
+    recurringActionBtn: {
+      borderRadius: 7,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    recurringActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
 
     // ── List rows ──
     listRow: {

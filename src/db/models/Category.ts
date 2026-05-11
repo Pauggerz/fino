@@ -13,5 +13,6 @@ export default class Category extends Model {
   @field('is_active') isActive!: boolean;
   @field('is_default') isDefault!: boolean;
   @field('sort_order') sortOrder!: number;
+  @text('category_type') categoryType?: 'expense' | 'income';
   @date('updated_at') updatedAt!: Date;
 }

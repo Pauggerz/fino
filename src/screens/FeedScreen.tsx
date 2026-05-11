@@ -20,7 +20,6 @@ import {
   ScrollView,
   RefreshControl,
 } from 'react-native';
-import Svg, { Path as SvgPath } from 'react-native-svg';
 import {
   useNavigation,
   useFocusEffect,
@@ -49,12 +48,10 @@ import {
   SortOrder,
 } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
+import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import { useAccounts } from '@/hooks/useAccounts';
 import { CategoryIcon } from '@/components/CategoryIcon';
-import {
-  INCOME_CATEGORIES,
-  CATEGORY_COLOR,
-} from '@/constants/categoryMappings';
+import { CATEGORY_COLOR } from '@/constants/categoryMappings';
 import { deleteTransaction } from '@/services/localMutations';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
@@ -63,6 +60,7 @@ import Toast from '../components/Toast';
 import type { FeedStackParamList } from '../navigation/RootNavigator';
 import { Skeleton } from '@/components/Skeleton';
 import { ErrorBanner } from '@/components/ErrorBanner';
+import { EmptyTransactions } from '@/components/empty/EmptyTransactions';
 import { useDeferredRender } from '@/hooks/useDeferredRender';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -89,16 +87,6 @@ function getMonthRange(year: number, month: number): DateRange {
   const to = `${year}-${pad(month + 1)}-${pad(lastDay)}`;
   return { from, to };
 }
-
-// Static lookup — INCOME_CATEGORIES never changes at runtime, so build the
-// name→entry map once at module load instead of scanning it per row.
-const INCOME_CATEGORY_BY_NAME: Map<string, (typeof INCOME_CATEGORIES)[number]> =
-  new Map(INCOME_CATEGORIES.map((c) => [c.name.toLowerCase(), c]));
-
-const INCOME_FILTER_OPTIONS: string[] = [
-  'All',
-  ...INCOME_CATEGORIES.map((c) => c.name),
-];
 
 const MONTH_NAMES = [
   'January',
@@ -813,6 +801,7 @@ const FeedControls = React.memo(
     activeCategory,
     setActiveCategory,
     categories,
+    incomeCategories,
     loading,
     swipeHintVisible,
     totalEntries,
@@ -828,6 +817,7 @@ const FeedControls = React.memo(
     activeCategory: string;
     setActiveCategory: (value: string) => void;
     categories: any[];
+    incomeCategories: any[];
     loading: boolean;
     swipeHintVisible: boolean;
     totalEntries: number;
@@ -853,9 +843,11 @@ const FeedControls = React.memo(
               const isActive = activeCategory === chip;
               let activeBg = colors.primary;
               if (viewType === 'income' && chip !== 'All') {
-                const incCat = INCOME_CATEGORIES.find((c) => c.name === chip);
-                if (incCat) {
-                  activeBg = CATEGORY_COLOR[incCat.key] ?? colors.primary;
+                const incCat = incomeCategories.find((c) => c.name === chip);
+                if (incCat?.text_colour) {
+                  activeBg = incCat.text_colour;
+                } else if (incCat?.emoji) {
+                  activeBg = CATEGORY_COLOR[incCat.emoji] ?? colors.primary;
                 }
               } else if (viewType === 'expense' && chip !== 'All') {
                 const expCat = categories.find((c) => c.name === chip);
@@ -901,137 +893,18 @@ const FeedControls = React.memo(
         )}
 
         {!loading && sectionsLength === 0 && (
-          <View style={styles.emptyState}>
-            {/* Stats-themed illustration: ghost bar chart with trend line.
-                Suggests "this is where your insights will appear once you
-                start logging." Last bar is hollow to imply "next entry → you". */}
-            <Svg
-              width={220}
-              height={120}
-              viewBox="0 0 220 120"
-              style={{ opacity: 0.9 }}
-            >
-              {/* Baseline axis */}
-              <SvgPath
-                d="M10 100 H210"
-                stroke={colors.textSecondary}
-                strokeWidth="1"
-                opacity="0.25"
-              />
-              {/* Dotted gridline */}
-              <SvgPath
-                d="M10 60 H210"
-                stroke={colors.textSecondary}
-                strokeWidth="1"
-                strokeDasharray="3 5"
-                opacity="0.18"
-              />
-              {/* Filled bars (ghosted history) */}
-              <SvgPath
-                d="M22 100 V72 H40 V100 Z"
-                fill={colors.primary}
-                opacity="0.18"
-              />
-              <SvgPath
-                d="M52 100 V52 H70 V100 Z"
-                fill={colors.primary}
-                opacity="0.28"
-              />
-              <SvgPath
-                d="M82 100 V64 H100 V100 Z"
-                fill={colors.primary}
-                opacity="0.22"
-              />
-              <SvgPath
-                d="M112 100 V40 H130 V100 Z"
-                fill={colors.primary}
-                opacity="0.34"
-              />
-              <SvgPath
-                d="M142 100 V58 H160 V100 Z"
-                fill={colors.primary}
-                opacity="0.26"
-              />
-              {/* Last bar — outlined, signals "your next entry goes here" */}
-              <SvgPath
-                d="M172 100 V32 H190 V100 Z"
-                fill="none"
-                stroke={colors.primary}
-                strokeWidth="1.5"
-                strokeDasharray="3 3"
-                opacity="0.7"
-              />
-              {/* Trend line over the bars */}
-              <SvgPath
-                d="M31 76 L61 56 L91 68 L121 44 L151 62 L181 36"
-                fill="none"
-                stroke={colors.primary}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity="0.85"
-              />
-              {/* Trend dots */}
-              <SvgPath
-                d="M31 76 m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"
-                fill={colors.primary}
-                opacity="0.85"
-              />
-              <SvgPath
-                d="M61 56 m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"
-                fill={colors.primary}
-                opacity="0.85"
-              />
-              <SvgPath
-                d="M91 68 m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"
-                fill={colors.primary}
-                opacity="0.85"
-              />
-              <SvgPath
-                d="M121 44 m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"
-                fill={colors.primary}
-                opacity="0.85"
-              />
-              <SvgPath
-                d="M151 62 m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0"
-                fill={colors.primary}
-                opacity="0.85"
-              />
-              {/* Final dot — hollow, matches the outlined bar */}
-              <SvgPath
-                d="M181 36 m-3 0 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0"
-                fill={colors.white ?? '#FFFFFF'}
-                stroke={colors.primary}
-                strokeWidth="1.8"
-                opacity="0.9"
-              />
-            </Svg>
-            <Text style={styles.emptyStateTitle}>
-              {searchQuery.length > 0
-                ? 'No matches'
-                : `Nothing in ${monthLabel} yet`}
-            </Text>
-            <Text style={styles.emptyStateText}>
-              {searchQuery.length > 0
+          <EmptyTransactions
+            title={searchQuery.length > 0 ? 'No matches' : `Nothing in ${monthLabel} yet`}
+            body={
+              searchQuery.length > 0
                 ? 'No results for your search.'
-                : `You don't have any transactions in ${monthLabel}. Use the month picker above to view another month, or add one now.`}
-            </Text>
-            {searchQuery.length === 0 && (
-              <TouchableOpacity
-                style={[
-                  styles.emptyStateCta,
-                  { backgroundColor: colors.primary },
-                ]}
-                activeOpacity={0.85}
-                onPress={onAddTransaction}
-              >
-                <Ionicons name="add" size={16} color="#FFFFFF" />
-                <Text style={styles.emptyStateCtaText}>
-                  Add transaction for {monthLabel}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+                : `You don't have any transactions in ${monthLabel}. Use the month picker above to view another month, or add one now.`
+            }
+            ctaLabel={
+              searchQuery.length > 0 ? undefined : `Add transaction for ${monthLabel}`
+            }
+            onPressCta={searchQuery.length > 0 ? undefined : onAddTransaction}
+          />
         )}
       </View>
     );
@@ -1054,6 +927,7 @@ const FeedTransactionRow = React.memo(
   ({
     tx,
     categoryByName,
+    incomeCategoryByName,
     styles,
     swipeStyles,
     colors,
@@ -1063,6 +937,7 @@ const FeedTransactionRow = React.memo(
   }: {
     tx: FeedTransaction;
     categoryByName: Map<string, any>;
+    incomeCategoryByName: Map<string, any>;
     styles: FeedStyles;
     swipeStyles: FeedSwipeStyles;
     colors: any;
@@ -1087,9 +962,12 @@ const FeedTransactionRow = React.memo(
       iconKey = catData?.emoji ?? 'default';
       iconColor = catData?.text_colour ?? colors.textSecondary;
     } else {
-      const incCat = INCOME_CATEGORY_BY_NAME.get(catKey);
-      iconKey = incCat?.key ?? 'default';
-      iconColor = CATEGORY_COLOR[iconKey] ?? colors.incomeGreen;
+      const incCat = incomeCategoryByName.get(catKey);
+      iconKey = incCat?.emoji ?? 'default';
+      iconColor =
+        incCat?.text_colour ??
+        CATEGORY_COLOR[iconKey] ??
+        colors.incomeGreen;
     }
 
     // Pre-formatted upstream in useTransactions.modelToPlain — row is now pure
@@ -1130,8 +1008,12 @@ const FeedTransactionRow = React.memo(
               {tx.display_name ?? tx.merchant_name ?? tx.category ?? '—'}
             </Text>
             <View style={styles.txSubtitleRow}>
-              <Text style={styles.txTime}>{time}</Text>
-              <View style={styles.metaDot} />
+              {time ? (
+                <>
+                  <Text style={styles.txTime}>{time}</Text>
+                  <View style={styles.metaDot} />
+                </>
+              ) : null}
               <View
                 style={[
                   styles.acctTag,
@@ -1280,6 +1162,7 @@ function FeedScreen() {
     error: categoriesError,
     refetch: refetchCategories,
   } = useCategories();
+  const { categories: incomeCategories } = useIncomeCategories();
   const {
     accounts,
     error: accountsError,
@@ -1370,23 +1253,28 @@ function FeedScreen() {
   // Fresh arrays per render previously broke FeedControls' React.memo — every
   // keystroke in the search box re-rendered the chip carousel.
   const filterOptions = useMemo<string[]>(() => {
-    if (viewType === 'income') return INCOME_FILTER_OPTIONS;
+    const source = viewType === 'income' ? incomeCategories : categories;
     const seen = new Set<string>();
     const names: string[] = ['All'];
-    for (const c of categories) {
+    for (const c of source) {
       const k = c.name.toLowerCase();
       if (seen.has(k)) continue;
       seen.add(k);
       names.push(c.name);
     }
     return names;
-  }, [viewType, categories]);
+  }, [viewType, categories, incomeCategories]);
 
   // O(1) category lookup for FeedTransactionRow. Was a linear .find() per row,
   // per render — the single biggest scroll-frame cost in the profiler.
   const categoryByName = useMemo(
     () => new Map(categories.map((c) => [c.name.toLowerCase(), c])),
     [categories]
+  );
+
+  const incomeCategoryByName = useMemo(
+    () => new Map(incomeCategories.map((c) => [c.name.toLowerCase(), c])),
+    [incomeCategories]
   );
 
   // ── Delete handler ──
@@ -1718,6 +1606,7 @@ function FeedScreen() {
             activeCategory={activeCategory}
             setActiveCategory={setActiveCategory}
             categories={categories}
+            incomeCategories={incomeCategories}
             loading={loading}
             swipeHintVisible={swipeHintVisible}
             totalEntries={totalEntries}
@@ -1735,6 +1624,7 @@ function FeedScreen() {
         <FeedTransactionRow
           tx={item.data}
           categoryByName={categoryByName}
+          incomeCategoryByName={incomeCategoryByName}
           styles={styles}
           swipeStyles={swipeStyles}
           colors={colors}
@@ -1770,7 +1660,9 @@ function FeedScreen() {
       filterOptions,
       activeCategory,
       categories,
+      incomeCategories,
       categoryByName,
+      incomeCategoryByName,
       loading,
       swipeHintVisible,
       totalEntries,
@@ -2517,40 +2409,6 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       fontFamily: 'Inter_600SemiBold',
       fontSize: 14,
       color: colors.primary,
-    },
-    // ── Empty state ───────────────────────────────────────────────────────────
-    emptyState: {
-      alignItems: 'center' as const,
-      paddingTop: 48,
-      paddingBottom: 32,
-      gap: 8,
-    },
-    emptyStateTitle: {
-      fontFamily: 'Nunito_700Bold',
-      fontSize: 16,
-      color: colors.textPrimary,
-      marginTop: 8,
-    },
-    emptyStateText: {
-      fontFamily: 'Inter_400Regular',
-      fontSize: 13,
-      color: colors.textSecondary,
-      textAlign: 'center' as const,
-      paddingHorizontal: 32,
-    },
-    emptyStateCta: {
-      flexDirection: 'row' as const,
-      alignItems: 'center' as const,
-      gap: 6,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      borderRadius: 999,
-      marginTop: 16,
-    },
-    emptyStateCtaText: {
-      fontFamily: 'Nunito_700Bold',
-      fontSize: 13,
-      color: '#FFFFFF',
     },
   });
 

@@ -58,21 +58,25 @@ export const CATEGORY_ICON_PATHS: Record<string, CategoryIconConfig> = {
   // ── Income categories ────────────────────────────────────────────────────────
   salary: {
     viewBox: '0 0 24 24',
-    // monetization_on — coin with currency symbol
+    // payments — stacked banknotes. Reads as "paycheck/cash income" more
+    // directly than the previous monetization_on coin, which was easy to
+    // confuse with a generic currency mark.
     paths: (
       <Path
         fill="#CURRENT"
-        d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"
+        d="M19 14V6c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zm-9-1c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-5v11c0 1.1-.9 2-2 2H4v-2h17V8h2z"
       />
     ),
   },
   allowance: {
     viewBox: '0 0 24 24',
-    // account_balance_wallet
+    // savings — piggy bank. Universal symbol for pocket money / a small
+    // regular stipend, swapped in from the wallet glyph that read more like a
+    // bank account.
     paths: (
       <Path
         fill="#CURRENT"
-        d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"
+        d="M19.83 7.5l-2.27-2.27c.07-.42.18-.81.32-1.15C18.39 3.34 19.27 3 20.5 3V1c-1.61 0-2.94.5-3.93 1.5l-1.07.93C14.95 3.16 14.18 3 13.5 3c-2.92 0-5.4 1.85-6.36 4.43-1.16.27-2.21.84-3.07 1.62L1.4 7.4c-.4-.39-1.04-.39-1.41 0-.39.39-.39 1.04 0 1.41L4 12.83V19c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-.5c1.21 1.04 2.95 1.5 5 1.5s3.79-.46 5-1.5V19c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-6.17c.31-.27.6-.55.85-.83H22c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1h-2.17zM16 11c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-2-4H9.5c-.28 0-.5-.22-.5-.5s.22-.5.5-.5H14c.28 0 .5.22.5.5s-.22.5-.5.5z"
       />
     ),
   },
@@ -88,11 +92,13 @@ export const CATEGORY_ICON_PATHS: Record<string, CategoryIconConfig> = {
   },
   business: {
     viewBox: '0 0 24 24',
-    // store / storefront
+    // business_center — briefcase. Entrepreneur / side-business framing,
+    // distinct from the expense-side store / Bills icons. Replaces the
+    // storefront which read closer to "shop = expense" than "I run a biz".
     paths: (
       <Path
         fill="#CURRENT"
-        d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"
+        d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z"
       />
     ),
   },
@@ -108,11 +114,13 @@ export const CATEGORY_ICON_PATHS: Record<string, CategoryIconConfig> = {
   },
   investment: {
     viewBox: '0 0 24 24',
-    // trending_up
+    // account_balance — bank facade with columns. Reads as institutional /
+    // investment / portfolio more clearly than the bare upward arrow it
+    // replaces, which collided visually with generic "growth" stats.
     paths: (
       <Path
         fill="#CURRENT"
-        d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"
+        d="M4 10v7h3v-7H4zm6 0v7h3v-7h-3zM2 22h19v-3H2v3zm14-12v7h3v-7h-3zm-4.5-9L2 6v2h19V6l-9.5-5z"
       />
     ),
   },

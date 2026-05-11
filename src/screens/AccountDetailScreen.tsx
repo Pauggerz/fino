@@ -32,13 +32,11 @@ import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories } from '@/hooks/useCategories';
+import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import { useAuth } from '../contexts/AuthContext';
 import { Skeleton } from '@/components/Skeleton';
 import { CategoryIcon } from '@/components/CategoryIcon';
-import {
-  CATEGORY_COLOR,
-  INCOME_CATEGORIES,
-} from '@/constants/categoryMappings';
+import { CATEGORY_COLOR } from '@/constants/categoryMappings';
 import type { MoreStackParamList } from '../navigation/RootNavigator';
 import WalletCard, { getCfg } from '../components/WalletCard';
 import { Icon } from '../components/icons/Icon';
@@ -105,6 +103,7 @@ export default function AccountDetailScreen() {
   const { accounts, loading: accountsLoading, refetch: refetchAccounts } =
     useAccounts();
   const { categories } = useCategories();
+  const { categories: incomeCategories } = useIncomeCategories();
   const { user } = useAuth();
   const userId = user?.id;
   const cachedTxs =
@@ -357,11 +356,17 @@ export default function AccountDetailScreen() {
   const getCategoryIcon = useCallback(
     (tx: Transaction): { key: string; color: string } => {
       if (tx.type === 'income') {
-        const incCat = INCOME_CATEGORIES.find(
+        const incCat = incomeCategories.find(
           (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
         );
-        const key = incCat?.key ?? 'default';
-        return { key, color: CATEGORY_COLOR[key] ?? colors.incomeGreen };
+        const key = incCat?.emoji ?? 'default';
+        return {
+          key,
+          color:
+            incCat?.text_colour ??
+            CATEGORY_COLOR[key] ??
+            colors.incomeGreen,
+        };
       }
       const catData = categories.find(
         (c) => c.name.toLowerCase() === (tx.category ?? '').toLowerCase()
@@ -373,7 +378,7 @@ export default function AccountDetailScreen() {
           catData?.text_colour ?? CATEGORY_COLOR[key] ?? colors.textSecondary,
       };
     },
-    [categories, colors]
+    [categories, incomeCategories, colors]
   );
 
   const getPillIcon = useCallback(
@@ -389,18 +394,20 @@ export default function AccountDetailScreen() {
             catData.text_colour ?? CATEGORY_COLOR[key] ?? colors.textSecondary,
         };
       }
-      const incCat = INCOME_CATEGORIES.find(
+      const incCat = incomeCategories.find(
         (c) => c.name.toLowerCase() === categoryName.toLowerCase()
       );
       if (incCat) {
+        const key = incCat.emoji ?? 'default';
         return {
-          key: incCat.key,
-          color: CATEGORY_COLOR[incCat.key] ?? colors.incomeGreen,
+          key,
+          color:
+            incCat.text_colour ?? CATEGORY_COLOR[key] ?? colors.incomeGreen,
         };
       }
       return { key: 'default', color: colors.textSecondary };
     },
-    [categories, colors]
+    [categories, incomeCategories, colors]
   );
 
   // ── Save Edit Account ──

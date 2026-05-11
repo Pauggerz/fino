@@ -1,12 +1,15 @@
 /**
- * CategoryScreen — manage expense categories and their monthly budgets.
+ * CategoryScreen — manage expense and income categories.
  *
- * • Default categories (Food / Transport / Shopping / Bills / Health / Others)
- *   are renameable, re-coloured, re-iconed, and budget-editable, but NOT
- *   deletable — preserves transaction history continuity.
- * • Custom categories support every operation including delete.
- * • Uniqueness is enforced case-insensitively against both expense and income
- *   names, so a custom category can never collide with the income side.
+ * • A segmented Expense / Income toggle gates which side the list, hero
+ *   summary, and Add/Edit modal operate on. Same screen, two filtered views.
+ * • Default expense categories (Food / Transport / Shopping / Bills / Health
+ *   / Others) are renameable, re-coloured, re-iconed, and budget-editable,
+ *   but NOT deletable — preserves transaction history continuity.
+ * • Custom categories on either side support every operation including
+ *   delete.
+ * • Uniqueness is case-insensitive but scoped per type, so an expense "Bills"
+ *   and an income "Bonus" can coexist while two expense "Bills" cannot.
  */
 
 import React, {
@@ -48,17 +51,19 @@ import {
   updateCategory,
   deleteCategory,
 } from '@/services/localMutations';
-import { INCOME_KEYS } from '@/constants/categoryMappings';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import {
   CATEGORY_SWATCHES,
   CATEGORY_TILE_BGS,
-  ICON_LIBRARY,
+  EXPENSE_ICON_LIBRARY,
+  INCOME_ICON_LIBRARY,
 } from '@/constants/iconLibrary';
 import { spacing } from '../constants/theme';
 import type { ThemeColors } from '../constants/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type CategoryType = 'expense' | 'income';
 
 interface CategoryRow {
   id: string;
@@ -69,6 +74,7 @@ interface CategoryRow {
   budget_limit: number | null;
   is_default: boolean;
   sort_order: number;
+  category_type: CategoryType;
 }
 
 interface DraftState {
@@ -77,6 +83,10 @@ interface DraftState {
   colorIdx: number;
   budgetLimit: string; // raw input — parsed at save
 }
+
+// Income accent — kept in sync with the green used on RecurringIncomeScreen so
+// both surfaces feel like the same product surface.
+const INCOME_GREEN = '#3f6b52';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,11 +124,22 @@ export default function CategoryScreen() {
 
   const [rows, setRows] = useState<CategoryRow[]>([]);
   const [spendByName, setSpendByName] = useState<Record<string, number>>({});
+  const [incomeByName, setIncomeByName] = useState<Record<string, number>>({});
+  const [incomeCountByName, setIncomeCountByName] = useState<
+    Record<string, number>
+  >({});
   const [loading, setLoading] = useState(true);
+
+  // Active tab — segmented control state.
+  const [type, setType] = useState<CategoryType>('expense');
 
   // Modal state
   const [editing, setEditing] = useState<CategoryRow | null>(null);
   const [adding, setAdding] = useState(false);
+
+  // Guards the auto-seed below from re-firing on every emission while the
+  // newly-created row hasn't yet propagated through the observable.
+  const seededRef = useRef<Set<CategoryType>>(new Set());
 
   // ── Live data ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -136,11 +157,13 @@ export default function CategoryScreen() {
         Q.where('is_active', true),
         Q.sortBy('sort_order', Q.asc)
       );
+    // Pull both expense and income transactions in the same month window —
+    // we feed the expense tab a spend map and the income tab an income map
+    // off the same emission so the toggle never sees stale data.
     const txQ = database
       .get<TransactionModel>('transactions')
       .query(
         Q.where('user_id', userId),
-        Q.where('type', 'expense'),
         Q.where('date', Q.gte(start)),
         Q.where('date', Q.lte(end))
       );
@@ -155,6 +178,7 @@ export default function CategoryScreen() {
         'is_active',
         'is_default',
         'sort_order',
+        'category_type',
       ]),
       txQ.observeWithColumns([
         'amount',
@@ -166,31 +190,39 @@ export default function CategoryScreen() {
     ])
       .pipe(debounceTime(50))
       .subscribe(([catRecords, txRecords]) => {
-        // Compute month-to-date spend per category name (lowercased).
         const spend: Record<string, number> = {};
+        const income: Record<string, number> = {};
+        const incomeCount: Record<string, number> = {};
         for (const tx of txRecords) {
           if (tx.isTransfer || (tx.category ?? '').toLowerCase() === 'transfer')
             continue;
           if (!tx.category) continue;
           const k = tx.category.toLowerCase();
-          spend[k] = (spend[k] ?? 0) + tx.amount;
+          if (tx.type === 'income') {
+            income[k] = (income[k] ?? 0) + tx.amount;
+            incomeCount[k] = (incomeCount[k] ?? 0) + 1;
+          } else if (tx.type === 'expense') {
+            spend[k] = (spend[k] ?? 0) + tx.amount;
+          }
         }
         setSpendByName(spend);
+        setIncomeByName(income);
+        setIncomeCountByName(incomeCount);
 
-        // Filter out income categories (matched against the `emoji` key).
-        const expenseRows: CategoryRow[] = catRecords
-          .filter((c) => !INCOME_KEYS.has((c.emoji ?? '').toLowerCase()))
-          .map((c) => ({
-            id: c.id,
-            name: c.name,
-            emoji: c.emoji ?? 'others',
-            tile_bg_colour: c.tileBgColour ?? '#F2EFEC',
-            text_colour: c.textColour ?? '#5C5550',
-            budget_limit: c.budgetLimit ?? null,
-            is_default: c.isDefault,
-            sort_order: c.sortOrder,
-          }));
-        setRows(expenseRows);
+        const mapped: CategoryRow[] = catRecords.map((c) => ({
+          id: c.id,
+          name: c.name,
+          emoji: c.emoji ?? 'others',
+          tile_bg_colour: c.tileBgColour ?? '#F2EFEC',
+          text_colour: c.textColour ?? '#5C5550',
+          budget_limit: c.budgetLimit ?? null,
+          is_default: c.isDefault,
+          sort_order: c.sortOrder,
+          // Pre-v6 rows that synced before the column existed locally have an
+          // undefined categoryType — treat them as expense.
+          category_type: c.categoryType === 'income' ? 'income' : 'expense',
+        }));
+        setRows(mapped);
         setLoading(false);
       });
 
@@ -202,10 +234,50 @@ export default function CategoryScreen() {
     navigation.goBack();
   }, [navigation]);
 
-  const otherNames = useMemo(
-    () => rows.map((r) => r.name.toLowerCase()),
-    [rows]
+  // Rows for the currently-active tab.
+  const visibleRows = useMemo(
+    () => rows.filter((r) => r.category_type === type),
+    [rows, type]
   );
+
+  // Uniqueness is scoped per type: expense "Bills" and income "Bonus" can
+  // coexist; two expense "Bills" cannot.
+  const sameTypeNames = useMemo(
+    () => visibleRows.map((r) => r.name.toLowerCase()),
+    [visibleRows]
+  );
+
+  // Invariant: every type must keep at least the catch-all "Others" default —
+  // it's the locked fallback that auto-categorization writes to and that the
+  // delete handler blocks removal of. The server trigger seeds the expense
+  // side at signup; the income side has no analogous trigger, so we top it up
+  // client-side once the first sync settles. seededRef stops this from
+  // re-firing while the new row is still propagating through the observable.
+  useEffect(() => {
+    if (!userId || loading) return;
+    (['expense', 'income'] as CategoryType[]).forEach((t) => {
+      if (seededRef.current.has(t)) return;
+      const has = rows.some((r) => r.category_type === t);
+      if (has) return;
+      seededRef.current.add(t);
+      createCategory({
+        userId,
+        name: 'Others',
+        categoryType: t,
+        emoji: t === 'income' ? 'default' : 'others',
+        tileBgColour: '#F2EFEC',
+        textColour: '#5C5550',
+        sortOrder: 999,
+        isDefault: true,
+      }).catch((err) => {
+        // Roll back the guard so a retry can happen on the next render.
+        seededRef.current.delete(t);
+        if (__DEV__)
+          // eslint-disable-next-line no-console
+          console.warn('[CategoryScreen] Failed to seed Others:', t, err);
+      });
+    });
+  }, [userId, loading, rows]);
 
   const handleSaveEdit = useCallback(
     async (id: string, draft: DraftState) => {
@@ -214,9 +286,12 @@ export default function CategoryScreen() {
         Alert.alert('Required', 'Category name cannot be empty.');
         return;
       }
-      // Uniqueness — exclude the row being edited.
+      const target = rows.find((r) => r.id === id);
       const collision = rows.some(
-        (r) => r.id !== id && r.name.toLowerCase() === name.toLowerCase()
+        (r) =>
+          r.id !== id &&
+          r.category_type === target?.category_type &&
+          r.name.toLowerCase() === name.toLowerCase()
       );
       if (collision) {
         Alert.alert('Already exists', `"${name}" is already a category.`);
@@ -228,7 +303,14 @@ export default function CategoryScreen() {
         emoji: draft.iconKey,
         tileBgColour: CATEGORY_TILE_BGS[draft.colorIdx],
         textColour: CATEGORY_SWATCHES[draft.colorIdx],
-        budgetLimit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
+        // Budget is meaningless for income — clear any stray value if a row
+        // ever ends up on the income side.
+        budgetLimit:
+          target?.category_type === 'income'
+            ? undefined
+            : Number.isFinite(limit) && limit > 0
+              ? limit
+              : undefined,
       });
       setEditing(null);
     },
@@ -244,24 +326,33 @@ export default function CategoryScreen() {
         return;
       }
       const lower = name.toLowerCase();
-      if (otherNames.includes(lower) || INCOME_KEYS.has(lower)) {
+      if (sameTypeNames.includes(lower)) {
         Alert.alert('Already exists', `"${name}" is already a category.`);
         return;
       }
       const limit = parseFloat(draft.budgetLimit);
-      const maxSort = rows.reduce((m, r) => Math.max(m, r.sort_order), -1);
+      const maxSort = visibleRows.reduce(
+        (m, r) => Math.max(m, r.sort_order),
+        -1
+      );
       await createCategory({
         userId,
         name,
+        categoryType: type,
         emoji: draft.iconKey,
         tileBgColour: CATEGORY_TILE_BGS[draft.colorIdx],
         textColour: CATEGORY_SWATCHES[draft.colorIdx],
-        budgetLimit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
+        budgetLimit:
+          type === 'income'
+            ? undefined
+            : Number.isFinite(limit) && limit > 0
+              ? limit
+              : undefined,
         sortOrder: maxSort + 1,
       });
       setAdding(false);
     },
-    [userId, rows, otherNames]
+    [userId, type, visibleRows, sameTypeNames]
   );
 
   const handleDelete = useCallback(async (row: CategoryRow) => {
@@ -293,12 +384,36 @@ export default function CategoryScreen() {
   }, []);
 
   // ── Summary ────────────────────────────────────────────────────────────────
-  const totalBudget = rows.reduce((s, r) => s + (r.budget_limit ?? 0), 0);
-  const totalSpent = rows.reduce(
+  // Expense-side aggregates — only meaningful when the Expense tab is active.
+  const totalBudget = visibleRows.reduce(
+    (s, r) => s + (r.budget_limit ?? 0),
+    0
+  );
+  const totalSpent = visibleRows.reduce(
     (s, r) => s + (spendByName[r.name.toLowerCase()] ?? 0),
     0
   );
-  const budgetedCount = rows.filter((r) => r.budget_limit != null).length;
+  const budgetedCount = visibleRows.filter(
+    (r) => r.budget_limit != null
+  ).length;
+
+  // Income-side aggregates.
+  const totalIncomeMTD = visibleRows.reduce(
+    (s, r) => s + (incomeByName[r.name.toLowerCase()] ?? 0),
+    0
+  );
+  const largestIncome = useMemo(() => {
+    let bestName = '—';
+    let bestAmount = 0;
+    for (const r of visibleRows) {
+      const v = incomeByName[r.name.toLowerCase()] ?? 0;
+      if (v > bestAmount) {
+        bestAmount = v;
+        bestName = r.name;
+      }
+    }
+    return { name: bestName, amount: bestAmount };
+  }, [visibleRows, incomeByName]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -316,8 +431,9 @@ export default function CategoryScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Categories & Budget</Text>
           <Text style={styles.headerSub} numberOfLines={1}>
-            {rows.length} {rows.length === 1 ? 'category' : 'categories'}
-            {budgetedCount > 0 ? ` · ${budgetedCount} with budget` : ''}
+            {type === 'expense'
+              ? `${visibleRows.length} expense ${visibleRows.length === 1 ? 'category' : 'categories'}${budgetedCount > 0 ? ` · ${budgetedCount} with budget` : ''}`
+              : `${visibleRows.length} income ${visibleRows.length === 1 ? 'source' : 'sources'}`}
           </Text>
         </View>
         <TouchableOpacity
@@ -327,6 +443,75 @@ export default function CategoryScreen() {
           hitSlop={8}
         >
           <Ionicons name="add" size={22} color={colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Segmented Expense / Income toggle */}
+      <View style={styles.segmented}>
+        <TouchableOpacity
+          onPress={() => setType('expense')}
+          activeOpacity={0.85}
+          style={[
+            styles.segBtn,
+            type === 'expense' && {
+              backgroundColor: isDark ? colors.background : '#FFFFFF',
+              shadowColor: '#000',
+              shadowOpacity: 0.06,
+              shadowRadius: 4,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+            },
+          ]}
+        >
+          <Ionicons
+            name="trending-down"
+            size={14}
+            color={
+              type === 'expense' ? colors.expenseRed : colors.textSecondary
+            }
+          />
+          <Text
+            style={[
+              styles.segBtnText,
+              {
+                color:
+                  type === 'expense' ? colors.expenseRed : colors.textSecondary,
+              },
+            ]}
+          >
+            Expense
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setType('income')}
+          activeOpacity={0.85}
+          style={[
+            styles.segBtn,
+            type === 'income' && {
+              backgroundColor: isDark ? colors.background : '#FFFFFF',
+              shadowColor: '#000',
+              shadowOpacity: 0.06,
+              shadowRadius: 4,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+            },
+          ]}
+        >
+          <Ionicons
+            name="trending-up"
+            size={14}
+            color={type === 'income' ? INCOME_GREEN : colors.textSecondary}
+          />
+          <Text
+            style={[
+              styles.segBtnText,
+              {
+                color: type === 'income' ? INCOME_GREEN : colors.textSecondary,
+              },
+            ]}
+          >
+            Income
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -340,8 +525,8 @@ export default function CategoryScreen() {
           }}
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Summary card (matches HomeScreen onTrack info box) ── */}
-          {totalBudget > 0 && (
+          {/* ── Summary card ── */}
+          {type === 'expense' && totalBudget > 0 && (
             <View style={styles.summaryCard}>
               <View style={styles.summaryAvatar}>
                 <Ionicons
@@ -384,32 +569,100 @@ export default function CategoryScreen() {
             </View>
           )}
 
-          <Text style={styles.sectionLabel}>YOUR CATEGORIES</Text>
+          {type === 'income' && visibleRows.length > 0 && (
+            <View
+              style={[
+                styles.summaryCard,
+                {
+                  borderColor: 'rgba(63,107,82,0.25)',
+                  backgroundColor: isDark ? 'rgba(63,107,82,0.12)' : '#EFF8F2',
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.summaryAvatar,
+                  {
+                    backgroundColor: isDark ? 'rgba(63,107,82,0.2)' : '#E2F0E8',
+                    borderColor: 'rgba(63,107,82,0.3)',
+                  },
+                ]}
+              >
+                <Ionicons name="trending-up" size={20} color={INCOME_GREEN} />
+              </View>
 
-          <View
-            style={[
-              styles.listCard,
-              {
-                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            {rows.map((row, i) => {
-              const spent = spendByName[row.name.toLowerCase()] ?? 0;
-              return (
-                <CategoryListRow
-                  key={row.id}
-                  row={row}
-                  spent={spent}
-                  isLast={i === rows.length - 1}
-                  styles={styles}
-                  colors={colors}
-                  onPress={() => setEditing(row)}
-                />
-              );
-            })}
-          </View>
+              <View style={styles.summaryBody}>
+                <Text style={[styles.summaryLabel, { color: INCOME_GREEN }]}>
+                  RECEIVED THIS MONTH
+                </Text>
+                <Text
+                  style={[
+                    styles.summaryHeadline,
+                    { color: colors.textPrimary },
+                  ]}
+                >
+                  ₱{Math.round(totalIncomeMTD).toLocaleString('en-PH')}
+                </Text>
+                <Text
+                  style={[styles.summarySub, { color: colors.textSecondary }]}
+                >
+                  {visibleRows.length}{' '}
+                  {visibleRows.length === 1 ? 'source' : 'sources'} active
+                  {largestIncome.amount > 0
+                    ? ` · largest: ${largestIncome.name}`
+                    : ''}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <Text style={styles.sectionLabel}>
+            {type === 'expense' ? 'YOUR CATEGORIES' : 'INCOME SOURCES'}
+          </Text>
+
+          {visibleRows.length > 0 && (
+            <View
+              style={[
+                styles.listCard,
+                {
+                  backgroundColor: isDark
+                    ? colors.surfaceSubdued
+                    : colors.white,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              {visibleRows.map((row, i) => {
+                const isIncome = row.category_type === 'income';
+                const spent = spendByName[row.name.toLowerCase()] ?? 0;
+                const incomeAmount = incomeByName[row.name.toLowerCase()] ?? 0;
+                const incomeCount =
+                  incomeCountByName[row.name.toLowerCase()] ?? 0;
+                return (
+                  <CategoryListRow
+                    key={row.id}
+                    row={row}
+                    spent={spent}
+                    incomeAmount={incomeAmount}
+                    incomeCount={incomeCount}
+                    isIncome={isIncome}
+                    isLast={i === visibleRows.length - 1}
+                    styles={styles}
+                    colors={colors}
+                    onPress={() => setEditing(row)}
+                  />
+                );
+              })}
+            </View>
+          )}
+
+          {visibleRows.length === 0 && (
+            <Text style={[styles.emptyHint, { color: colors.textSecondary }]}>
+              {type === 'income'
+                ? 'No income categories yet. Setting up "Others"…'
+                : 'No expense categories yet. Setting up "Others"…'}
+            </Text>
+          )}
 
           <TouchableOpacity
             onPress={() => setAdding(true)}
@@ -422,10 +675,19 @@ export default function CategoryScreen() {
                 { backgroundColor: isDark ? colors.surfaceSubdued : '#F4F4F8' },
               ]}
             >
-              <Ionicons name="add" size={20} color={colors.primary} />
+              <Ionicons
+                name="add"
+                size={20}
+                color={type === 'income' ? INCOME_GREEN : colors.primary}
+              />
             </View>
-            <Text style={[styles.addText, { color: colors.primary }]}>
-              Add category
+            <Text
+              style={[
+                styles.addText,
+                { color: type === 'income' ? INCOME_GREEN : colors.primary },
+              ]}
+            >
+              {type === 'income' ? 'Add income source' : 'Add category'}
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -436,6 +698,7 @@ export default function CategoryScreen() {
         visible={editing !== null}
         mode="edit"
         initial={editing}
+        type={editing?.category_type ?? type}
         styles={styles}
         colors={colors}
         isDark={isDark}
@@ -452,6 +715,7 @@ export default function CategoryScreen() {
         visible={adding}
         mode="add"
         initial={null}
+        type={type}
         styles={styles}
         colors={colors}
         isDark={isDark}
@@ -469,6 +733,9 @@ export default function CategoryScreen() {
 function CategoryListRow({
   row,
   spent,
+  incomeAmount,
+  incomeCount,
+  isIncome,
   isLast,
   styles,
   colors,
@@ -476,11 +743,70 @@ function CategoryListRow({
 }: {
   row: CategoryRow;
   spent: number;
+  incomeAmount: number;
+  incomeCount: number;
+  isIncome: boolean;
   isLast: boolean;
   styles: ReturnType<typeof createStyles>;
   colors: ThemeColors;
   onPress: () => void;
 }) {
+  if (isIncome) {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.7}
+        style={[styles.row, isLast && { borderBottomWidth: 0 }]}
+        onPress={onPress}
+      >
+        <CategoryIcon
+          categoryKey={row.emoji.toLowerCase()}
+          color={row.text_colour}
+          size={18}
+          wrapperSize={36}
+        />
+        <View style={styles.rowMeta}>
+          <View style={styles.rowTopLine}>
+            <Text
+              style={[styles.rowName, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
+              {row.name}
+            </Text>
+            <Text
+              style={[
+                styles.rowAmount,
+                {
+                  color: incomeAmount > 0 ? INCOME_GREEN : colors.textSecondary,
+                  opacity: incomeAmount > 0 ? 1 : 0.5,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              +₱
+              {incomeAmount.toLocaleString('en-PH', {
+                maximumFractionDigits: 0,
+              })}
+            </Text>
+          </View>
+          <Text
+            style={[styles.rowSub, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            {incomeCount === 0
+              ? 'No transactions yet'
+              : `${incomeCount} ${incomeCount === 1 ? 'transaction' : 'transactions'} this month`}
+          </Text>
+        </View>
+        <Ionicons
+          name="chevron-forward"
+          size={16}
+          color={colors.textSecondary}
+          style={{ opacity: 0.5 }}
+        />
+      </TouchableOpacity>
+    );
+  }
+
   const limit = row.budget_limit;
   const pct = limit && limit > 0 ? Math.min(1, spent / limit) : 0;
   const overBudget = limit != null && spent >= limit;
@@ -574,6 +900,7 @@ function CategoryFormModal({
   visible,
   mode,
   initial,
+  type,
   styles,
   colors,
   isDark,
@@ -585,6 +912,7 @@ function CategoryFormModal({
   visible: boolean;
   mode: 'add' | 'edit';
   initial: CategoryRow | null;
+  type: CategoryType;
   styles: ReturnType<typeof createStyles>;
   colors: ThemeColors;
   isDark: boolean;
@@ -593,9 +921,13 @@ function CategoryFormModal({
   onSave: (draft: DraftState) => void | Promise<void>;
   onDelete: () => void;
 }) {
+  const isIncome = type === 'income';
+  const accentColor = isIncome ? INCOME_GREEN : colors.primary;
+  const insets = useSafeAreaInsets();
+  const iconLibrary = isIncome ? INCOME_ICON_LIBRARY : EXPENSE_ICON_LIBRARY;
   const [draft, setDraft] = useState<DraftState>({
     name: '',
-    iconKey: ICON_LIBRARY[0].key,
+    iconKey: iconLibrary[0].key,
     colorIdx: 0,
     budgetLimit: '',
   });
@@ -619,13 +951,13 @@ function CategoryFormModal({
     } else {
       setDraft({
         name: '',
-        iconKey: ICON_LIBRARY[0].key,
+        iconKey: iconLibrary[0].key,
         colorIdx: 0,
         budgetLimit: '',
       });
     }
     setSaving(false);
-  }, [visible, initial]);
+  }, [visible, initial, iconLibrary]);
 
   const handleSubmit = useCallback(async () => {
     setSaving(true);
@@ -649,12 +981,12 @@ function CategoryFormModal({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={[
           styles.container,
-          { backgroundColor: isDark ? colors.background : '#F7F5F2' },
+          {
+            backgroundColor: isDark ? colors.background : '#F7F5F2',
+            paddingTop: insets.top,
+          },
         ]}
       >
-        <View style={styles.formTopBar}>
-          <View style={styles.formHandle} />
-        </View>
         <View style={styles.formHeader}>
           <TouchableOpacity
             onPress={onClose}
@@ -666,12 +998,22 @@ function CategoryFormModal({
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>
-              {mode === 'add' ? 'New category' : 'Edit category'}
+              {mode === 'add'
+                ? isIncome
+                  ? 'New income source'
+                  : 'New category'
+                : isIncome
+                  ? 'Edit income source'
+                  : 'Edit category'}
             </Text>
             <Text style={styles.headerSub} numberOfLines={1}>
-              {mode === 'add'
-                ? 'Set a name, icon, and monthly budget'
-                : 'Update name, icon, color, or budget'}
+              {isIncome
+                ? mode === 'add'
+                  ? 'Set a name, icon, and colour'
+                  : 'Update name, icon, or colour'
+                : mode === 'add'
+                  ? 'Set a name, icon, and monthly budget'
+                  : 'Update name, icon, color, or budget'}
             </Text>
           </View>
         </View>
@@ -703,7 +1045,13 @@ function CategoryFormModal({
             <Text style={[styles.previewName, { color: colors.textPrimary }]}>
               {draft.name.trim() || 'Category name'}
             </Text>
-            {draft.budgetLimit ? (
+            {isIncome ? (
+              <Text
+                style={[styles.previewSub, { color: colors.textSecondary }]}
+              >
+                Income source
+              </Text>
+            ) : draft.budgetLimit ? (
               <Text
                 style={[styles.previewSub, { color: colors.textSecondary }]}
               >
@@ -753,9 +1101,7 @@ function CategoryFormModal({
             style={[
               styles.pickerCard,
               {
-                backgroundColor: isDark
-                  ? colors.surfaceSubdued
-                  : colors.white,
+                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
                 borderColor: colors.border,
               },
             ]}
@@ -765,7 +1111,7 @@ function CategoryFormModal({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.pickerScrollContent}
             >
-              {ICON_LIBRARY.map((entry) => {
+              {iconLibrary.map((entry) => {
                 const active = draft.iconKey === entry.key;
                 return (
                   <TouchableOpacity
@@ -803,9 +1149,7 @@ function CategoryFormModal({
             style={[
               styles.pickerCard,
               {
-                backgroundColor: isDark
-                  ? colors.surfaceSubdued
-                  : colors.white,
+                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
                 borderColor: colors.border,
               },
             ]}
@@ -841,44 +1185,59 @@ function CategoryFormModal({
             </ScrollView>
           </View>
 
-          {/* Budget */}
-          <Text style={styles.fieldLabel}>MONTHLY BUDGET</Text>
-          <View
-            style={[
-              styles.pesoRow,
-              {
-                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
-              },
-            ]}
-          >
-            <Text style={styles.pesoSign}>₱</Text>
-            <TextInput
-              value={draft.budgetLimit}
-              onChangeText={(v) =>
-                setDraft((d) => ({
-                  ...d,
-                  budgetLimit: v.replace(/[^0-9.]/g, ''),
-                }))
-              }
-              placeholder="No limit"
-              placeholderTextColor={colors.textSecondary}
-              keyboardType="number-pad"
-              style={styles.pesoInput}
-            />
-          </View>
+          {/* Budget — income has no monthly cap concept, so the field is
+              hidden on the Income tab. */}
+          {!isIncome && (
+            <>
+              <Text style={styles.fieldLabel}>MONTHLY BUDGET</Text>
+              <View
+                style={[
+                  styles.pesoRow,
+                  {
+                    backgroundColor: isDark
+                      ? colors.surfaceSubdued
+                      : colors.white,
+                  },
+                ]}
+              >
+                <Text style={styles.pesoSign}>₱</Text>
+                <TextInput
+                  value={draft.budgetLimit}
+                  onChangeText={(v) =>
+                    setDraft((d) => ({
+                      ...d,
+                      budgetLimit: v.replace(/[^0-9.]/g, ''),
+                    }))
+                  }
+                  placeholder="No limit"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="number-pad"
+                  style={styles.pesoInput}
+                />
+              </View>
+            </>
+          )}
 
           {/* Save */}
           <TouchableOpacity
             onPress={handleSubmit}
             activeOpacity={0.85}
             disabled={saving}
-            style={[styles.primaryBtn, saving && { opacity: 0.6 }]}
+            style={[
+              styles.primaryBtn,
+              { backgroundColor: accentColor },
+              saving && { opacity: 0.6 },
+            ]}
           >
             {saving ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <Text style={styles.primaryBtnText}>
-                {mode === 'add' ? 'Add category' : 'Save changes'}
+                {mode === 'add'
+                  ? isIncome
+                    ? 'Add income source'
+                    : 'Add category'
+                  : 'Save changes'}
               </Text>
             )}
           </TouchableOpacity>
@@ -944,24 +1303,13 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
       marginTop: 1,
     },
 
-    // ── Form modal handle (subtle, top of pageSheet) ──
-    formTopBar: {
-      paddingTop: 12,
-      paddingBottom: 8,
-      alignItems: 'center',
-    },
-    formHandle: {
-      width: 36,
-      height: 4,
-      backgroundColor: colors.border,
-      borderRadius: 2,
-    },
+    // ── Form modal header — mirrors the main screen header so the modal's
+    //    top chrome lines up vertically with the surface it slid out from. ──
     formHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 16,
+      paddingVertical: 12,
       gap: 10,
     },
 
@@ -1084,6 +1432,38 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
     rowBarFill: {
       height: '100%',
       borderRadius: 2,
+    },
+
+    // ── Segmented Expense / Income toggle ──
+    segmented: {
+      flexDirection: 'row',
+      marginHorizontal: 16,
+      marginBottom: 6,
+      padding: 4,
+      borderRadius: 14,
+      backgroundColor: isDark ? colors.surfaceSubdued : '#F4F4F8',
+    },
+    segBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 10,
+      borderRadius: 10,
+    },
+    segBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 13,
+    },
+
+    emptyHint: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 13,
+      textAlign: 'center',
+      paddingVertical: 28,
+      paddingHorizontal: 24,
+      lineHeight: 19,
     },
 
     addRow: {
