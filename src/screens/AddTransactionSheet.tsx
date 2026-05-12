@@ -378,6 +378,7 @@ export default function AddTransactionSheet({ route }: Props) {
   // 92% so we don't leave an awkward gap above the now-empty footer area.
   useEffect(() => {
     const sub = Keyboard.addListener('keyboardDidHide', () => {
+      if (allowCloseRef.current) return;
       bottomSheetRef.current?.snapToIndex(0);
     });
     return () => sub.remove();
