@@ -44,6 +44,7 @@ import TransferModal from '@/components/account/TransferModal';
 import AdjustBalanceSheet from '@/components/account/AdjustBalanceSheet';
 import { saveEditAccount } from '@/services/transactionMutations';
 import { formatShortDate } from '@/utils/groupByDate';
+import { MonthPickerModal } from '@/components/stats/MonthPickerModal';
 
 // Cross-mount cache for per-account transaction lists. Without this, opening
 // the same account twice replays the loading skeleton each time while the
@@ -149,6 +150,7 @@ export default function AccountDetailScreen() {
 
   // ── Month selector for Money Flow (0 = current, -1 = previous, ...) ──
   const [monthOffset, setMonthOffset] = useState(0);
+  const [monthPickerVisible, setMonthPickerVisible] = useState(false);
 
   const selectedAccount = useMemo<Account | null>(() => {
     if (!accounts.length) return null;
@@ -762,9 +764,15 @@ export default function AccountDetailScreen() {
                     >
                       <Text style={styles.monthNavGlyph}>‹</Text>
                     </TouchableOpacity>
-                    <Text style={styles.monthSelectorText}>
-                      {selectedMonthLabel}
-                    </Text>
+                    <TouchableOpacity
+                      onPress={() => setMonthPickerVisible(true)}
+                      activeOpacity={0.7}
+                      hitSlop={6}
+                    >
+                      <Text style={styles.monthSelectorText}>
+                        {selectedMonthLabel}
+                      </Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => setMonthOffset((o) => Math.min(0, o + 1))}
                       hitSlop={10}
@@ -1348,6 +1356,19 @@ export default function AccountDetailScreen() {
         account={selectedAccount}
         colors={colors}
         isDark={isDark}
+      />
+
+      <MonthPickerModal
+        visible={monthPickerVisible}
+        year={selYear}
+        month={selMonth}
+        onConfirm={(y, m) => {
+          const now = new Date();
+          const offset = (y - now.getFullYear()) * 12 + (m - now.getMonth());
+          setMonthOffset(Math.min(0, offset));
+          setMonthPickerVisible(false);
+        }}
+        onClose={() => setMonthPickerVisible(false)}
       />
 
       {/* ════ EDIT ACCOUNT ════ */}
