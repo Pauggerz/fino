@@ -64,12 +64,37 @@ const ACCOUNT_COLORS = [
   '#888780',
 ];
 
+// Account category options. Stored in the `type` column on the accounts
+// table, which WalletCard already surfaces as the uppercase brand label
+// ("E-WALLET", "BANK ACCOUNT", etc.) on the home carousel.
+const ACCOUNT_CATEGORIES = [
+  { key: 'E-Wallet', icon: 'phone-portrait-outline' as const },
+  { key: 'Bank', icon: 'business-outline' as const },
+  { key: 'Cash', icon: 'cash-outline' as const },
+  { key: 'Credit Card', icon: 'card-outline' as const },
+  { key: 'Savings', icon: 'shield-checkmark-outline' as const },
+  { key: 'Other', icon: 'ellipsis-horizontal-outline' as const },
+];
+
+const DEFAULT_CATEGORY = ACCOUNT_CATEGORIES[0].key;
+
+// Older rows have `type: 'manual'` (the data-entry mode, not a real
+// category). Treat them as the default until the user picks one.
+function normalizeCategory(raw: string | undefined | null): string {
+  if (!raw || raw.toLowerCase() === 'manual') return DEFAULT_CATEGORY;
+  const match = ACCOUNT_CATEGORIES.find(
+    (c) => c.key.toLowerCase() === raw.toLowerCase(),
+  );
+  return match ? match.key : raw;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DraftState {
   name: string;
   balance: string;
   color: string;
+  category: string;
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -108,7 +133,7 @@ export default function AccountsScreen() {
     await createAccount({
       userId: user.id,
       name: savedName,
-      type: 'manual',
+      type: draft.category || DEFAULT_CATEGORY,
       brandColour: draft.color,
       letterAvatar: letter,
       startingBalance: startBal,
@@ -129,6 +154,7 @@ export default function AccountsScreen() {
       const letter = savedName[0].toUpperCase();
       await updateAccount(id, {
         name: savedName,
+        type: draft.category || DEFAULT_CATEGORY,
         brandColour: draft.color,
         letterAvatar: letter,
       });
@@ -421,6 +447,7 @@ function AccountFormModal({
     name: '',
     balance: '',
     color: ACCOUNT_COLORS[0],
+    category: DEFAULT_CATEGORY,
   });
   const [saving, setSaving] = useState(false);
 
@@ -431,12 +458,14 @@ function AccountFormModal({
         name: initial.name,
         balance: '',
         color: initial.brand_colour ?? ACCOUNT_COLORS[0],
+        category: normalizeCategory(initial.type),
       });
     } else {
       setDraft({
         name: '',
         balance: '',
         color: ACCOUNT_COLORS[0],
+        category: DEFAULT_CATEGORY,
       });
     }
     setSaving(false);
@@ -579,6 +608,63 @@ function AccountFormModal({
               },
             ]}
           />
+
+          {/* Category */}
+          <Text style={styles.fieldLabel}>CATEGORY</Text>
+          <View
+            style={[
+              styles.pickerCard,
+              {
+                backgroundColor: isDark ? colors.surfaceSubdued : colors.white,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pickerScrollContent}
+            >
+              {ACCOUNT_CATEGORIES.map((c) => {
+                const active = draft.category === c.key;
+                return (
+                  <TouchableOpacity
+                    key={c.key}
+                    activeOpacity={0.75}
+                    onPress={() =>
+                      setDraft((d) => ({ ...d, category: c.key }))
+                    }
+                    style={[
+                      styles.categoryChip,
+                      {
+                        backgroundColor: active
+                          ? draft.color
+                          : isDark
+                            ? colors.background
+                            : '#F4F4F8',
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={c.icon}
+                      size={14}
+                      color={active ? '#FFFFFF' : colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.categoryChipText,
+                        {
+                          color: active ? '#FFFFFF' : colors.textPrimary,
+                        },
+                      ]}
+                    >
+                      {c.key}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
 
           {/* Starting balance — add mode only */}
           {mode === 'add' && (
@@ -951,6 +1037,18 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 2,
+    },
+    categoryChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+    },
+    categoryChipText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
     },
     pesoRow: {
       flexDirection: 'row',

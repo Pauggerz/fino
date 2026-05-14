@@ -16,6 +16,11 @@ export interface MonthlyTotals {
   totalIncome: number;
   totalExpense: number;
   sparklineData: SparklinePoint[];
+  /**
+   * Map of account_id → number of (non-transfer) transactions for this account
+   * in the current month. Used by HomeScreen to sort wallet cards by activity.
+   */
+  txCountByAccount: Record<string, number>;
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
@@ -52,6 +57,7 @@ interface AggregateSnapshot {
   totalIncome: number;
   totalExpense: number;
   sparklineData: SparklinePoint[];
+  txCountByAccount: Record<string, number>;
 }
 const monthlyCache = new Map<string, AggregateSnapshot>();
 const monthKey = (userId: string) => {
@@ -76,6 +82,9 @@ export const useMonthlyTotals = (): MonthlyTotals => {
   const [sparklineData, setSparklineData] = useState<SparklinePoint[]>(
     cached?.sparklineData ?? EMPTY_SPARKLINE,
   );
+  const [txCountByAccount, setTxCountByAccount] = useState<
+    Record<string, number>
+  >(cached?.txCountByAccount ?? {});
   const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
@@ -83,6 +92,7 @@ export const useMonthlyTotals = (): MonthlyTotals => {
       setTotalIncome(0);
       setTotalExpense(0);
       setSparklineData(EMPTY_SPARKLINE);
+      setTxCountByAccount({});
       setLoading(false);
       return;
     }
@@ -108,12 +118,13 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     // Debounce collapses observer bursts from sync pulls. Without it, a 30-row
     // pull reruns the month aggregation loop 30 times — with it, once per burst.
     const sub = query
-      .observeWithColumns(['amount', 'type', 'date', 'is_transfer', 'category'])
+      .observeWithColumns(['amount', 'type', 'date', 'is_transfer', 'category', 'account_id'])
       .pipe(debounceTime(50))
       .subscribe((records) => {
       let income = 0;
       let expense = 0;
       const buckets: number[] = new Array(7).fill(0);
+      const accountCounts: Record<string, number> = {};
 
       for (const tx of records) {
         // Inter-account transfers are balance moves, not real income/expense.
@@ -124,6 +135,9 @@ export const useMonthlyTotals = (): MonthlyTotals => {
         // spending events — exclude from the 7-day sparkline so a one-shot
         // adjustment doesn't show up as a fake daily spike.
         const isAdjustment = (tx.category ?? '').toLowerCase() === 'adjustment';
+        if (tx.accountId) {
+          accountCounts[tx.accountId] = (accountCounts[tx.accountId] ?? 0) + 1;
+        }
         if (tx.type === 'income') income += tx.amount;
         if (tx.type === 'expense') {
           expense += tx.amount;
@@ -143,11 +157,13 @@ export const useMonthlyTotals = (): MonthlyTotals => {
       setTotalIncome(income);
       setTotalExpense(expense);
       setSparklineData(nextSparkline);
+      setTxCountByAccount(accountCounts);
       setLoading(false);
       monthlyCache.set(monthKey(userId), {
         totalIncome: income,
         totalExpense: expense,
         sparklineData: nextSparkline,
+        txCountByAccount: accountCounts,
       });
     });
 
@@ -158,6 +174,7 @@ export const useMonthlyTotals = (): MonthlyTotals => {
     totalIncome,
     totalExpense,
     sparklineData,
+    txCountByAccount,
     loading,
     error: null,
     refetch: triggerSync,

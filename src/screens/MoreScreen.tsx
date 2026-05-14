@@ -921,6 +921,7 @@ function MoreScreen() {
 
   const handleToolPress = (id: string) => {
     if (id === 'fino') navigation.navigate('ChatScreen');
+    else if (id === 'accounts') navigation.navigate('Accounts');
     else if (id === 'budget') navigation.navigate('Categories');
     else if (id === 'recurring') setRecurringExpanded((v) => !v);
     else if (id === 'recurring-income') navigation.navigate('RecurringIncome');
@@ -942,12 +943,20 @@ function MoreScreen() {
       bg: colors.lavenderLight,
     },
     {
+      id: 'accounts',
+      label: 'Accounts',
+      desc: 'Manage wallets, banks, and cash',
+      icon: 'wallet',
+      color: colors.primary,
+      bg: colors.primaryLight,
+    },
+    {
       id: 'budget',
       label: 'Category and Budget Set-up',
       desc: 'Manage categories and monthly limits',
       icon: 'pie-chart',
-      color: colors.primary,
-      bg: colors.primaryLight,
+      color: '#C97A20',
+      bg: isDark ? '#3A2E1D' : '#FFF4E5',
     },
     {
       id: 'recurring',
