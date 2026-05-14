@@ -682,16 +682,22 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                     })}
                 <TouchableOpacity
                   style={styles.addAcctRow}
-                  onPress={() => setShowAddAccount(true)}
+                  onPress={() => {
+                    onClose();
+                    setTimeout(
+                      () => (navigation as any).navigate('Accounts'),
+                      260,
+                    );
+                  }}
                   activeOpacity={0.7}
                 >
                   <Ionicons
-                    name="add-circle-outline"
+                    name="settings-outline"
                     size={16}
                     color={colors.primary}
                   />
                   <Text style={[styles.addAcctText, { color: colors.primary }]}>
-                    Add new account
+                    Manage accounts
                   </Text>
                 </TouchableOpacity>
               </View>
