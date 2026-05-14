@@ -15,7 +15,6 @@ import {
   TouchableOpacity,
   Pressable,
   ActivityIndicator,
-  Modal,
   TextInput,
   ScrollView,
   RefreshControl,
@@ -27,7 +26,6 @@ import {
   type RouteProp,
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList, ListRenderItem } from '@shopify/flash-list';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
@@ -61,6 +59,8 @@ import type { FeedStackParamList } from '../navigation/RootNavigator';
 import { Skeleton } from '@/components/Skeleton';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { EmptyTransactions } from '@/components/empty/EmptyTransactions';
+import { AmbientOrb } from '@/components/empty/AnimatedAmbient';
+import { MonthPickerModal } from '@/components/stats/MonthPickerModal';
 import { useDeferredRender } from '@/hooks/useDeferredRender';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -158,130 +158,6 @@ function SwipeableRow({
 }
 
 const MemoizedSwipeableRow = React.memo(SwipeableRow);
-
-// ─── Month picker modal ───────────────────────────────────────────────────────
-
-function MonthPickerModal({
-  visible,
-  year,
-  month,
-  onConfirm,
-  onClose,
-}: {
-  visible: boolean;
-  year: number;
-  month: number;
-  onConfirm: (y: number, m: number) => void;
-  onClose: () => void;
-}) {
-  const { colors, isDark } = useTheme();
-  const pickerStyles = useMemo(
-    () => createPickerStyles(colors, isDark),
-    [colors, isDark]
-  );
-
-  const [draftYear, setDraftYear] = useState(year);
-  const [draftMonth, setDraftMonth] = useState(month);
-
-  React.useEffect(() => {
-    if (visible) {
-      setDraftYear(year);
-      setDraftMonth(month);
-    }
-  }, [visible, year, month]);
-
-  const prevMonth = () => {
-    if (draftMonth === 0) {
-      setDraftMonth(11);
-      setDraftYear((y) => y - 1);
-    } else {
-      setDraftMonth((m) => m - 1);
-    }
-  };
-
-  const nextMonth = () => {
-    const now = new Date();
-    if (
-      draftYear > now.getFullYear() ||
-      (draftYear === now.getFullYear() && draftMonth >= now.getMonth())
-    )
-      return;
-    if (draftMonth === 11) {
-      setDraftMonth(0);
-      setDraftYear((y) => y + 1);
-    } else {
-      setDraftMonth((m) => m + 1);
-    }
-  };
-
-  const now = new Date();
-  const isAtMax =
-    draftYear > now.getFullYear() ||
-    (draftYear === now.getFullYear() && draftMonth >= now.getMonth());
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <Pressable style={pickerStyles.backdrop} onPress={onClose}>
-        <Pressable style={pickerStyles.card} onPress={() => {}}>
-          <Text style={pickerStyles.title}>Select Month</Text>
-
-          <View style={pickerStyles.row}>
-            <TouchableOpacity
-              style={pickerStyles.arrow}
-              onPress={prevMonth}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name="chevron-back"
-                size={20}
-                color={colors.textPrimary}
-              />
-            </TouchableOpacity>
-
-            <Text style={pickerStyles.monthLabel}>
-              {MONTH_NAMES[draftMonth]} {draftYear}
-            </Text>
-
-            <TouchableOpacity
-              style={[pickerStyles.arrow, isAtMax && { opacity: 0.3 }]}
-              onPress={nextMonth}
-              disabled={isAtMax}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={colors.textPrimary}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <View style={pickerStyles.actions}>
-            <TouchableOpacity
-              style={pickerStyles.cancelBtn}
-              onPress={onClose}
-              activeOpacity={0.7}
-            >
-              <Text style={pickerStyles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={pickerStyles.confirmBtn}
-              onPress={() => onConfirm(draftYear, draftMonth)}
-              activeOpacity={0.8}
-            >
-              <Text style={pickerStyles.confirmText}>Apply</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
 
 // ─── List item type ───────────────────────────────────────────────────────────
 
@@ -405,23 +281,25 @@ const FeedHero = React.memo(
         </View>
       </View>
 
-      <LinearGradient
-        colors={[colors.statsHeroBg1, colors.statsHeroBg2]}
-        style={styles.heroCard}
+      <View
+        style={[styles.heroCard, { backgroundColor: colors.heroCardBg }]}
       >
-        <LinearGradient
-          colors={[colors.primaryLight60, 'transparent']}
-          style={[
-            styles.heroBlob,
-            { top: -30, right: -20, width: 160, height: 160 },
-          ]}
+        <AmbientOrb
+          size={200}
+          color={colors.primary}
+          baseOpacity={0.28}
+          amplitude={20}
+          durationMs={12000}
+          style={{ top: -40, right: -40 }}
         />
-        <LinearGradient
-          colors={[colors.primaryTransparent50, 'transparent']}
-          style={[
-            styles.heroBlob,
-            { bottom: 44, left: -20, width: 110, height: 110, opacity: 0.6 },
-          ]}
+        <AmbientOrb
+          size={150}
+          color={colors.primary}
+          baseOpacity={0.22}
+          amplitude={18}
+          durationMs={14000}
+          phase={0.4}
+          style={{ bottom: 60, left: -40 }}
         />
 
         <View style={styles.heroTotalBlock}>
@@ -489,7 +367,7 @@ const FeedHero = React.memo(
           No {viewType} transactions for this period
         </Text>
       )}
-      </LinearGradient>
+      </View>
     </View>
   )
 );
@@ -518,6 +396,7 @@ const FeedSticky = React.memo(
     setDraftSortOrder,
     closeFilterPanel,
     applyFilters,
+    isEmptyState,
   }: {
     styles: FeedStyles;
     colors: any;
@@ -539,6 +418,7 @@ const FeedSticky = React.memo(
     setDraftSortOrder: (value: SortOrder) => void;
     closeFilterPanel: () => void;
     applyFilters: () => void;
+    isEmptyState: boolean;
   }) => (
     <View style={styles.stickyBar}>
       <View style={styles.segmentRow}>
@@ -578,53 +458,55 @@ const FeedSticky = React.memo(
         </TouchableOpacity>
       </View>
 
-      <View style={styles.searchRow}>
-        <View style={styles.searchBar}>
-          <Ionicons
-            name="search-outline"
-            size={16}
-            color={colors.textSecondary}
-          />
-          <TextInput
-            ref={searchInputRef}
-            style={styles.searchInput}
-            placeholder="Search by name, amount…"
-            placeholderTextColor={colors.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            returnKeyType="search"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity
-              onPress={() => setSearchQuery('')}
-              activeOpacity={0.7}
-              accessibilityLabel="Clear search"
-              accessibilityRole="button"
-            >
-              <Ionicons
-                name="close-circle"
-                size={16}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-          )}
+      {!isEmptyState && (
+        <View style={styles.searchRow}>
+          <View style={styles.searchBar}>
+            <Ionicons
+              name="search-outline"
+              size={16}
+              color={colors.textSecondary}
+            />
+            <TextInput
+              ref={searchInputRef}
+              style={styles.searchInput}
+              placeholder="Search by name, amount…"
+              placeholderTextColor={colors.textSecondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setSearchQuery('')}
+                activeOpacity={0.7}
+                accessibilityLabel="Clear search"
+                accessibilityRole="button"
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={16}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.filterTriggerBtn,
+              hasActiveFilters && styles.filterTriggerBtnActive,
+            ]}
+            activeOpacity={0.8}
+            onPress={onToggleFilterPanel}
+          >
+            <Ionicons
+              name="options-outline"
+              size={18}
+              color={hasActiveFilters ? colors.primary : colors.textSecondary}
+            />
+            {hasActiveFilters && <View style={styles.filterBadge} />}
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={[
-            styles.filterTriggerBtn,
-            hasActiveFilters && styles.filterTriggerBtnActive,
-          ]}
-          activeOpacity={0.8}
-          onPress={onToggleFilterPanel}
-        >
-          <Ionicons
-            name="options-outline"
-            size={18}
-            color={hasActiveFilters ? colors.primary : colors.textSecondary}
-          />
-          {hasActiveFilters && <View style={styles.filterBadge} />}
-        </TouchableOpacity>
-      </View>
+      )}
 
       {filterPanelVisible && (
         <View style={styles.filterPanel}>
@@ -809,6 +691,7 @@ const FeedControls = React.memo(
     searchQuery,
     monthLabel,
     onAddTransaction,
+    isEmptyState,
   }: {
     styles: FeedStyles;
     colors: any;
@@ -825,21 +708,23 @@ const FeedControls = React.memo(
     searchQuery: string;
     monthLabel: string;
     onAddTransaction: () => void;
+    isEmptyState: boolean;
   }) => {
     if (loading) {
       return <FeedSkeletonList styles={styles} />;
     }
     return (
       <View>
-        <View style={styles.filterWrapper}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              paddingHorizontal: spacing.screenPadding,
-            }}
-          >
-            {filterOptions.map((chip) => {
+        {!isEmptyState && (
+          <View style={styles.filterWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{
+                paddingHorizontal: spacing.screenPadding,
+              }}
+            >
+              {filterOptions.map((chip) => {
               const isActive = activeCategory === chip;
               let activeBg = colors.primary;
               if (viewType === 'income' && chip !== 'All') {
@@ -876,8 +761,9 @@ const FeedControls = React.memo(
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
-        </View>
+            </ScrollView>
+          </View>
+        )}
 
         {swipeHintVisible && totalEntries > 0 && (
           <View style={styles.swipeHint}>
@@ -1544,6 +1430,16 @@ function FeedScreen() {
     [sections]
   );
 
+  // True empty state: no transactions in this month and no filters/search
+  // narrowing the view. When true we hide the search bar + category chips
+  // so the empty illustration owns the screen.
+  const isEmptyState =
+    !loading &&
+    totalEntries === 0 &&
+    searchQuery.length === 0 &&
+    !hasActiveFilters &&
+    activeCategory === 'All';
+
   // renderItem dispatches by item.type into independently-memoized
   // sub-components. Each sub-component only receives the narrow slice of
   // props it actually reads — so typing in the search bar, for example,
@@ -1593,6 +1489,7 @@ function FeedScreen() {
             setDraftSortOrder={setDraftSortOrder}
             closeFilterPanel={closeFilterPanel}
             applyFilters={applyFilters}
+            isEmptyState={isEmptyState}
           />
         );
       }
@@ -1614,6 +1511,7 @@ function FeedScreen() {
             searchQuery={searchQuery}
             monthLabel={monthLabel}
             onAddTransaction={handleAddTransaction}
+            isEmptyState={isEmptyState}
           />
         );
       }
@@ -1676,6 +1574,7 @@ function FeedScreen() {
       handleTxPress,
       handleDeleteTransaction,
       handleAddTransaction,
+      isEmptyState,
     ]
   );
 
@@ -1715,6 +1614,7 @@ function FeedScreen() {
           <FlashList
             data={listData}
             renderItem={renderItem}
+            extraData={isEmptyState}
             getItemType={getItemType}
             drawDistance={500}
             refreshControl={
@@ -1808,79 +1708,6 @@ const createSwipeStyles = (colors: any, _isDark: boolean) =>
     },
   });
 
-const createPickerStyles = (colors: any, isDark: boolean) =>
-  StyleSheet.create({
-    backdrop: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.45)',
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    card: {
-      backgroundColor: colors.white,
-      borderRadius: 20,
-      padding: 24,
-      width: 300,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.15,
-      shadowRadius: 20,
-      elevation: 8,
-    },
-    title: {
-      fontFamily: 'Nunito_700Bold',
-      fontSize: 17,
-      color: colors.textPrimary,
-      textAlign: 'center',
-      marginBottom: 20,
-    },
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 24,
-    },
-    arrow: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: colors.catTileEmptyBg,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    monthLabel: {
-      fontFamily: 'Nunito_700Bold',
-      fontSize: 18,
-      color: colors.textPrimary,
-    },
-    actions: { flexDirection: 'row', gap: 10 },
-    cancelBtn: {
-      flex: 1,
-      paddingVertical: 12,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-    },
-    cancelText: {
-      fontFamily: 'Inter_600SemiBold',
-      fontSize: 14,
-      color: colors.textSecondary,
-    },
-    confirmBtn: {
-      flex: 1,
-      paddingVertical: 12,
-      borderRadius: 12,
-      backgroundColor: colors.primary,
-      alignItems: 'center',
-    },
-    confirmText: {
-      fontFamily: 'Inter_600SemiBold',
-      fontSize: 14,
-      color: '#FFFFFF',
-    },
-  });
-
 const createStyles = (colors: any, isDark: boolean, topInset: number) =>
   StyleSheet.create({
     container: {
@@ -1932,15 +1759,11 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
       marginHorizontal: spacing.screenPadding,
       marginBottom: 0,
       overflow: 'hidden',
-      shadowColor: colors.statsHeroBg2 ?? '#1a3028',
-      shadowOffset: { width: 0, height: 14 },
-      shadowOpacity: 0.45,
-      shadowRadius: 28,
-      elevation: 8,
-    },
-    heroBlob: {
-      position: 'absolute',
-      borderRadius: 999,
+      shadowColor: colors.heroCardShadow ?? '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 6,
     },
     monthPillRow: {
       flexDirection: 'row',

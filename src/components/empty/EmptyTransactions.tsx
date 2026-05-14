@@ -22,7 +22,6 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useTheme } from '@/contexts/ThemeContext';
 import type { ThemeColors } from '@/constants/theme';
-import { AmbientOrb } from './AnimatedAmbient';
 
 /**
  * Animated empty-state for the transactions feed.
@@ -38,12 +37,11 @@ import { AmbientOrb } from './AnimatedAmbient';
  *     CTA absorbs all touches without hit-test contention.
  *
  * Visual layers (back → front):
- *   1. Two ambient orbs (sage + peach), drift, 9–11s loops
- *   2. Three concentric pulse rings expanding from the receipt
- *   3. The receipt card itself, gentle vertical float + tilt
- *   4. The `+` chip with its own halo pulse
- *   5. Four upward-rising "coins" in muted theme accents
- *   6. Heading / body / CTA stack
+ *   1. Three concentric pulse rings expanding from the receipt
+ *   2. The receipt card itself, gentle vertical float + tilt
+ *   3. The `+` chip with its own halo pulse
+ *   4. Four upward-rising "coins" in muted theme accents
+ *   5. Heading / body / CTA stack
  */
 
 export interface EmptyTransactionsProps {
@@ -137,28 +135,7 @@ export const EmptyTransactions: React.FC<EmptyTransactionsProps> = React.memo(
 
     return (
       <View style={[styles.wrap, style]}>
-        {/* Layer 1 — ambient orbs (decorative, non-interactive). */}
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <AmbientOrb
-            size={260}
-            color={colors.primary}
-            baseOpacity={0.16}
-            amplitude={28}
-            durationMs={9000}
-            style={{ top: -40, left: -80 }}
-          />
-          <AmbientOrb
-            size={220}
-            color={colors.peach}
-            baseOpacity={0.36}
-            amplitude={34}
-            durationMs={11000}
-            phase={0.4}
-            style={{ bottom: -40, right: -60 }}
-          />
-        </View>
-
-        {/* Layer 5 — coins. Rendered behind the hero card so they appear to
+        {/* Layer 4 — coins. Rendered behind the hero card so they appear to
             rise from below it. */}
         <View pointerEvents="none" style={styles.coinsLayer}>
           <Coin progress={coinProgress[0]} color={colors.primary} size={10} left="14%" />
@@ -167,7 +144,7 @@ export const EmptyTransactions: React.FC<EmptyTransactionsProps> = React.memo(
           <Coin progress={coinProgress[3]} color={colors.primary} size={6} left="60%" opacity={0.7} />
         </View>
 
-        {/* Layer 2-4 — receipt + rings + chip, all centred together. */}
+        {/* Layers 1-3 — receipt + rings + chip, all centred together. */}
         <View style={styles.heroBlock}>
           <View style={styles.receiptStack}>
             {ringProgress.map((p, i) => (
@@ -180,7 +157,7 @@ export const EmptyTransactions: React.FC<EmptyTransactionsProps> = React.memo(
           </View>
         </View>
 
-        {/* Layer 6 — copy + CTA. Always last in the tree so it sits on top
+        {/* Layer 5 — copy + CTA. Always last in the tree so it sits on top
             even without explicit z-indexing. */}
         <View style={styles.copyBlock}>
           <Text style={styles.title}>{title}</Text>

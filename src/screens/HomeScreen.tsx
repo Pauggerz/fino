@@ -268,10 +268,26 @@ function HomeScreen() {
     totalIncome,
     totalExpense: monthlyExpense,
     sparklineData,
+    txCountByAccount,
     loading: totalsLoading,
     error: totalsError,
     refetch: refetchTotals,
   } = useMonthlyTotals();
+
+  // Carousel order: accounts touched more this month float to the front so the
+  // most active wallet is what the user lands on. Falls back to sort_order
+  // (the existing manual ordering) when activity ties — keeps things stable
+  // for new users whose counts are all 0.
+  const sortedAccounts = useMemo(() => {
+    const arr = [...accounts];
+    arr.sort((a, b) => {
+      const ca = txCountByAccount[a.id] ?? 0;
+      const cb = txCountByAccount[b.id] ?? 0;
+      if (cb !== ca) return cb - ca;
+      return a.sort_order - b.sort_order;
+    });
+    return arr;
+  }, [accounts, txCountByAccount]);
 
   const fetchError = accountsError ?? categoriesError ?? totalsError;
   const retryAll = useCallback(() => {
@@ -728,7 +744,7 @@ function HomeScreen() {
             <View style={styles.unifiedHairline} />
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('more')}
+              onPress={() => navigation.navigate('Accounts')}
               style={styles.unifiedSeeAll}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
@@ -790,14 +806,14 @@ function HomeScreen() {
                 </Svg>
                 <Text style={styles.emptyCarouselText}>No accounts yet</Text>
                 <TouchableOpacity
-                  onPress={() => navigation.navigate('more')}
+                  onPress={() => navigation.navigate('Accounts')}
                   style={styles.emptyCarouselCta}
                 >
                   <Text style={styles.emptyCarouselCtaText}>Add account →</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              accounts.map((acc) => (
+              sortedAccounts.map((acc) => (
                 <ScaledWalletCard
                   key={acc.id}
                   account={acc}
@@ -816,13 +832,16 @@ function HomeScreen() {
 
         {/* ── Budgets + insight, directly on background ── */}
         <RAnim.View style={[styles.belowCard, belowAnim]}>
-          {/* Monthly budgets */}
-          <View style={styles.acctHeader}>
-            <View style={styles.acctHeaderLeft}>
-              <View style={styles.sectionDot} />
-              <Text style={styles.sectionLabel}>Monthly Budgets</Text>
+          {/* Monthly budgets — header is hidden in the empty state so the
+              "no transactions yet" CTA reads as the primary message. */}
+          {!hasNoTransactions && (
+            <View style={styles.acctHeader}>
+              <View style={styles.acctHeaderLeft}>
+                <View style={styles.sectionDot} />
+                <Text style={styles.sectionLabel}>Monthly Budgets</Text>
+              </View>
             </View>
-          </View>
+          )}
 
           <View style={styles.catGrid}>
             {categoriesLoading && categories.length === 0 ? (

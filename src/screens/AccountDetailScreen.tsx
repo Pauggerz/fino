@@ -44,6 +44,7 @@ import TransferModal from '@/components/account/TransferModal';
 import AdjustBalanceSheet from '@/components/account/AdjustBalanceSheet';
 import { saveEditAccount } from '@/services/transactionMutations';
 import { formatShortDate } from '@/utils/groupByDate';
+import { MonthPickerModal } from '@/components/stats/MonthPickerModal';
 
 // Cross-mount cache for per-account transaction lists. Without this, opening
 // the same account twice replays the loading skeleton each time while the
@@ -54,11 +55,23 @@ const accountTxKey = (userId: string, accountId: string) =>
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Matches DailySpendChart's peak-day highlight so the two charts feel related.
+const PEAK_AMBER = '#E07B2E';
+
 function fmtPeso(n: number): string {
   return `₱${Math.abs(n).toLocaleString('en-PH', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function shortPeso(v: number): string {
+  if (v <= 0) return '₱0';
+  if (v >= 1000) {
+    const k = v / 1000;
+    return `₱${k.toFixed(k >= 10 ? 0 : 1)}k`;
+  }
+  return `₱${Math.round(v)}`;
 }
 
 function fmtTrend(current: number, previous: number): string {
@@ -100,14 +113,18 @@ export default function AccountDetailScreen() {
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
-  const { accounts, loading: accountsLoading, refetch: refetchAccounts } =
-    useAccounts();
+  const {
+    accounts,
+    loading: accountsLoading,
+    refetch: refetchAccounts,
+  } = useAccounts();
   const { categories } = useCategories();
   const { categories: incomeCategories } = useIncomeCategories();
   const { user } = useAuth();
   const userId = user?.id;
-  const cachedTxs =
-    userId ? accountTxCache.get(accountTxKey(userId, id)) : undefined;
+  const cachedTxs = userId
+    ? accountTxCache.get(accountTxKey(userId, id))
+    : undefined;
   const [transactions, setTransactions] = useState<Transaction[]>(
     cachedTxs ?? []
   );
@@ -130,6 +147,10 @@ export default function AccountDetailScreen() {
 
   // ── Adjust Balance ──
   const [adjustSheetVisible, setAdjustSheetVisible] = useState(false);
+
+  // ── Month selector for Money Flow (0 = current, -1 = previous, ...) ──
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [monthPickerVisible, setMonthPickerVisible] = useState(false);
 
   const selectedAccount = useMemo<Account | null>(() => {
     if (!accounts.length) return null;
@@ -168,8 +189,7 @@ export default function AccountDetailScreen() {
         merchant_name: r.merchantName ?? null,
         display_name: r.displayName ?? null,
         transaction_note: r.transactionNote ?? null,
-        signal_source: (r.signalSource ??
-          null) as Transaction['signal_source'],
+        signal_source: (r.signalSource ?? null) as Transaction['signal_source'],
         date: r.date,
         receipt_url: r.receiptUrl ?? null,
         account_deleted: r.accountDeleted,
@@ -196,49 +216,74 @@ export default function AccountDetailScreen() {
     : ([config.color, config.color, config.color] as [string, string, string]);
   const balance = selectedAccount?.balance ?? 0;
 
-  // ── Monthly stats + trends ──
-  const { monthIn, monthOut, prevMonthIn, prevMonthOut, curMonthCount } =
+  // ── Selected-month anchor (driven by monthOffset; 0 = current) ──
+  const { selMonth, selYear, prevMonth, prevYear, daysInSelMonth } =
     useMemo(() => {
       const now = new Date();
-      const curMonth = now.getMonth();
-      const curYear = now.getFullYear();
-      const prevDate = new Date(curYear, curMonth - 1, 1);
-      const prevMonth = prevDate.getMonth();
-      const prevYear = prevDate.getFullYear();
-
-      return transactions.reduce(
-        (acc, tx) => {
-          const d = new Date(tx.date);
-          const m = d.getMonth();
-          const y = d.getFullYear();
-          if (m === curMonth && y === curYear) {
-            acc.curMonthCount += 1;
-            if (tx.type === 'income') acc.monthIn += tx.amount;
-            else acc.monthOut += tx.amount;
-          } else if (m === prevMonth && y === prevYear) {
-            if (tx.type === 'income') acc.prevMonthIn += tx.amount;
-            else acc.prevMonthOut += tx.amount;
-          }
-          return acc;
-        },
-        {
-          monthIn: 0,
-          monthOut: 0,
-          prevMonthIn: 0,
-          prevMonthOut: 0,
-          curMonthCount: 0,
-        }
+      const anchor = new Date(
+        now.getFullYear(),
+        now.getMonth() + monthOffset,
+        1
       );
-    }, [transactions]);
+      const sm = anchor.getMonth();
+      const sy = anchor.getFullYear();
+      const prev = new Date(sy, sm - 1, 1);
+      return {
+        selMonth: sm,
+        selYear: sy,
+        prevMonth: prev.getMonth(),
+        prevYear: prev.getFullYear(),
+        daysInSelMonth: new Date(sy, sm + 1, 0).getDate(),
+      };
+    }, [monthOffset]);
 
-  // ── Unique categories for filter pills ──
+  // ── Monthly stats + trends (scoped to selected month) ──
+  const { monthIn, monthOut, prevMonthIn, prevMonthOut, curMonthCount } =
+    useMemo(
+      () =>
+        transactions.reduce(
+          (acc, tx) => {
+            const d = new Date(tx.date);
+            const m = d.getMonth();
+            const y = d.getFullYear();
+            if (m === selMonth && y === selYear) {
+              acc.curMonthCount += 1;
+              if (tx.type === 'income') acc.monthIn += tx.amount;
+              else acc.monthOut += tx.amount;
+            } else if (m === prevMonth && y === prevYear) {
+              if (tx.type === 'income') acc.prevMonthIn += tx.amount;
+              else acc.prevMonthOut += tx.amount;
+            }
+            return acc;
+          },
+          {
+            monthIn: 0,
+            monthOut: 0,
+            prevMonthIn: 0,
+            prevMonthOut: 0,
+            curMonthCount: 0,
+          }
+        ),
+      [transactions, selMonth, selYear, prevMonth, prevYear]
+    );
+
+  // ── Transactions in the selected month (drives the Recent list, count,
+  //    filter pills, and footer "See all" button). ──
+  const monthTxns = useMemo(
+    () =>
+      transactions.filter((t) => {
+        const d = new Date(t.date);
+        return d.getMonth() === selMonth && d.getFullYear() === selYear;
+      }),
+    [transactions, selMonth, selYear]
+  );
+
+  // ── Unique categories for filter pills (scoped to selected month) ──
   const uniqueCategories = useMemo(
     () => [
-      ...new Set(
-        transactions.map((t) => (t.category ?? 'other').toLowerCase())
-      ),
+      ...new Set(monthTxns.map((t) => (t.category ?? 'other').toLowerCase())),
     ],
-    [transactions]
+    [monthTxns]
   );
 
   // ── Share of total wealth (across all accounts) ──
@@ -249,41 +294,47 @@ export default function AccountDetailScreen() {
   const sharePct =
     totalAccountsBalance > 0 ? (balance / totalAccountsBalance) * 100 : 0;
 
-  // ── 14-day daily flow for sparkline ──
+  // ── Daily flow scoped to the selected month (one bucket per calendar day) ──
   const dailyFlow = useMemo(() => {
-    const days: { date: Date; in: number; out: number }[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      days.push({ date: d, in: 0, out: 0 });
+    const days: { day: number; in: number; out: number }[] = [];
+    for (let d = 1; d <= daysInSelMonth; d++) {
+      days.push({ day: d, in: 0, out: 0 });
     }
-    const startMs = days[0].date.getTime();
     transactions.forEach((t) => {
       const td = new Date(t.date);
-      td.setHours(0, 0, 0, 0);
-      const idx = Math.floor((td.getTime() - startMs) / 86400000);
-      if (idx >= 0 && idx < 14) {
-        if (t.type === 'income') days[idx].in += t.amount;
-        else days[idx].out += t.amount;
+      if (td.getMonth() !== selMonth || td.getFullYear() !== selYear) return;
+      const idx = td.getDate() - 1;
+      if (idx < 0 || idx >= days.length) return;
+      if (t.type === 'income') days[idx].in += t.amount;
+      else days[idx].out += t.amount;
+    });
+    const max = Math.max(...days.map((d) => Math.max(d.in, d.out)), 1);
+    // Peak day = day with highest spending (matches Insights' amber peak)
+    let peakDay = 0;
+    let peakAmt = 0;
+    days.forEach((d, i) => {
+      if (d.out > peakAmt) {
+        peakAmt = d.out;
+        peakDay = i;
       }
     });
-    const max = Math.max(...days.map((d) => d.in + d.out), 1);
-    return { days, max };
-  }, [transactions]);
+    return {
+      days,
+      max,
+      peakDay,
+      peakAmt,
+      hasData: peakAmt > 0 || days.some((d) => d.in > 0),
+    };
+  }, [transactions, selMonth, selYear, daysInSelMonth]);
 
-  // ── Top 3 spending categories this month ──
+  // ── Top 3 spending categories in selected month ──
   const topCats = useMemo(() => {
-    const now = new Date();
-    const m = now.getMonth();
-    const y = now.getFullYear();
     const map = new Map<string, number>();
     let totalOut = 0;
     transactions.forEach((t) => {
       if (t.type !== 'expense') return;
       const d = new Date(t.date);
-      if (d.getMonth() !== m || d.getFullYear() !== y) return;
+      if (d.getMonth() !== selMonth || d.getFullYear() !== selYear) return;
       const key = (t.category ?? 'other').toLowerCase();
       map.set(key, (map.get(key) ?? 0) + t.amount);
       totalOut += t.amount;
@@ -298,15 +349,15 @@ export default function AccountDetailScreen() {
       }));
     const maxAmt = items.length > 0 ? items[0].amt : 1;
     return { items, totalOut, maxAmt };
-  }, [transactions]);
+  }, [transactions, selMonth, selYear]);
 
   // ── Net flow this month ──
   const monthNet = monthIn - monthOut;
 
-  // ── Filtered transactions ──
+  // ── Filtered transactions (scoped to selected month) ──
   const filteredTxns = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return transactions
+    return monthTxns
       .filter(
         (t) =>
           !activeCategory ||
@@ -320,7 +371,16 @@ export default function AccountDetailScreen() {
           )
       )
       .slice(0, q || activeCategory ? 5 : 3);
-  }, [transactions, activeCategory, searchQuery]);
+  }, [monthTxns, activeCategory, searchQuery]);
+
+  // When the user navigates to a different month, drop any active category
+  // pill that no longer has entries — avoids stranding the user on an empty
+  // result set after a month switch.
+  useEffect(() => {
+    if (activeCategory && !uniqueCategories.includes(activeCategory)) {
+      setActiveCategory(null);
+    }
+  }, [activeCategory, uniqueCategories]);
 
   // ── Last reconciled ──
   const lastReconciledLabel = selectedAccount?.last_reconciled_at
@@ -340,11 +400,11 @@ export default function AccountDetailScreen() {
       })
     : '—';
 
-  // ── Current month label ──
-  const currentMonthLabel = new Date().toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-  });
+  // ── Selected month label (e.g. "May 2026") ──
+  const selectedMonthLabel = new Date(selYear, selMonth, 1).toLocaleDateString(
+    'en-US',
+    { month: 'long', year: 'numeric' }
+  );
 
   // ── Other accounts for Transfer ──
   const otherAccounts = useMemo(
@@ -363,9 +423,7 @@ export default function AccountDetailScreen() {
         return {
           key,
           color:
-            incCat?.text_colour ??
-            CATEGORY_COLOR[key] ??
-            colors.incomeGreen,
+            incCat?.text_colour ?? CATEGORY_COLOR[key] ?? colors.incomeGreen,
         };
       }
       const catData = categories.find(
@@ -571,10 +629,7 @@ export default function AccountDetailScreen() {
     return (
       <View style={styles.containerCenter}>
         <Text style={styles.emptyText}>Account not found.</Text>
-        <TouchableOpacity
-          style={styles.backGhostBtn}
-          onPress={handleBack}
-        >
+        <TouchableOpacity style={styles.backGhostBtn} onPress={handleBack}>
           <Text style={styles.backGhostBtnText}>Go back</Text>
         </TouchableOpacity>
       </View>
@@ -617,21 +672,9 @@ export default function AccountDetailScreen() {
                     {(selectedAccount.type ?? 'ACCOUNT').toUpperCase()}
                   </Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.heroIconBtn}
-                  onPress={() =>
-                    navigation.navigate('Tabs', {
-                      screen: 'feed',
-                      params: {
-                        screen: 'FeedMain',
-                        params: { filterAccount: id },
-                      },
-                    })
-                  }
-                  hitSlop={8}
-                >
-                  <Icon name="chart" size={16} color="#FFFFFF" />
-                </TouchableOpacity>
+                {/* Invisible spacer (matches back button's footprint) keeps
+                    the title centered now that the chart shortcut is gone. */}
+                <View style={styles.heroIconSpacer} pointerEvents="none" />
               </View>
 
               <View style={styles.heroBody}>
@@ -662,7 +705,8 @@ export default function AccountDetailScreen() {
 
                 <View style={styles.quickActionsRow}>
                   <TouchableOpacity
-                    style={styles.qaBtn}
+                    style={styles.qaTile}
+                    activeOpacity={0.85}
                     onPress={() =>
                       navigation.navigate('AddTransaction', {
                         mode: 'income',
@@ -675,28 +719,33 @@ export default function AccountDetailScreen() {
                       })
                     }
                   >
-                    <View style={styles.qaIcon}>
-                      <Icon name="add" size={14} color="#FFFFFF" />
+                    <View style={styles.qaTileIcon}>
+                      <Icon name="add" size={16} color="#FFFFFF" />
                     </View>
-                    <Text style={styles.qaBtnText}>Add Funds</Text>
+                    <Text style={styles.qaTileLabel}>Add Funds</Text>
+                    <Text style={styles.qaTileSub}>Income</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.qaBtn}
+                    style={styles.qaTile}
+                    activeOpacity={0.85}
                     onPress={() => setShowTransferModal(true)}
                   >
-                    <View style={styles.qaIcon}>
-                      <Text style={styles.qaIconGlyph}>↗</Text>
+                    <View style={styles.qaTileIcon}>
+                      <Text style={styles.qaTileGlyph}>⇄</Text>
                     </View>
-                    <Text style={styles.qaBtnText}>Transfer</Text>
+                    <Text style={styles.qaTileLabel}>Transfer</Text>
+                    <Text style={styles.qaTileSub}>Between accounts</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.qaBtn}
+                    style={styles.qaTile}
+                    activeOpacity={0.85}
                     onPress={() => setAdjustSheetVisible(true)}
                   >
-                    <View style={styles.qaIcon}>
-                      <Icon name="balance" size={14} color="#FFFFFF" />
+                    <View style={styles.qaTileIcon}>
+                      <Icon name="balance" size={16} color="#FFFFFF" />
                     </View>
-                    <Text style={styles.qaBtnText}>Adjust</Text>
+                    <Text style={styles.qaTileLabel}>Adjust</Text>
+                    <Text style={styles.qaTileSub}>Reconcile</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -707,127 +756,306 @@ export default function AccountDetailScreen() {
               <View style={styles.flowCard}>
                 <View style={styles.flowHead}>
                   <Text style={styles.flowTitle}>Money Flow</Text>
-                  <View style={styles.monthChip}>
-                    <Text style={styles.monthChipText}>
-                      {currentMonthLabel}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.flowCols}>
-                  <View style={styles.flowCol}>
-                    <Text style={styles.flowColLabel}>In</Text>
-                    <Text
+                  <View style={styles.monthSelector}>
+                    <TouchableOpacity
+                      onPress={() => setMonthOffset((o) => o - 1)}
+                      hitSlop={10}
+                      style={styles.monthNavBtn}
+                    >
+                      <Text style={styles.monthNavGlyph}>‹</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setMonthPickerVisible(true)}
+                      activeOpacity={0.7}
+                      hitSlop={6}
+                    >
+                      <Text style={styles.monthSelectorText}>
+                        {selectedMonthLabel}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setMonthOffset((o) => Math.min(0, o + 1))}
+                      hitSlop={10}
+                      disabled={monthOffset >= 0}
                       style={[
-                        styles.flowColVal,
-                        { color: colors.incomeGreen },
+                        styles.monthNavBtn,
+                        monthOffset >= 0 && { opacity: 0.3 },
                       ]}
                     >
-                      +{fmtPeso(monthIn)}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.flowColDelta,
-                        {
-                          color:
-                            monthIn === prevMonthIn
-                              ? colors.textSecondary
-                              : monthIn >= prevMonthIn
-                                ? colors.incomeGreen
-                                : colors.expenseRed,
-                        },
-                      ]}
-                    >
-                      {fmtTrend(monthIn, prevMonthIn) || '—'}
-                    </Text>
-                  </View>
-                  <View style={styles.flowDivider} />
-                  <View style={styles.flowCol}>
-                    <Text style={styles.flowColLabel}>Out</Text>
-                    <Text
-                      style={[
-                        styles.flowColVal,
-                        { color: colors.expenseRed },
-                      ]}
-                    >
-                      −{fmtPeso(monthOut)}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.flowColDelta,
-                        {
-                          color:
-                            monthOut === prevMonthOut
-                              ? colors.textSecondary
-                              : monthOut <= prevMonthOut
-                                ? colors.incomeGreen
-                                : colors.expenseRed,
-                        },
-                      ]}
-                    >
-                      {fmtTrend(monthOut, prevMonthOut) || '—'}
-                    </Text>
-                  </View>
-                  <View style={styles.flowDivider} />
-                  <View style={styles.flowCol}>
-                    <Text style={styles.flowColLabel}>Net</Text>
-                    <Text
-                      style={[
-                        styles.flowColVal,
-                        {
-                          color:
-                            monthNet >= 0
-                              ? colors.textPrimary
-                              : colors.expenseRed,
-                        },
-                      ]}
-                    >
-                      {monthNet >= 0 ? '+' : '−'}
-                      {fmtPeso(monthNet)}
-                    </Text>
-                    <Text style={styles.flowColDelta}>
-                      {curMonthCount} txn{curMonthCount === 1 ? '' : 's'}
-                    </Text>
+                      <Text style={styles.monthNavGlyph}>›</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
 
-                {/* 14-day sparkline */}
-                <View style={styles.sparkWrap}>
-                  {dailyFlow.days.map((d, i) => {
-                    const SPARK_H = 38;
-                    const total = d.in + d.out;
-                    const inH = total > 0 ? (d.in / dailyFlow.max) * SPARK_H : 0;
-                    const outH = total > 0 ? (d.out / dailyFlow.max) * SPARK_H : 0;
-                    return (
-                      <View key={i} style={styles.sparkBar}>
-                        <View
+                {curMonthCount === 0 && !dailyFlow.hasData ? (
+                  // ─── Money Flow empty state ────────────────────────────────
+                  <View style={styles.flowEmpty}>
+                    <View
+                      style={[
+                        styles.flowEmptyIcon,
+                        { backgroundColor: `${config.color}1F` },
+                      ]}
+                    >
+                      <Icon name="chart" size={22} color={config.color} />
+                    </View>
+                    <Text style={styles.flowEmptyTitle}>
+                      Nothing flowing yet
+                    </Text>
+                    <Text style={styles.flowEmptySub}>
+                      {monthOffset === 0
+                        ? 'Add your first transaction on this account and we’ll start tracking money in, out, and net flow.'
+                        : `No activity recorded for ${selectedMonthLabel}.`}
+                    </Text>
+                    {monthOffset === 0 && (
+                      <TouchableOpacity
+                        style={[
+                          styles.flowEmptyCta,
+                          { backgroundColor: config.color },
+                        ]}
+                        onPress={() =>
+                          navigation.navigate('AddTransaction', {
+                            mode: 'income',
+                            prefill: {
+                              account: selectedAccount.id,
+                              merchant: '',
+                              amount: '',
+                              category: '',
+                            },
+                          })
+                        }
+                      >
+                        <Icon name="add" size={13} color="#FFFFFF" />
+                        <Text style={styles.flowEmptyCtaText}>
+                          Add transaction
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.flowCols}>
+                      <View style={styles.flowCol}>
+                        <Text style={styles.flowColLabel}>In</Text>
+                        <Text
                           style={[
-                            styles.sparkSeg,
+                            styles.flowColVal,
+                            { color: colors.incomeGreen },
+                          ]}
+                        >
+                          +{fmtPeso(monthIn)}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.flowColDelta,
                             {
-                              height: outH,
-                              backgroundColor: colors.expenseRed,
-                              opacity: 0.85,
+                              color:
+                                monthIn === prevMonthIn
+                                  ? colors.textSecondary
+                                  : monthIn >= prevMonthIn
+                                    ? colors.incomeGreen
+                                    : colors.expenseRed,
                             },
                           ]}
-                        />
-                        <View
-                          style={[
-                            styles.sparkSeg,
-                            {
-                              height: inH,
-                              backgroundColor: colors.incomeGreen,
-                              opacity: 0.9,
-                              marginTop: inH > 0 && outH > 0 ? 1 : 0,
-                            },
-                          ]}
-                        />
+                        >
+                          {fmtTrend(monthIn, prevMonthIn) || '—'}
+                        </Text>
                       </View>
-                    );
-                  })}
-                </View>
-                <View style={styles.sparkFoot}>
-                  <Text style={styles.sparkFootText}>14 days ago</Text>
-                  <Text style={styles.sparkFootText}>Today</Text>
-                </View>
+                      <View style={styles.flowDivider} />
+                      <View style={styles.flowCol}>
+                        <Text style={styles.flowColLabel}>Out</Text>
+                        <Text
+                          style={[
+                            styles.flowColVal,
+                            { color: colors.expenseRed },
+                          ]}
+                        >
+                          −{fmtPeso(monthOut)}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.flowColDelta,
+                            {
+                              color:
+                                monthOut === prevMonthOut
+                                  ? colors.textSecondary
+                                  : monthOut <= prevMonthOut
+                                    ? colors.incomeGreen
+                                    : colors.expenseRed,
+                            },
+                          ]}
+                        >
+                          {fmtTrend(monthOut, prevMonthOut) || '—'}
+                        </Text>
+                      </View>
+                      <View style={styles.flowDivider} />
+                      <View style={styles.flowCol}>
+                        <Text style={styles.flowColLabel}>Net</Text>
+                        <Text
+                          style={[
+                            styles.flowColVal,
+                            {
+                              color:
+                                monthNet >= 0
+                                  ? colors.textPrimary
+                                  : colors.expenseRed,
+                            },
+                          ]}
+                        >
+                          {monthNet >= 0 ? '+' : '−'}
+                          {fmtPeso(monthNet)}
+                        </Text>
+                        <Text style={styles.flowColDelta}>
+                          {curMonthCount} txn{curMonthCount === 1 ? '' : 's'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Daily breakdown chart — visual grammar mirrors
+                        Insights' DailySpendChart (gridlines, y-axis labels,
+                        peak-day amber) but keeps the in/out dual series. */}
+                    <View style={styles.chartWrap}>
+                      <View style={styles.chartSubHead}>
+                        <Text style={styles.chartSubHeadTitle}>
+                          Daily breakdown
+                        </Text>
+                        <View style={styles.chartLegend}>
+                          <View style={styles.chartLegendItem}>
+                            <View
+                              style={[
+                                styles.chartLegendSwatch,
+                                { backgroundColor: colors.incomeGreen },
+                              ]}
+                            />
+                            <Text style={styles.chartLegendText}>In</Text>
+                          </View>
+                          <View style={styles.chartLegendItem}>
+                            <View
+                              style={[
+                                styles.chartLegendSwatch,
+                                { backgroundColor: colors.expenseRed },
+                              ]}
+                            />
+                            <Text style={styles.chartLegendText}>Out</Text>
+                          </View>
+                        </View>
+                      </View>
+                      <View style={styles.chartBody}>
+                        <View style={styles.chartYAxis}>
+                          <Text style={styles.chartYLabel}>
+                            {shortPeso(dailyFlow.max)}
+                          </Text>
+                          <Text style={styles.chartYLabel}>
+                            {shortPeso(dailyFlow.max / 2)}
+                          </Text>
+                          <Text style={styles.chartYLabel}>₱0</Text>
+                        </View>
+                        <View style={styles.chartPlot}>
+                          <View
+                            style={[styles.chartGridline, { top: 0 }]}
+                            pointerEvents="none"
+                          />
+                          <View
+                            style={[styles.chartGridline, { top: '50%' }]}
+                            pointerEvents="none"
+                          />
+                          <View
+                            style={[styles.chartGridline, { bottom: 14 }]}
+                            pointerEvents="none"
+                          />
+                          <View style={styles.chartBars}>
+                            {dailyFlow.days.map((d, i) => {
+                              const CHART_H = 78;
+                              const inH =
+                                d.in > 0
+                                  ? Math.max(
+                                      (d.in / dailyFlow.max) * CHART_H,
+                                      2
+                                    )
+                                  : 0;
+                              const outH =
+                                d.out > 0
+                                  ? Math.max(
+                                      (d.out / dailyFlow.max) * CHART_H,
+                                      2
+                                    )
+                                  : 0;
+                              const isPeak =
+                                i === dailyFlow.peakDay && d.out > 0;
+                              const showLabel = d.day % 5 === 0 || isPeak;
+                              return (
+                                <View key={d.day} style={styles.chartBarCol}>
+                                  <View style={styles.chartBarStack}>
+                                    {inH > 0 && (
+                                      <View
+                                        style={[
+                                          styles.chartBarSeg,
+                                          {
+                                            height: inH,
+                                            backgroundColor: colors.incomeGreen,
+                                            opacity: 0.9,
+                                          },
+                                        ]}
+                                      />
+                                    )}
+                                    {outH > 0 && (
+                                      <View
+                                        style={[
+                                          styles.chartBarSeg,
+                                          {
+                                            height: outH,
+                                            backgroundColor: isPeak
+                                              ? PEAK_AMBER
+                                              : colors.expenseRed,
+                                            opacity: isPeak ? 1 : 0.85,
+                                            marginTop:
+                                              inH > 0 && outH > 0 ? 1 : 0,
+                                          },
+                                        ]}
+                                      />
+                                    )}
+                                  </View>
+                                  <Text
+                                    style={[
+                                      styles.chartBarLabel,
+                                      isPeak && { color: PEAK_AMBER },
+                                    ]}
+                                  >
+                                    {showLabel ? d.day : ''}
+                                  </Text>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      </View>
+                      {dailyFlow.peakAmt > 0 && (
+                        <View style={styles.chartCaption}>
+                          <View
+                            style={[
+                              styles.chartLegendSwatch,
+                              { backgroundColor: PEAK_AMBER },
+                            ]}
+                          />
+                          <Text style={styles.chartCaptionText}>
+                            Peak spend ·{' '}
+                            {new Date(
+                              selYear,
+                              selMonth,
+                              dailyFlow.peakDay + 1
+                            ).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                            {' · '}
+                            <Text style={styles.chartCaptionAmt}>
+                              {fmtPeso(dailyFlow.peakAmt)}
+                            </Text>
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </>
+                )}
               </View>
             </View>
 
@@ -899,32 +1127,18 @@ export default function AccountDetailScreen() {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Recent Transactions</Text>
               <View style={styles.sectionActions}>
+                {monthTxns.length > 0 && (
+                  <Text style={styles.recentCount}>{monthTxns.length}</Text>
+                )}
                 <TouchableOpacity
                   onPress={() => {
                     setSearchVisible((v) => !v);
                     if (searchVisible) setSearchQuery('');
                   }}
                   hitSlop={8}
+                  style={styles.recentSearchBtn}
                 >
-                  <Icon name="search" size={18} color={colors.textSecondary} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() =>
-                    navigation.navigate('Tabs', {
-                      screen: 'feed',
-                      params: {
-                        screen: 'FeedMain',
-                        params: {
-                          filterAccount: id,
-                          filterCategory: activeCategory ?? undefined,
-                        },
-                      },
-                    })
-                  }
-                >
-                  <Text style={[styles.seeAll, { color: config.color }]}>
-                    See all{transactions.length ? ` (${transactions.length})` : ''} →
-                  </Text>
+                  <Icon name="search" size={14} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -974,7 +1188,6 @@ export default function AccountDetailScreen() {
                 </TouchableOpacity>
                 {uniqueCategories.map((cat) => {
                   const isActive = activeCategory === cat;
-                  const { key, color } = getPillIcon(cat);
                   return (
                     <TouchableOpacity
                       key={cat}
@@ -990,22 +1203,14 @@ export default function AccountDetailScreen() {
                       ]}
                       onPress={() => setActiveCategory(isActive ? null : cat)}
                     >
-                      <View style={styles.pillInner}>
-                        <CategoryIcon
-                          categoryKey={key}
-                          color={isActive ? '#FFFFFF' : color}
-                          wrapperSize={18}
-                          size={10}
-                        />
-                        <Text
-                          style={[
-                            styles.filterPillText,
-                            isActive && styles.filterPillTextActive,
-                          ]}
-                        >
-                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                        </Text>
-                      </View>
+                      <Text
+                        style={[
+                          styles.filterPillText,
+                          isActive && styles.filterPillTextActive,
+                        ]}
+                      >
+                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                      </Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -1017,11 +1222,41 @@ export default function AccountDetailScreen() {
           <Text style={styles.emptyText}>
             {searchQuery || activeCategory
               ? 'No matching transactions'
-              : 'No recent transactions'}
+              : `No transactions in ${selectedMonthLabel}`}
           </Text>
         }
         ListFooterComponent={
           <>
+            {monthTxns.length > 0 && (
+              <TouchableOpacity
+                style={[
+                  styles.seeAllFoot,
+                  {
+                    backgroundColor: `${config.color}14`,
+                    borderColor: `${config.color}33`,
+                  },
+                ]}
+                activeOpacity={0.85}
+                onPress={() =>
+                  navigation.navigate('Tabs', {
+                    screen: 'feed',
+                    params: {
+                      screen: 'FeedMain',
+                      params: {
+                        filterAccount: id,
+                        filterCategory: activeCategory ?? undefined,
+                      },
+                    },
+                  })
+                }
+              >
+                <Text style={[styles.seeAllFootText, { color: config.color }]}>
+                  See all {monthTxns.length} transaction
+                  {monthTxns.length === 1 ? '' : 's'} →
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.sectionPad}>
               <View style={styles.detailsCard}>
                 <View style={styles.detailsHead}>
@@ -1121,6 +1356,19 @@ export default function AccountDetailScreen() {
         account={selectedAccount}
         colors={colors}
         isDark={isDark}
+      />
+
+      <MonthPickerModal
+        visible={monthPickerVisible}
+        year={selYear}
+        month={selMonth}
+        onConfirm={(y, m) => {
+          const now = new Date();
+          const offset = (y - now.getFullYear()) * 12 + (m - now.getMonth());
+          setMonthOffset(Math.min(0, offset));
+          setMonthPickerVisible(false);
+        }}
+        onClose={() => setMonthPickerVisible(false)}
       />
 
       {/* ════ EDIT ACCOUNT ════ */}
@@ -1293,6 +1541,10 @@ const createStyles = (colors: any, isDark: boolean) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    heroIconSpacer: {
+      width: 36,
+      height: 36,
+    },
     heroIconArrow: {
       fontFamily: 'Inter_600SemiBold',
       fontSize: 18,
@@ -1403,39 +1655,46 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     quickActionsRow: {
       flexDirection: 'row',
-      gap: 8,
+      gap: 10,
       marginTop: 18,
       width: '100%',
     },
-    qaBtn: {
+    qaTile: {
       flex: 1,
-      backgroundColor: 'rgba(255,255,255,0.16)',
+      backgroundColor: 'rgba(255,255,255,0.14)',
       borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.18)',
-      paddingVertical: 10,
-      paddingHorizontal: 6,
+      borderColor: 'rgba(255,255,255,0.2)',
+      paddingVertical: 12,
+      paddingHorizontal: 8,
       borderRadius: 14,
       alignItems: 'center',
-      gap: 5,
+      gap: 6,
     },
-    qaIcon: {
-      width: 30,
-      height: 30,
-      borderRadius: 15,
+    qaTileIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 12,
       backgroundColor: 'rgba(255,255,255,0.22)',
       alignItems: 'center',
       justifyContent: 'center',
     },
-    qaIconGlyph: {
+    qaTileGlyph: {
       fontFamily: 'Inter_600SemiBold',
-      fontSize: 13,
+      fontSize: 15,
       color: '#FFFFFF',
-      lineHeight: 15,
+      lineHeight: 17,
     },
-    qaBtnText: {
+    qaTileLabel: {
       fontFamily: 'Inter_600SemiBold',
-      fontSize: 11,
+      fontSize: 11.5,
       color: '#FFFFFF',
+      letterSpacing: 0.1,
+    },
+    qaTileSub: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 9,
+      color: 'rgba(255,255,255,0.65)',
+      letterSpacing: 0.2,
     },
     // Section helper
     sectionPad: {
@@ -1479,6 +1738,37 @@ const createStyles = (colors: any, isDark: boolean) =>
       fontSize: 11,
       color: colors.textSecondary,
     },
+    monthSelector: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 2,
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'rgba(30,30,46,0.08)',
+      paddingVertical: 3,
+      paddingHorizontal: 4,
+      borderRadius: 999,
+    },
+    monthNavBtn: {
+      width: 22,
+      height: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    monthNavGlyph: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 14,
+      color: colors.textSecondary,
+      lineHeight: 16,
+    },
+    monthSelectorText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: colors.textPrimary,
+      paddingHorizontal: 4,
+      minWidth: 78,
+      textAlign: 'center',
+    },
     flowCols: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1514,38 +1804,186 @@ const createStyles = (colors: any, isDark: boolean) =>
         : 'rgba(30,30,46,0.08)',
       marginHorizontal: 4,
     },
-    // Sparkline
-    sparkWrap: {
-      flexDirection: 'row',
-      alignItems: 'flex-end',
-      justifyContent: 'space-between',
-      gap: 3,
-      height: 40,
+    // Daily breakdown chart — visual grammar mirrors Insights' DailySpendChart
+    chartWrap: {
       marginTop: 14,
-      paddingTop: 10,
+      paddingTop: 12,
       borderTopWidth: 1,
-      borderTopColor: isDark
-        ? 'rgba(255,255,255,0.05)'
+      borderTopColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(30,30,46,0.06)',
+    },
+    chartSubHead: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    chartSubHeadTitle: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11,
+      color: colors.textPrimary,
+    },
+    chartLegend: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    chartLegendItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    chartLegendSwatch: {
+      width: 8,
+      height: 8,
+      borderRadius: 2,
+    },
+    chartLegendText: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 9.5,
+      color: colors.textSecondary,
+    },
+    chartBody: {
+      flexDirection: 'row',
+      height: 96,
+    },
+    chartYAxis: {
+      width: 30,
+      height: 78,
+      justifyContent: 'space-between',
+      alignItems: 'flex-end',
+      paddingRight: 6,
+    },
+    chartYLabel: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 8,
+      color: colors.textSecondary,
+      opacity: 0.7,
+    },
+    chartPlot: {
+      flex: 1,
+      position: 'relative',
+    },
+    chartGridline: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      height: 1,
+      backgroundColor: isDark
+        ? 'rgba(255,255,255,0.06)'
         : 'rgba(30,30,46,0.06)',
     },
-    sparkBar: {
+    chartBars: {
       flex: 1,
-      flexDirection: 'column',
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      height: 96,
+    },
+    chartBarCol: {
+      flex: 1,
+      alignItems: 'center',
+    },
+    chartBarStack: {
+      width: '70%',
+      height: 78,
       justifyContent: 'flex-end',
     },
-    sparkSeg: {
+    chartBarSeg: {
       width: '100%',
       borderRadius: 1.5,
     },
-    sparkFoot: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: 6,
-    },
-    sparkFootText: {
-      fontFamily: 'Inter_500Medium',
-      fontSize: 9,
+    chartBarLabel: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 8,
       color: colors.textSecondary,
+      marginTop: 4,
+      height: 10,
+    },
+    chartCaption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 6,
+      paddingLeft: 30,
+    },
+    chartCaptionText: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 10,
+      color: colors.textSecondary,
+    },
+    chartCaptionAmt: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 10,
+      color: colors.textPrimary,
+    },
+    // Money Flow empty state (in-card variant of the app-wide empty pattern)
+    flowEmpty: {
+      alignItems: 'center',
+      paddingVertical: 18,
+      paddingHorizontal: 12,
+      gap: 8,
+    },
+    flowEmptyIcon: {
+      width: 54,
+      height: 54,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 4,
+    },
+    flowEmptyTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 16,
+      color: colors.textPrimary,
+    },
+    flowEmptySub: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 17,
+      maxWidth: 260,
+    },
+    flowEmptyCta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      borderRadius: 999,
+    },
+    flowEmptyCtaText: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 12,
+      color: '#FFFFFF',
+    },
+    // Recent header: count + search icon
+    recentCount: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 11,
+      color: colors.textSecondary,
+    },
+    recentSearchBtn: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: isDark ? '#333333' : 'rgba(30,30,46,0.1)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    // "See all" footer button under the recent transactions list
+    seeAllFoot: {
+      marginHorizontal: spacing.screenPadding,
+      marginTop: 6,
+      paddingVertical: 12,
+      borderRadius: 14,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    seeAllFootText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12.5,
     },
     // Top categories
     catCard: {
@@ -1564,9 +2002,7 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     catRowDivider: {
       borderTopWidth: 1,
-      borderTopColor: isDark
-        ? 'rgba(255,255,255,0.05)'
-        : 'rgba(30,30,46,0.06)',
+      borderTopColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(30,30,46,0.06)',
     },
     catMeta: {
       flex: 1,

@@ -132,13 +132,26 @@ export function getCanonicalBrandName(name: string): string | null {
   return BRAND_KEY_MAP[name.trim().toLowerCase()] ?? null;
 }
 
+// The "type" column stores the user-selected category (E-Wallet, Bank, Cash,
+// Credit Card, Savings, Other). Legacy rows have `type: 'manual'` from before
+// the picker existed; those fall back to the brand's hardcoded label, or to a
+// generic "ACCOUNT" for custom names.
+function categoryLabel(acc: Account, fallback: string): string {
+  const t = (acc.type ?? '').trim();
+  if (!t || t.toLowerCase() === 'manual') return fallback;
+  return t.toUpperCase();
+}
+
 export function getCfg(acc: Account): CardCfg {
   const canonical = getCanonicalBrandName(acc.name);
-  if (canonical) return BRAND_CFGS[canonical];
+  if (canonical) {
+    const brand = BRAND_CFGS[canonical];
+    return { ...brand, typeLabel: categoryLabel(acc, brand.typeLabel) };
+  }
   const c = acc.brand_colour || '#2a2a3e';
   return {
     grad: [c, c, c],
-    typeLabel: (acc.type || 'ACCOUNT').toUpperCase(),
+    typeLabel: categoryLabel(acc, 'ACCOUNT'),
     watermark: (acc.letter_avatar || acc.name.charAt(0)).toUpperCase(),
   };
 }

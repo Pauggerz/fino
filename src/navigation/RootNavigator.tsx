@@ -49,6 +49,7 @@ const ScreenshotScreen = lazy(() => import('../screens/ScreenshotScreen'));
 const OnboardingScreen = lazy(() => import('../screens/OnboardingScreen'));
 const CashFlowScreen = lazy(() => import('../screens/CashFlowScreen'));
 const CategoryScreen = lazy(() => import('../screens/CategoryScreen'));
+const AccountsScreen = lazy(() => import('../screens/AccountsScreen'));
 const SankeyFullscreenScreen = lazy(
   () => import('../screens/SankeyFullscreenScreen')
 );
@@ -118,6 +119,7 @@ export type RootStackParamList = {
   RecurringBills: undefined;
   CashFlow: { accountId?: string } | undefined;
   Categories: undefined;
+  Accounts: undefined;
   TransactionDetail: { id: string };
   SankeyFullscreen: {
     income: number;
@@ -331,6 +333,11 @@ export default function RootNavigator() {
               <Stack.Screen
                 name="Categories"
                 component={CategoryScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="Accounts"
+                component={AccountsScreen}
                 options={{ headerShown: false, presentation: 'modal' }}
               />
               <Stack.Screen
