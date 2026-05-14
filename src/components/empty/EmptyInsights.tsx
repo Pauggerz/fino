@@ -17,7 +17,6 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useTheme } from '@/contexts/ThemeContext';
 import type { ThemeColors } from '@/constants/theme';
-import { AmbientOrb } from './AnimatedAmbient';
 
 /**
  * Animated empty-state for the Insights screen.
@@ -29,12 +28,11 @@ import { AmbientOrb } from './AnimatedAmbient';
  *   - Pure inline SVG / native views — no Skia, no Lottie, no asset hits
  *
  * Visual layers (back → front):
- *   1. Two ambient orbs (lavender + sage)
- *   2. Six bars rising/falling in a wave (staggered scaleY)
- *   3. A spark dot tracing the chart top with a soft trail
- *   4. A magnifier badge floating at upper-right of the chart
- *   5. A sweeping shimmer bar under the chart
- *   6. Heading / body / status chip (or CTA when supplied)
+ *   1. Six bars rising/falling in a wave (staggered scaleY)
+ *   2. A spark dot tracing the chart top with a soft trail
+ *   3. A magnifier badge floating at upper-right of the chart
+ *   4. A sweeping shimmer bar under the chart
+ *   5. Heading / body / status chip (or CTA when supplied)
  */
 
 export interface EmptyInsightsProps {
@@ -130,28 +128,7 @@ export const EmptyInsights: React.FC<EmptyInsightsProps> = React.memo(
 
     return (
       <View style={[styles.wrap, style]}>
-        {/* Layer 1 — ambient orbs. */}
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <AmbientOrb
-            size={240}
-            color={colors.lavender}
-            baseOpacity={0.32}
-            amplitude={32}
-            durationMs={10000}
-            phase={0.3}
-            style={{ top: -50, right: -70 }}
-          />
-          <AmbientOrb
-            size={260}
-            color={colors.primary}
-            baseOpacity={0.22}
-            amplitude={36}
-            durationMs={13000}
-            style={{ bottom: -80, left: -90 }}
-          />
-        </View>
-
-        {/* Layers 2-5 — chart cluster. */}
+        {/* Layers 1-4 — chart cluster. */}
         <View style={styles.chartCluster}>
           <View style={styles.chartFrame}>
             {/* Spark trail + dot rendered above the bars. */}

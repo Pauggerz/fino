@@ -71,6 +71,17 @@ const ACCOUNT_COLORS = [
   '#888780',
 ];
 
+// Mirror of the AccountsScreen category list — kept in sync manually since
+// this legacy modal is still mounted in ProfileSidebar.
+const ACCOUNT_CATEGORIES: { key: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'E-Wallet', icon: 'phone-portrait-outline' },
+  { key: 'Bank', icon: 'business-outline' },
+  { key: 'Cash', icon: 'cash-outline' },
+  { key: 'Credit Card', icon: 'card-outline' },
+  { key: 'Savings', icon: 'shield-checkmark-outline' },
+  { key: 'Other', icon: 'ellipsis-horizontal-outline' },
+];
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface BillReminder {
@@ -107,12 +118,16 @@ export function AddAccountModal({
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const [selectedColor, setSelectedColor] = useState(ACCOUNT_COLORS[0]);
+  const [selectedCategory, setSelectedCategory] = useState(
+    ACCOUNT_CATEGORIES[0].key,
+  );
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
     setName('');
     setBalance('');
     setSelectedColor(ACCOUNT_COLORS[0]);
+    setSelectedCategory(ACCOUNT_CATEGORIES[0].key);
   };
 
   const handleSave = async () => {
@@ -136,8 +151,8 @@ export function AddAccountModal({
 
     await createAccount({
       userId: user.id,
-      name: name.trim(),
-      type: 'manual',
+      name: savedName,
+      type: selectedCategory,
       brandColour: selectedColor,
       letterAvatar: letter,
       startingBalance: startBal,
@@ -219,6 +234,52 @@ export function AddAccountModal({
                 placeholderTextColor={colors.textSecondary}
                 maxLength={30}
               />
+            </View>
+
+            <View style={modalStyles.fieldGroup}>
+              <Text style={modalStyles.fieldLabel}>CATEGORY</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+              >
+                {ACCOUNT_CATEGORIES.map((c) => {
+                  const active = selectedCategory === c.key;
+                  return (
+                    <TouchableOpacity
+                      key={c.key}
+                      activeOpacity={0.75}
+                      onPress={() => setSelectedCategory(c.key)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 999,
+                        backgroundColor: active
+                          ? selectedColor
+                          : colors.catTileEmptyBg,
+                      }}
+                    >
+                      <Ionicons
+                        name={c.icon}
+                        size={14}
+                        color={active ? '#FFFFFF' : colors.textSecondary}
+                      />
+                      <Text
+                        style={{
+                          fontFamily: 'Inter_600SemiBold',
+                          fontSize: 12,
+                          color: active ? '#FFFFFF' : colors.textPrimary,
+                        }}
+                      >
+                        {c.key}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
 
             <View style={modalStyles.fieldGroup}>
