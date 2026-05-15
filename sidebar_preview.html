@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Fino — Sidebar & Hero Balance preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito:wght@700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ionicons@5.5.2/dist/css/ionicons.min.css">
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --text: #1c1c1e;
+    --muted: #8a8a8e;
+    --border: rgba(0,0,0,0.08);
+    --subdued: #f4f4f8;
+    --primary: #4f7a5e;      /* Forest */
+    --primaryDark: #355a44;
+    --primaryLight: #E8F4EC;
+    --primaryLightStrong: #CFE8D8;
+    --warn: #E0A455;
+    --warnBg: #FFF4E5;
+    --warnBgStrong: #FFE6C2;
+    --purple: #6A52C2;
+    --purpleBg: #F0ECFD;
+    --purpleBgStrong: #DCD3F8;
+    --lavenderDark: #4B2DA3;
+    --lavenderBg: #EDE8FC;
+    --red: #E05C5C;
+    --redOnDark: #FF7B7B;
+    --heroBg: linear-gradient(160deg,#2a3d33,#1f2e26);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px;
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column; gap: 40px; align-items: center;
+  }
+  h1 { font-family: 'Nunito', sans-serif; font-weight: 800; margin: 0 0 4px; font-size: 22px; }
+  h2 { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 16px; margin: 0 0 12px; }
+  .note { color: var(--muted); font-size: 13px; max-width: 760px; line-height: 1.5; }
+  .section { width: 100%; max-width: 1100px; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; }
+  .card {
+    background: var(--panel);
+    border-radius: 18px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.06);
+    padding: 18px;
+    width: 360px;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .badge.before { background: #ffe3e3; color: #b53a3a; }
+  .badge.after  { background: #d9f3e2; color: #2e7a48; }
+
+  /* ── Sidebar grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .gridItem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--subdued);
+    border-radius: 14px;
+    padding: 12px;
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+  .gridItem.active {
+    background: var(--primaryLight);
+  }
+  .gridIconBox {
+    width: 36px; height: 36px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: background 120ms ease;
+  }
+  .gridLabel { font-size: 13px; font-weight: 500; flex: 1; }
+  .gridIconBox ion-icon { font-size: 20px; }
+
+  .ic-wallet     { background: var(--primaryLight); color: var(--primary); }
+  .ic-wallet.on  { background: var(--primaryLightStrong); }
+  .ic-pie        { background: var(--warnBg);     color: var(--warn); }
+  .ic-pie.on     { background: var(--warnBgStrong); }
+  .ic-repeat     { background: var(--purpleBg);   color: var(--purple); }
+  .ic-repeat.on  { background: var(--purpleBgStrong); }
+  .ic-spark      { background: var(--lavenderBg); color: var(--lavenderDark); }
+
+  /* ── Hero card ── */
+  .hero {
+    background: var(--heroBg);
+    border-radius: 20px;
+    padding: 22px 20px 26px;
+    color: #fff;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+  }
+  .heroLabel {
+    font-size: 12px; opacity: 0.7; margin-bottom: 6px;
+    font-family: 'Inter';
+  }
+  .heroAmountRow {
+    display: flex; align-items: flex-start; line-height: 1;
+  }
+  .heroCurr {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 800;
+    font-size: 26px;
+    margin-top: 6px;
+    margin-right: 2px;
+  }
+  .heroAmount {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 900;
+    font-size: 44px;
+    letter-spacing: -0.5px;
+  }
+  .heroAmount.neg, .heroCurr.neg, .heroSign.neg {
+    color: var(--redOnDark);
+  }
+  .heroSign {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 800;
+    font-size: 30px;
+    margin-top: 4px;
+    margin-right: 1px;
+  }
+  .trendBadge {
+    display: inline-block;
+    background: rgba(255,255,255,0.12);
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    margin-top: 12px;
+  }
+
+  /* Caption strip */
+  .caption {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .controls {
+    display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .ctrl {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 999px;
+    background: #fff;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .ctrl.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+</style>
+</head>
+<body>
+
+<div class="section">
+  <h1>Sidebar grid — two-state icons</h1>
+  <p class="note">
+    Outline when idle, filled when its panel is expanded. Background tile also tints stronger
+    in the active state so the change reads at a glance. <b>Ask Fino</b> stays single state because
+    it navigates away.
+  </p>
+
+  <div class="controls">
+    <span style="font-size:12px;color:var(--muted);align-self:center;">Tap to toggle the demo:</span>
+    <button class="ctrl" id="t-acc">My Accounts</button>
+    <button class="ctrl" id="t-cat">Categories</button>
+    <button class="ctrl" id="t-rec">Recurrent</button>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <span class="badge before">Before</span>
+      <h2>Always outline</h2>
+      <div class="grid">
+        <div class="gridItem">
+          <div class="gridIconBox ic-wallet"><ion-icon name="wallet-outline"></ion-icon></div>
+          <div class="gridLabel">My Accounts</div>
+        </div>
+        <div class="gridItem">
+          <div class="gridIconBox ic-pie"><ion-icon name="pie-chart-outline"></ion-icon></div>
+          <div class="gridLabel">Categories &amp; Budget</div>
+        </div>
+        <div class="gridItem">
+          <div class="gridIconBox ic-repeat"><ion-icon name="repeat-outline"></ion-icon></div>
+          <div class="gridLabel">Recurrent Transactions</div>
+        </div>
+        <div class="gridItem">
+          <div class="gridIconBox ic-spark"><ion-icon name="sparkles-outline"></ion-icon></div>
+          <div class="gridLabel">Ask Fino</div>
+        </div>
+      </div>
+      <p class="caption">No visual feedback when a section is expanded below.</p>
+    </div>
+
+    <div class="card">
+      <span class="badge after">After</span>
+      <h2>Outline → Filled on active</h2>
+      <div class="grid" id="afterGrid">
+        <div class="gridItem" data-key="acc">
+          <div class="gridIconBox ic-wallet" data-on="ic-wallet on"><ion-icon name="wallet-outline"></ion-icon></div>
+          <div class="gridLabel">My Accounts</div>
+        </div>
+        <div class="gridItem" data-key="cat">
+          <div class="gridIconBox ic-pie" data-on="ic-pie on"><ion-icon name="pie-chart-outline"></ion-icon></div>
+          <div class="gridLabel">Categories &amp; Budget</div>
+        </div>
+        <div class="gridItem" data-key="rec">
+          <div class="gridIconBox ic-repeat" data-on="ic-repeat on"><ion-icon name="sync-outline"></ion-icon></div>
+          <div class="gridLabel">Recurrent Transactions</div>
+        </div>
+        <div class="gridItem">
+          <div class="gridIconBox ic-spark"><ion-icon name="sparkles-outline"></ion-icon></div>
+          <div class="gridLabel">Ask Fino</div>
+        </div>
+      </div>
+      <p class="caption">
+        Active swaps to <code>wallet</code> / <code>pie-chart</code> / <code>sync</code> (filled) +
+        stronger tile tint. Repeat → Sync because Ionicons has no filled <code>repeat</code> glyph.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h1>Home — total balance when negative</h1>
+  <p class="note">
+    Currently the <code>₱</code> is rendered <i>before</i> the formatted string, so a negative balance
+    reads <code>₱-1,234.56</code> (sign in the wrong slot) and the number stays white. After:
+    sign moves to the front and the whole figure turns red.
+  </p>
+
+  <div class="row">
+    <div class="card" style="background:transparent;box-shadow:none;padding:0;">
+      <span class="badge before">Before (negative case)</span>
+      <div class="hero">
+        <div class="heroLabel">Total balance</div>
+        <div class="heroAmountRow">
+          <span class="heroCurr">₱</span>
+          <span class="heroAmount">-1,234.56</span>
+        </div>
+        <div class="trendBadge">−12.4% vs last month</div>
+      </div>
+      <p class="caption">Sign sits after the peso symbol; no color change.</p>
+    </div>
+
+    <div class="card" style="background:transparent;box-shadow:none;padding:0;">
+      <span class="badge after">After</span>
+      <div class="hero">
+        <div class="heroLabel">Total balance</div>
+        <div class="heroAmountRow">
+          <span class="heroSign neg">−</span>
+          <span class="heroCurr neg">₱</span>
+          <span class="heroAmount neg">1,234.56</span>
+        </div>
+        <div class="trendBadge">−12.4% vs last month</div>
+      </div>
+      <p class="caption">
+        Sign in the right slot, full figure tinted <code>#FF7B7B</code> (legible on the dark hero).
+        Positive case stays unchanged — no regression on normal balances.
+      </p>
+    </div>
+
+    <div class="card" style="background:transparent;box-shadow:none;padding:0;">
+      <span class="badge after">After — positive (unchanged)</span>
+      <div class="hero">
+        <div class="heroLabel">Total balance</div>
+        <div class="heroAmountRow">
+          <span class="heroCurr">₱</span>
+          <span class="heroAmount">12,500.00</span>
+        </div>
+        <div class="trendBadge">+8.2% vs last month</div>
+      </div>
+      <p class="caption">Existing look preserved when balance ≥ 0.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  const map = { acc: 't-acc', cat: 't-cat', rec: 't-rec' };
+  const state = { acc:false, cat:false, rec:false };
+  function render() {
+    document.querySelectorAll('#afterGrid .gridItem').forEach(el => {
+      const k = el.dataset.key;
+      if (!k) return;
+      const on = state[k];
+      const box = el.querySelector('.gridIconBox');
+      const icon = el.querySelector('ion-icon');
+      el.classList.toggle('active', on);
+      // swap icon
+      const filled = { acc:'wallet', cat:'pie-chart', rec:'sync' }[k];
+      const outline = filled + '-outline';
+      icon.setAttribute('name', on ? filled : outline);
+      // tile tint via data-on class
+      box.className = on ? box.dataset.on : box.dataset.on.split(' ')[0];
+    });
+    Object.entries(map).forEach(([k,id]) => {
+      document.getElementById(id).classList.toggle('on', state[k]);
+    });
+  }
+  Object.entries(map).forEach(([k,id]) => {
+    document.getElementById(id).addEventListener('click', () => {
+      // mimic sidebar's "one at a time" behavior
+      Object.keys(state).forEach(other => { if (other !== k) state[other] = false; });
+      state[k] = !state[k];
+      render();
+    });
+  });
+  render();
+</script>
+
+<script type="module" src="https://cdn.jsdelivr.net/npm/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
+<script nomodule src="https://cdn.jsdelivr.net/npm/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
+</body>
+</html>

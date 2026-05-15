@@ -55,7 +55,6 @@ import type { ThemeColors } from '@/constants/theme';
 // ─── Rolling balance (slot-machine style) ────────────────────────────────────
 
 function formatBalanceString(n: number): string {
-  const neg = n < 0;
   const abs = Math.abs(n);
   const rounded = Math.round(abs * 100) / 100;
   const int = Math.floor(rounded);
@@ -68,7 +67,7 @@ function formatBalanceString(n: number): string {
     if (i > 0 && (s.length - i) % 3 === 0) out += ',';
     out += s[i];
   }
-  return `${neg ? '-' : ''}${out}.${frac}`;
+  return `${out}.${frac}`;
 }
 
 const REEL_DIGIT_H = 48; // must match heroAmount.lineHeight
@@ -685,10 +684,25 @@ function HomeScreen() {
                 />
               ) : (
                 <>
-                  <Text style={styles.heroCurr}>₱</Text>
+                  {totalBalance < 0 && !isPrivacyMode && (
+                    <Text style={[styles.heroAmount, styles.heroNegTint]}>
+                      −
+                    </Text>
+                  )}
+                  <Text
+                    style={[
+                      styles.heroCurr,
+                      totalBalance < 0 && styles.heroNegTint,
+                    ]}
+                  >
+                    ₱
+                  </Text>
                   <RollingBalance
                     value={totalBalance}
-                    textStyle={styles.heroAmount}
+                    textStyle={[
+                      styles.heroAmount,
+                      totalBalance < 0 && styles.heroNegTint,
+                    ]}
                     isPrivacyMode={isPrivacyMode}
                   />
                 </>
@@ -1095,6 +1109,9 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       color: '#FFFFFF', // Ensures it stays bright white on the dark hero background
       letterSpacing: -2,
       lineHeight: 48,
+    },
+    heroNegTint: {
+      color: '#FF7B7B', // Legible red on the dark hero gradient
     },
     trendBadge: {
       alignSelf: 'flex-start',

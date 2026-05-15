@@ -72,35 +72,55 @@ interface Props {
 
 // ── Shortcut grid item ────────────────────────────────────────────────────────
 function GridItem({
-  icon,
+  iconOutline,
+  iconFilled,
+  active,
   label,
   color,
   bg,
+  bgActive,
   onPress,
   colors,
   isDark,
   styles,
 }: {
-  icon: string;
+  iconOutline: string;
+  iconFilled?: string;
+  active?: boolean;
   label: string;
   color: string;
   bg: string;
+  bgActive?: string;
   onPress: () => void;
   colors: ThemeColors;
   isDark: boolean;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const showFilled = !!active && !!iconFilled;
+  const tileBg = showFilled && bgActive ? bgActive : bg;
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.7}
       style={[
         styles.gridItem,
-        { backgroundColor: isDark ? colors.surfaceSubdued : '#F4F4F8' },
+        {
+          backgroundColor: active
+            ? isDark
+              ? 'rgba(255,255,255,0.06)'
+              : '#ECECF2'
+            : isDark
+              ? colors.surfaceSubdued
+              : '#F4F4F8',
+        },
       ]}
     >
-      <View style={[styles.gridIconBox, { backgroundColor: bg }]}>
-        <Ionicons name={icon as any} size={20} color={color} />
+      <View style={[styles.gridIconBox, { backgroundColor: tileBg }]}>
+        <Ionicons
+          name={(showFilled ? iconFilled : iconOutline) as any}
+          size={20}
+          color={color}
+        />
       </View>
       <Text
         style={[styles.gridLabel, { color: colors.textPrimary }]}
@@ -501,7 +521,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
               <Ionicons
                 name="wallet-outline"
                 size={14}
-                color={colors.primary}
+                color={totalBalance < 0 ? colors.expenseRed : colors.primary}
               />
               <Text
                 style={[styles.balanceLabel, { color: colors.textSecondary }]}
@@ -509,9 +529,17 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 Total balance
               </Text>
               <Text
-                style={[styles.balanceAmount, { color: colors.textPrimary }]}
+                style={[
+                  styles.balanceAmount,
+                  {
+                    color:
+                      totalBalance < 0
+                        ? colors.expenseRed
+                        : colors.textPrimary,
+                  },
+                ]}
               >
-                ₱
+                {totalBalance < 0 ? '−' : ''}₱
                 {Math.abs(totalBalance).toLocaleString('en-PH', {
                   minimumFractionDigits: 2,
                 })}
@@ -525,10 +553,13 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
             {/* ── Shortcut grid ── */}
             <View style={styles.grid}>
               <GridItem
-                icon="wallet-outline"
+                iconOutline="wallet-outline"
+                iconFilled="wallet"
+                active={accountsExpanded}
                 label="My Accounts"
                 color={colors.primary}
                 bg={isDark ? colors.primaryLight : '#E8F4EC'}
+                bgActive={isDark ? 'rgba(91,140,110,0.32)' : '#CFE8D8'}
                 onPress={() => {
                   setBillsExpanded(false);
                   setCategoriesExpanded(false);
@@ -539,10 +570,13 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 styles={styles}
               />
               <GridItem
-                icon="pie-chart-outline"
+                iconOutline="pie-chart-outline"
+                iconFilled="pie-chart"
+                active={categoriesExpanded}
                 label="Categories & Budget"
                 color={colors.statWarnBar}
                 bg={isDark ? '#3A2E1D' : '#FFF4E5'}
+                bgActive={isDark ? '#54421F' : '#FFE6C2'}
                 onPress={() => {
                   setAccountsExpanded(false);
                   setBillsExpanded(false);
@@ -553,10 +587,13 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 styles={styles}
               />
               <GridItem
-                icon="repeat-outline"
+                iconOutline="sync-outline"
+                iconFilled="sync"
+                active={billsExpanded}
                 label="Recurrent Transactions"
                 color={colors.insightPurple}
                 bg={isDark ? colors.lavenderLight : '#F0ECFD'}
+                bgActive={isDark ? 'rgba(106,82,194,0.32)' : '#DCD3F8'}
                 onPress={() => {
                   setAccountsExpanded(false);
                   setCategoriesExpanded(false);
@@ -567,7 +604,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 styles={styles}
               />
               <GridItem
-                icon="sparkles-outline"
+                iconOutline="sparkles-outline"
                 label="Ask Fino"
                 color={colors.lavenderDark}
                 bg={isDark ? colors.lavenderLight : '#EDE8FC'}
