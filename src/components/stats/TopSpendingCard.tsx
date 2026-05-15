@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { CategoryIcon } from '@/components/CategoryIcon';
+import { CATEGORY_COLOR } from '@/constants/categoryMappings';
 import fmtPeso from '@/utils/format';
 
 export type MerchantRow = {
@@ -46,7 +48,10 @@ export function TopSpendingCard({
     <View
       style={[
         styles.card,
-        { backgroundColor: colors.white, borderColor: colors.cardBorderTransparent },
+        {
+          backgroundColor: colors.white,
+          borderColor: colors.cardBorderTransparent,
+        },
       ]}
     >
       <View style={styles.headRow}>
@@ -73,9 +78,7 @@ export function TopSpendingCard({
                   style={[
                     styles.toggleOptText,
                     {
-                      color: active
-                        ? colors.textPrimary
-                        : colors.textSecondary,
+                      color: active ? colors.textPrimary : colors.textSecondary,
                     },
                   ]}
                 >
@@ -88,9 +91,7 @@ export function TopSpendingCard({
       </View>
 
       {rows.length === 0 ? (
-        <Text
-          style={[styles.emptyText, { color: colors.textSecondary }]}
-        >
+        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
           {mode === 'merchants'
             ? 'No merchant data yet — add some transactions to see your top merchants.'
             : 'No transactions this month.'}
@@ -116,13 +117,12 @@ export function TopSpendingCard({
               <Text style={[styles.rank, { color: colors.textSecondary }]}>
                 {i + 1}
               </Text>
-              <View
-                style={[styles.avatar, { backgroundColor: row.color }]}
-              >
-                <Text style={styles.avatarText}>
-                  {avatarLetters(row.name)}
-                </Text>
-              </View>
+              <CategoryIcon
+                categoryKey={(row.category ?? 'default').toLowerCase()}
+                color={categoryIconColor(row.category, row.color)}
+                wrapperSize={36}
+                size={20}
+              />
               <View style={styles.meta}>
                 <Text
                   style={[styles.name, { color: colors.textPrimary }]}
@@ -163,13 +163,12 @@ export function TopSpendingCard({
   );
 }
 
-function avatarLetters(name: string): string {
-  if (!name) return '?';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return name.slice(0, 2).toUpperCase();
+// Prefer the canonical category color so icons stay legible on the soft tinted
+// tile background. Falls back to the row's hash-derived color (used for
+// uncategorised merchants) so we never render a black-on-black SVG.
+function categoryIconColor(category: string | null, fallback: string): string {
+  if (!category) return fallback;
+  return CATEGORY_COLOR[category.toLowerCase()] ?? fallback;
 }
 
 function cap(s: string): string {
@@ -227,18 +226,6 @@ const styles = StyleSheet.create({
     fontFamily: 'DMMono_500Medium',
     fontSize: 12,
     width: 16,
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    color: '#FFFFFF',
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
   },
   meta: { flex: 1, gap: 2 },
   name: {

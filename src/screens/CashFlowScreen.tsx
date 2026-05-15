@@ -31,8 +31,18 @@ import { MonthPickerModal } from '@/components/stats/MonthPickerModal';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 
 const MONTHS_SHORT = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 function categoryColor(cat: string | null): string {
@@ -160,7 +170,10 @@ export default function CashFlowScreen() {
         selectedYear,
         selectedMonth + 1,
         0,
-        23, 59, 59, 999
+        23,
+        59,
+        59,
+        999
       ).toISOString();
       const sixMoStart = new Date(
         selectedYear,
@@ -174,7 +187,10 @@ export default function CashFlowScreen() {
         prevYearIdx,
         prevMonthIdx + 1,
         0,
-        23, 59, 59, 999
+        23,
+        59,
+        59,
+        999
       ).toISOString();
 
       const txCol = database.get<TransactionModel>('transactions');
@@ -416,6 +432,8 @@ export default function CashFlowScreen() {
             <CashFlowCard
               income={bundle.income}
               expenses={bundle.expense}
+              prevIncome={bundle.prevIncome}
+              prevExpenses={bundle.prevExpense}
               prevNet={
                 bundle.prevIncome === 0 && bundle.prevExpense === 0
                   ? null
@@ -461,7 +479,10 @@ export default function CashFlowScreen() {
                 </Text>
                 {bundle.transactions.length > 0 ? (
                   <Text
-                    style={[styles.txnHeaderCount, { color: colors.textSecondary }]}
+                    style={[
+                      styles.txnHeaderCount,
+                      { color: colors.textSecondary },
+                    ]}
                   >
                     {bundle.transactions.length}
                   </Text>
@@ -499,8 +520,8 @@ export default function CashFlowScreen() {
                             styles.txnTypeIcon,
                             {
                               backgroundColor: isInc
-                                ? colors.incomeGreen + '1F'
-                                : colors.expenseRed + '1F',
+                                ? `${colors.incomeGreen}1F`
+                                : `${colors.expenseRed}1F`,
                             },
                           ]}
                           accessibilityLabel={isInc ? 'Income' : 'Expense'}
@@ -558,9 +579,7 @@ export default function CashFlowScreen() {
                       ]}
                     >
                       <Pressable
-                        onPress={() =>
-                          setTxnPage((p) => Math.max(0, p - 1))
-                        }
+                        onPress={() => setTxnPage((p) => Math.max(0, p - 1))}
                         disabled={txnPage === 0}
                         accessibilityRole="button"
                         accessibilityLabel="Previous page"
@@ -588,16 +607,17 @@ export default function CashFlowScreen() {
                       </Pressable>
 
                       <Text
-                        style={[styles.pagerLabel, { color: colors.textSecondary }]}
+                        style={[
+                          styles.pagerLabel,
+                          { color: colors.textSecondary },
+                        ]}
                       >
                         Page {txnPage + 1} of {txnPageCount}
                       </Text>
 
                       <Pressable
                         onPress={() =>
-                          setTxnPage((p) =>
-                            Math.min(txnPageCount - 1, p + 1)
-                          )
+                          setTxnPage((p) => Math.min(txnPageCount - 1, p + 1))
                         }
                         disabled={txnPage >= txnPageCount - 1}
                         accessibilityRole="button"
@@ -606,8 +626,7 @@ export default function CashFlowScreen() {
                           styles.pagerBtn,
                           {
                             backgroundColor: colors.surfaceSubdued,
-                            opacity:
-                              txnPage >= txnPageCount - 1 ? 0.4 : 1,
+                            opacity: txnPage >= txnPageCount - 1 ? 0.4 : 1,
                           },
                         ]}
                       >
@@ -680,10 +699,7 @@ function CategoryList({
       </Text>
       {rows.length === 0 ? (
         <Text
-          style={[
-            styles.empty,
-            { color: colors.textSecondary, marginTop: 8 },
-          ]}
+          style={[styles.empty, { color: colors.textSecondary, marginTop: 8 }]}
         >
           No data this month.
         </Text>
@@ -693,7 +709,7 @@ function CategoryList({
           return (
             <View key={r.key} style={styles.catRow}>
               <View
-                style={[styles.catBadge, { backgroundColor: accent + '22' }]}
+                style={[styles.catBadge, { backgroundColor: `${accent}22` }]}
               >
                 <Text style={[styles.catBadgeText, { color: accent }]}>
                   {pct}%

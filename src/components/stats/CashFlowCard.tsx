@@ -15,6 +15,8 @@ export type MonthTrendPoint = {
 export function CashFlowCard({
   income,
   expenses,
+  prevIncome,
+  prevExpenses,
   prevNet,
   trend,
   largest,
@@ -23,6 +25,8 @@ export function CashFlowCard({
 }: {
   income: number;
   expenses: number;
+  prevIncome?: number | null;
+  prevExpenses?: number | null;
   prevNet: number | null;
   trend: MonthTrendPoint[];
   largest: number;
@@ -36,14 +40,10 @@ export function CashFlowCard({
   const savingsPct = income > 0 ? Math.round((net / income) * 100) : 0;
   const dailyAvg = daysElapsed > 0 ? expenses / daysElapsed : 0;
 
-  // Cap bar widths so income (always 100%) and expense (relative) read at a glance.
-  const expenseRatio =
-    income > 0 ? Math.min(1, expenses / income) : expenses > 0 ? 1 : 0;
+  const incomeDelta = computeDelta(income, prevIncome);
+  const expenseDelta = computeDelta(expenses, prevExpenses);
 
-  const trendMax = Math.max(
-    1,
-    ...trend.map((t) => Math.abs(t.net))
-  );
+  const trendMax = Math.max(1, ...trend.map((t) => Math.abs(t.net)));
 
   const deltaLabel =
     prevNet === null
@@ -58,173 +58,219 @@ export function CashFlowCard({
       onPress={() => navigation.navigate('CashFlow')}
       android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
     >
-    <LinearGradient
-      colors={
-        isDark
-          ? [colors.white, colors.white]
-          : ['#FFFFFF', '#F4F0E9']
-      }
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.card, { borderColor: colors.cardBorderTransparent }]}
-    >
-      {/* Head */}
-      <View style={styles.headRow}>
-        <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>
-          CASH FLOW
-        </Text>
-        <View style={styles.headRight}>
-        {deltaLabel ? (
-          <View
-            style={[
-              styles.pill,
-              {
-                backgroundColor: deltaUp
-                  ? colors.onTrackBg1
-                  : colors.coralLight,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.pillText,
-                { color: deltaUp ? colors.incomeGreen : colors.expenseRed },
-              ]}
-            >
-              {deltaUp ? '▲ ' : '▼ '}
-              {deltaLabel}
-            </Text>
-          </View>
-        ) : null}
-          <Ionicons
-            name="chevron-forward"
-            size={14}
-            color={colors.textSecondary}
-          />
-        </View>
-      </View>
-
-      {/* Hero net amount */}
-      <Text
-        style={[
-          styles.netAmount,
-          { color: positive ? colors.incomeGreen : colors.expenseRed },
-        ]}
+      <LinearGradient
+        colors={isDark ? [colors.white, colors.white] : ['#FFFFFF', '#F4F0E9']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.card, { borderColor: colors.cardBorderTransparent }]}
       >
-        {positive ? '+' : '-'}
-        {fmtPeso(net)}
-      </Text>
-      <Text style={[styles.netLabel, { color: colors.textSecondary }]}>
-        Net this month — you kept {savingsPct}% of income
-      </Text>
-
-      {/* Dual bars */}
-      <View style={styles.dualBars}>
-        <View style={[styles.barCol, { backgroundColor: colors.surfaceSubdued }]}>
-          <Text style={[styles.barLabel, { color: colors.textSecondary }]}>
-            INCOME
+        {/* Head */}
+        <View style={styles.headRow}>
+          <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>
+            CASH FLOW
           </Text>
-          <Text style={[styles.barValue, { color: colors.incomeGreen }]}>
-            {fmtPeso(income)}
-          </Text>
-          <View
-            style={[
-              styles.barFill,
-              { backgroundColor: 'rgba(0,0,0,0.05)' },
-            ]}
-          >
-            <View
-              style={[
-                styles.barFillInner,
-                {
-                  width: '100%',
-                  backgroundColor: colors.incomeGreen,
-                },
-              ]}
-            />
-          </View>
-        </View>
-        <View style={[styles.barCol, { backgroundColor: colors.surfaceSubdued }]}>
-          <Text style={[styles.barLabel, { color: colors.textSecondary }]}>
-            EXPENSES
-          </Text>
-          <Text style={[styles.barValue, { color: colors.expenseRed }]}>
-            {fmtPeso(expenses)}
-          </Text>
-          <View
-            style={[
-              styles.barFill,
-              { backgroundColor: 'rgba(0,0,0,0.05)' },
-            ]}
-          >
-            <View
-              style={[
-                styles.barFillInner,
-                {
-                  width: `${expenseRatio * 100}%`,
-                  backgroundColor: colors.expenseRed,
-                },
-              ]}
-            />
-          </View>
-        </View>
-      </View>
-
-      {/* Mini stats */}
-      <View style={styles.miniStats}>
-        <MiniStat label="Largest" value={fmtPeso(largest)} colors={colors} />
-        <MiniStat label="Txns" value={String(txCount)} colors={colors} />
-        <MiniStat
-          label="Daily avg"
-          value={fmtPeso(dailyAvg)}
-          colors={colors}
-        />
-      </View>
-
-      {/* 6-month trend strip */}
-      <View style={{ marginTop: 18 }}>
-        <Text style={[styles.miniLabel, { color: colors.textSecondary }]}>
-          6-MONTH NET TREND
-        </Text>
-        <View style={styles.miniBars}>
-          {trend.map((t) => {
-            const height = `${Math.max(8, (Math.abs(t.net) / trendMax) * 100)}%`;
-            const negative = t.net < 0;
-            const fill = t.isCurrent
-              ? colors.primary
-              : negative
-                ? colors.expenseRed
-                : colors.incomeGreen;
-            return (
-              <View key={t.label} style={styles.miniBarCol}>
-                <View
-                  style={[
-                    styles.miniBar,
-                    {
-                      height: height as any,
-                      backgroundColor: fill,
-                    },
-                  ]}
-                />
+          <View style={styles.headRight}>
+            {deltaLabel ? (
+              <View
+                style={[
+                  styles.pill,
+                  {
+                    backgroundColor: deltaUp
+                      ? colors.onTrackBg1
+                      : colors.coralLight,
+                  },
+                ]}
+              >
                 <Text
                   style={[
-                    styles.miniBarLabel,
-                    {
-                      color: t.isCurrent
-                        ? colors.primary
-                        : colors.textSecondary,
-                    },
+                    styles.pillText,
+                    { color: deltaUp ? colors.incomeGreen : colors.expenseRed },
                   ]}
                 >
-                  {t.label}
+                  {deltaUp ? '▲ ' : '▼ '}
+                  {deltaLabel}
                 </Text>
               </View>
-            );
-          })}
+            ) : null}
+            <Ionicons
+              name="chevron-forward"
+              size={14}
+              color={colors.textSecondary}
+            />
+          </View>
         </View>
-      </View>
-    </LinearGradient>
+
+        {/* Hero net amount */}
+        <Text
+          style={[
+            styles.netAmount,
+            { color: positive ? colors.incomeGreen : colors.expenseRed },
+          ]}
+        >
+          {positive ? '+' : '-'}
+          {fmtPeso(net)}
+        </Text>
+        <Text style={[styles.netLabel, { color: colors.textSecondary }]}>
+          Net this month — you kept {savingsPct}% of income
+        </Text>
+
+        {/* Dual columns. The previous green/red bar that lived under each value
+          conveyed no useful information (income was always 100%, expense was
+          income/expense ratio that already reads from the numbers above). It
+          is replaced with a vs-prev-month delta — same vertical footprint,
+          actually informative. */}
+        <View style={styles.dualBars}>
+          <View
+            style={[styles.barCol, { backgroundColor: colors.surfaceSubdued }]}
+          >
+            <Text style={[styles.barLabel, { color: colors.textSecondary }]}>
+              INCOME
+            </Text>
+            <Text style={[styles.barValue, { color: colors.incomeGreen }]}>
+              {fmtPeso(income)}
+            </Text>
+            <DeltaPill
+              delta={incomeDelta}
+              // For income, going up is good; treated the same as expense going down.
+              goodDirection="up"
+              colors={colors}
+            />
+          </View>
+          <View
+            style={[styles.barCol, { backgroundColor: colors.surfaceSubdued }]}
+          >
+            <Text style={[styles.barLabel, { color: colors.textSecondary }]}>
+              EXPENSES
+            </Text>
+            <Text style={[styles.barValue, { color: colors.expenseRed }]}>
+              {fmtPeso(expenses)}
+            </Text>
+            <DeltaPill
+              delta={expenseDelta}
+              goodDirection="down"
+              colors={colors}
+            />
+          </View>
+        </View>
+
+        {/* Mini stats */}
+        <View style={styles.miniStats}>
+          <MiniStat label="Largest" value={fmtPeso(largest)} colors={colors} />
+          <MiniStat label="Txns" value={String(txCount)} colors={colors} />
+          <MiniStat
+            label="Daily avg"
+            value={fmtPeso(dailyAvg)}
+            colors={colors}
+          />
+        </View>
+
+        {/* 6-month trend strip */}
+        <View style={{ marginTop: 18 }}>
+          <Text style={[styles.miniLabel, { color: colors.textSecondary }]}>
+            6-MONTH NET TREND
+          </Text>
+          <View style={styles.miniBars}>
+            {trend.map((t) => {
+              const height = `${Math.max(8, (Math.abs(t.net) / trendMax) * 100)}%`;
+              const negative = t.net < 0;
+              const fill = t.isCurrent
+                ? colors.primary
+                : negative
+                  ? colors.expenseRed
+                  : colors.incomeGreen;
+              return (
+                <View key={t.label} style={styles.miniBarCol}>
+                  <View
+                    style={[
+                      styles.miniBar,
+                      {
+                        height: height as any,
+                        backgroundColor: fill,
+                      },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.miniBarLabel,
+                      {
+                        color: t.isCurrent
+                          ? colors.primary
+                          : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {t.label}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      </LinearGradient>
     </Pressable>
+  );
+}
+
+type Delta =
+  | { kind: 'pct'; up: boolean; pct: number }
+  | { kind: 'new'; up: boolean }
+  | null;
+
+// Builds the vs-prev-month comparison. Returns null when there's no prior data
+// or both sides are zero (nothing meaningful to compare). When prev is zero
+// but current is positive, we mark it as "new" so the pill reads "New" rather
+// than the misleading "+∞%".
+function computeDelta(current: number, prev: number | null | undefined): Delta {
+  if (prev == null) return null;
+  if (prev === 0 && current === 0) return null;
+  if (prev === 0) return { kind: 'new', up: current > 0 };
+  const pct = Math.round(((current - prev) / prev) * 100);
+  if (pct === 0) return { kind: 'pct', up: true, pct: 0 };
+  return { kind: 'pct', up: pct > 0, pct: Math.abs(pct) };
+}
+
+function DeltaPill({
+  delta,
+  goodDirection,
+  colors,
+}: {
+  delta: Delta;
+  goodDirection: 'up' | 'down';
+  colors: any;
+}) {
+  if (!delta) {
+    return (
+      <View style={styles.deltaRow}>
+        <Text
+          style={[styles.deltaMuted, { color: colors.textSecondary }]}
+          numberOfLines={1}
+        >
+          No prior month
+        </Text>
+      </View>
+    );
+  }
+
+  const goingUp = delta.up;
+  const isGood = goodDirection === 'up' ? goingUp : !goingUp;
+  const tint = isGood ? colors.incomeGreen : colors.expenseRed;
+  const bg = isGood ? colors.onTrackBg1 : colors.coralLight;
+
+  const label =
+    delta.kind === 'new'
+      ? 'New'
+      : delta.pct === 0
+        ? 'Flat vs prev'
+        : `${goingUp ? 'Up' : 'Down'} ${delta.pct}% vs prev`;
+
+  return (
+    <View style={styles.deltaRow}>
+      <View style={[styles.deltaPill, { backgroundColor: bg }]}>
+        <Text style={[styles.deltaPillText, { color: tint }]} numberOfLines={1}>
+          {label}
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -238,9 +284,7 @@ function MiniStat({
   colors: any;
 }) {
   return (
-    <View
-      style={[styles.miniStat, { backgroundColor: colors.surfaceSubdued }]}
-    >
+    <View style={[styles.miniStat, { backgroundColor: colors.surfaceSubdued }]}>
       <Text style={[styles.miniStatKey, { color: colors.textSecondary }]}>
         {label.toUpperCase()}
       </Text>
@@ -317,15 +361,27 @@ const styles = StyleSheet.create({
     fontSize: 18,
     letterSpacing: -0.3,
   },
-  barFill: {
-    height: 8,
-    borderRadius: 999,
-    marginTop: 12,
-    overflow: 'hidden',
+  deltaRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  barFillInner: {
-    height: '100%',
+  deltaPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 999,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  deltaPillText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    letterSpacing: 0.3,
+  },
+  deltaMuted: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 10,
+    letterSpacing: 0.2,
   },
   miniStats: {
     flexDirection: 'row',

@@ -15,6 +15,25 @@ import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import { analyzeTransactionText } from './aiCategoryMap';
 import fmtPeso from '@/utils/format';
+import {
+  median,
+  madSigma,
+  stddev,
+  ci95,
+  tCritical95,
+  chi2Uniform,
+  linearRegression,
+} from '@/utils/statistics';
+import {
+  checkAnomalyBaseline,
+  checkComposition,
+  checkDowPattern,
+  checkSankey,
+  checkTodPattern,
+  checkTrajectory,
+  checkTrendSlope,
+  type Sufficiency,
+} from '@/utils/sufficiency';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -43,6 +62,25 @@ export type TrajectoryForecast = {
   pacingOver: boolean;
   /** True when the projection used per-weekday weighting (vs flat dailyAvg). */
   usedDowWeighting: boolean;
+  /** Lower 95% bound on the EOM projection (Student-t for N<30, normal otherwise). */
+  ciLow: number;
+  /** Upper 95% bound on the EOM projection. */
+  ciHigh: number;
+  /** True when the CI used the t-distribution (i.e. daysElapsed < 30). */
+  ciUsedT: boolean;
+};
+
+export type TrendSlope = {
+  /** OLS slope of the 6-month net series in pesos / month. Sign = direction. */
+  slope: number;
+  /** Coefficient of determination, R² ∈ [0, 1]. */
+  r2: number;
+  /** Months that contributed to the regression (zero-spend months dropped). */
+  n: number;
+  /** 'up' when slope > 0 and R² ≥ 0.6; 'down' when slope < 0 and R² ≥ 0.6;
+   *  'flat' otherwise. We refuse to claim a direction below R² = 0.6 because
+   *  the fit isn't strong enough to call the slope. */
+  direction: 'up' | 'down' | 'flat';
 };
 
 export type RecurringBill = {
@@ -85,6 +123,21 @@ export type WeekDelta = {
   pctChange: number; // 0.25 → +25%
 };
 
+/**
+ * Per-card sufficiency verdicts. Each gate is documented in
+ * `docs/INSIGHTS_FORMULAS.md` §1.2 and implemented in `@/utils/sufficiency`.
+ * The screen reads these to decide whether to render each chart or surface
+ * the "needs more data" overlay with the gate's reason string.
+ */
+export type InsightsSufficiency = {
+  sankey: Sufficiency;
+  trajectory: Sufficiency;
+  composition: Sufficiency;
+  dowPattern: Sufficiency;
+  todPattern: Sufficiency;
+  trendSlope: Sufficiency;
+};
+
 export type Insights = {
   headline: string;
   whereChip: string;
@@ -97,6 +150,10 @@ export type Insights = {
   recurring: RecurringBill[];
   /** Localised financial coach tip — sentiment + actionable message. */
   coach: CoachMessage;
+  /** OLS slope + R² over the 6-month net series. Null when <3 months of data. */
+  trendSlope: TrendSlope | null;
+  /** Per-card sufficiency verdicts driving the "needs more data" overlays. */
+  sufficiency: InsightsSufficiency;
 };
 
 export type CategorySuggestion = {
@@ -171,29 +228,83 @@ function sumByMerchant(
 // ─── Detectors ──────────────────────────────────────────────────────────────
 
 /**
- * Anomalies: categories whose current-month spend is ≥50% above their
- * 3-month rolling average (excluding the current month). Only categories
- * with a baseline of at least one prior month with non-zero spend qualify
- * — avoids false-positives on first-time categories.
+ * Anomaly detection via the **Iglewicz-Hoaglin modified z-score** on a
+ * per-category, per-prior-month baseline. See §3.6 of
+ * `docs/INSIGHTS_FORMULAS.md` for the full derivation.
+ *
+ * Algorithm:
+ *   1. Bucket prior-3-month expense txns into a 3-element array `b` per
+ *      category. Months with zero spend in that category contribute a 0 —
+ *      not a missing observation. (A category appearing this month after
+ *      3 zeros is itself worth flagging.)
+ *   2. Compute median(b) and σ̂ = 1.4826 · MAD(b).
+ *   3. If σ̂ > 0 → flag when (current − median) / σ̂ > 3.5
+ *      (Iglewicz-Hoaglin outlier cutoff; conservative on heavy-tailed data).
+ *   4. If σ̂ = 0 (perfectly stable subscription) → fall back to
+ *      current > 1.5 · median (50% margin chosen wide enough to ignore
+ *      cent-level rounding).
+ *   5. Require ≥2 prior months with non-zero spend before flagging
+ *      (avoids "appeared once, now anomalous" false-positives).
+ *
+ * Result is sorted by `pctOver` desc so the worst offender drives the chip.
  */
 function detectAnomalies(
   currentByCat: Record<string, number>,
-  prior3MoByCat: Record<string, number>,
-  prior3MoMonthsCount: number
+  prior3MoTx: TransactionModel[],
+  priorMonthKeys: string[]
 ): Anomaly[] {
+  // Build month → category → amount. Initialise every prior month even when
+  // empty so the baseline array always has length = priorMonthKeys.length and
+  // zero-spend months count as 0 observations.
+  const byMonthCat: Record<string, Record<string, number>> = {};
+  for (const mk of priorMonthKeys) byMonthCat[mk] = {};
+  for (const t of prior3MoTx) {
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
+    const mk = t.date.slice(0, 7);
+    if (!(mk in byMonthCat)) continue;
+    const cat = (t.category ?? '').trim().toLowerCase();
+    if (!cat) continue;
+    byMonthCat[mk][cat] = (byMonthCat[mk][cat] ?? 0) + t.amount;
+  }
+
   const out: Anomaly[] = [];
   for (const [cat, current] of Object.entries(currentByCat)) {
-    const total3Mo = prior3MoByCat[cat] ?? 0;
-    if (total3Mo <= 0) continue;
-    const baseline = total3Mo / Math.max(1, prior3MoMonthsCount);
-    if (baseline <= 0 || current <= baseline * 1.5) continue;
-    out.push({
-      category: cat,
-      current,
-      baseline,
-      pctOver: (current - baseline) / baseline,
-    });
+    if (current <= 0) continue;
+    const baseline = priorMonthKeys.map((mk) => byMonthCat[mk][cat] ?? 0);
+    const monthsWithSpend = baseline.filter((b) => b > 0).length;
+
+    // Sufficiency gate — see checkAnomalyBaseline in @/utils/sufficiency.
+    if (monthsWithSpend < 2) continue;
+
+    const med = median(baseline);
+    const sigma = madSigma(baseline);
+
+    let flagged = false;
+    let pctOver = 0;
+    if (sigma > 0) {
+      // Robust z-score: M = (x − median) / (1.4826 · MAD). Cutoff |M| > 3.5
+      // is Iglewicz-Hoaglin (1993). We only flag positive-side excursions —
+      // *under*-spending isn't an action signal.
+      const z = (current - med) / sigma;
+      if (z > 3.5) {
+        flagged = true;
+        pctOver = med > 0 ? (current - med) / med : 0;
+      }
+    } else if (med > 0) {
+      // MAD = 0: baseline is perfectly stable (e.g. fixed-amount
+      // subscription). Z-score is undefined — fall back to a 50% margin
+      // on the median (wider than the z-score equivalent to avoid
+      // flagging on cent-level rounding).
+      if (current > med * 1.5) {
+        flagged = true;
+        pctOver = (current - med) / med;
+      }
+    }
+    if (!flagged) continue;
+
+    out.push({ category: cat, current, baseline: med, pctOver });
   }
+
   return out.sort((a, b) => b.pctOver - a.pctOver);
 }
 
