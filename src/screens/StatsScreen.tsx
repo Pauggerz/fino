@@ -76,6 +76,13 @@ import { MonthPickerModal } from '@/components/stats/MonthPickerModal';
 import DowPatternChart from '@/components/stats/DowPatternChart';
 import TimeOfDayChart from '@/components/stats/TimeOfDayChart';
 import { getInsights, type Insights } from '@/services/IntelligenceEngine';
+import {
+  checkDowPattern,
+  checkSankey,
+  checkTodPattern,
+  checkTrajectory,
+  type Sufficiency,
+} from '@/utils/sufficiency';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -742,6 +749,41 @@ function InsightsScreen() {
   const finoWhereChip = insights?.whereChip ?? buildWhereChip(bundle);
   const finoWhenChip = insights?.whenChip ?? buildWhenChip(bundle);
 
+  // Sufficiency gates. The engine is the source of truth once it resolves —
+  // its gates use the exact same input data the chips do, so the gate and
+  // the chip can never disagree. On cold start we fall back to recomputing
+  // from the local bundle, which is the same data the engine sees, so the
+  // visual stays stable across the engine-resolves transition.
+  const populatedWeekdays = useMemo(
+    () => bundle.dowAvg.reduce((n, v) => n + (v > 0 ? 1 : 0), 0),
+    [bundle.dowAvg]
+  );
+  const populatedTodBuckets = useMemo(
+    () => bundle.todTotals.reduce((n, v) => n + (v > 0 ? 1 : 0), 0),
+    [bundle.todTotals]
+  );
+  const sankeyGate: Sufficiency =
+    insights?.sufficiency?.sankey ??
+    checkSankey({
+      hasIncome: bundle.totalIncome > 0,
+      hasExpense: bundle.totalExpense > 0,
+    });
+  const trajectoryGate: Sufficiency =
+    insights?.sufficiency?.trajectory ??
+    checkTrajectory({ txCount: bundle.txCount, daysElapsed });
+  const dowGate: Sufficiency =
+    insights?.sufficiency?.dowPattern ??
+    checkDowPattern({
+      txCount: bundle.txCount,
+      populatedWeekdays,
+    });
+  const todGate: Sufficiency =
+    insights?.sufficiency?.todPattern ??
+    checkTodPattern({
+      txCount: bundle.txCount,
+      populatedBuckets: populatedTodBuckets,
+    });
+
   // ── Render ──
 
   if (loading && bundle.totalExpense === 0 && bundle.totalIncome === 0) {
@@ -913,12 +955,10 @@ function InsightsScreen() {
             daysElapsed={daysElapsed}
           />
           <NeedMoreData
-            enough={bundle.totalIncome > 0 && bundle.totalExpense > 0}
-            needed={2}
-            current={
-              (bundle.totalIncome > 0 ? 1 : 0) +
-              (bundle.totalExpense > 0 ? 1 : 0)
-            }
+            enough={sankeyGate.ok}
+            needed={sankeyGate.needed}
+            current={sankeyGate.current}
+            reason={sankeyGate.reason}
             colors={colors}
           >
             <MoneyFlowSankey
@@ -935,9 +975,10 @@ function InsightsScreen() {
             />
           </NeedMoreData>
           <NeedMoreData
-            enough={bundle.txCount >= 5}
-            needed={5}
-            current={bundle.txCount}
+            enough={trajectoryGate.ok}
+            needed={trajectoryGate.needed}
+            current={trajectoryGate.current}
+            reason={trajectoryGate.reason}
             colors={colors}
           >
             <TrajectoryChart
@@ -989,9 +1030,10 @@ function InsightsScreen() {
               </Text>
             </View>
             <NeedMoreData
-              enough={bundle.txCount >= 5}
-              needed={5}
-              current={bundle.txCount}
+              enough={dowGate.ok}
+              needed={dowGate.needed}
+              current={dowGate.current}
+              reason={dowGate.reason}
               colors={colors}
             >
               <DowPatternChart dowAvg={bundle.dowAvg} colors={colors} />
@@ -1012,9 +1054,10 @@ function InsightsScreen() {
               </Text>
             </View>
             <NeedMoreData
-              enough={bundle.txCount >= 5}
-              needed={5}
-              current={bundle.txCount}
+              enough={todGate.ok}
+              needed={todGate.needed}
+              current={todGate.current}
+              reason={todGate.reason}
               colors={colors}
             >
               <TimeOfDayChart
@@ -1144,20 +1187,28 @@ const emptyStyles = StyleSheet.create({
   },
 });
 
+// The reason string comes from @/utils/sufficiency — each gate writes its own
+// user-facing copy so this component doesn't have to guess. The legacy
+// `needed`/`current` props are kept as a fallback for callers that haven't
+// migrated to the sufficiency module yet (so a default message can be built).
 function NeedMoreData({
   enough,
   needed,
   current,
+  reason,
   colors,
   children,
 }: {
   enough: boolean;
   needed: number;
   current: number;
+  reason?: string;
   colors: any;
   children: React.ReactNode;
 }) {
-  if (enough) return <>{children}</>;
+  if (enough) return children as React.ReactElement;
+  const remaining = Math.max(needed - current, 1);
+  const fallback = `Log ${remaining} more transaction${remaining === 1 ? '' : 's'} this month to unlock this chart.`;
   return (
     <View style={needMoreStyles.wrap}>
       <View style={needMoreStyles.faded} pointerEvents="none">
@@ -1177,8 +1228,7 @@ function NeedMoreData({
           Needs more data
         </Text>
         <Text style={[needMoreStyles.sub, { color: colors.textSecondary }]}>
-          Log {Math.max(needed - current, 1)} more transaction
-          {needed - current === 1 ? '' : 's'} this month to unlock this chart.
+          {reason && reason.length > 0 ? reason : fallback}
         </Text>
       </View>
     </View>

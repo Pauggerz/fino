@@ -158,7 +158,8 @@ export function checkTodPattern(args: {
       ok: false,
       current: args.populatedBuckets,
       needed: 2,
-      reason: 'All transactions land in one part of the day — need spread to see a pattern.',
+      reason:
+        'All transactions land in one part of the day — need spread to see a pattern.',
     };
   }
   return { ok: true, current: args.txCount, needed: 15, reason: '' };

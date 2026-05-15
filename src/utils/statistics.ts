@@ -284,9 +284,10 @@ export function hhi(amounts: number[]): number {
   if (total <= 0) return 0;
   let acc = 0;
   for (const a of amounts) {
-    if (a <= 0) continue;
-    const share = a / total;
-    acc += share * share;
+    if (a > 0) {
+      const share = a / total;
+      acc += share * share;
+    }
   }
   return acc;
 }
