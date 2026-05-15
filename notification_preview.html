@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fino Notifications — Design Preview</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito:wght@700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+  <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+
+  <style>
+    :root {
+      --primary: #5B8C6E;
+      --primary-dark: #3f6b52;
+      --primary-light: #EBF2EE;
+      --background: #F7F5F2;
+      --surface: #FFFFFF;
+      --surface-subdued: #F0EFEA;
+      --border: #e0dfd7;
+      --text-primary: #1E1E2E;
+      --text-secondary: #8A8A9A;
+      --text-tertiary: #B5B5C0;
+      --expense: #C0503A;
+      --expense-light: #FCECE9;
+      --insight: #4B2DA3;
+      --lavender: #F0ECFD;
+      --coral: #E8856A;
+      --coral-surface: #FBF0EC;
+      --amber: #D4A24C;
+      --amber-surface: #FBF3E4;
+
+      --radius-hero: 28px;
+      --radius-card-large: 20px;
+      --radius-card: 16px;
+      --radius-icon: 10px;
+      --radius-pill: 9999px;
+
+      --shadow-sm: 0 2px 8px rgba(30, 30, 46, 0.04);
+      --shadow-md: 0 8px 24px rgba(30, 30, 46, 0.08);
+      --shadow-lg: 0 16px 32px rgba(30, 30, 46, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 40px 24px;
+      background-color: #EFEDE7;
+      background-image:
+        radial-gradient(circle at 10% 10%, rgba(91, 140, 110, 0.05), transparent 40%),
+        radial-gradient(circle at 90% 90%, rgba(75, 45, 163, 0.05), transparent 40%);
+      font-family: 'Inter', sans-serif;
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    .page-title {
+      font-family: 'Nunito', sans-serif;
+      font-size: 36px;
+      font-weight: 900;
+      text-align: center;
+      margin: 0 0 8px;
+      letter-spacing: -1px;
+    }
+
+    .page-subtitle {
+      text-align: center;
+      color: var(--text-secondary);
+      margin: 0 0 48px;
+      font-size: 15px;
+    }
+
+    .scene-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 64px 48px;
+      justify-content: center;
+      align-items: flex-start;
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+
+    .scene {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .scene-label {
+      font-family: 'Nunito', sans-serif;
+      font-size: 14px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      background: var(--surface);
+      padding: 6px 14px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border);
+    }
+
+    .scene-caption {
+      font-size: 13px;
+      color: var(--text-secondary);
+      max-width: 360px;
+      text-align: center;
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* Device frame */
+    .device-frame {
+      width: 390px;
+      height: 780px;
+      background-color: var(--background);
+      border-radius: 44px;
+      box-shadow: 0 0 0 10px #0E0E10, 0 30px 60px rgba(0,0,0,0.25);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Notch */
+    .device-frame::before {
+      content: '';
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 110px;
+      height: 28px;
+      background: #0E0E10;
+      border-radius: 18px;
+      z-index: 100;
+    }
+
+    /* ============ Header (Notifications Screen) ============ */
+    .header {
+      padding: 56px 20px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: rgba(247, 245, 242, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid rgba(224, 223, 215, 0.5);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-title {
+      font-family: 'Nunito', sans-serif;
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin: 0;
+      letter-spacing: -0.5px;
+    }
+
+    .header-count {
+      background: var(--primary);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      min-width: 22px;
+      text-align: center;
+    }
+
+    .icon-button {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-pill);
+      background-color: var(--surface-subdued);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: none;
+      cursor: pointer;
+      color: var(--text-primary);
+      transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+      position: relative;
+    }
+
+    .icon-button:hover {
+      background-color: #E6E5DF;
+      transform: scale(1.05);
+    }
+
+    .icon-button.ghost {
+      background: transparent;
+    }
+
+    /* Unread Dot on the bell */
+    .unread-dot {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 9px;
+      height: 9px;
+      background-color: var(--expense);
+      border-radius: 50%;
+      border: 2px solid var(--background);
+      box-shadow: 0 0 0 1px var(--expense);
+    }
+
+    /* Scrollable Content */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 20px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin: 8px 4px 2px;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    /* ============ Notification Card ============ */
+    .notif-card {
+      background-color: var(--surface);
+      border-radius: var(--radius-card);
+      padding: 14px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border: 1px solid var(--border);
+      position: relative;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .notif-card.read {
+      opacity: 0.75;
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    .notif-card:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    /* Unread accent stripe */
+    .notif-card.unread::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 14px;
+      bottom: 14px;
+      width: 3px;
+      background-color: var(--primary);
+      border-radius: 0 4px 4px 0;
+    }
+    .notif-card.unread.warning::before { background-color: var(--expense); }
+    .notif-card.unread.insight::before { background-color: var(--insight); }
+    .notif-card.unread.tip::before { background-color: var(--coral); }
+
+    .card-top {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .icon-box {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-icon);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .icon-box.warning   { background-color: var(--expense-light);  color: var(--expense); }
+    .icon-box.insight   { background-color: var(--lavender);       color: var(--insight); }
+    .icon-box.primary   { background-color: var(--primary-light);  color: var(--primary); }
+    .icon-box.tip       { background-color: var(--coral-surface);  color: var(--coral); }
+    .icon-box.amber     { background-color: var(--amber-surface);  color: var(--amber); }
+
+    .card-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .card-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 3px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+      letter-spacing: -0.2px;
+    }
+
+    .card-time {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-tertiary);
+      flex-shrink: 0;
+    }
+
+    .card-message {
+      font-size: 13.5px;
+      line-height: 1.45;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    .card-message strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .card-message .money {
+      font-family: 'DM Mono', monospace;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    /* Card Actions */
+    .card-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 2px;
+      padding-left: 52px;
+    }
+
+    .btn-action {
+      background-color: var(--surface-subdued);
+      color: var(--text-primary);
+      border: none;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.2s ease;
+    }
+
+    .btn-action:hover { background-color: #E6E5DF; }
+    .btn-action.primary { background-color: var(--primary); color: #fff; }
+    .btn-action.primary:hover { background-color: var(--primary-dark); }
+    .btn-action.warning { background-color: var(--expense); color: #fff; }
+    .btn-action.warning:hover { background-color: #A03D2A; }
+
+    /* Fino Intelligence Badge */
+    .intel-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: linear-gradient(135deg, var(--lavender), #E0D4FC);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--insight);
+      margin-bottom: 4px;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .intel-badge ion-icon { font-size: 11px; }
+
+    /* ============ Profile Sidebar Mock (Option A) ============ */
+    .sidebar-mock {
+      flex: 1;
+      background: var(--background);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-header {
+      padding: 56px 20px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .sidebar-header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .sidebar-title {
+      font-family: 'Nunito', sans-serif;
+      font-size: 26px;
+      font-weight: 900;
+      margin: 0;
+      letter-spacing: -0.8px;
+    }
+
+    .profile-block {
+      padding: 8px 20px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-family: 'Nunito', sans-serif;
+      font-weight: 800;
+      font-size: 24px;
+    }
+
+    .profile-name {
+      font-family: 'Nunito', sans-serif;
+      font-weight: 800;
+      font-size: 18px;
+      margin: 0;
+    }
+
+    .profile-email {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin: 2px 0 0;
+    }
+
+    .shortcut-grid {
+      padding: 8px 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .shortcut-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: flex-start;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .shortcut-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .shortcut-title {
+      font-weight: 700;
+      font-size: 14px;
+      margin: 0;
+    }
+
+    .shortcut-sub {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    /* Spotlight ring to highlight the new button placement */
+    .spotlight {
+      box-shadow: 0 0 0 3px rgba(91, 140, 110, 0.0), var(--shadow-sm);
+      animation: pulse 2.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(91, 140, 110, 0.5), var(--shadow-sm); }
+      50%      { box-shadow: 0 0 0 8px rgba(91, 140, 110, 0), var(--shadow-md); }
+    }
+
+    /* ============ Empty State ============ */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      text-align: center;
+      gap: 16px;
+    }
+
+    .empty-illustration {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary-light), #D7E5DD);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary);
+      margin-bottom: 8px;
+    }
+
+    .empty-title {
+      font-family: 'Nunito', sans-serif;
+      font-weight: 800;
+      font-size: 20px;
+      margin: 0;
+    }
+
+    .empty-msg {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin: 0;
+      max-width: 260px;
+      line-height: 1.5;
+    }
+
+    /* ============ Toast preview (in-app banner concept) ============ */
+    .toast-preview {
+      position: absolute;
+      top: 56px;
+      left: 16px;
+      right: 16px;
+      background: var(--surface);
+      border-radius: var(--radius-card);
+      padding: 14px;
+      box-shadow: var(--shadow-lg);
+      border: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      z-index: 50;
+    }
+  </style>
+</head>
+<body>
+
+  <h1 class="page-title">Fino Notifications</h1>
+  <p class="page-subtitle">Design preview — review before implementation</p>
+
+  <div class="scene-grid">
+
+    <!-- ============ Scene 1: Bell placement in Profile Sidebar (Option A) ============ -->
+    <div class="scene">
+      <div class="scene-label">Option A · Profile Sidebar</div>
+      <div class="device-frame">
+        <div class="sidebar-mock">
+          <div class="sidebar-header">
+            <h2 class="sidebar-title">Profile</h2>
+            <div class="sidebar-header-actions">
+              <button class="icon-button spotlight" aria-label="Notifications">
+                <ion-icon name="notifications-outline" style="font-size: 22px;"></ion-icon>
+                <span class="unread-dot"></span>
+              </button>
+              <button class="icon-button" aria-label="Close">
+                <ion-icon name="close-outline" style="font-size: 24px;"></ion-icon>
+              </button>
+            </div>
+          </div>
+
+          <div class="profile-block">
+            <div class="avatar">G</div>
+            <div>
+              <p class="profile-name">George Senagan</p>
+              <p class="profile-email">senagan.george@gmail.com</p>
+            </div>
+          </div>
+
+          <div class="shortcut-grid">
+            <div class="shortcut-btn">
+              <div class="shortcut-icon" style="background: var(--primary-light); color: var(--primary);">
+                <ion-icon name="wallet-outline" style="font-size: 20px;"></ion-icon>
+              </div>
+              <p class="shortcut-title">Accounts</p>
+              <p class="shortcut-sub">3 active</p>
+            </div>
+            <div class="shortcut-btn">
+              <div class="shortcut-icon" style="background: var(--lavender); color: var(--insight);">
+                <ion-icon name="pie-chart-outline" style="font-size: 20px;"></ion-icon>
+              </div>
+              <p class="shortcut-title">Categories</p>
+              <p class="shortcut-sub">14 total</p>
+            </div>
+            <div class="shortcut-btn">
+              <div class="shortcut-icon" style="background: var(--coral-surface); color: var(--coral);">
+                <ion-icon name="receipt-outline" style="font-size: 20px;"></ion-icon>
+              </div>
+              <p class="shortcut-title">Recurring</p>
+              <p class="shortcut-sub">5 bills</p>
+            </div>
+            <div class="shortcut-btn">
+              <div class="shortcut-icon" style="background: var(--amber-surface); color: var(--amber);">
+                <ion-icon name="school-outline" style="font-size: 20px;"></ion-icon>
+              </div>
+              <p class="shortcut-title">Learn</p>
+              <p class="shortcut-sub">Tips & guides</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="scene-caption">Bell sits next to the close button in the sidebar header. The red dot indicates unread items.</p>
+    </div>
+
+    <!-- ============ Scene 2: Notifications Screen (full list) ============ -->
+    <div class="scene">
+      <div class="scene-label">Notifications Screen</div>
+      <div class="device-frame">
+        <div class="header">
+          <div class="header-left">
+            <button class="icon-button ghost" aria-label="Back">
+              <ion-icon name="chevron-back-outline" style="font-size: 24px;"></ion-icon>
+            </button>
+            <h1 class="header-title">Notifications</h1>
+            <span class="header-count">3</span>
+          </div>
+          <button class="icon-button" aria-label="Mark all read" title="Mark all as read">
+            <ion-icon name="checkmark-done-outline" style="font-size: 20px;"></ion-icon>
+          </button>
+        </div>
+
+        <div class="content">
+          <div class="section-label">New</div>
+
+          <!-- Overspend Warning -->
+          <div class="notif-card unread warning">
+            <div class="card-top">
+              <div class="icon-box warning">
+                <ion-icon name="alert-circle" style="font-size: 22px;"></ion-icon>
+              </div>
+              <div class="card-body">
+                <div class="card-title-row">
+                  <h3 class="card-title">Shopping budget alert</h3>
+                  <span class="card-time">2m</span>
+                </div>
+                <p class="card-message">You've used <strong>90%</strong> of your Shopping budget. Only <span class="money">₱450</span> left this month.</p>
+              </div>
+            </div>
+            <div class="card-actions">
+              <button class="btn-action warning">
+                <ion-icon name="pie-chart-outline"></ion-icon>
+                Review budget
+              </button>
+            </div>
+          </div>
+
+          <!-- Fino Intelligence -->
+          <div class="notif-card unread insight">
+            <div class="card-top">
+              <div class="icon-box insight">
+                <ion-icon name="sparkles" style="font-size: 20px;"></ion-icon>
+              </div>
+              <div class="card-body">
+                <div class="intel-badge">
+                  <ion-icon name="sparkles"></ion-icon> Fino Intelligence
+                </div>
+                <div class="card-title-row">
+                  <h3 class="card-title">Weekend spend pattern</h3>
+                  <span class="card-time">1h</span>
+                </div>
+                <p class="card-message">You typically spend <span class="money">₱2,500</span> on Food & Dining over the weekend. Planning meals could save up to <span class="money">₱500</span>.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Forget Tracking -->
+          <div class="notif-card unread">
+            <div class="card-top">
+              <div class="icon-box primary">
+                <ion-icon name="receipt-outline" style="font-size: 20px;"></ion-icon>
+              </div>
+              <div class="card-body">
+                <div class="card-title-row">
+                  <h3 class="card-title">Forget tracking?</h3>
+                  <span class="card-time">5h</span>
+                </div>
+                <p class="card-message">No transactions logged in the last <strong>2 days</strong>. A quick entry keeps your budgets accurate.</p>
+              </div>
+            </div>
+            <div class="card-actions">
+              <button class="btn-action primary">
+                <ion-icon name="add-circle-outline"></ion-icon>
+                Add transaction
+              </button>
+            </div>
+          </div>
+
+          <div class="section-label">Earlier</div>
+
+          <!-- Read: Tip -->
+          <div class="notif-card read">
+            <div class="card-top">
+              <div class="icon-box tip">
+                <ion-icon name="bulb-outline" style="font-size: 22px;"></ion-icon>
+              </div>
+              <div class="card-body">
+                <div class="card-title-row">
+                  <h3 class="card-title">Pro tip: recurring bills</h3>
+                  <span class="card-time">Wed</span>
+                </div>
+                <p class="card-message">Set up recurring transactions for monthly subscriptions in the Recurring tab.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Read: Streak -->
+          <div class="notif-card read">
+            <div class="card-top">
+              <div class="icon-box amber">
+                <ion-icon name="flame-outline" style="font-size: 22px;"></ion-icon>
+              </div>
+              <div class="card-body">
+                <div class="card-title-row">
+                  <h3 class="card-title">7-day tracking streak</h3>
+                  <span class="card-time">Mon</span>
+                </div>
+                <p class="card-message">You've logged transactions every day this week. Keep it going!</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <p class="scene-caption">Unread cards have a coloured left stripe (matched to type), an opaque surface, and an action chip. Read cards fade and lose the surface.</p>
+    </div>
+
+    <!-- ============ Scene 3: Empty State ============ -->
+    <div class="scene">
+      <div class="scene-label">Empty State</div>
+      <div class="device-frame">
+        <div class="header">
+          <div class="header-left">
+            <button class="icon-button ghost" aria-label="Back">
+              <ion-icon name="chevron-back-outline" style="font-size: 24px;"></ion-icon>
+            </button>
+            <h1 class="header-title">Notifications</h1>
+          </div>
+        </div>
+
+        <div class="empty-state">
+          <div class="empty-illustration">
+            <ion-icon name="notifications-off-outline" style="font-size: 56px;"></ion-icon>
+          </div>
+          <h2 class="empty-title">You're all caught up</h2>
+          <p class="empty-msg">No new alerts or insights right now. We'll let you know when there's something worth seeing.</p>
+        </div>
+      </div>
+      <p class="scene-caption">Quiet, friendly empty state — no fake CTA, no noise.</p>
+    </div>
+
+    <!-- ============ Scene 4: Card Anatomy ============ -->
+    <div class="scene">
+      <div class="scene-label">Card Anatomy</div>
+      <div class="device-frame" style="height: 780px; background: var(--background);">
+        <div class="header">
+          <h1 class="header-title">Card Variants</h1>
+        </div>
+        <div class="content">
+          <div class="section-label">Warning · over budget</div>
+          <div class="notif-card unread warning">
+            <div class="card-top">
+              <div class="icon-box warning"><ion-icon name="alert-circle" style="font-size: 22px;"></ion-icon></div>
+              <div class="card-body">
+                <div class="card-title-row"><h3 class="card-title">Over budget</h3><span class="card-time">now</span></div>
+                <p class="card-message">Shopping is <strong>110%</strong> of plan.</p>
+              </div>
+            </div>
+            <div class="card-actions"><button class="btn-action warning">Review</button></div>
+          </div>
+
+          <div class="section-label">Insight · Fino Intelligence</div>
+          <div class="notif-card unread insight">
+            <div class="card-top">
+              <div class="icon-box insight"><ion-icon name="sparkles" style="font-size: 20px;"></ion-icon></div>
+              <div class="card-body">
+                <div class="intel-badge"><ion-icon name="sparkles"></ion-icon> Fino Intelligence</div>
+                <div class="card-title-row"><h3 class="card-title">Coffee adds up</h3><span class="card-time">now</span></div>
+                <p class="card-message">You spent <span class="money">₱1,200</span> on coffee this month.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-label">Reminder · habit</div>
+          <div class="notif-card unread">
+            <div class="card-top">
+              <div class="icon-box primary"><ion-icon name="receipt-outline" style="font-size: 20px;"></ion-icon></div>
+              <div class="card-body">
+                <div class="card-title-row"><h3 class="card-title">Track today?</h3><span class="card-time">now</span></div>
+                <p class="card-message">A 30-second entry keeps your data sharp.</p>
+              </div>
+            </div>
+            <div class="card-actions"><button class="btn-action primary">Add</button></div>
+          </div>
+
+          <div class="section-label">Tip · educational</div>
+          <div class="notif-card unread tip">
+            <div class="card-top">
+              <div class="icon-box tip"><ion-icon name="bulb-outline" style="font-size: 22px;"></ion-icon></div>
+              <div class="card-body">
+                <div class="card-title-row"><h3 class="card-title">Did you know?</h3><span class="card-time">now</span></div>
+                <p class="card-message">You can split bills with friends in the Bill Splitter.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-label">Achievement · streak</div>
+          <div class="notif-card unread">
+            <div class="card-top">
+              <div class="icon-box amber"><ion-icon name="flame-outline" style="font-size: 22px;"></ion-icon></div>
+              <div class="card-body">
+                <div class="card-title-row"><h3 class="card-title">7-day streak</h3><span class="card-time">now</span></div>
+                <p class="card-message">Logged daily for a week — nice.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="scene-caption">Five card types, all built from the same base layout — colour, icon, and badge change per type.</p>
+    </div>
+
+  </div>
+
+</body>
+</html>

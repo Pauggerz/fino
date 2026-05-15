@@ -34,6 +34,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccounts } from '../hooks/useAccounts';
 import { useCategories } from '../hooks/useCategories';
+import { useNotifications } from '../hooks/useNotifications';
 import { supabase } from '../services/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Q } from '@nozbe/watermelondb';
@@ -47,6 +48,7 @@ import {
 } from '../constants/accountLogos';
 import { Skeleton } from './Skeleton';
 import { CategoryIcon } from './CategoryIcon';
+import { FinoIntelIcon } from './icons/FinoIntelIcon';
 import { spacing, ACCENT_THEMES, ThemeColors } from '../constants/theme';
 import { AddAccountModal } from '../screens/MoreScreen';
 
@@ -74,6 +76,7 @@ interface Props {
 function GridItem({
   iconOutline,
   iconFilled,
+  customIcon,
   active,
   label,
   color,
@@ -84,8 +87,9 @@ function GridItem({
   isDark,
   styles,
 }: {
-  iconOutline: string;
+  iconOutline?: string;
   iconFilled?: string;
+  customIcon?: React.ReactNode;
   active?: boolean;
   label: string;
   color: string;
@@ -116,11 +120,13 @@ function GridItem({
       ]}
     >
       <View style={[styles.gridIconBox, { backgroundColor: tileBg }]}>
-        <Ionicons
-          name={(showFilled ? iconFilled : iconOutline) as any}
-          size={20}
-          color={color}
-        />
+        {customIcon ?? (
+          <Ionicons
+            name={(showFilled ? iconFilled : iconOutline) as any}
+            size={20}
+            color={color}
+          />
+        )}
       </View>
       <Text
         style={[styles.gridLabel, { color: colors.textPrimary }]}
@@ -186,6 +192,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
   const userId = user?.id;
   const { accounts, loading, refetch: refetchAccounts } = useAccounts();
   const { categories, loading: loadingCategories } = useCategories();
+  const { unreadCount: notifUnread } = useNotifications();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
 
@@ -505,6 +512,41 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                     backgroundColor: isDark ? colors.surfaceSubdued : '#F4F4F8',
                   },
                 ]}
+                onPress={() => {
+                  onClose();
+                  setTimeout(
+                    () => (navigation as any).navigate('Notifications'),
+                    260,
+                  );
+                }}
+                accessibilityLabel="Notifications"
+              >
+                <Ionicons
+                  name="notifications-outline"
+                  size={18}
+                  color={colors.textSecondary}
+                />
+                {notifUnread > 0 && (
+                  <View
+                    style={[
+                      styles.notifDot,
+                      {
+                        backgroundColor: colors.expenseRed,
+                        borderColor: isDark
+                          ? colors.surfaceSubdued
+                          : '#F4F4F8',
+                      },
+                    ]}
+                  />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.headerIconBtn,
+                  {
+                    backgroundColor: isDark ? colors.surfaceSubdued : '#F4F4F8',
+                  },
+                ]}
                 onPress={onClose}
               >
                 <Ionicons name="close" size={18} color={colors.textSecondary} />
@@ -604,7 +646,9 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 styles={styles}
               />
               <GridItem
-                iconOutline="sparkles-outline"
+                customIcon={
+                  <FinoIntelIcon size={20} color={colors.lavenderDark} />
+                }
                 label="Ask Fino"
                 color={colors.lavenderDark}
                 bg={isDark ? colors.lavenderLight : '#EDE8FC'}
@@ -1642,6 +1686,15 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
       borderRadius: 17,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    notifDot: {
+      position: 'absolute',
+      top: 6,
+      right: 6,
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      borderWidth: 1.5,
     },
 
     // Balance chip

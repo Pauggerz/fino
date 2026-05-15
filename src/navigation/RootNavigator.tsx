@@ -53,6 +53,9 @@ const AccountsScreen = lazy(() => import('../screens/AccountsScreen'));
 const SankeyFullscreenScreen = lazy(
   () => import('../screens/SankeyFullscreenScreen')
 );
+const NotificationsScreen = lazy(
+  () => import('../screens/NotificationsScreen')
+);
 
 function ModalLoadingShim() {
   const { colors } = useTheme();
@@ -120,6 +123,7 @@ export type RootStackParamList = {
   CashFlow: { accountId?: string } | undefined;
   Categories: undefined;
   Accounts: undefined;
+  Notifications: undefined;
   TransactionDetail: { id: string };
   SankeyFullscreen: {
     income: number;
@@ -338,6 +342,11 @@ export default function RootNavigator() {
               <Stack.Screen
                 name="Accounts"
                 component={AccountsScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="Notifications"
+                component={NotificationsScreen}
                 options={{ headerShown: false, presentation: 'modal' }}
               />
               <Stack.Screen

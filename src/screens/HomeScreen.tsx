@@ -44,6 +44,7 @@ import {
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories, CategoryWithSpend } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
+import { generatePeriodicInsights } from '@/hooks/useNotifications';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { deleteTransaction } from '@/services/localMutations';
 import ProfileSidebar from '@/components/ProfileSidebar';
@@ -237,8 +238,9 @@ function onTrackLabel(pct: number): string {
 function HomeScreen() {
   const navigation = useNavigation<any>();
   const { status: syncStatus } = useSync();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const userName = profile?.name || 'User';
+  const userId = user?.id;
 
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -398,6 +400,14 @@ function HomeScreen() {
         setToastVisible(true);
       }
 
+      // Derive any new in-app notifications (budget warnings, tracking
+      // reminders, top-spend insight) from current local data. Idempotent —
+      // each insight carries a stable `kind` key so re-running on every focus
+      // doesn't create duplicates.
+      if (userId) {
+        generatePeriodicInsights(userId).catch(() => {});
+      }
+
       return () => {
         // Sidebar uses a global Modal; always close it when Home loses focus
         // so it can never intercept touches on other screens.
@@ -405,6 +415,7 @@ function HomeScreen() {
       };
     }, [
       isPrivacyMode,
+      userId,
       greetingOpacity,
       greetingTransY,
       cardOpacity,
