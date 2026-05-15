@@ -38,6 +38,77 @@ const TAB_ICONS: Record<TabRoute, [string, string]> = {
   more: ['grid-outline', 'grid'],
 };
 
+interface LiquidIconProps {
+  isActive: boolean;
+  outlineName: string;
+  filledName: string;
+  activeColor: string;
+  inactiveColor: string;
+  haloColor: string;
+  size?: number;
+}
+
+function LiquidIcon({
+  isActive,
+  outlineName,
+  filledName,
+  activeColor,
+  inactiveColor,
+  haloColor,
+  size = 22,
+}: LiquidIconProps) {
+  const progress = useSharedValue(isActive ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(isActive ? 1 : 0, { duration: 320 });
+  }, [isActive, progress]);
+
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: interpolate(progress.value, [0, 1], [0.4, 1.1]) }],
+  }));
+  const outlineStyle = useAnimatedStyle(() => ({
+    opacity: 1 - progress.value,
+    transform: [{ scale: interpolate(progress.value, [0, 1], [1, 1.15]) }],
+  }));
+  const filledStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: interpolate(progress.value, [0, 1], [0.7, 1]) }],
+  }));
+
+  const box = size + 10;
+
+  return (
+    <View
+      style={{
+        width: box,
+        height: box,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Reanimated.View
+        style={[
+          {
+            position: 'absolute',
+            width: box,
+            height: box,
+            borderRadius: box / 2,
+            backgroundColor: haloColor,
+          },
+          haloStyle,
+        ]}
+      />
+      <Reanimated.View style={[{ position: 'absolute' }, outlineStyle]}>
+        <Ionicons name={outlineName as any} size={size} color={inactiveColor} />
+      </Reanimated.View>
+      <Reanimated.View style={[{ position: 'absolute' }, filledStyle]}>
+        <Ionicons name={filledName as any} size={size} color={activeColor} />
+      </Reanimated.View>
+    </View>
+  );
+}
+
 const TAB_LABELS: Record<TabRoute, string> = {
   home: 'Home',
   feed: 'Txns',
@@ -137,6 +208,12 @@ export default function TabBar({
   const renderTab = (id: TabRoute) => {
     const isActive = visualActiveTab === id;
     const [outline, filled] = TAB_ICONS[id];
+    const inactiveColor = isDark
+      ? 'rgba(255,255,255,0.45)'
+      : 'rgba(0,0,0,0.35)';
+    const haloColor = isDark
+      ? 'rgba(91,140,110,0.22)'
+      : 'rgba(91,140,110,0.14)';
     return (
       <TouchableOpacity
         key={id}
@@ -155,16 +232,13 @@ export default function TabBar({
         accessibilityState={{ selected: isActive }}
         accessibilityLabel={`${TAB_LABELS[id]} tab`}
       >
-        <Ionicons
-          name={(isActive ? filled : outline) as any}
-          size={22}
-          color={
-            isActive
-              ? colors.primary
-              : isDark
-                ? 'rgba(255,255,255,0.45)'
-                : 'rgba(0,0,0,0.35)'
-          }
+        <LiquidIcon
+          isActive={isActive}
+          outlineName={outline}
+          filledName={filled}
+          activeColor={colors.primary}
+          inactiveColor={inactiveColor}
+          haloColor={haloColor}
         />
         <Text
           style={[
