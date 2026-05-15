@@ -22,6 +22,7 @@ export function CashFlowCard({
   largest,
   txCount,
   daysElapsed,
+  interactive = true,
 }: {
   income: number;
   expenses: number;
@@ -32,6 +33,10 @@ export function CashFlowCard({
   largest: number;
   txCount: number;
   daysElapsed: number;
+  // When false, the card-wide press-to-navigate-to-CashFlow is disabled and
+  // the trailing chevron is hidden — used on CashFlowScreen itself, where
+  // both would be no-ops.
+  interactive?: boolean;
 }) {
   const { colors, isDark } = useTheme();
   const navigation = useNavigation<any>();
@@ -53,11 +58,16 @@ export function CashFlowCard({
         : `-${fmtPeso(prevNet - net)} vs prev`;
   const deltaUp = prevNet !== null && net >= prevNet;
 
+  const Wrapper: React.ComponentType<any> = interactive ? Pressable : View;
+  const wrapperProps = interactive
+    ? {
+        onPress: () => navigation.navigate('CashFlow'),
+        android_ripple: { color: 'rgba(0,0,0,0.05)', borderless: false },
+      }
+    : {};
+
   return (
-    <Pressable
-      onPress={() => navigation.navigate('CashFlow')}
-      android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
-    >
+    <Wrapper {...wrapperProps}>
       <LinearGradient
         colors={isDark ? [colors.white, colors.white] : ['#FFFFFF', '#F4F0E9']}
         start={{ x: 0, y: 0 }}
@@ -92,11 +102,13 @@ export function CashFlowCard({
                 </Text>
               </View>
             ) : null}
-            <Ionicons
-              name="chevron-forward"
-              size={14}
-              color={colors.textSecondary}
-            />
+            {interactive ? (
+              <Ionicons
+                name="chevron-forward"
+                size={14}
+                color={colors.textSecondary}
+              />
+            ) : null}
           </View>
         </View>
 
@@ -207,7 +219,7 @@ export function CashFlowCard({
           </View>
         </View>
       </LinearGradient>
-    </Pressable>
+    </Wrapper>
   );
 }
 
