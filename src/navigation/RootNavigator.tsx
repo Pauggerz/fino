@@ -112,7 +112,9 @@ export type RootStackParamList = {
       note?: string;
     };
   };
-  ScreenshotScreen: { sharedImageUri?: string } | undefined;
+  ScreenshotScreen:
+    | { sharedImageUri?: string; initialSource?: 'camera' | 'upload' }
+    | undefined;
   ChatScreen: undefined;
   BillSplitter: undefined;
   UtangTracker: undefined;
@@ -187,7 +189,16 @@ function TabNavigator() {
           onAddManual={() =>
             props.navigation.navigate('AddTransaction', { mode: 'expense' })
           }
-          onScan={() => props.navigation.navigate('ScreenshotScreen')}
+          onScan={() =>
+            props.navigation.navigate('ScreenshotScreen', {
+              initialSource: 'camera',
+            })
+          }
+          onUpload={() =>
+            props.navigation.navigate('ScreenshotScreen', {
+              initialSource: 'upload',
+            })
+          }
         />
       )}
       screenOptions={{

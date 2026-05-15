@@ -29,6 +29,7 @@ interface TabBarProps {
   onTabPress: (tab: TabRoute) => void;
   onAddManual: () => void;
   onScan: () => void;
+  onUpload: () => void;
 }
 
 const TAB_ICONS: Record<TabRoute, [string, string]> = {
@@ -121,6 +122,7 @@ export default function TabBar({
   onTabPress,
   onAddManual,
   onScan,
+  onUpload,
 }: TabBarProps) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -169,13 +171,14 @@ export default function TabBar({
     else openMenu();
   };
 
-  const pickAction = (which: 'manual' | 'scan') => {
+  const pickAction = (which: 'manual' | 'scan' | 'upload') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     closeMenu();
     // small delay so the close animation reads visually before nav slide-up
     setTimeout(() => {
       if (which === 'manual') onAddManual();
-      else onScan();
+      else if (which === 'scan') onScan();
+      else onUpload();
     }, 80);
   };
 
@@ -197,6 +200,13 @@ export default function TabBar({
     opacity: progress.value,
     transform: [
       { translateY: interpolate(progress.value, [0, 1], [60, 0]) },
+      { scale: interpolate(progress.value, [0, 1], [0.6, 1]) },
+    ],
+  }));
+  const uploadStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [
+      { translateY: interpolate(progress.value, [0, 1], [90, 0]) },
       { scale: interpolate(progress.value, [0, 1], [0.6, 1]) },
     ],
   }));
@@ -290,6 +300,43 @@ export default function TabBar({
             style={styles.dialColumn}
             pointerEvents="box-none"
           >
+            <Reanimated.View
+              style={[
+                styles.actionPill,
+                { backgroundColor: actionPillBg, shadowColor: '#000' },
+                uploadStyle,
+              ]}
+            >
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => pickAction('upload')}
+                style={styles.actionPillInner}
+                accessibilityLabel="Upload receipt"
+              >
+                <View
+                  style={[
+                    styles.actionIcon,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(201,184,245,0.18)'
+                        : '#EEEDFE',
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="cloud-upload-outline"
+                    size={18}
+                    color={isDark ? colors.lavender : '#4B2DA3'}
+                  />
+                </View>
+                <Text
+                  style={[styles.actionLabel, { color: actionPillText }]}
+                >
+                  Upload receipt
+                </Text>
+              </TouchableOpacity>
+            </Reanimated.View>
+
             <Reanimated.View
               style={[
                 styles.actionPill,

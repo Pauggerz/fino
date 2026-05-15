@@ -30,20 +30,12 @@ export default function FABActionSheet() {
   const ACTIONS = useMemo(
     () => [
       {
-        key: 'expense' as const,
-        icon: '↓',
-        iconBg: isDark ? 'rgba(192,57,42,0.15)' : '#fde8e0',
-        iconColor: isDark ? colors.expenseRed : '#c0391a',
-        title: 'Log expense',
-        sub: 'Record money you spent',
-      },
-      {
-        key: 'income' as const,
-        icon: '↑',
+        key: 'manual' as const,
+        icon: '+',
         iconBg: isDark ? 'rgba(45,106,79,0.15)' : '#e8f5ee',
         iconColor: isDark ? colors.incomeGreen : '#27500A',
-        title: 'Log income',
-        sub: 'Record money received',
+        title: 'Add manually',
+        sub: 'Enter an expense or income',
       },
       {
         key: 'scan' as const,
@@ -51,7 +43,15 @@ export default function FABActionSheet() {
         iconBg: isDark ? 'rgba(201,184,245,0.1)' : '#EEEDFE',
         iconColor: isDark ? colors.lavenderDark : '#4B2DA3',
         title: 'Scan receipt',
-        sub: 'Auto-fill from a photo',
+        sub: 'Snap a photo with your camera',
+      },
+      {
+        key: 'upload' as const,
+        icon: '⇪',
+        iconBg: isDark ? 'rgba(201,184,245,0.1)' : '#EEEDFE',
+        iconColor: isDark ? colors.lavenderDark : '#4B2DA3',
+        title: 'Upload receipt',
+        sub: 'Pick a screenshot from gallery',
       },
     ],
     [colors, isDark]
@@ -68,10 +68,12 @@ export default function FABActionSheet() {
 
   const handleAction = useCallback(
     (key: (typeof ACTIONS)[number]['key']) => {
-      if (key === 'expense' || key === 'income') {
-        navigation.replace('AddTransaction', { mode: key });
+      if (key === 'manual') {
+        navigation.replace('AddTransaction', { mode: 'expense' });
       } else if (key === 'scan') {
-        navigation.replace('ScreenshotScreen');
+        navigation.replace('ScreenshotScreen', { initialSource: 'camera' });
+      } else if (key === 'upload') {
+        navigation.replace('ScreenshotScreen', { initialSource: 'upload' });
       }
     },
     [navigation]

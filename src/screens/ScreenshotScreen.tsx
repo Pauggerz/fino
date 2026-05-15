@@ -193,8 +193,27 @@ export default function ScreenshotScreen() {
     }
   }, [route.params?.sharedImageUri]);
 
+  // Auto-launch the camera or gallery picker once when the screen is opened
+  // from the FAB. The user picked the source upstream, so we shouldn't make
+  // them tap a second time. Skipped when the screen was opened via the OS
+  // share sheet (sharedImageUri is already populated).
+  const autoLaunchedRef = useRef(false);
+  useEffect(() => {
+    if (autoLaunchedRef.current) return;
+    if (route.params?.sharedImageUri) return;
+    if (!route.params?.initialSource) return;
+    autoLaunchedRef.current = true;
+    if (route.params.initialSource === 'camera') {
+      handleCamera();
+    } else {
+      handleUpload();
+    }
+  }, [route.params?.initialSource, route.params?.sharedImageUri]);
+
+  const initialSource: 'camera' | 'upload' =
+    route.params?.initialSource ?? 'upload';
   const [selectedSource, setSelectedSource] = useState<'camera' | 'upload'>(
-    'upload'
+    initialSource
   );
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
@@ -744,7 +763,9 @@ export default function ScreenshotScreen() {
           >
             <Ionicons name="close" size={18} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Scan Receipt</Text>
+          <Text style={styles.headerTitle}>
+            {selectedSource === 'camera' ? 'Scan Receipt' : 'Upload Receipt'}
+          </Text>
           <TouchableOpacity
             style={styles.newDatePill}
             onPress={openDateEdit}
@@ -817,7 +838,9 @@ export default function ScreenshotScreen() {
             />
           ) : (
             <TouchableOpacity
-              onPress={handleUpload}
+              onPress={
+                selectedSource === 'camera' ? handleCamera : handleUpload
+              }
               style={styles.receiptEmpty}
             >
               <Svg width={40} height={40} viewBox="0 0 24 24">
@@ -827,10 +850,14 @@ export default function ScreenshotScreen() {
                 />
               </Svg>
               <Text style={styles.receiptEmptyTitle}>
-                Tap to select a receipt
+                {selectedSource === 'camera'
+                  ? 'Tap to take a photo'
+                  : 'Tap to select a receipt'}
               </Text>
               <Text style={styles.receiptEmptyHint}>
-                GCash · Maya · BDO · BPI
+                {selectedSource === 'camera'
+                  ? 'Point at the receipt'
+                  : 'GCash · Maya · BDO · BPI'}
               </Text>
             </TouchableOpacity>
           )}
