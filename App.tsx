@@ -30,6 +30,9 @@ import DatabaseProvider from '@nozbe/watermelondb/react/DatabaseProvider';
 import RootNavigator from './src/navigation/RootNavigator';
 import { SyncProvider } from './src/contexts/SyncContext';
 import { AuthProvider } from './src/contexts/AuthContext';
+import { CurrencyProvider } from './src/contexts/CurrencyContext';
+import { I18nProvider } from './src/contexts/I18nContext';
+import { NotificationPrefsProvider } from './src/contexts/NotificationPrefsContext';
 import { supabase } from './src/services/supabase';
 import { ACCOUNT_LOGOS } from './src/constants/accountLogos';
 import { ThemeProvider } from './src/contexts/ThemeContext';
@@ -128,14 +131,20 @@ export default function App() {
       <ErrorBoundary>
         <DatabaseProvider database={database}>
           <ThemeProvider>
-            <SafeAreaProvider>
-              <AuthProvider>
-                <SyncProvider>
-                  <RootNavigator />
-                  <StatusBar style="auto" />
-                </SyncProvider>
-              </AuthProvider>
-            </SafeAreaProvider>
+            <I18nProvider>
+              <SafeAreaProvider>
+                <AuthProvider>
+                  <CurrencyProvider>
+                    <NotificationPrefsProvider>
+                      <SyncProvider>
+                        <RootNavigator />
+                        <StatusBar style="auto" />
+                      </SyncProvider>
+                    </NotificationPrefsProvider>
+                  </CurrencyProvider>
+                </AuthProvider>
+              </SafeAreaProvider>
+            </I18nProvider>
           </ThemeProvider>
         </DatabaseProvider>
       </ErrorBoundary>

@@ -56,6 +56,19 @@ const SankeyFullscreenScreen = lazy(
 const NotificationsScreen = lazy(
   () => import('../screens/NotificationsScreen')
 );
+const SettingsScreen = lazy(() => import('../screens/SettingsScreen'));
+const AccountSettingsScreen = lazy(
+  () => import('../screens/AccountSettingsScreen')
+);
+const NotificationSettingsScreen = lazy(
+  () => import('../screens/NotificationSettingsScreen')
+);
+const CurrencySettingsScreen = lazy(
+  () => import('../screens/CurrencySettingsScreen')
+);
+const LanguageSettingsScreen = lazy(
+  () => import('../screens/LanguageSettingsScreen')
+);
 
 function ModalLoadingShim() {
   const { colors } = useTheme();
@@ -126,6 +139,11 @@ export type RootStackParamList = {
   Categories: undefined;
   Accounts: undefined;
   Notifications: undefined;
+  Settings: undefined;
+  AccountSettings: { focus?: 'name' | 'email' | 'password' } | undefined;
+  NotificationSettings: undefined;
+  CurrencySettings: undefined;
+  LanguageSettings: undefined;
   TransactionDetail: { id: string };
   SankeyFullscreen: {
     income: number;
@@ -359,6 +377,31 @@ export default function RootNavigator() {
                 name="Notifications"
                 component={NotificationsScreen}
                 options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="Settings"
+                component={SettingsScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="AccountSettings"
+                component={AccountSettingsScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="NotificationSettings"
+                component={NotificationSettingsScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="CurrencySettings"
+                component={CurrencySettingsScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="LanguageSettings"
+                component={LanguageSettingsScreen}
+                options={{ headerShown: false }}
               />
               <Stack.Screen
                 name="TransactionDetail"

@@ -1104,7 +1104,12 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
             <ListRow
               icon="settings-outline"
               label="Settings & Preferences"
-              onPress={() => setShowSettings(true)}
+              onPress={() => {
+                onClose();
+                // Defer until close animation has started — prevents the modal
+                // pop from flickering through the sidebar.
+                setTimeout(() => navigation.navigate('Settings' as never), 250);
+              }}
               colors={colors}
               isDark={isDark}
               styles={styles}
