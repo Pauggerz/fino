@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FINO — Chat Revamp Mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+
+/* ── Fino Dark-mode Design Tokens (Forest theme) ── */
+:root{
+  --bg:       #0E0E10;   /* warm near-black */
+  --surface:  #18181C;   /* card surface */
+  --subdued:  #202024;   /* surfaceSubdued */
+  --border:   #28282E;
+  --borderCard: rgba(255,255,255,0.07);
+
+  --primary:      #5DB87E;  /* Forest primary (dark) */
+  --primaryDark:  #3D8A5E;
+  --primaryLight: #172A1E;  /* tinted deep surface */
+  --heroBg:       #173324;  /* hero card bg */
+
+  --text1: #EEEAE4;   /* warm off-white */
+  --text2: #88888F;   /* secondary */
+
+  --expense:  #C0503A;
+  --income:   #5DB87E;
+
+  /* AI / Insight — lavender */
+  --aiColor:   #C9B8F5;
+  --aiSurface: #1E1530;
+  --aiBorder:  rgba(201,184,245,0.18);
+
+  /* Category colors (dark-adapted) */
+  --cfood:   #C97A20; --cfood-bg:   rgba(186,117,23,0.14);
+  --ctrans:  #5A9FE8; --ctrans-bg:  rgba(58,123,213,0.14);
+  --cshop:   #D46A60; --cshop-bg:   rgba(192,80,58,0.14);
+  --cbills:  #9B7AE0; --cbills-bg:  rgba(122,74,184,0.14);
+  --chealth: #5DB87E; --chealth-bg: rgba(45,106,79,0.14);
+
+  /* Account brand */
+  --gcash: #007DFF; --bdo: #CC0000; --cash: #1C9E4B;
+
+  /* Transparency helpers */
+  --w07: rgba(255,255,255,0.07);
+  --w12: rgba(255,255,255,0.12);
+  --w15: rgba(255,255,255,0.15);
+  --b15: rgba(0,0,0,0.15);
+}
+
+body{
+  background:#080809;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:32px 20px 80px;
+  gap:12px;
+  font-family:'Inter',sans-serif;
+}
+
+.pg-label{
+  font-size:11px;font-weight:700;
+  color:rgba(238,234,228,.3);
+  letter-spacing:.14em;text-transform:uppercase;
+  margin-bottom:4px;
+}
+
+/* ═══════════════════════════════
+   PHONE FRAME
+═══════════════════════════════ */
+.phone{
+  width:390px;height:844px;
+  background:var(--bg);
+  border-radius:50px;overflow:hidden;
+  position:relative;display:flex;flex-direction:column;
+  border:1px solid rgba(255,255,255,0.06);
+  box-shadow:0 0 0 6px #0d0d0f,0 0 0 8px #141416,
+             0 60px 120px rgba(0,0,0,.9);
+}
+
+/* Status bar */
+.sbar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 28px 0;flex-shrink:0;
+}
+.sbar-time{font-family:'DM Mono',monospace;font-size:15px;font-weight:500;color:var(--text1);}
+.sbar-right{display:flex;gap:5px;align-items:center;}
+.sbar-right svg{width:16px;height:16px;fill:var(--text1);}
+
+/* Header */
+.hdr{
+  display:flex;align-items:center;
+  padding:10px 18px 12px;gap:11px;
+  flex-shrink:0;
+  border-bottom:1px solid var(--border);
+}
+.hdr-av{
+  width:40px;height:40px;border-radius:12px;
+  background:linear-gradient(145deg,#1e4a30,#112a1e);
+  border:1px solid rgba(93,184,126,0.25);
+  display:flex;align-items:center;justify-content:center;
+  position:relative;flex-shrink:0;
+}
+.hdr-av svg{width:20px;height:20px;fill:var(--primary);}
+.sdot{
+  width:8px;height:8px;background:var(--primary);border-radius:50%;
+  position:absolute;bottom:-1px;right:-1px;border:2px solid var(--bg);
+  animation:sdot 2.4s ease-in-out infinite;
+}
+@keyframes sdot{0%,100%{opacity:1;}50%{opacity:.6;transform:scale(.85);}}
+.hdr-info{flex:1;}
+.hdr-name{
+  font-family:'Nunito',sans-serif;font-size:16px;font-weight:800;
+  color:var(--text1);letter-spacing:-.02em;
+}
+.hdr-status{
+  font-size:11px;font-weight:600;color:var(--primary);
+  display:flex;align-items:center;gap:4px;margin-top:1px;
+}
+.hdr-status::before{content:'';width:5px;height:5px;background:var(--primary);border-radius:50%;}
+.hdr-btns{display:flex;gap:7px;}
+.hbtn{
+  width:36px;height:36px;border-radius:10px;
+  background:var(--subdued);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;transition:background .15s;
+}
+.hbtn:hover{background:var(--surface);}
+.hbtn svg{width:16px;height:16px;stroke:var(--text2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+
+/* Stats strip */
+.sstrip{
+  display:flex;gap:1px;background:var(--border);
+  border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.scell{
+  flex:1;background:var(--bg);padding:9px 11px;
+  display:flex;flex-direction:column;gap:1px;cursor:pointer;
+  transition:background .15s;
+}
+.scell:hover{background:var(--subdued);}
+.sc-l{font-size:9px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;}
+.sc-v{font-family:'DM Mono',monospace;font-size:13px;font-weight:500;color:var(--text1);}
+.sc-v.g{color:var(--primary);}
+.sc-v.r{color:var(--expense);}
+.sc-c{font-size:9px;color:var(--text2);}
+.sc-c.up{color:var(--primary);}
+.sc-c.dn{color:var(--expense);}
+
+/* ── Chat area ── */
+.chat{
+  flex:1;overflow-y:auto;
+  padding:16px 16px 10px;
+  display:flex;flex-direction:column;gap:14px;
+}
+.chat::-webkit-scrollbar{width:0;}
+
+/* Date divider */
+.ddiv{
+  display:flex;align-items:center;gap:9px;
+  font-size:10px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--text2);
+}
+.ddiv::before,.ddiv::after{content:'';flex:1;height:1px;background:var(--border);}
+
+/* Message rows */
+.mrow{display:flex;gap:8px;align-items:flex-end;}
+.mrow.u{flex-direction:row-reverse;}
+.mav{
+  width:28px;height:28px;border-radius:9px;
+  background:linear-gradient(145deg,#1e4a30,#112a1e);
+  border:1px solid rgba(93,184,126,0.2);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;font-size:13px;
+}
+.mcol{max-width:82%;display:flex;flex-direction:column;gap:5px;}
+.mtime{font-size:10px;color:var(--text2);padding:0 4px;}
+.mrow.u .mtime{text-align:right;}
+
+/* Bubbles — spec: AI [4,16,16,16], User [16,4,16,16] */
+.bub{
+  padding:10px 14px;font-size:13.5px;line-height:1.6;
+  width:fit-content;
+}
+.bub.ai{
+  background:var(--aiSurface);
+  border:1px solid var(--aiBorder);
+  color:var(--text1);
+  border-radius:4px 16px 16px 16px;
+}
+.bub.ai b,.bub.ai .hi{color:var(--aiColor);font-weight:600;}
+.bub.u{
+  background:var(--primaryLight);
+  border:1px solid rgba(93,184,126,0.22);
+  color:#c8e8d5;
+  border-radius:16px 4px 16px 16px;
+}
+
+/* Welcome / Hero card */
+.hero-card{
+  background:var(--heroBg);border-radius:28px;
+  padding:20px;position:relative;overflow:hidden;
+  border:1px solid var(--w07);
+  box-shadow:0 16px 24px rgba(0,0,0,.42);
+}
+.hero-card::before{
+  content:'';position:absolute;top:-60px;right:-60px;
+  width:180px;height:180px;
+  background:radial-gradient(circle,rgba(93,184,126,.1),transparent 65%);
+  pointer-events:none;
+}
+.hero-card::after{
+  content:'FINO';
+  position:absolute;bottom:-16px;right:12px;
+  font-family:'Nunito',sans-serif;font-size:88px;font-weight:900;
+  color:var(--w07);letter-spacing:-4px;pointer-events:none;
+  line-height:1;
+}
+.hero-greet{font-size:12px;font-weight:600;color:rgba(93,184,126,.9);margin-bottom:3px;}
+.hero-title{
+  font-family:'Nunito',sans-serif;font-size:19px;font-weight:800;
+  color:var(--text1);letter-spacing:-.03em;line-height:1.25;margin-bottom:16px;
+}
+.hero-row{
+  display:flex;gap:8px;
+  background:var(--b15);border-radius:12px;
+  padding:10px 12px;border:1px solid var(--w12);
+}
+.hero-col{flex:1;}
+.hero-col+.hero-col{
+  border-left:1px solid var(--w12);padding-left:12px;
+}
+.hero-col-l{font-size:9px;font-weight:700;color:rgba(238,234,228,.55);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;}
+.hero-col-v{font-family:'DM Mono',monospace;font-size:15px;font-weight:500;color:var(--text1);}
+.hero-col-v.g{color:var(--primary);}
+.hero-col-v.r{color:#E07070;}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:8px;
+  background:rgba(93,184,126,.15);color:var(--primary);
+  border:1px solid rgba(93,184,126,.2);margin-top:3px;
+}
+
+/* AI insight bubble */
+.ai-insight{
+  background:var(--aiSurface);border:1px solid var(--aiBorder);
+  border-radius:4px 16px 16px 16px;
+  padding:12px 14px;max-width:270px;
+}
+.ai-insight-ico{font-size:20px;margin-bottom:6px;display:block;}
+.ai-insight-t{font-size:13px;line-height:1.55;color:var(--text1);}
+.ai-insight-t .hi{color:var(--aiColor);font-weight:600;}
+
+/* Category breakdown card */
+.br-card{
+  background:var(--surface);border-radius:20px;overflow:hidden;
+  border:1px solid var(--borderCard);
+  box-shadow:0 4px 12px rgba(0,0,0,.15);
+  max-width:268px;
+}
+.br-head{
+  padding:12px 16px 8px;
+  display:flex;justify-content:space-between;align-items:center;
+}
+.br-head-t{
+  font-size:10px;font-weight:700;color:var(--text2);
+  text-transform:uppercase;letter-spacing:.1em;
+}
+.br-badge{
+  font-size:10px;font-weight:700;padding:2px 8px;border-radius:9999px;
+  background:rgba(93,184,126,.12);color:var(--primary);
+  border:1px solid rgba(93,184,126,.2);
+}
+.br-rows{padding:0 14px 14px;display:flex;flex-direction:column;gap:9px;}
+.br-row{display:flex;align-items:center;gap:8px;}
+.br-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.br-name{flex:1;font-size:12px;color:var(--text2);}
+.br-bw{width:58px;height:4px;background:var(--subdued);border-radius:2px;overflow:hidden;}
+.br-bar{height:4px;border-radius:2px;}
+.br-amt{font-family:'DM Mono',monospace;font-size:12px;font-weight:500;color:var(--text1);min-width:50px;text-align:right;}
+
+/* Transaction confirmed card */
+.tx-card{
+  background:var(--surface);border-radius:16px;
+  border:1px solid var(--borderCard);
+  padding:12px 14px;display:flex;align-items:center;gap:11px;
+  max-width:262px;
+  box-shadow:0 4px 12px rgba(0,0,0,.12);
+}
+.tx-ic{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.tx-info{flex:1;}
+.tx-lbl{font-size:10px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.08em;}
+.tx-name{font-family:'Nunito',sans-serif;font-size:14px;font-weight:800;color:var(--text1);margin:1px 0;letter-spacing:-.01em;}
+.tx-meta{font-size:11px;color:var(--text2);}
+.tx-cat{font-size:10px;font-weight:700;padding:2px 7px;border-radius:9999px;margin-top:3px;display:inline-flex;}
+.tx-amt{font-family:'DM Mono',monospace;font-size:16px;font-weight:500;}
+.tx-amt.r{color:var(--expense);}
+.tx-amt.g{color:var(--income);}
+
+/* Follow-up chips */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px;}
+.chip{
+  font-size:12px;font-weight:600;padding:6px 12px;border-radius:9999px;
+  background:var(--subdued);border:1px solid var(--border);
+  color:var(--text2);cursor:pointer;transition:all .16s;white-space:nowrap;
+}
+.chip:hover{border-color:var(--primary);color:var(--primary);background:rgba(93,184,126,.08);}
+
+/* Claude-style progressive steps */
+.steps-wrap{
+  background:var(--aiSurface);border:1px solid var(--aiBorder);
+  border-radius:4px 16px 16px 16px;
+  padding:11px 14px;display:flex;flex-direction:column;gap:7px;
+  min-width:190px;
+}
+.step-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);transition:opacity .3s;}
+.step-row.active{color:var(--text1);}
+.step-row.done{opacity:.4;}
+.step-spin{
+  width:12px;height:12px;border-radius:50%;flex-shrink:0;
+  border:1.5px solid rgba(201,184,245,.22);border-top-color:var(--aiColor);
+  animation:spin .75s linear infinite;
+}
+.step-check{font-size:11px;color:var(--aiColor);flex-shrink:0;line-height:1;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* Typing cursor on AI bubble */
+.typing-cursor{
+  display:inline-block;width:2px;height:13px;
+  background:var(--aiColor);border-radius:1px;margin-left:2px;vertical-align:middle;
+  animation:blink 0.9s infinite;
+}
+@keyframes blink{0%,49%{opacity:1;}50%,100%{opacity:0;}}
+
+/* ── Input area ── */
+.inarea{
+  flex-shrink:0;padding:8px 14px 30px;
+  border-top:1px solid var(--border);background:var(--bg);
+}
+.qas{display:flex;gap:6px;margin-bottom:9px;overflow-x:auto;padding-bottom:1px;}
+.qas::-webkit-scrollbar{display:none;}
+.qab{
+  display:flex;align-items:center;gap:5px;padding:7px 12px;
+  border-radius:9999px;background:var(--subdued);border:1px solid var(--border);
+  color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;
+  transition:all .15s;white-space:nowrap;flex-shrink:0;
+}
+.qab:hover{background:var(--surface);color:var(--text1);}
+.qab.prim{background:rgba(93,184,126,.1);border-color:rgba(93,184,126,.25);color:var(--primary);}
+.qab svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.inrow{display:flex;align-items:center;gap:8px;}
+.inf{
+  flex:1;background:var(--subdued);border:1px solid var(--border);
+  border-radius:9999px;padding:11px 18px;
+  font-family:'Inter',sans-serif;font-size:13.5px;color:var(--text1);
+  outline:none;transition:border-color .15s;
+}
+.inf::placeholder{color:var(--text2);}
+.inf:focus{border-color:rgba(93,184,126,.35);}
+.sbtn{
+  width:42px;height:42px;border-radius:14px;
+  background:var(--primary);border:none;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;transition:all .15s;flex-shrink:0;
+}
+.sbtn:hover{background:var(--primaryDark);transform:scale(.95);}
+.sbtn svg{width:17px;height:17px;fill:var(--heroBg);}
+
+/* ═══════════════════════════════════
+   OVERLAYS (slide up over chat)
+═══════════════════════════════════ */
+.overlay{
+  position:absolute;inset:0;z-index:50;
+  transform:translateY(100%);
+  transition:transform .38s cubic-bezier(0.22,1,0.36,1);
+  background:var(--bg);
+  display:flex;flex-direction:column;
+}
+.overlay.open{transform:translateY(0);}
+
+/* ── Back handle shared ── */
+.ov-bar{
+  display:flex;align-items:center;padding:14px 18px 12px;
+  gap:11px;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.ov-back{
+  width:34px;height:34px;border-radius:10px;
+  background:var(--subdued);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.ov-back svg{width:18px;height:18px;stroke:var(--text1);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.ov-title{
+  flex:1;font-family:'Nunito',sans-serif;font-size:18px;font-weight:800;
+  color:var(--text1);letter-spacing:-.02em;
+}
+
+/* ── STATS overlay ── */
+.ov-stats-scroll{flex:1;overflow-y:auto;}
+.ov-stats-scroll::-webkit-scrollbar{width:0;}
+
+/* Period tabs */
+.period-tabs{display:flex;gap:2px;background:var(--subdued);border:1px solid var(--border);border-radius:10px;padding:3px;}
+.ptab{font-size:11px;font-weight:700;padding:4px 10px;border-radius:7px;cursor:pointer;color:var(--text2);transition:all .15s;}
+.ptab.on{background:var(--primary);color:var(--heroBg);}
+
+/* Big metric */
+.big-met{padding:18px 20px 8px;}
+.bm-label{font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;}
+.bm-value{font-family:'DM Mono',monospace;font-size:36px;font-weight:500;color:var(--text1);letter-spacing:-1.5px;line-height:1;margin-bottom:8px;}
+.bm-badges{display:flex;align-items:center;gap:8px;}
+.badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:9999px;}
+.badge.g{background:rgba(93,184,126,.12);color:var(--primary);border:1px solid rgba(93,184,126,.22);}
+.badge.r{background:rgba(192,80,58,.12);color:#E07070;border:1px solid rgba(192,80,58,.22);}
+.bm-sub{font-size:11px;color:var(--text2);}
+
+/* Section headers inside stats */
+.sec-hdr{
+  padding:14px 20px 8px;
+  font-size:10px;font-weight:700;color:var(--text2);
+  text-transform:uppercase;letter-spacing:.1em;
+}
+
+/* Chart container */
+.chart-card{
+  margin:0 16px;background:var(--surface);border-radius:20px;
+  border:1px solid var(--borderCard);padding:14px;
+  box-shadow:0 4px 12px rgba(0,0,0,.12);
+}
+.chart-legend{display:flex;gap:14px;margin-top:9px;}
+.cl{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2);}
+.cl-line{width:18px;height:2px;border-radius:1px;}
+.cl-dash{width:18px;height:0;border-top:2px dashed;}
+
+/* Donut row */
+.donut-row{display:flex;align-items:center;gap:16px;padding:0 20px 14px;}
+.donut-svg{width:92px;height:92px;flex-shrink:0;}
+.donut-leg{flex:1;display:flex;flex-direction:column;gap:7px;}
+.dl-row{display:flex;align-items:center;gap:7px;}
+.dl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.dl-name{flex:1;font-size:12px;color:var(--text2);}
+.dl-pct{font-size:11px;color:var(--text2);}
+.dl-amt{font-family:'DM Mono',monospace;font-size:12px;font-weight:500;color:var(--text1);}
+
+/* Weekly bars */
+.week-wrap{margin:0 16px;background:var(--surface);border-radius:20px;border:1px solid var(--borderCard);padding:14px 14px 12px;}
+.week-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.week-t{font-size:12px;font-weight:700;color:var(--text1);}
+.week-total{font-family:'DM Mono',monospace;font-size:12px;font-weight:500;color:var(--primary);}
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:80px;}
+.bcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;}
+.bwrap{flex:1;width:100%;display:flex;align-items:flex-end;}
+.bar{width:100%;border-radius:5px 5px 3px 3px;transition:height .3s ease;}
+.bday{font-size:10px;color:var(--text2);font-weight:600;}
+.bcol.tod .bday{color:var(--primary);}
+
+/* Recent txns */
+.rtx-sec{padding:14px 0 0;}
+.rtx-hdr{padding:0 20px;font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;}
+.rtx-row{display:flex;align-items:center;gap:10px;padding:10px 20px;}
+.rtx-ic{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.rtx-info{flex:1;}
+.rtx-name{font-size:13px;font-weight:600;color:var(--text1);}
+.rtx-date{font-size:11px;color:var(--text2);}
+.rtx-amt{font-family:'DM Mono',monospace;font-size:13px;font-weight:500;}
+.rtx-sep{height:1px;background:var(--border);margin:0 20px;}
+
+/* ── ADD TRANSACTION overlay ── */
+.ov-add{background:var(--bg);}
+.type-toggle{display:flex;gap:2px;background:var(--subdued);border:1px solid var(--border);border-radius:10px;padding:3px;}
+.ttab{font-size:12px;font-weight:700;padding:5px 12px;border-radius:7px;cursor:pointer;color:var(--text2);transition:all .15s;}
+.ttab.exp.on{background:var(--expense);color:#fff;}
+.ttab.inc.on{background:var(--primary);color:var(--heroBg);}
+
+.amt-disp{padding:22px 20px 14px;text-align:center;}
+.amt-big{
+  font-family:'DM Mono',monospace;font-size:48px;font-weight:500;
+  color:var(--text1);letter-spacing:-1.5px;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.amt-cur{font-size:28px;color:var(--text2);}
+.cur-blink{width:2px;height:48px;background:var(--primary);border-radius:1px;animation:blink 1s infinite;}
+@keyframes blink{0%,49%{opacity:1;}50%,100%{opacity:0;}}
+.amt-acct{
+  display:inline-flex;align-items:center;gap:6px;margin-top:6px;
+  font-size:12px;font-weight:600;color:var(--text2);
+  background:var(--subdued);border:1px solid var(--border);
+  padding:4px 12px;border-radius:9999px;cursor:pointer;
+}
+.amt-acct-dot{width:7px;height:7px;border-radius:50%;}
+
+.cat-grid{padding:4px 16px 14px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.citem{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;}
+.cic{
+  width:48px;height:48px;border-radius:14px;
+  background:var(--subdued);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  font-size:21px;transition:all .16s;
+}
+.citem.sel .cic{border-color:rgba(93,184,126,.5);background:rgba(93,184,126,.1);box-shadow:0 0 14px rgba(93,184,126,.15);}
+.cname{font-size:10px;font-weight:600;color:var(--text2);text-align:center;}
+.citem.sel .cname{color:var(--primary);}
+
+.add-sep{height:1px;background:var(--border);margin:0 16px 12px;}
+.merch-in{
+  display:block;margin:0 16px 10px;
+  padding:13px 16px;
+  background:var(--subdued);border:1px solid var(--border);
+  border-radius:16px;font-family:'Inter',sans-serif;
+  font-size:14px;color:var(--text1);outline:none;
+  width:calc(100% - 32px);transition:border-color .15s;
+}
+.merch-in::placeholder{color:var(--text2);}
+.merch-in:focus{border-color:rgba(93,184,126,.35);}
+
+.acct-row{
+  margin:0 16px 12px;padding:11px 14px;
+  background:var(--subdued);border:1px solid var(--border);
+  border-radius:16px;display:flex;align-items:center;gap:10px;cursor:pointer;
+}
+.acct-ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
+.acct-name{flex:1;font-size:13px;font-weight:600;color:var(--text1);}
+.acct-bal{font-family:'DM Mono',monospace;font-size:12px;font-weight:500;color:var(--text2);}
+.acct-chev{font-size:16px;color:var(--text2);}
+
+.log-btn{
+  display:block;margin:0 16px 32px;padding:0 16px;height:50px;
+  background:var(--primary);border:none;border-radius:16px;
+  font-family:'Inter',sans-serif;font-size:15px;font-weight:700;
+  color:var(--heroBg);cursor:pointer;width:calc(100% - 32px);
+  transition:background .15s;letter-spacing:.2px;
+}
+.log-btn:hover{background:var(--primaryDark);}
+</style>
+</head>
+<body>
+
+<p class="pg-label">FINO — Chat Revamp Concept · Dark / Forest</p>
+
+<div class="phone">
+
+  <!-- STATUS BAR -->
+  <div class="sbar">
+    <span class="sbar-time">9:41</span>
+    <div class="sbar-right">
+      <svg viewBox="0 0 24 24"><path d="M1.42 9a16 16 0 0 1 21.16 0M5 12.55a11 11 0 0 1 14.08 0M10.54 16.1a6 6 0 0 1 2.92 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
+      <svg viewBox="0 0 24 24"><rect x="2" y="7" width="16" height="11" rx="2"/><path d="M22 11v4"/></svg>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <div class="hdr">
+    <div class="hdr-av">
+      <svg viewBox="0 0 24 24"><path d="M17 8C8 10 5.9 16.17 3.82 19.5c.82.33 1.7.5 2.64.5C11 20 14 16 17 16c3 0 4.34 2.36 4.34 2.36L22 10s-3-4-5-2z"/></svg>
+      <div class="sdot"></div>
+    </div>
+    <div class="hdr-info">
+      <div class="hdr-name">Fino AI</div>
+      <div class="hdr-status">Online · Knows your finances</div>
+    </div>
+    <div class="hdr-btns">
+      <div class="hbtn" onclick="openStats()">
+        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div class="hbtn">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS STRIP -->
+  <div class="sstrip">
+    <div class="scell" onclick="openStats()">
+      <div class="sc-l">Balance</div>
+      <div class="sc-v g">₱45,280</div>
+      <div class="sc-c up">↑ ₱2,100 this wk</div>
+    </div>
+    <div class="scell" onclick="openStats()">
+      <div class="sc-l">Spent</div>
+      <div class="sc-v r">₱18,320</div>
+      <div class="sc-c dn">↓ 12% vs last mo</div>
+    </div>
+    <div class="scell" onclick="openStats()">
+      <div class="sc-l">Income</div>
+      <div class="sc-v g">₱32,000</div>
+      <div class="sc-c">Salary · May 15</div>
+    </div>
+  </div>
+
+  <!-- CHAT MESSAGES -->
+  <div class="chat" id="chatArea">
+
+    <div class="ddiv">Today · May 18</div>
+
+    <!-- Welcome hero card -->
+    <div class="mrow">
+      <div class="mav">🌿</div>
+      <div class="mcol">
+        <div class="hero-card">
+          <div class="hero-greet">Good morning, George 👋</div>
+          <div class="hero-title">You're saving ₱13,680 this month</div>
+          <div class="hero-row">
+            <div class="hero-col">
+              <div class="hero-col-l">Net Balance</div>
+              <div class="hero-col-v g">₱45,280</div>
+              <div class="hero-badge">↑ ₱2.1k</div>
+            </div>
+            <div class="hero-col">
+              <div class="hero-col-l">Spent</div>
+              <div class="hero-col-v r">₱18,320</div>
+            </div>
+            <div class="hero-col">
+              <div class="hero-col-l">Saved</div>
+              <div class="hero-col-v g">₱13,680</div>
+            </div>
+          </div>
+        </div>
+        <div class="mtime">9:00 AM</div>
+      </div>
+    </div>
+
+    <!-- AI proactive insight -->
+    <div class="mrow">
+      <div class="mav">🌿</div>
+      <div class="mcol">
+        <div class="ai-insight">
+          <span class="ai-insight-ico">💡</span>
+          <span class="ai-insight-t">Your food spending spiked <span class="hi">+38%</span> this week — mostly Grab Food late nights. You've spent <span class="hi">₱3,200</span> on food delivery alone.</span>
+        </div>
+        <div class="mtime">9:00 AM</div>
+      </div>
+    </div>
+
+    <!-- User -->
+    <div class="mrow u">
+      <div class="mcol">
+        <div class="bub u">show me my top spending categories</div>
+        <div class="mtime">9:02 AM</div>
+      </div>
+    </div>
+
+    <!-- AI with breakdown -->
+    <div class="mrow">
+      <div class="mav">🌿</div>
+      <div class="mcol">
+        <div class="bub ai">Here's your May breakdown. <b>Food & Dining</b> is leading at 42% — ₱7,694. You still have 13 days left to bring it down.</div>
+        <div class="br-card">
+          <div class="br-head">
+            <span class="br-head-t">May Spending</span>
+            <span class="br-badge">₱18,320 total</span>
+          </div>
+          <div class="br-rows">
+            <div class="br-row">
+              <div class="br-dot" style="background:var(--cfood)"></div>
+              <span class="br-name">Food & Dining</span>
+              <div class="br-bw"><div class="br-bar" style="width:100%;background:var(--cfood)"></div></div>
+              <span class="br-amt">₱7,694</span>
+            </div>
+            <div class="br-row">
+              <div class="br-dot" style="background:var(--cshop)"></div>
+              <span class="br-name">Shopping</span>
+              <div class="br-bw"><div class="br-bar" style="width:52%;background:var(--cshop)"></div></div>
+              <span class="br-amt">₱4,030</span>
+            </div>
+            <div class="br-row">
+              <div class="br-dot" style="background:var(--ctrans)"></div>
+              <span class="br-name">Transport</span>
+              <div class="br-bw"><div class="br-bar" style="width:43%;background:var(--ctrans)"></div></div>
+              <span class="br-amt">₱3,298</span>
+            </div>
+            <div class="br-row">
+              <div class="br-dot" style="background:var(--cbills)"></div>
+              <span class="br-name">Bills</span>
+              <div class="br-bw"><div class="br-bar" style="width:20%;background:var(--cbills)"></div></div>
+              <span class="br-amt">₱1,466</span>
+            </div>
+            <div class="br-row">
+              <div class="br-dot" style="background:var(--text2)"></div>
+              <span class="br-name">Others</span>
+              <div class="br-bw"><div class="br-bar" style="width:24%;background:var(--text2)"></div></div>
+              <span class="br-amt">₱1,832</span>
+            </div>
+          </div>
+        </div>
+        <div class="chips">
+          <div class="chip">📊 Full analytics</div>
+          <div class="chip">🍔 Cut food spend?</div>
+          <div class="chip">💡 Budget tips</div>
+        </div>
+        <div class="mtime">9:02 AM</div>
+      </div>
+    </div>
+
+    <!-- User logs a transaction -->
+    <div class="mrow u">
+      <div class="mcol">
+        <div class="bub u">spent 250 on Jollibee lunch GCash</div>
+        <div class="mtime">9:05 AM</div>
+      </div>
+    </div>
+
+    <!-- AI confirms -->
+    <div class="mrow">
+      <div class="mav">🌿</div>
+      <div class="mcol">
+        <div class="bub ai">Got it, logging that now!</div>
+        <div class="tx-card">
+          <div class="tx-ic" style="background:var(--cfood-bg)">🍔</div>
+          <div class="tx-info">
+            <div class="tx-lbl">✓ Logged</div>
+            <div class="tx-name">Jollibee</div>
+            <div class="tx-meta">GCash · 9:05 AM</div>
+            <div class="tx-cat" style="background:var(--cfood-bg);color:var(--cfood);border:1px solid rgba(201,122,32,.25)">Food & Dining</div>
+          </div>
+          <div class="tx-amt r">−₱250</div>
+        </div>
+        <div class="ai-insight" style="max-width:262px;margin-top:2px;">
+          <span class="ai-insight-t">That's your <span class="hi">6th Jollibee visit</span> this month — ₱1,520 total there. Your most visited spot! 🏆</span>
+        </div>
+        <div class="chips">
+          <div class="chip">📈 Jollibee history</div>
+          <div class="chip">🎯 Set food budget</div>
+        </div>
+        <div class="mtime">9:05 AM</div>
+      </div>
+    </div>
+
+    <!-- Progressive steps (Claude-style) -->
+    <div class="mrow">
+      <div class="mav">🌿</div>
+      <div class="mcol">
+        <div class="steps-wrap">
+          <div class="step-row done">
+            <span class="step-check">✓</span>
+            <span>Fetched your transactions</span>
+          </div>
+          <div class="step-row done">
+            <span class="step-check">✓</span>
+            <span>Analyzed May spending</span>
+          </div>
+          <div class="step-row active">
+            <div class="step-spin"></div>
+            <span>Generating response…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /chat -->
+
+  <!-- INPUT AREA -->
+  <div class="inarea">
+    <div class="qas">
+      <div class="qab prim" onclick="openAdd()">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Transaction
+      </div>
+      <div class="qab" onclick="openStats()">
+        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Analytics
+      </div>
+      <div class="qab">
+        <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        Bills
+      </div>
+      <div class="qab">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        Receipt
+      </div>
+    </div>
+    <div class="inrow">
+      <input class="inf" id="chatInput" placeholder="Ask anything about your money…" onkeydown="onKey(event)">
+      <button class="sbtn" onclick="sendMsg()">
+        <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════
+       STATS OVERLAY
+  ═══════════════════════════════════ -->
+  <div class="overlay" id="statsOv">
+    <div class="ov-bar">
+      <div class="ov-back" onclick="closeOv('statsOv')">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </div>
+      <div class="ov-title">Analytics</div>
+      <div class="period-tabs">
+        <div class="ptab on">Month</div>
+        <div class="ptab">3M</div>
+        <div class="ptab">Year</div>
+      </div>
+    </div>
+
+    <div class="ov-stats-scroll">
+
+      <!-- Big metric -->
+      <div class="big-met">
+        <div class="bm-label">Total Spent · May 2026</div>
+        <div class="bm-value">₱18,320</div>
+        <div class="bm-badges">
+          <span class="badge g">↓ 12% vs April</span>
+          <span class="bm-sub">Projected: ₱30,500</span>
+        </div>
+      </div>
+
+      <!-- Spending trend area chart -->
+      <div class="sec-hdr">Spending Trend</div>
+      <div class="chart-card">
+        <svg viewBox="0 0 340 95" width="100%" height="80" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="agrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#5DB87E" stop-opacity=".28"/>
+              <stop offset="100%" stop-color="#5DB87E" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="pgrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#C9B8F5" stop-opacity=".12"/>
+              <stop offset="100%" stop-color="#C9B8F5" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <!-- Grid lines -->
+          <line x1="0" y1="24" x2="340" y2="24" stroke="#28282E" stroke-width=".8" stroke-dasharray="4,4"/>
+          <line x1="0" y1="48" x2="340" y2="48" stroke="#28282E" stroke-width=".8" stroke-dasharray="4,4"/>
+          <line x1="0" y1="72" x2="340" y2="72" stroke="#28282E" stroke-width=".8" stroke-dasharray="4,4"/>
+          <!-- Projected fill -->
+          <path d="M 204,48 L 260,33 L 318,18 L 340,14 L 340,95 L 204,95 Z" fill="url(#pgrad)"/>
+          <!-- Actual fill -->
+          <path d="M 0,95 L 11,93 L 23,91 L 34,87 L 46,85 L 57,85 L 68,84 L 80,79 L 91,77 L 102,75 L 114,70 L 125,68 L 136,68 L 147,65 L 159,61 L 170,58 L 181,55 L 192,51 L 204,48 L 204,95 Z" fill="url(#agrad)"/>
+          <!-- Projected dashed -->
+          <path d="M 204,48 L 260,33 L 318,18 L 340,14" stroke="#C9B8F5" stroke-width="1.8" fill="none" stroke-dasharray="5,4" opacity=".65"/>
+          <!-- Actual line -->
+          <path d="M 0,95 L 11,93 L 23,91 L 34,87 L 46,85 L 57,85 L 68,84 L 80,79 L 91,77 L 102,75 L 114,70 L 125,68 L 136,68 L 147,65 L 159,61 L 170,58 L 181,55 L 192,51 L 204,48" stroke="#5DB87E" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- Today line -->
+          <line x1="204" y1="8" x2="204" y2="95" stroke="#5DB87E" stroke-width="1" stroke-dasharray="3,3" opacity=".35"/>
+          <!-- Today dot -->
+          <circle cx="204" cy="48" r="4.5" fill="#5DB87E"/>
+          <circle cx="204" cy="48" r="8" fill="#5DB87E" opacity=".18"/>
+          <text x="209" y="45" font-size="9" fill="#5DB87E" font-family="Inter" font-weight="700">Today</text>
+        </svg>
+        <div class="chart-legend">
+          <div class="cl"><div class="cl-line" style="background:#5DB87E"></div>Actual</div>
+          <div class="cl"><div class="cl-dash" style="border-color:#C9B8F5"></div>Projected</div>
+        </div>
+      </div>
+
+      <!-- Category donut -->
+      <div class="sec-hdr">By Category</div>
+      <div class="donut-row">
+        <svg class="donut-svg" viewBox="0 0 92 92">
+          <!-- C = 2π×34 ≈ 213.6 -->
+          <g transform="rotate(-90 46 46)">
+            <circle cx="46" cy="46" r="34" fill="none" stroke="#202024" stroke-width="13"/>
+            <!-- Food 42%=89.7 -->
+            <circle cx="46" cy="46" r="34" fill="none" stroke="#C97A20" stroke-width="12" stroke-dasharray="89.7 124" stroke-dashoffset="0"/>
+            <!-- Shopping 22%=47 -->
+            <circle cx="46" cy="46" r="34" fill="none" stroke="#D46A60" stroke-width="12" stroke-dasharray="47 166.7" stroke-dashoffset="-89.7"/>
+            <!-- Transport 18%=38.4 -->
+            <circle cx="46" cy="46" r="34" fill="none" stroke="#5A9FE8" stroke-width="12" stroke-dasharray="38.4 175.2" stroke-dashoffset="-136.7"/>
+            <!-- Bills 8%=17.1 -->
+            <circle cx="46" cy="46" r="34" fill="none" stroke="#9B7AE0" stroke-width="12" stroke-dasharray="17.1 196.5" stroke-dashoffset="-175.1"/>
+            <!-- Others 10%=21.4 -->
+            <circle cx="46" cy="46" r="34" fill="none" stroke="#4A5568" stroke-width="12" stroke-dasharray="21.4 192.2" stroke-dashoffset="-192.2"/>
+          </g>
+          <text x="46" y="43" text-anchor="middle" font-size="11" fill="#EEEAE4" font-family="DM Mono" font-weight="500">₱18.3k</text>
+          <text x="46" y="55" text-anchor="middle" font-size="8" fill="#88888F" font-family="Inter" font-weight="700" letter-spacing="1">SPENT</text>
+        </svg>
+        <div class="donut-leg">
+          <div class="dl-row"><div class="dl-dot" style="background:#C97A20"></div><span class="dl-name">Food</span><span class="dl-pct">42%</span><span class="dl-amt">₱7,694</span></div>
+          <div class="dl-row"><div class="dl-dot" style="background:#D46A60"></div><span class="dl-name">Shopping</span><span class="dl-pct">22%</span><span class="dl-amt">₱4,030</span></div>
+          <div class="dl-row"><div class="dl-dot" style="background:#5A9FE8"></div><span class="dl-name">Transport</span><span class="dl-pct">18%</span><span class="dl-amt">₱3,298</span></div>
+          <div class="dl-row"><div class="dl-dot" style="background:#9B7AE0"></div><span class="dl-name">Bills</span><span class="dl-pct">8%</span><span class="dl-amt">₱1,466</span></div>
+          <div class="dl-row"><div class="dl-dot" style="background:#4A5568"></div><span class="dl-name">Others</span><span class="dl-pct">10%</span><span class="dl-amt">₱1,832</span></div>
+        </div>
+      </div>
+
+      <!-- Weekly bars -->
+      <div class="sec-hdr">This Week</div>
+      <div class="week-wrap">
+        <div class="week-hdr">
+          <span class="week-t">Daily Spend</span>
+          <span class="week-total">₱10,210 this week</span>
+        </div>
+        <div class="bar-chart">
+          <div class="bcol tod">
+            <div class="bwrap"><div class="bar" style="height:23px;background:#5DB87E;"></div></div>
+            <div class="bday">MON</div>
+          </div>
+          <div class="bcol">
+            <div class="bwrap"><div class="bar" style="height:16px;background:#202024;"></div></div>
+            <div class="bday">TUE</div>
+          </div>
+          <div class="bcol">
+            <div class="bwrap"><div class="bar" style="height:45px;background:#202024;"></div></div>
+            <div class="bday">WED</div>
+          </div>
+          <div class="bcol">
+            <div class="bwrap"><div class="bar" style="height:15px;background:#202024;"></div></div>
+            <div class="bday">THU</div>
+          </div>
+          <div class="bcol">
+            <div class="bwrap"><div class="bar" style="height:52px;background:#202024;"></div></div>
+            <div class="bday">FRI</div>
+          </div>
+          <div class="bcol">
+            <div class="bwrap"><div class="bar" style="height:80px;background:#202024;"></div></div>
+            <div class="bday">SAT</div>
+          </div>
+          <div class="bcol">
+            <div class="bwrap"><div class="bar" style="height:17px;background:#202024;"></div></div>
+            <div class="bday">SUN</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent txns -->
+      <div class="rtx-sec">
+        <div class="rtx-hdr">Recent Transactions</div>
+        <div class="rtx-row">
+          <div class="rtx-ic" style="background:var(--cfood-bg)">🍔</div>
+          <div class="rtx-info"><div class="rtx-name">Jollibee</div><div class="rtx-date">Today · Food · GCash</div></div>
+          <div class="rtx-amt" style="color:var(--expense)">−₱250</div>
+        </div>
+        <div class="rtx-sep"></div>
+        <div class="rtx-row">
+          <div class="rtx-ic" style="background:var(--ctrans-bg)">🚗</div>
+          <div class="rtx-info"><div class="rtx-name">Grab</div><div class="rtx-date">Yesterday · Transport · GCash</div></div>
+          <div class="rtx-amt" style="color:var(--expense)">−₱180</div>
+        </div>
+        <div class="rtx-sep"></div>
+        <div class="rtx-row">
+          <div class="rtx-ic" style="background:var(--chealth-bg)">💊</div>
+          <div class="rtx-info"><div class="rtx-name">Mercury Drug</div><div class="rtx-date">May 16 · Health · Cash</div></div>
+          <div class="rtx-amt" style="color:var(--expense)">−₱95</div>
+        </div>
+        <div class="rtx-sep"></div>
+        <div class="rtx-row">
+          <div class="rtx-ic" style="background:rgba(93,184,126,.12)">💼</div>
+          <div class="rtx-info"><div class="rtx-name">Salary</div><div class="rtx-date">May 15 · Income · BDO</div></div>
+          <div class="rtx-amt" style="color:var(--income)">+₱32,000</div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /stats overlay -->
+
+  <!-- ═══════════════════════════════════
+       ADD TRANSACTION OVERLAY
+  ═══════════════════════════════════ -->
+  <div class="overlay ov-add" id="addOv">
+    <div class="ov-bar">
+      <div class="ov-back" onclick="closeOv('addOv')">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </div>
+      <div class="ov-title">Log Transaction</div>
+      <div class="type-toggle">
+        <div class="ttab exp on" id="expTab" onclick="setType('exp')">Expense</div>
+        <div class="ttab inc" id="incTab" onclick="setType('inc')">Income</div>
+      </div>
+    </div>
+
+    <div class="amt-disp">
+      <div class="amt-big">
+        <span class="amt-cur">₱</span>
+        <span id="amtVal">250</span>
+        <div class="cur-blink"></div>
+      </div>
+      <div style="margin-top:8px;">
+        <span class="amt-acct">
+          <div class="amt-acct-dot" style="background:#007DFF"></div>
+          GCash · ₱8,240
+          <span style="font-size:10px;opacity:.5">›</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="cat-grid">
+      <div class="citem sel" onclick="selCat(this)">
+        <div class="cic">🍔</div><div class="cname">Food</div>
+      </div>
+      <div class="citem" onclick="selCat(this)">
+        <div class="cic">🚗</div><div class="cname">Transport</div>
+      </div>
+      <div class="citem" onclick="selCat(this)">
+        <div class="cic">🛍️</div><div class="cname">Shopping</div>
+      </div>
+      <div class="citem" onclick="selCat(this)">
+        <div class="cic">💊</div><div class="cname">Health</div>
+      </div>
+      <div class="citem" onclick="selCat(this)">
+        <div class="cic">🏠</div><div class="cname">Bills</div>
+      </div>
+      <div class="citem" onclick="selCat(this)">
+        <div class="cic">🎮</div><div class="cname">Leisure</div>
+      </div>
+      <div class="citem" onclick="selCat(this)">
+        <div class="cic">📚</div><div class="cname">Education</div>
+      </div>
+      <div class="citem" onclick="selCat(this)">
+        <div class="cic">✨</div><div class="cname">Other</div>
+      </div>
+    </div>
+
+    <div class="add-sep"></div>
+    <input class="merch-in" type="text" placeholder="Merchant or description…" value="Jollibee">
+
+    <div class="acct-row">
+      <div class="acct-ic" style="background:rgba(0,125,255,.15)">💳</div>
+      <div class="acct-name">GCash</div>
+      <div class="acct-bal">₱8,240.50</div>
+      <div class="acct-chev">›</div>
+    </div>
+
+    <button class="log-btn" onclick="logTx()">Log Expense</button>
+  </div><!-- /add overlay -->
+
+</div><!-- /phone -->
+
+<script>
+function openStats(){document.getElementById('statsOv').classList.add('open');}
+function openAdd(){document.getElementById('addOv').classList.add('open');}
+function closeOv(id){document.getElementById(id).classList.remove('open');}
+
+function setType(t){
+  document.getElementById('expTab').classList.toggle('on', t==='exp');
+  document.getElementById('incTab').classList.toggle('on', t==='inc');
+  document.querySelector('.log-btn').textContent = t==='exp'?'Log Expense':'Log Income';
+}
+
+function selCat(el){
+  document.querySelectorAll('.citem').forEach(c=>c.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+/* ── Step sequences keyed by message topic ── */
+const stepSets={
+  spend:[
+    'Fetching your transactions…',
+    'Calculating totals for May…',
+    'Identifying top categories…',
+  ],
+  category:[
+    'Fetching your transactions…',
+    'Grouping by category…',
+    'Comparing to last month…',
+  ],
+  budget:[
+    'Loading spending history…',
+    'Running 3-month baseline…',
+    'Building recommendation…',
+  ],
+  bill:[
+    'Checking recurring bills…',
+    'Scanning upcoming due dates…',
+    'Mapping to your accounts…',
+  ],
+  save:[
+    'Fetching income & expenses…',
+    'Calculating net savings rate…',
+    'Comparing to your goal…',
+  ],
+  default:[
+    'Fetching your data…',
+    'Analyzing…',
+    'Generating response…',
+  ],
+};
+
+const replies=[
+  "Based on your data, you're spending <b>₱680/day</b> on average. You're on track to save about <b>₱13,680</b> this month — great progress!",
+  "Your biggest win this month: <b>Transport</b> is down 18% vs April. Commuting a few days is really paying off.",
+  "You have <b>3 bills</b> due this week: Netflix ₱199, Meralco ₱1,800, and internet ₱1,299. Want me to set reminders?",
+  "Looking at 3 months of data — you consistently overspend on <b>weekends by +43%</b>. Friday night restaurants are the culprit. Want tips?",
+];
+let rIdx=0;
+
+function pickSteps(txt){
+  const t=txt.toLowerCase();
+  if(/spend|spent|spending|cost|much/.test(t)) return stepSets.spend;
+  if(/categor/.test(t)) return stepSets.category;
+  if(/budget|cut|reduce|less/.test(t)) return stepSets.budget;
+  if(/bill|subscri|due/.test(t)) return stepSets.bill;
+  if(/save|saving|goal/.test(t)) return stepSets.save;
+  return stepSets.default;
+}
+
+function delay(ms){return new Promise(r=>setTimeout(r,ms));}
+
+async function typewriter(el, html){
+  /* strip tags and type raw text; then swap to full html */
+  const plain=html.replace(/<[^>]+>/g,'');
+  const cursor=document.createElement('span');
+  cursor.className='typing-cursor';
+  el.appendChild(cursor);
+  let i=0;
+  while(i<plain.length){
+    cursor.before(document.createTextNode(plain[i]));
+    i++;
+    await delay(i<6?80:22);
+    document.getElementById('chatArea').scrollTop=9999;
+  }
+  cursor.remove();
+  el.innerHTML=html; /* replace with bold/markup version */
+}
+
+async function sendMsg(){
+  const inp=document.getElementById('chatInput');
+  const txt=inp.value.trim();
+  if(!txt)return;
+  inp.value='';
+  const chat=document.getElementById('chatArea');
+
+  /* User bubble */
+  const u=document.createElement('div');
+  u.className='mrow u';
+  u.innerHTML=`<div class="mcol"><div class="bub u">${esc(txt)}</div><div class="mtime">Just now</div></div>`;
+  chat.appendChild(u);
+  chat.scrollTop=9999;
+
+  /* Build steps container */
+  const stepsRow=document.createElement('div');
+  stepsRow.className='mrow';
+  const stepsWrap=document.createElement('div');
+  stepsWrap.className='steps-wrap';
+  stepsRow.innerHTML=`<div class="mav">🌿</div>`;
+  stepsRow.appendChild(Object.assign(document.createElement('div'),{className:'mcol'}));
+  stepsRow.querySelector('.mcol').appendChild(stepsWrap);
+  chat.appendChild(stepsRow);
+  chat.scrollTop=9999;
+
+  const steps=pickSteps(txt);
+
+  /* Animate each step */
+  for(let i=0;i<steps.length;i++){
+    const row=document.createElement('div');
+    row.className='step-row active';
+    row.innerHTML=`<div class="step-spin"></div><span>${steps[i]}</span>`;
+    stepsWrap.appendChild(row);
+    chat.scrollTop=9999;
+    const wait= i===steps.length-1 ? 900 : 520+Math.random()*220;
+    await delay(wait);
+    /* Mark done */
+    row.classList.remove('active');
+    row.classList.add('done');
+    row.innerHTML=`<span class="step-check">✓</span><span>${steps[i].replace('…','')}</span>`;
+  }
+
+  await delay(180);
+  stepsRow.remove();
+
+  /* AI response with typewriter */
+  const reply=replies[rIdx%replies.length]; rIdx++;
+  const aRow=document.createElement('div');
+  aRow.className='mrow';
+  const bubEl=document.createElement('div');
+  bubEl.className='bub ai';
+  const timeEl=document.createElement('div');
+  timeEl.className='mtime';
+  timeEl.textContent='Just now';
+  const colEl=document.createElement('div');
+  colEl.className='mcol';
+  colEl.appendChild(bubEl);
+  aRow.innerHTML='<div class="mav">🌿</div>';
+  aRow.appendChild(colEl);
+  chat.appendChild(aRow);
+  chat.scrollTop=9999;
+
+  await typewriter(bubEl, reply);
+
+  /* Follow-up chips */
+  const chipsEl=document.createElement('div');
+  chipsEl.className='chips';
+  chipsEl.innerHTML=`<div class="chip">Tell me more</div><div class="chip">Show chart</div>`;
+  colEl.appendChild(chipsEl);
+  colEl.appendChild(timeEl);
+  chat.scrollTop=9999;
+}
+
+function onKey(e){if(e.key==='Enter')sendMsg();}
+
+async function logTx(){
+  closeOv('addOv');
+  await delay(300);
+  const chat=document.getElementById('chatArea');
+
+  /* Steps for logging */
+  const stepsRow=document.createElement('div');
+  stepsRow.className='mrow';
+  const stepsWrap=document.createElement('div');
+  stepsWrap.className='steps-wrap';
+  stepsRow.innerHTML='<div class="mav">🌿</div>';
+  const col=Object.assign(document.createElement('div'),{className:'mcol'});
+  col.appendChild(stepsWrap);
+  stepsRow.appendChild(col);
+  chat.appendChild(stepsRow);
+  chat.scrollTop=9999;
+
+  const logSteps=['Saving transaction…','Updating your balance…','Syncing to cloud…'];
+  for(const s of logSteps){
+    const r=document.createElement('div');
+    r.className='step-row active';
+    r.innerHTML=`<div class="step-spin"></div><span>${s}</span>`;
+    stepsWrap.appendChild(r);
+    chat.scrollTop=9999;
+    await delay(480);
+    r.classList.replace('active','done');
+    r.innerHTML=`<span class="step-check">✓</span><span>${s.replace('…','')}</span>`;
+  }
+  await delay(160);
+  stepsRow.remove();
+
+  const a=document.createElement('div');
+  a.className='mrow';
+  const bub=document.createElement('div');
+  bub.className='bub ai';
+  const mc=document.createElement('div');
+  mc.className='mcol';
+  mc.appendChild(bub);
+  a.innerHTML='<div class="mav">🌿</div>';
+  a.appendChild(mc);
+  chat.appendChild(a);
+  await typewriter(bub,'Logged ✓ — <b>₱250 at Jollibee</b> added to Food & Dining.');
+  mc.insertAdjacentHTML('beforeend','<div class="mtime">Just now</div>');
+  chat.scrollTop=9999;
+}
+
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// Period tab switching (cosmetic)
+document.querySelectorAll('.ptab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    t.closest('.period-tabs').querySelectorAll('.ptab').forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');
+  });
+});
+// Type toggle (cosmetic)
+document.querySelectorAll('.ttab').forEach(t=>{
+  t.addEventListener('click',()=>setType(t.classList.contains('exp')?'exp':'inc'));
+});
+
+window.onload=()=>{
+  const c=document.getElementById('chatArea');
+  c.scrollTop=c.scrollHeight;
+};
+</script>
+</body>
+</html>

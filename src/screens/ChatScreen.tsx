@@ -44,16 +44,26 @@ const DEFAULT_PROMPTS = [
   'Did I get paid yet?',
 ];
 
-const THINKING_PHRASES = [
-  'Analysing your finances',
-  'Crunching the numbers',
-  'Reviewing your spending',
-  'Checking your budget',
-  'Looking at your data',
-  'Thinking it through',
-  'Scanning transactions',
-  'Calculating patterns',
-];
+const STEP_SETS: Record<string, string[]> = {
+  spend:      ['Fetching your transactions', 'Calculating totals', 'Identifying top categories'],
+  category:   ['Fetching transactions', 'Grouping by category', 'Comparing to last month'],
+  budget:     ['Loading spending history', 'Running 3-month baseline', 'Building recommendation'],
+  bills:      ['Checking recurring bills', 'Scanning upcoming due dates', 'Mapping to accounts'],
+  save:       ['Fetching income & expenses', 'Calculating savings rate', 'Comparing to your goal'],
+  income:     ['Fetching income records', 'Summing this month', 'Checking vs last month'],
+  default:    ['Fetching your data', 'Analyzing', 'Generating response'],
+};
+
+function pickSteps(text: string): string[] {
+  const t = text.toLowerCase();
+  if (/spend|spent|cost|how much|total/.test(t)) return STEP_SETS.spend;
+  if (/categor/.test(t)) return STEP_SETS.category;
+  if (/budget|cut|reduc|less/.test(t)) return STEP_SETS.budget;
+  if (/bill|subscri|due|upcoming/.test(t)) return STEP_SETS.bills;
+  if (/save|saving|goal/.test(t)) return STEP_SETS.save;
+  if (/income|earn|paid|salary/.test(t)) return STEP_SETS.income;
+  return STEP_SETS.default;
+}
 
 type RichRow = { label: string; value: string; color?: string };
 
@@ -65,11 +75,20 @@ type TxData = {
   txType: 'expense' | 'income';
 };
 
+type HeroData = {
+  greeting: string;
+  title: string;
+  balance: number;
+  spent: number;
+  income: number;
+};
+
 type Message = {
   id: string;
   type: 'ai' | 'user';
   text: string;
   richData?: RichRow[];
+  heroData?: HeroData;
   followUps?: string[];
   timestamp: string;
   txData?: TxData;
@@ -87,55 +106,89 @@ function nowTime() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// ─── THINKING BUBBLE ────────────────────────────────────────────────────────
+// ─── STEP ROW (single line inside ThinkingSteps) ────────────────────────────
 
-function ThinkingBubble({ colors, isDark }: { colors: any; isDark: boolean }) {
-  const [phraseIndex, setPhraseIndex] = useState(0);
-  const fadePhrase = useRef(new Animated.Value(1)).current;
-  const dot1Y = useRef(new Animated.Value(0)).current;
-  const dot2Y = useRef(new Animated.Value(0)).current;
-  const dot3Y = useRef(new Animated.Value(0)).current;
-  const dot1O = useRef(new Animated.Value(0.4)).current;
-  const dot2O = useRef(new Animated.Value(0.4)).current;
-  const dot3O = useRef(new Animated.Value(0.4)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+type StepStatus = 'active' | 'done';
+
+function StepRow({ text, status, colors }: { text: string; status: StepStatus; colors: any }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const bounceDot = (y: Animated.Value, o: Animated.Value, delay: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.parallel([
-            Animated.timing(y, { toValue: -7, duration: 280, useNativeDriver: true }),
-            Animated.timing(o, { toValue: 1, duration: 280, useNativeDriver: true }),
-          ]),
-          Animated.parallel([
-            Animated.timing(y, { toValue: 0, duration: 280, useNativeDriver: true }),
-            Animated.timing(o, { toValue: 0.4, duration: 280, useNativeDriver: true }),
-          ]),
-          Animated.delay(600),
-        ])
-      );
-
-    bounceDot(dot1Y, dot1O, 0).start();
-    bounceDot(dot2Y, dot2O, 160).start();
-    bounceDot(dot3Y, dot3O, 320).start();
-
+    // Fade in on mount
+    Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    // Spin (always running; spinner view is only rendered when active)
     Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.18, duration: 900, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
-      ])
+      Animated.timing(spinAnim, { toValue: 1, duration: 750, useNativeDriver: true })
     ).start();
+  }, []);
 
-    const interval = setInterval(() => {
-      Animated.timing(fadePhrase, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => {
-        setPhraseIndex((prev) => (prev + 1) % THINKING_PHRASES.length);
-        Animated.timing(fadePhrase, { toValue: 1, duration: 220, useNativeDriver: true }).start();
-      });
-    }, 2200);
+  useEffect(() => {
+    if (status === 'done') {
+      Animated.timing(opacity, { toValue: 0.42, duration: 280, useNativeDriver: true }).start();
+    }
+  }, [status]);
 
-    return () => clearInterval(interval);
+  const rotate = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  return (
+    <Animated.View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, opacity }}>
+      {status === 'done' ? (
+        <Ionicons name="checkmark" size={13} color={colors.chatAILabel} style={{ width: 13 }} />
+      ) : (
+        <Animated.View
+          style={{
+            width: 13,
+            height: 13,
+            borderRadius: 7,
+            borderWidth: 1.5,
+            borderColor: colors.chatAILabel + '30',
+            borderTopColor: colors.chatAILabel,
+            transform: [{ rotate }],
+          }}
+        />
+      )}
+      <Text
+        style={{
+          fontFamily: 'Inter_400Regular',
+          fontSize: 13,
+          color: status === 'active' ? colors.chatAIText : colors.chatAILabel,
+          lineHeight: 18,
+        }}
+      >
+        {text}{status === 'active' ? '…' : ''}
+      </Text>
+    </Animated.View>
+  );
+}
+
+// ─── THINKING STEPS (replaces ThinkingBubble) ────────────────────────────────
+
+function ThinkingSteps({ steps, colors, isDark }: { steps: string[]; colors: any; isDark: boolean }) {
+  // statuses grows from ['active'] as steps complete
+  const [statuses, setStatuses] = useState<StepStatus[]>(['active']);
+
+  useEffect(() => {
+    if (steps.length <= 1) return;
+    let cumDelay = 0;
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
+
+    steps.slice(0, -1).forEach((_, i) => {
+      cumDelay += 520 + Math.floor(Math.random() * 280);
+      const d = cumDelay;
+      timeouts.push(
+        setTimeout(() => {
+          setStatuses((prev) => {
+            const next = [...prev];
+            next[i] = 'done';
+            next.push('active');
+            return next;
+          });
+        }, d)
+      );
+    });
+
+    return () => timeouts.forEach(clearTimeout);
   }, []);
 
   const bubbleBg = isDark ? 'rgba(124,101,200,0.12)' : 'rgba(124,101,200,0.07)';
@@ -152,72 +205,15 @@ function ThinkingBubble({ colors, isDark }: { colors: any; isDark: boolean }) {
           borderTopRightRadius: 16,
           borderBottomRightRadius: 16,
           borderBottomLeftRadius: 16,
-          padding: 14,
-          minWidth: 160,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+          gap: 10,
+          minWidth: 190,
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 7 }}>
-          <View style={{ position: 'relative', width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
-            <Animated.View
-              style={{
-                position: 'absolute',
-                width: 20,
-                height: 20,
-                borderRadius: 6,
-                backgroundColor: colors.chatAILabel,
-                opacity: 0.25,
-                transform: [{ scale: pulseAnim }],
-              }}
-            />
-            <View
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: 5,
-                backgroundColor: colors.chatAILabel,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <FinoIntelIcon size={10} color="#fff" />
-            </View>
-          </View>
-          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.chatAILabel }}>
-            Fino
-          </Text>
-        </View>
-
-        <Animated.Text
-          style={{
-            fontFamily: 'Inter_400Regular',
-            fontSize: 13,
-            color: colors.textSecondary,
-            marginBottom: 12,
-            opacity: fadePhrase,
-          }}
-        >
-          {THINKING_PHRASES[phraseIndex]}...
-        </Animated.Text>
-
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 16 }}>
-          {[
-            { y: dot1Y, o: dot1O },
-            { y: dot2Y, o: dot2O },
-            { y: dot3Y, o: dot3O },
-          ].map((d, i) => (
-            <Animated.View
-              key={i}
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: colors.chatAILabel,
-                transform: [{ translateY: d.y }],
-                opacity: d.o,
-              }}
-            />
-          ))}
-        </View>
+        {statuses.map((status, i) => (
+          <StepRow key={i} text={steps[i] ?? ''} status={status} colors={colors} />
+        ))}
       </View>
     </View>
   );
@@ -241,62 +237,6 @@ function AnimatedMessage({ children, isNew }: { children: React.ReactNode; isNew
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
       {children}
     </Animated.View>
-  );
-}
-
-// ─── HEADER STATUS DOT ───────────────────────────────────────────────────────
-
-function StatusDot({ isTyping }: { isTyping: boolean }) {
-  const pulse = useRef(new Animated.Value(1)).current;
-  const dotOpacity = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (isTyping) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulse, { toValue: 1.6, duration: 600, useNativeDriver: true }),
-          Animated.timing(pulse, { toValue: 1, duration: 600, useNativeDriver: true }),
-        ])
-      ).start();
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(dotOpacity, { toValue: 0.3, duration: 600, useNativeDriver: true }),
-          Animated.timing(dotOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      pulse.stopAnimation();
-      dotOpacity.stopAnimation();
-      Animated.timing(pulse, { toValue: 1, duration: 200, useNativeDriver: true }).start();
-      Animated.timing(dotOpacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
-    }
-  }, [isTyping]);
-
-  const dotColor = isTyping ? '#F59E0B' : '#22C55E';
-
-  return (
-    <View style={{ width: 10, height: 10, alignItems: 'center', justifyContent: 'center' }}>
-      <Animated.View
-        style={{
-          position: 'absolute',
-          width: 10,
-          height: 10,
-          borderRadius: 5,
-          backgroundColor: dotColor,
-          opacity: 0.35,
-          transform: [{ scale: pulse }],
-        }}
-      />
-      <Animated.View
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius: 3.5,
-          backgroundColor: dotColor,
-          opacity: dotOpacity,
-        }}
-      />
-    </View>
   );
 }
 
@@ -662,6 +602,13 @@ export default function ChatScreen() {
   const [insights, setInsights] = useState<Insights | null>(null);
   const [lastMsgId, setLastMsgId] = useState<string | null>(null);
 
+  // Streaming / typewriter state
+  const [currentSteps, setCurrentSteps] = useState<string[]>(STEP_SETS.default);
+  const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState('');
+  const [showCursor, setShowCursor] = useState(true);
+  const streamGenRef = useRef(0);
+
   // Transaction logging state
   const [pendingTx, setPendingTx] = useState<DetectedTransaction | null>(null);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
@@ -680,6 +627,13 @@ export default function ChatScreen() {
     const hideSub = Keyboard.addListener(hideEvent, () => setIsKeyboardVisible(false));
     return () => { showSub.remove(); hideSub.remove(); };
   }, []);
+
+  // Blinking cursor while streaming
+  useEffect(() => {
+    if (!streamingMsgId) return;
+    const id = setInterval(() => setShowCursor((p) => !p), 500);
+    return () => clearInterval(id);
+  }, [streamingMsgId]);
 
   useEffect(() => {
     if (!userId) { setRecentTxns([]); return; }
@@ -709,20 +663,31 @@ export default function ChatScreen() {
   }, [userId]);
 
   useEffect(() => {
+    const hour = new Date().getHours();
+    const greet =
+      hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    const saved = Math.max(0, totalIncome - monthlySpent);
+    const title =
+      saved > 0
+        ? `You're saving ₱${saved.toLocaleString('en-PH', { maximumFractionDigits: 0 })} this month`
+        : "Here's your snapshot this month";
+
     setMessages([
       {
         id: 'msg-welcome',
         type: 'ai',
-        text: "Hi! Here's your financial snapshot this month:",
-        richData: [
-          { label: 'Spent this month', value: `₱${monthlySpent.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, color: colors.expenseRed },
-          { label: 'Income this month', value: `₱${totalIncome.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, color: colors.incomeGreen },
-          { label: 'Total balance', value: `₱${totalBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, color: colors.textPrimary },
-        ],
+        text: '',
+        heroData: {
+          greeting: `${greet} 👋`,
+          title,
+          balance: totalBalance,
+          spent: monthlySpent,
+          income: totalIncome,
+        },
         timestamp: nowTime(),
       },
     ]);
-  }, [monthlySpent, totalIncome, totalBalance, colors]);
+  }, [monthlySpent, totalIncome, totalBalance]);
 
   const financialContext = useMemo<UserFinancialContext>(() => {
     const totalBudget = categories.reduce((sum, c) => sum + (c.budget_limit ?? 0), 0);
@@ -808,13 +773,20 @@ export default function ChatScreen() {
     setShowPrompts(false);
     setInputText('');
 
+    // Abort any in-flight stream so it stops updating streamingText
+    streamGenRef.current += 1;
+    setStreamingMsgId(null);
+    setStreamingText('');
+
     const userMsgId = Date.now().toString();
     setMessages((prev) => [...prev, { id: userMsgId, type: 'user', text: textToSend.trim(), timestamp: nowTime() }]);
     setLastMsgId(userMsgId);
+
+    // Pick context-aware steps and show thinking indicator
+    setCurrentSteps(pickSteps(textToSend.trim()));
     setIsTyping(true);
 
     try {
-      // Run chat reply + transaction detection in parallel
       const [reply, detected] = await Promise.all([
         sendMessage(textToSend.trim(), geminiHistory, financialContext),
         detectTransaction(textToSend.trim(), categoryNames),
@@ -826,6 +798,8 @@ export default function ChatScreen() {
         { role: 'model', text: reply },
       ]);
 
+      // Stop thinking steps, add message with full text stored
+      setIsTyping(false);
       const aiMsgId = `ai-${Date.now()}`;
       setMessages((prev) => [...prev, { id: aiMsgId, type: 'ai', text: reply, timestamp: nowTime() }]);
       setLastMsgId(aiMsgId);
@@ -833,29 +807,39 @@ export default function ChatScreen() {
       // Handle detected transaction
       if (detected.isTransaction && detected.amount != null) {
         const hint = detected.accountHint?.toLowerCase() ?? '';
-        const matched = hint
-          ? accounts.find((a) => a.name.toLowerCase().includes(hint))
-          : null;
-
+        const matched = hint ? accounts.find((a) => a.name.toLowerCase().includes(hint)) : null;
         if (accounts.length === 1) {
-          // Only one account — log it automatically
           await doLogTransaction(detected, accounts[0].id);
         } else if (matched) {
-          // Account hint matched a user account — log automatically
           await doLogTransaction(detected, matched.id);
         } else {
-          // Can't determine account — ask the user
           setPendingTx(detected);
           setShowAccountPicker(true);
         }
       }
+
+      // ── Typewriter effect ──────────────────────────────────────────────────
+      const gen = ++streamGenRef.current;
+      setStreamingMsgId(aiMsgId);
+      setStreamingText('');
+
+      for (let i = 1; i <= reply.length; i++) {
+        if (streamGenRef.current !== gen) break;
+        await new Promise<void>((r) => setTimeout(r, i <= 3 ? 50 : 15));
+        setStreamingText(reply.slice(0, i));
+        scrollViewRef.current?.scrollToEnd({ animated: false });
+      }
+
+      if (streamGenRef.current === gen) {
+        setStreamingMsgId(null);
+        setStreamingText('');
+      }
     } catch (err) {
       console.error('[Fino AI] handleSend error:', err);
+      setIsTyping(false);
       const errId = `err-${Date.now()}`;
       setMessages((prev) => [...prev, { id: errId, type: 'ai', text: 'Something went wrong. Please try again.', timestamp: nowTime() }]);
       setLastMsgId(errId);
-    } finally {
-      setIsTyping(false);
     }
   };
 
@@ -907,6 +891,8 @@ export default function ChatScreen() {
 
   const renderMessage = (msg: Message) => {
     const isNew = msg.id === lastMsgId;
+    const isStreaming = msg.id === streamingMsgId;
+    const displayText = isStreaming ? streamingText : msg.text;
 
     if (msg.type === 'user') {
       return (
@@ -932,9 +918,42 @@ export default function ChatScreen() {
               <Text style={styles.aiLabelText}>Fino</Text>
             </View>
 
-            {msg.text ? <Text style={styles.aiText}>{msg.text}</Text> : null}
+            {displayText ? (
+              <Text style={styles.aiText}>
+                {displayText}
+                {isStreaming ? (showCursor ? '|' : ' ') : ''}
+              </Text>
+            ) : null}
 
-            {msg.richData ? (
+            {!isStreaming && msg.heroData ? (
+              <View style={styles.heroCard}>
+                <Text style={styles.heroGreet}>{msg.heroData.greeting}</Text>
+                <Text style={styles.heroTitle}>{msg.heroData.title}</Text>
+                <View style={styles.heroRow}>
+                  <View style={styles.heroCol}>
+                    <Text style={styles.heroColLabel}>Balance</Text>
+                    <Text style={styles.heroColValue}>
+                      ₱{msg.heroData.balance.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+                    </Text>
+                  </View>
+                  <View style={[styles.heroCol, styles.heroColDivided]}>
+                    <Text style={styles.heroColLabel}>Spent</Text>
+                    <Text style={[styles.heroColValue, { color: '#FFB4A8' }]}>
+                      ₱{msg.heroData.spent.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+                    </Text>
+                  </View>
+                  <View style={[styles.heroCol, styles.heroColDivided]}>
+                    <Text style={styles.heroColLabel}>Income</Text>
+                    <Text style={[styles.heroColValue, { color: '#9DEAB1' }]}>
+                      ₱{msg.heroData.income.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Only show rich cards / tx card when not streaming */}
+            {!isStreaming && msg.richData ? (
               <View style={styles.richCard}>
                 {msg.richData.map((row) => (
                   <View key={row.label} style={styles.richCardRow}>
@@ -947,14 +966,14 @@ export default function ChatScreen() {
               </View>
             ) : null}
 
-            {msg.txData ? (
+            {!isStreaming && msg.txData ? (
               <TxConfirmCard tx={msg.txData} colors={colors} isDark={isDark} />
             ) : null}
           </View>
 
-          <Text style={styles.timestampAi}>{msg.timestamp}</Text>
+          {!isStreaming && <Text style={styles.timestampAi}>{msg.timestamp}</Text>}
 
-          {msg.followUps ? (
+          {!isStreaming && msg.followUps ? (
             <View style={styles.followupWrapper}>
               {msg.followUps.map((prompt) => (
                 <TouchableOpacity key={prompt} style={styles.followupChip} onPress={() => handleSend(prompt)}>
@@ -973,27 +992,69 @@ export default function ChatScreen() {
       {/* ─── HEADER ─── */}
       <View
         onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
-        style={[styles.chatHeader, { paddingTop: Math.max(insets.top, 16) }]}
+        style={[styles.chatHeader, { paddingTop: Math.max(insets.top, 12) }]}
       >
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={8}>
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <View style={styles.headerProfile}>
-          <View style={styles.avatar}>
-            <FinoIntelIcon size={26} color={colors.lavenderDark} filled />
-          </View>
-          <View>
-            <Text style={styles.headerTitle}>Ask Fino</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
-              <StatusDot isTyping={isTyping} />
-              <Text style={styles.headerSubtitle}>
-                {isTyping ? 'Thinking...' : 'AI Financial Assistant'}
-              </Text>
-            </View>
-          </View>
+        <View style={styles.avatar}>
+          <FinoIntelIcon size={22} color="#fff" filled />
+          <View style={[styles.avatarStatusDot, { backgroundColor: isTyping ? '#F59E0B' : '#22C55E' }]} />
         </View>
-        <View style={styles.backBtn} />
+        <View style={styles.headerInfo}>
+          <Text style={styles.headerTitle} numberOfLines={1}>Fino AI</Text>
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {isTyping ? 'Thinking…' : 'Online · Knows your finances'}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.headerActionBtn}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
+          hitSlop={6}
+        >
+          <Ionicons name="stats-chart-outline" size={18} color={colors.textSecondary} />
+        </TouchableOpacity>
       </View>
+
+      {/* ─── STATS STRIP ─── */}
+      {hasTransactions ? (
+        <View style={styles.statsStrip}>
+          <TouchableOpacity
+            style={styles.statCell}
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
+          >
+            <Text style={styles.statLabel}>Balance</Text>
+            <Text style={[styles.statValue, { color: colors.incomeGreen }]}>
+              ₱{totalBalance.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+            </Text>
+            <Text style={styles.statSub}>Across {accounts.length} {accounts.length === 1 ? 'account' : 'accounts'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.statCell, styles.statCellDivided]}
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
+          >
+            <Text style={styles.statLabel}>Spent</Text>
+            <Text style={[styles.statValue, { color: colors.expenseRed }]}>
+              ₱{monthlySpent.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+            </Text>
+            <Text style={styles.statSub}>This month</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.statCell, styles.statCellDivided]}
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
+          >
+            <Text style={styles.statLabel}>Income</Text>
+            <Text style={[styles.statValue, { color: colors.incomeGreen }]}>
+              ₱{totalIncome.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+            </Text>
+            <Text style={styles.statSub}>This month</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* ─── KEYBOARD AVOIDING VIEW ─── */}
       <KeyboardAvoidingView
@@ -1014,7 +1075,7 @@ export default function ChatScreen() {
             onLayout={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
           >
             {messages.map(renderMessage)}
-            {isTyping ? <ThinkingBubble colors={colors} isDark={isDark} /> : null}
+            {isTyping ? <ThinkingSteps steps={currentSteps} colors={colors} isDark={isDark} /> : null}
             {renderSuggestedPrompts()}
           </ScrollView>
         )}
@@ -1025,6 +1086,49 @@ export default function ChatScreen() {
             { paddingBottom: isKeyboardVisible ? 16 : Math.max(insets.bottom, 16) },
           ]}
         >
+          {/* Quick action chips */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.quickActions}
+            keyboardShouldPersistTaps="handled"
+          >
+            <TouchableOpacity
+              style={[styles.quickActionBtn, styles.quickActionBtnPrimary]}
+              activeOpacity={0.75}
+              onPress={() => navigation.navigate('AddTransaction', { mode: 'expense' })}
+            >
+              <Ionicons name="add" size={14} color={colors.primary} />
+              <Text style={[styles.quickActionText, styles.quickActionTextPrimary]}>
+                Add Transaction
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionBtn}
+              activeOpacity={0.75}
+              onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
+            >
+              <Ionicons name="bar-chart-outline" size={14} color={colors.textSecondary} />
+              <Text style={styles.quickActionText}>Analytics</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionBtn}
+              activeOpacity={0.75}
+              onPress={() => navigation.navigate('RecurringBills')}
+            >
+              <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+              <Text style={styles.quickActionText}>Bills</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionBtn}
+              activeOpacity={0.75}
+              onPress={() => navigation.navigate('ScreenshotScreen')}
+            >
+              <Ionicons name="scan-outline" size={14} color={colors.textSecondary} />
+              <Text style={styles.quickActionText}>Scan Receipt</Text>
+            </TouchableOpacity>
+          </ScrollView>
+
           <View style={styles.inputWrapper}>
             <TextInput
               style={styles.inputField}
@@ -1070,25 +1174,62 @@ const createStyles = (colors: any, isDark: boolean) =>
     chatHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      gap: 11,
       paddingHorizontal: spacing.screenPadding,
-      paddingBottom: 16,
+      paddingBottom: 12,
       borderBottomWidth: 1,
       borderBottomColor: isDark ? '#333333' : 'rgba(0,0,0,0.05)',
       backgroundColor: colors.background,
     },
-    backBtn: { width: 40, alignItems: 'flex-start', justifyContent: 'center' },
-    headerProfile: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    backBtn: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: -4,
+    },
     avatar: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
+      width: 40,
+      height: 40,
+      borderRadius: 12,
       backgroundColor: colors.chatAILabel,
       alignItems: 'center',
       justifyContent: 'center',
+      position: 'relative',
     },
-    headerTitle: { fontFamily: 'Nunito_800ExtraBold', fontSize: 16, color: colors.chatAILabel },
-    headerSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 12, color: colors.textSecondary },
+    avatarStatusDot: {
+      position: 'absolute',
+      bottom: -1,
+      right: -1,
+      width: 11,
+      height: 11,
+      borderRadius: 5.5,
+      borderWidth: 2,
+      borderColor: colors.background,
+    },
+    headerInfo: { flex: 1, minWidth: 0 },
+    headerTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 16,
+      color: colors.textPrimary,
+      letterSpacing: -0.3,
+    },
+    headerSubtitle: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 11,
+      color: colors.textSecondary,
+      marginTop: 1,
+    },
+    headerActionBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      backgroundColor: colors.surfaceSubdued,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     scrollContent: { padding: spacing.screenPadding, paddingBottom: 24 },
     emptyStateContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
     emptyEmoji: { fontSize: 48, marginBottom: 16 },
@@ -1136,6 +1277,123 @@ const createStyles = (colors: any, isDark: boolean) =>
     richCardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     richCardLabel: { fontFamily: 'Inter_400Regular', fontSize: 13, color: colors.textSecondary },
     richCardValue: { fontFamily: 'DMMono_500Medium', fontSize: 14, color: colors.textPrimary },
+
+    // ─── Hero welcome card (in chat) ───
+    heroCard: {
+      marginTop: 12,
+      backgroundColor: colors.heroCardBg,
+      borderRadius: 22,
+      padding: 18,
+      overflow: 'hidden',
+    },
+    heroGreet: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.heroSub ?? 'rgba(255,255,255,0.7)',
+      marginBottom: 4,
+    },
+    heroTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 18,
+      color: colors.heroOn ?? '#FFF',
+      letterSpacing: -0.3,
+      lineHeight: 23,
+      marginBottom: 14,
+    },
+    heroRow: {
+      flexDirection: 'row',
+      backgroundColor: colors.blackTransparent15 ?? 'rgba(0,0,0,0.15)',
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.whiteTransparent12 ?? 'rgba(255,255,255,0.12)',
+      paddingVertical: 10,
+      paddingHorizontal: 4,
+    },
+    heroCol: { flex: 1, paddingHorizontal: 10 },
+    heroColDivided: {
+      borderLeftWidth: 1,
+      borderLeftColor: colors.whiteTransparent12 ?? 'rgba(255,255,255,0.12)',
+    },
+    heroColLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 9,
+      letterSpacing: 0.6,
+      color: colors.heroSub ?? 'rgba(255,255,255,0.55)',
+      textTransform: 'uppercase',
+      marginBottom: 3,
+    },
+    heroColValue: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 14,
+      color: colors.heroOn ?? '#FFF',
+    },
+
+    // ─── Stats strip (below header) ───
+    statsStrip: {
+      flexDirection: 'row',
+      backgroundColor: colors.background,
+      borderBottomWidth: 1,
+      borderBottomColor: isDark ? '#333' : 'rgba(0,0,0,0.05)',
+    },
+    statCell: {
+      flex: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    statCellDivided: {
+      borderLeftWidth: 1,
+      borderLeftColor: isDark ? '#222' : 'rgba(0,0,0,0.05)',
+    },
+    statLabel: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 9,
+      letterSpacing: 0.6,
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+      marginBottom: 2,
+    },
+    statValue: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 13,
+      color: colors.textPrimary,
+    },
+    statSub: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 9,
+      color: colors.textSecondary,
+      marginTop: 1,
+    },
+
+    // ─── Quick action row (above input) ───
+    quickActions: {
+      flexDirection: 'row',
+      flexWrap: 'nowrap',
+      gap: 6,
+      paddingBottom: 8,
+    },
+    quickActionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 11,
+      paddingVertical: 7,
+      borderRadius: 9999,
+      backgroundColor: colors.surfaceSubdued,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    quickActionBtnPrimary: {
+      backgroundColor: colors.primaryLight ?? colors.surfaceSubdued,
+      borderColor: colors.primary + '40',
+    },
+    quickActionText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 11.5,
+      color: colors.textSecondary,
+    },
+    quickActionTextPrimary: {
+      color: colors.primary,
+    },
     followupWrapper: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
     followupChip: {
       backgroundColor: colors.chatAIBubbleBg,
