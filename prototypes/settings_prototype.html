@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Fino — Settings & Preferences (Vision)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+<style>
+  /* ---------- THEME TOKENS ---------- */
+  /* Role-based: every accent ships a complete bundle (no derivation at render time). */
+  :root {
+    --bg:        #F7F5F2;
+    --surface:   #FFFFFF;
+    --surface-2: #F1EEEA;
+    --text:      #1E1E2E;
+    --text-muted:#8A8A9A;
+    --hairline:  rgba(30,30,46,0.08);
+    --icon:      #1E1E2E;
+    --icon-muted:#8A8A9A;
+    --expense:   #C0503A;
+    --income:    #3F6B52;
+    --shadow:    0 8px 24px rgba(20,20,30,0.06);
+
+    /* default Forest accent bundle */
+    --accent:          #5B8C6E;
+    --accent-on:       #FFFFFF;
+    --accent-muted:    #E4EDE6;
+    --accent-muted-on: #2E4A38;
+    --accent-border:   #C7D9CB;
+    --hero-bg:         #2A4F3A;
+    --hero-on:         #F2EFE8;
+    --hero-sub:        rgba(242,239,232,0.62);
+    --icon-on-accent:  #FFFFFF;
+  }
+  [data-mode="dark"] {
+    --bg:        #0E0E10;
+    --surface:   #18181C;
+    --surface-2: #1F1F25;
+    --text:      #EEEAE4;
+    --text-muted:#88888F;
+    --hairline:  rgba(255,255,255,0.08);
+    --icon:      #EEEAE4;
+    --icon-muted:#88888F;
+    --expense:   #E07A60;
+    --income:    #5DB87E;
+    --shadow:    0 8px 24px rgba(0,0,0,0.4);
+  }
+
+  /* ---------- ACCENT BUNDLES (light) ---------- */
+  [data-accent="forest"] {
+    --accent:#5B8C6E; --accent-on:#FFFFFF; --accent-muted:#E4EDE6; --accent-muted-on:#2E4A38; --accent-border:#C7D9CB;
+    --hero-bg:#2A4F3A; --hero-on:#F2EFE8; --hero-sub:rgba(242,239,232,.62); --icon-on-accent:#FFFFFF;
+  }
+  [data-accent="ocean"] {
+    --accent:#3A7BD5; --accent-on:#FFFFFF; --accent-muted:#E1ECF9; --accent-muted-on:#1F4A85; --accent-border:#BFD5EF;
+    --hero-bg:#1F3C6B; --hero-on:#EEF4FC; --hero-sub:rgba(238,244,252,.62); --icon-on-accent:#FFFFFF;
+  }
+  [data-accent="violet"] {
+    --accent:#7B5EA7; --accent-on:#FFFFFF; --accent-muted:#EDE6F4; --accent-muted-on:#41335A; --accent-border:#D2C5E0;
+    --hero-bg:#3D2E5B; --hero-on:#F1ECF6; --hero-sub:rgba(241,236,246,.62); --icon-on-accent:#FFFFFF;
+  }
+  [data-accent="rose"] {
+    --accent:#C96B8A; --accent-on:#FFFFFF; --accent-muted:#F7E5EB; --accent-muted-on:#6E2A3F; --accent-border:#EAC8D3;
+    --hero-bg:#5D2638; --hero-on:#F8ECEF; --hero-sub:rgba(248,236,239,.62); --icon-on-accent:#FFFFFF;
+  }
+  /* Amber: this is where white-on-yellow fails today. Pair with deep brown. */
+  [data-accent="amber"] {
+    --accent:#B87A20; --accent-on:#1F1408; --accent-muted:#F6E9D2; --accent-muted-on:#5B3D10; --accent-border:#E6D2A8;
+    --hero-bg:#3E2A0C; --hero-on:#F4E8D2; --hero-sub:rgba(244,232,210,.62); --icon-on-accent:#1F1408;
+  }
+  [data-accent="sunset"] {
+    --accent:#E07A5F; --accent-on:#1F0A04; --accent-muted:#F9E2D8; --accent-muted-on:#6F2A18; --accent-border:#F0CDBF;
+    --hero-bg:#5C2716; --hero-on:#F7E6DC; --hero-sub:rgba(247,230,220,.62); --icon-on-accent:#1F0A04;
+  }
+  [data-accent="slate"] {
+    --accent:#4A7FA5; --accent-on:#FFFFFF; --accent-muted:#E1ECF3; --accent-muted-on:#1E3C53; --accent-border:#BFD3E0;
+    --hero-bg:#22394C; --hero-on:#EAF1F6; --hero-sub:rgba(234,241,246,.62); --icon-on-accent:#FFFFFF;
+  }
+
+  /* ---------- DARK-MODE ACCENT OVERRIDES ---------- */
+  /* In dark mode, accent surfaces brighten and `On` flips where appropriate. */
+  [data-mode="dark"][data-accent="forest"] { --accent:#5DB87E; --accent-on:#0A1A10; --accent-muted:#1B2D22; --accent-muted-on:#A8D8B6; --accent-border:#2A4836; --hero-bg:#173324; --hero-on:#E8F2EB; --hero-sub:rgba(232,242,235,.55); --icon-on-accent:#0A1A10; }
+  [data-mode="dark"][data-accent="ocean"]  { --accent:#5FA0E8; --accent-on:#06182E; --accent-muted:#15263B; --accent-muted-on:#AECFEE; --accent-border:#27425F; --hero-bg:#102341; --hero-on:#E6EFF8; --hero-sub:rgba(230,239,248,.55); --icon-on-accent:#06182E; }
+  [data-mode="dark"][data-accent="violet"] { --accent:#A589CC; --accent-on:#160E22; --accent-muted:#211A2E; --accent-muted-on:#D6C5EA; --accent-border:#3B2F52; --hero-bg:#241936; --hero-on:#EFE9F7; --hero-sub:rgba(239,233,247,.55); --icon-on-accent:#160E22; }
+  [data-mode="dark"][data-accent="rose"]   { --accent:#E08CA8; --accent-on:#1F0A12; --accent-muted:#2A1820; --accent-muted-on:#F0C7D3; --accent-border:#4A2A36; --hero-bg:#3A1623; --hero-on:#F6E5EA; --hero-sub:rgba(246,229,234,.55); --icon-on-accent:#1F0A12; }
+  [data-mode="dark"][data-accent="amber"]  { --accent:#E0A04A; --accent-on:#1F1408; --accent-muted:#2A2014; --accent-muted-on:#F1D8A8; --accent-border:#4A3A1E; --hero-bg:#2A1E0A; --hero-on:#F2E4C7; --hero-sub:rgba(242,228,199,.55); --icon-on-accent:#1F1408; }
+  [data-mode="dark"][data-accent="sunset"] { --accent:#F09B82; --accent-on:#1F0A04; --accent-muted:#2D1C16; --accent-muted-on:#F4CFC0; --accent-border:#4F2E22; --hero-bg:#3D1A0E; --hero-on:#F6E0D4; --hero-sub:rgba(246,224,212,.55); --icon-on-accent:#1F0A04; }
+  [data-mode="dark"][data-accent="slate"]  { --accent:#7AA8CC; --accent-on:#0A1722; --accent-muted:#172430; --accent-muted-on:#C2D7E6; --accent-border:#2C4258; --hero-bg:#162636; --hero-on:#E5EDF4; --hero-sub:rgba(229,237,244,.55); --icon-on-accent:#0A1722; }
+
+  /* ---------- BASE ---------- */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: linear-gradient(180deg, #E8E5DF 0%, #D9D4CB 100%);
+    min-height: 100vh;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px;
+    gap: 24px;
+  }
+  [data-mode="dark"] body, body[data-stage="dark"] { background: linear-gradient(180deg,#1A1A1F,#0A0A0C); }
+  .mono { font-family: 'DM Mono', ui-monospace, monospace; }
+
+  /* ---------- TOP TOOLBAR (mockup controls) ---------- */
+  .toolbar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    background: rgba(255,255,255,0.7); backdrop-filter: blur(20px);
+    padding: 8px 12px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+    font-size: 12px; font-weight: 600; color: #1E1E2E;
+  }
+  .toolbar .label { color:#6B6B7A; margin-right: 4px; }
+  .toolbar button {
+    appearance: none; border: 0; cursor: pointer; padding: 6px 10px; border-radius: 999px;
+    background: transparent; font: inherit; color: inherit; transition: background .15s;
+  }
+  .toolbar button:hover { background: rgba(0,0,0,0.05); }
+  .toolbar button.active { background: #1E1E2E; color: #fff; }
+  .toolbar .divider { width:1px; height:18px; background:rgba(0,0,0,0.12); margin: 0 4px; }
+  .swatch-row { display:flex; gap:6px; }
+  .swatch-btn { width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; transition: transform .15s, border-color .15s; }
+  .swatch-btn:hover { transform: scale(1.1); }
+  .swatch-btn.active { border-color: #1E1E2E; }
+  [data-stage="dark"] .toolbar { background: rgba(30,30,40,0.7); color:#EEE; }
+  [data-stage="dark"] .toolbar .label { color:#888; }
+  [data-stage="dark"] .toolbar button.active { background:#fff; color:#000; }
+
+  /* ---------- PHONE FRAME ---------- */
+  .phone {
+    width: 390px; max-width: 100%;
+    background: var(--bg);
+    border-radius: 44px;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.25), 0 8px 20px rgba(0,0,0,0.12);
+    border: 1px solid rgba(0,0,0,0.05);
+    position: relative;
+    color: var(--text);
+  }
+  .status-bar {
+    height: 44px; display:flex; align-items:center; justify-content:space-between;
+    padding: 0 28px; font-size: 14px; font-weight: 600;
+  }
+  .nav-bar {
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 4px 16px 12px;
+  }
+  .nav-bar .icon-btn {
+    width:36px; height:36px; border-radius: 18px; background: var(--surface-2);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .nav-bar h1 {
+    font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 18px;
+    margin: 0; letter-spacing: -0.3px;
+  }
+
+  /* ---------- SCROLL AREA ---------- */
+  .screen { padding: 0 16px 32px; overflow-y: auto; max-height: 820px; }
+  .screen::-webkit-scrollbar { width: 0; }
+
+  /* ---------- PROFILE HEADER ---------- */
+  .profile-card {
+    background: var(--surface);
+    border-radius: 24px;
+    padding: 20px;
+    display: flex; align-items: center; gap: 14px;
+    box-shadow: var(--shadow);
+    margin-bottom: 20px;
+  }
+  .avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--hero-bg));
+    display:flex; align-items:center; justify-content:center;
+    color: var(--accent-on); font-family:'Nunito'; font-weight: 800; font-size: 22px;
+  }
+  .profile-card .who { flex: 1; }
+  .profile-card .name { font-family:'Nunito'; font-weight: 800; font-size: 18px; }
+  .profile-card .email { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+  .pill {
+    background: var(--accent-muted); color: var(--accent-muted-on);
+    border-radius: 999px; padding: 6px 12px; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.3px; text-transform: uppercase;
+  }
+
+  /* ---------- SECTIONS ---------- */
+  .section { margin-bottom: 24px; }
+  .section-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 1px;
+    color: var(--text-muted); text-transform: uppercase;
+    margin: 0 4px 8px;
+  }
+  .group {
+    background: var(--surface);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .row {
+    display:flex; align-items:center; gap: 14px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--hairline);
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .row:last-child { border-bottom: 0; }
+  .row:hover { background: var(--surface-2); }
+  .row .lead-icon {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: var(--accent-muted); color: var(--accent-muted-on);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .row .row-text { flex: 1; min-width: 0; }
+  .row .row-title { font-weight: 600; font-size: 15px; color: var(--text); }
+  .row .row-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .row .row-trail { color: var(--text-muted); font-size: 14px; display:flex; align-items:center; gap:8px; }
+  .row .chev { color: var(--icon-muted); }
+
+  /* ---------- SWITCH ---------- */
+  .switch {
+    position: relative; width: 44px; height: 26px; flex-shrink:0;
+    background: var(--surface-2); border-radius: 999px; cursor: pointer;
+    transition: background .2s; border: 1px solid var(--hairline);
+  }
+  .switch::after {
+    content:''; position: absolute; top: 2px; left: 2px;
+    width: 20px; height: 20px; border-radius:50%; background:#fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: left .2s;
+  }
+  .switch.on { background: var(--accent); border-color: var(--accent); }
+  .switch.on::after { left: 20px; background: var(--accent-on); }
+
+  /* ---------- SEGMENTED ---------- */
+  .segmented {
+    display:flex; background: var(--surface-2); border-radius: 12px; padding: 4px;
+    gap: 2px;
+  }
+  .segmented .seg {
+    flex:1; text-align:center; padding: 8px 4px; border-radius: 9px;
+    font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer;
+  }
+  .segmented .seg.active {
+    background: var(--surface); color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  /* ---------- THEME PICKER ---------- */
+  .accent-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px;
+    padding: 16px;
+  }
+  .accent-tile {
+    aspect-ratio: 1; border-radius: 14px;
+    display:flex; align-items:flex-end; justify-content:flex-start;
+    padding: 8px; cursor: pointer; position: relative;
+    border: 2px solid transparent; transition: transform .15s, border-color .15s;
+  }
+  .accent-tile:hover { transform: translateY(-2px); }
+  .accent-tile.active { border-color: var(--text); }
+  .accent-tile .dot {
+    width:14px; height:14px; border-radius: 50%; background: #fff;
+    opacity: 0; transition: opacity .15s;
+  }
+  .accent-tile.active .dot { opacity: 1; }
+  .accent-name {
+    text-align:center; font-size: 11px; font-weight: 600;
+    color: var(--text-muted); margin-top: 6px;
+  }
+
+  /* ---------- PREVIEW CARD ---------- */
+  .preview-wrap { padding: 16px; }
+  .hero-preview {
+    background: var(--hero-bg); color: var(--hero-on);
+    border-radius: 20px; padding: 18px; position: relative; overflow: hidden;
+  }
+  .hero-preview .hero-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+    color: var(--hero-sub); text-transform: uppercase;
+  }
+  .hero-preview .hero-amount {
+    font-family:'Nunito'; font-weight: 900; font-size: 32px; letter-spacing:-1px; margin-top: 4px;
+  }
+  .hero-preview .hero-chip {
+    display:inline-flex; gap: 4px; align-items:center;
+    background: rgba(255,255,255,0.12); color: var(--hero-on);
+    padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    margin-top: 10px;
+  }
+  .hero-preview .hero-icon-row {
+    position: absolute; top: 18px; right: 18px;
+    display:flex; gap: 8px;
+  }
+  .hero-preview .hero-icon-row .icn {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(255,255,255,0.12);
+    display:flex; align-items:center; justify-content:center;
+    color: var(--hero-on);
+  }
+  .preview-tx {
+    margin-top: 12px; background: var(--surface-2);
+    border-radius: 14px; padding: 12px; display:flex; align-items:center; gap:12px;
+  }
+  .preview-tx .cat {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: var(--accent-muted); color: var(--accent-muted-on);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .preview-tx .tx-text { flex:1; }
+  .preview-tx .tx-merch { font-weight: 600; font-size: 14px; }
+  .preview-tx .tx-cat { font-size: 12px; color: var(--text-muted); }
+  .preview-tx .tx-amt { font-family:'DM Mono'; font-weight: 500; color: var(--expense); }
+  .preview-btn-row { margin-top: 12px; display:flex; gap: 10px; }
+  .btn {
+    flex:1; padding: 12px; border-radius: 14px;
+    font-weight: 700; font-size: 14px; text-align:center; cursor:pointer;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-on); }
+  .btn-secondary { background: var(--accent-muted); color: var(--accent-muted-on); }
+
+  /* ---------- ICONS (inline SVG) ---------- */
+  svg.ic { display:block; }
+
+  /* ---------- DANGER ---------- */
+  .row.danger .lead-icon { background: #FCE9E5; color: #C0503A; }
+  [data-mode="dark"] .row.danger .lead-icon { background: rgba(224,122,96,0.15); color: #E07A60; }
+  .row.danger .row-title { color: var(--expense); }
+
+  /* ---------- ANNOTATIONS ---------- */
+  .caption {
+    max-width: 390px; text-align: center; color: #5C5C68;
+    font-size: 12px; line-height: 1.5; padding: 0 8px;
+  }
+  [data-stage="dark"] .caption { color: #9A9AA5; }
+
+  /* ---------- LEGEND (theme-token explainer) ---------- */
+  .legend {
+    width: 390px; max-width: 100%;
+    background: rgba(255,255,255,0.85); backdrop-filter: blur(20px);
+    border-radius: 20px; padding: 16px 18px; font-size: 12px;
+    box-shadow: var(--shadow);
+  }
+  [data-stage="dark"] .legend { background: rgba(30,30,40,0.85); color:#EEE; }
+  .legend h3 { margin: 0 0 8px; font-family:'Nunito'; font-weight: 800; font-size: 14px; }
+  .legend .tok-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .tok { display:flex; align-items:center; gap: 8px; font-family:'DM Mono'; font-size: 11px; }
+  .tok .sw { width: 18px; height: 18px; border-radius: 6px; border: 1px solid var(--hairline); flex-shrink:0; }
+
+  /* ---------- LANGUAGE FLAGS ---------- */
+  .flag { width: 24px; height: 18px; border-radius: 3px; overflow: hidden; display:inline-block; line-height:0; }
+
+</style>
+</head>
+
+<body data-stage="light">
+
+<div class="toolbar" id="toolbar">
+  <span class="label">Mode</span>
+  <button data-mode="light" class="active">Light</button>
+  <button data-mode="dark">Dark</button>
+  <div class="divider"></div>
+  <span class="label">Accent</span>
+  <div class="swatch-row" id="swatches">
+    <button class="swatch-btn active" data-accent="forest" title="Forest" style="background:#5B8C6E"></button>
+    <button class="swatch-btn" data-accent="ocean"  title="Ocean"  style="background:#3A7BD5"></button>
+    <button class="swatch-btn" data-accent="violet" title="Violet" style="background:#7B5EA7"></button>
+    <button class="swatch-btn" data-accent="rose"   title="Rose"   style="background:#C96B8A"></button>
+    <button class="swatch-btn" data-accent="amber"  title="Amber"  style="background:#B87A20"></button>
+    <button class="swatch-btn" data-accent="sunset" title="Sunset" style="background:#E07A5F"></button>
+    <button class="swatch-btn" data-accent="slate"  title="Slate"  style="background:#4A7FA5"></button>
+  </div>
+</div>
+
+<div class="caption">
+  Vision mockup — Fino Settings & Preferences. Toggle Mode and Accent above to see the new <b>paired-token</b> theme system propagate. Note how icons, hero card text, and buttons stay readable on every accent (especially Amber & Rose, which break the current build).
+</div>
+
+<!-- ============================== PHONE ============================== -->
+<div class="phone" id="phone" data-mode="light" data-accent="forest">
+
+  <div class="status-bar">
+    <span class="mono">9:41</span>
+    <span>● ● ●</span>
+  </div>
+
+  <div class="nav-bar">
+    <div class="icon-btn" title="Back">
+      <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--icon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </div>
+    <h1>Settings</h1>
+    <div class="icon-btn" title="Search">
+      <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--icon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-3.6-3.6"/></svg>
+    </div>
+  </div>
+
+  <div class="screen">
+
+    <!-- PROFILE -->
+    <div class="profile-card">
+      <div class="avatar">G</div>
+      <div class="who">
+        <div class="name">George Senagan</div>
+        <div class="email">senagan.george@gmail.com</div>
+      </div>
+      <span class="pill">Free</span>
+    </div>
+
+    <!-- APPEARANCE -->
+    <div class="section">
+      <div class="section-title">Appearance</div>
+      <div class="group">
+        <div style="padding:14px 16px; border-bottom:1px solid var(--hairline);">
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:12px;">
+            <div class="lead-icon">
+              <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            </div>
+            <div class="row-text">
+              <div class="row-title">Theme</div>
+              <div class="row-sub">Match the system or pick yours</div>
+            </div>
+          </div>
+          <div class="segmented" id="modeSegmented">
+            <div class="seg" data-mode="system">System</div>
+            <div class="seg active" data-mode="light">Light</div>
+            <div class="seg" data-mode="dark">Dark</div>
+          </div>
+        </div>
+
+        <div style="padding:14px 16px 4px;">
+          <div style="display:flex; align-items:center; gap:14px;">
+            <div class="lead-icon">
+              <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 8 8 0 0 0 0-16 5 5 0 0 1 5 5"/></svg>
+            </div>
+            <div class="row-text">
+              <div class="row-title">Accent color</div>
+              <div class="row-sub">Adapts every screen, with safe contrast</div>
+            </div>
+          </div>
+          <div class="accent-grid" id="accentGrid">
+            <div class="accent-tile active" data-accent="forest" style="background:#5B8C6E"><div class="dot"></div></div>
+            <div class="accent-tile" data-accent="ocean"  style="background:#3A7BD5"><div class="dot"></div></div>
+            <div class="accent-tile" data-accent="violet" style="background:#7B5EA7"><div class="dot"></div></div>
+            <div class="accent-tile" data-accent="rose"   style="background:#C96B8A"><div class="dot"></div></div>
+            <div class="accent-tile" data-accent="amber"  style="background:#B87A20"><div class="dot"></div></div>
+            <div class="accent-tile" data-accent="sunset" style="background:#E07A5F"><div class="dot"></div></div>
+            <div class="accent-tile" data-accent="slate"  style="background:#4A7FA5"><div class="dot"></div></div>
+          </div>
+        </div>
+
+        <!-- LIVE PREVIEW -->
+        <div class="preview-wrap" style="border-top:1px solid var(--hairline);">
+          <div class="section-title" style="margin-left:0; margin-bottom:10px;">Live preview</div>
+          <div class="hero-preview">
+            <div class="hero-icon-row">
+              <div class="icn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+              <div class="icn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3zM3 9h18M9 21V9"/></svg></div>
+            </div>
+            <div class="hero-label">Total balance</div>
+            <div class="hero-amount mono">₱ 48,250.<span style="opacity:.6">00</span></div>
+            <div class="hero-chip"><span>▲ 2.4%</span> this month</div>
+          </div>
+          <div class="preview-tx">
+            <div class="cat">
+              <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v6a6 6 0 0 0 12 0V2M6 22h12"/></svg>
+            </div>
+            <div class="tx-text">
+              <div class="tx-merch">Jollibee — Robinsons</div>
+              <div class="tx-cat">Food & Dining</div>
+            </div>
+            <div class="tx-amt">−₱ 285.00</div>
+          </div>
+          <div class="preview-btn-row">
+            <div class="btn btn-primary">Continue</div>
+            <div class="btn btn-secondary">Skip</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACCOUNT -->
+    <div class="section">
+      <div class="section-title">Account</div>
+      <div class="group">
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Edit profile</div><div class="row-sub">Name, avatar</div></div>
+          <span class="row-trail"><svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Change email</div><div class="row-sub">senagan.george@gmail.com</div></div>
+          <span class="row-trail"><svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Change password</div></div>
+          <span class="row-trail"><svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Biometric lock</div><div class="row-sub">Face ID required to open Fino</div></div>
+          <div class="switch on"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTIFICATIONS -->
+    <div class="section">
+      <div class="section-title">Notifications</div>
+      <div class="group">
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Push notifications</div><div class="row-sub">Allow Fino to send you alerts</div></div>
+          <div class="switch on"></div>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Bill reminders</div><div class="row-sub">1 day before · 9:00 AM</div></div>
+          <span class="row-trail"><svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 6-6"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Budget alerts</div><div class="row-sub">At 80% and 100% of category budget</div></div>
+          <div class="switch on"></div>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2"/><circle cx="12" cy="12" r="5"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Weekly insight digest</div><div class="row-sub">Sundays · 8:00 PM</div></div>
+          <div class="switch on"></div>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Quiet hours</div><div class="row-sub">10:00 PM — 7:00 AM</div></div>
+          <span class="row-trail"><svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 22h20L12 2zM12 9v6M12 18h.01"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Inactivity reminder</div><div class="row-sub">Nudge me if I forget to log spends</div></div>
+          <div class="switch"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CURRENCY & REGION -->
+    <div class="section">
+      <div class="section-title">Currency & Region</div>
+      <div class="group">
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M10 8h6M10 16h2"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Primary currency</div><div class="row-sub">All amounts shown in this currency</div></div>
+          <span class="row-trail mono">₱ PHP <svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Number format</div><div class="row-sub">Decimal & thousands separator</div></div>
+          <span class="row-trail mono">1,234.56 <svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">First day of week</div></div>
+          <span class="row-trail">Monday <svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/><circle cx="12" cy="12" r="10"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Hide amounts</div><div class="row-sub">Privacy mode replaces values with ●●●</div></div>
+          <div class="switch"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LANGUAGE -->
+    <div class="section">
+      <div class="section-title">Language</div>
+      <div class="group">
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">App language</div><div class="row-sub">English (US)</div></div>
+          <span class="row-trail"><svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><circle cx="9" cy="15" r="2"/><circle cx="15" cy="9" r="2"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Help translate Fino</div><div class="row-sub">Contribute on Crowdin</div></div>
+          <span class="row-trail"><svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABOUT -->
+    <div class="section">
+      <div class="section-title">About</div>
+      <div class="group">
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Version</div></div>
+          <span class="row-trail mono">1.4.2 (build 218)</span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6M9 9h1"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">What's new</div></div>
+          <span class="row-trail"><svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Send feedback</div></div>
+          <span class="row-trail"><svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- DANGER ZONE -->
+    <div class="section">
+      <div class="group">
+        <div class="row">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Sign out</div></div>
+        </div>
+        <div class="row danger">
+          <div class="lead-icon">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          </div>
+          <div class="row-text"><div class="row-title">Delete account</div><div class="row-sub">Permanently erase your Fino data</div></div>
+          <span class="row-trail"><svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================== TOKEN LEGEND ============================== -->
+<div class="legend">
+  <h3>New paired-token system</h3>
+  <div class="tok-grid">
+    <div class="tok"><div class="sw" style="background:var(--accent)"></div>accent</div>
+    <div class="tok"><div class="sw" style="background:var(--accent-on); border-color:var(--accent)"></div>accent-on</div>
+    <div class="tok"><div class="sw" style="background:var(--accent-muted)"></div>accent-muted</div>
+    <div class="tok"><div class="sw" style="background:var(--accent-muted-on)"></div>accent-muted-on</div>
+    <div class="tok"><div class="sw" style="background:var(--hero-bg)"></div>hero-bg</div>
+    <div class="tok"><div class="sw" style="background:var(--hero-on); border-color:var(--hero-bg)"></div>hero-on</div>
+    <div class="tok"><div class="sw" style="background:var(--icon)"></div>icon</div>
+    <div class="tok"><div class="sw" style="background:var(--icon-on-accent); border-color:var(--accent)"></div>icon-on-accent</div>
+  </div>
+  <p style="margin:10px 0 0; color: var(--text-muted); line-height:1.5;">
+    Every accent ships its own <b>On</b> colors. Amber pairs with deep brown text instead of white — fixing the WCAG fails in the current build. Icons never read <code>theme.primary</code>; they read <code>icon</code> or <code>iconOnAccent</code>.
+  </p>
+</div>
+
+<script>
+  const phone = document.getElementById('phone');
+  const body = document.body;
+
+  // Toolbar: Mode
+  document.querySelectorAll('#toolbar button[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      document.querySelectorAll('#toolbar button[data-mode]').forEach(b => b.classList.toggle('active', b === btn));
+      phone.setAttribute('data-mode', mode);
+      body.setAttribute('data-stage', mode);
+      // sync the in-app segmented control too
+      document.querySelectorAll('#modeSegmented .seg').forEach(s => s.classList.toggle('active', s.dataset.mode === mode));
+    });
+  });
+
+  // Toolbar: Accent
+  document.querySelectorAll('#swatches .swatch-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const accent = btn.dataset.accent;
+      document.querySelectorAll('#swatches .swatch-btn').forEach(b => b.classList.toggle('active', b === btn));
+      phone.setAttribute('data-accent', accent);
+      document.querySelectorAll('#accentGrid .accent-tile').forEach(t => t.classList.toggle('active', t.dataset.accent === accent));
+    });
+  });
+
+  // In-app segmented (Theme mode inside the screen)
+  document.querySelectorAll('#modeSegmented .seg').forEach(seg => {
+    seg.addEventListener('click', () => {
+      const mode = seg.dataset.mode;
+      document.querySelectorAll('#modeSegmented .seg').forEach(s => s.classList.toggle('active', s === seg));
+      const target = mode === 'system' ? 'light' : mode;
+      phone.setAttribute('data-mode', target);
+      body.setAttribute('data-stage', target);
+      document.querySelectorAll('#toolbar button[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === target));
+    });
+  });
+
+  // In-app accent grid
+  document.querySelectorAll('#accentGrid .accent-tile').forEach(tile => {
+    tile.addEventListener('click', () => {
+      const accent = tile.dataset.accent;
+      document.querySelectorAll('#accentGrid .accent-tile').forEach(t => t.classList.toggle('active', t === tile));
+      phone.setAttribute('data-accent', accent);
+      document.querySelectorAll('#swatches .swatch-btn').forEach(b => b.classList.toggle('active', b.dataset.accent === accent));
+    });
+  });
+
+  // Switch toggle demo
+  document.querySelectorAll('.switch').forEach(sw => {
+    sw.addEventListener('click', () => sw.classList.toggle('on'));
+  });
+</script>
+
+</body>
+</html>

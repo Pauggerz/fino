@@ -34,6 +34,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccounts } from '../hooks/useAccounts';
 import { useCategories } from '../hooks/useCategories';
+import { useNotifications } from '../hooks/useNotifications';
 import { supabase } from '../services/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Q } from '@nozbe/watermelondb';
@@ -47,6 +48,7 @@ import {
 } from '../constants/accountLogos';
 import { Skeleton } from './Skeleton';
 import { CategoryIcon } from './CategoryIcon';
+import { FinoIntelIcon } from './icons/FinoIntelIcon';
 import { spacing, ACCENT_THEMES, ThemeColors } from '../constants/theme';
 import { AddAccountModal } from '../screens/MoreScreen';
 
@@ -72,35 +74,59 @@ interface Props {
 
 // ── Shortcut grid item ────────────────────────────────────────────────────────
 function GridItem({
-  icon,
+  iconOutline,
+  iconFilled,
+  customIcon,
+  active,
   label,
   color,
   bg,
+  bgActive,
   onPress,
   colors,
   isDark,
   styles,
 }: {
-  icon: string;
+  iconOutline?: string;
+  iconFilled?: string;
+  customIcon?: React.ReactNode;
+  active?: boolean;
   label: string;
   color: string;
   bg: string;
+  bgActive?: string;
   onPress: () => void;
   colors: ThemeColors;
   isDark: boolean;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const showFilled = !!active && !!iconFilled;
+  const tileBg = showFilled && bgActive ? bgActive : bg;
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.7}
       style={[
         styles.gridItem,
-        { backgroundColor: isDark ? colors.surfaceSubdued : '#F4F4F8' },
+        {
+          backgroundColor: active
+            ? isDark
+              ? 'rgba(255,255,255,0.06)'
+              : '#ECECF2'
+            : isDark
+              ? colors.surfaceSubdued
+              : '#F4F4F8',
+        },
       ]}
     >
-      <View style={[styles.gridIconBox, { backgroundColor: bg }]}>
-        <Ionicons name={icon as any} size={20} color={color} />
+      <View style={[styles.gridIconBox, { backgroundColor: tileBg }]}>
+        {customIcon ?? (
+          <Ionicons
+            name={(showFilled ? iconFilled : iconOutline) as any}
+            size={20}
+            color={color}
+          />
+        )}
       </View>
       <Text
         style={[styles.gridLabel, { color: colors.textPrimary }]}
@@ -166,6 +192,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
   const userId = user?.id;
   const { accounts, loading, refetch: refetchAccounts } = useAccounts();
   const { categories, loading: loadingCategories } = useCategories();
+  const { unreadCount: notifUnread } = useNotifications();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
 
@@ -485,6 +512,41 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                     backgroundColor: isDark ? colors.surfaceSubdued : '#F4F4F8',
                   },
                 ]}
+                onPress={() => {
+                  onClose();
+                  setTimeout(
+                    () => (navigation as any).navigate('Notifications'),
+                    260,
+                  );
+                }}
+                accessibilityLabel="Notifications"
+              >
+                <Ionicons
+                  name="notifications-outline"
+                  size={18}
+                  color={colors.textSecondary}
+                />
+                {notifUnread > 0 && (
+                  <View
+                    style={[
+                      styles.notifDot,
+                      {
+                        backgroundColor: colors.expenseRed,
+                        borderColor: isDark
+                          ? colors.surfaceSubdued
+                          : '#F4F4F8',
+                      },
+                    ]}
+                  />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.headerIconBtn,
+                  {
+                    backgroundColor: isDark ? colors.surfaceSubdued : '#F4F4F8',
+                  },
+                ]}
                 onPress={onClose}
               >
                 <Ionicons name="close" size={18} color={colors.textSecondary} />
@@ -501,7 +563,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
               <Ionicons
                 name="wallet-outline"
                 size={14}
-                color={colors.primary}
+                color={totalBalance < 0 ? colors.expenseRed : colors.primary}
               />
               <Text
                 style={[styles.balanceLabel, { color: colors.textSecondary }]}
@@ -509,9 +571,17 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 Total balance
               </Text>
               <Text
-                style={[styles.balanceAmount, { color: colors.textPrimary }]}
+                style={[
+                  styles.balanceAmount,
+                  {
+                    color:
+                      totalBalance < 0
+                        ? colors.expenseRed
+                        : colors.textPrimary,
+                  },
+                ]}
               >
-                ₱
+                {totalBalance < 0 ? '−' : ''}₱
                 {Math.abs(totalBalance).toLocaleString('en-PH', {
                   minimumFractionDigits: 2,
                 })}
@@ -525,10 +595,13 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
             {/* ── Shortcut grid ── */}
             <View style={styles.grid}>
               <GridItem
-                icon="wallet-outline"
+                iconOutline="wallet-outline"
+                iconFilled="wallet"
+                active={accountsExpanded}
                 label="My Accounts"
                 color={colors.primary}
                 bg={isDark ? colors.primaryLight : '#E8F4EC'}
+                bgActive={isDark ? 'rgba(91,140,110,0.32)' : '#CFE8D8'}
                 onPress={() => {
                   setBillsExpanded(false);
                   setCategoriesExpanded(false);
@@ -539,10 +612,13 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 styles={styles}
               />
               <GridItem
-                icon="pie-chart-outline"
+                iconOutline="pie-chart-outline"
+                iconFilled="pie-chart"
+                active={categoriesExpanded}
                 label="Categories & Budget"
                 color={colors.statWarnBar}
                 bg={isDark ? '#3A2E1D' : '#FFF4E5'}
+                bgActive={isDark ? '#54421F' : '#FFE6C2'}
                 onPress={() => {
                   setAccountsExpanded(false);
                   setBillsExpanded(false);
@@ -553,10 +629,13 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 styles={styles}
               />
               <GridItem
-                icon="repeat-outline"
+                iconOutline="sync-outline"
+                iconFilled="sync"
+                active={billsExpanded}
                 label="Recurrent Transactions"
                 color={colors.insightPurple}
                 bg={isDark ? colors.lavenderLight : '#F0ECFD'}
+                bgActive={isDark ? 'rgba(106,82,194,0.32)' : '#DCD3F8'}
                 onPress={() => {
                   setAccountsExpanded(false);
                   setCategoriesExpanded(false);
@@ -567,7 +646,9 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                 styles={styles}
               />
               <GridItem
-                icon="sparkles-outline"
+                customIcon={
+                  <FinoIntelIcon size={20} color={colors.lavenderDark} />
+                }
                 label="Ask Fino"
                 color={colors.lavenderDark}
                 bg={isDark ? colors.lavenderLight : '#EDE8FC'}
@@ -1023,7 +1104,12 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
             <ListRow
               icon="settings-outline"
               label="Settings & Preferences"
-              onPress={() => setShowSettings(true)}
+              onPress={() => {
+                onClose();
+                // Defer until close animation has started — prevents the modal
+                // pop from flickering through the sidebar.
+                setTimeout(() => navigation.navigate('Settings' as never), 250);
+              }}
               colors={colors}
               isDark={isDark}
               styles={styles}
@@ -1605,6 +1691,15 @@ const createStyles = (colors: ThemeColors, isDark: boolean) =>
       borderRadius: 17,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    notifDot: {
+      position: 'absolute',
+      top: 6,
+      right: 6,
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      borderWidth: 1.5,
     },
 
     // Balance chip

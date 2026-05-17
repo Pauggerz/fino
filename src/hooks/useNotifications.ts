@@ -1,0 +1,298 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Q } from '@nozbe/watermelondb';
+
+import { database } from '@/db';
+import NotificationModel, { NotificationType } from '@/db/models/Notification';
+import type CategoryModel from '@/db/models/Category';
+import type TransactionModel from '@/db/models/Transaction';
+import { useAuth } from '@/contexts/AuthContext';
+
+export interface NotificationItem {
+  id: string;
+  kind: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  actionRoute?: string;
+  actionLabel?: string;
+  isRead: boolean;
+  createdAt: number;
+}
+
+function toPlain(record: NotificationModel): NotificationItem {
+  return {
+    id: record.id,
+    kind: record.kind,
+    type: record.type,
+    title: record.title,
+    message: record.message,
+    actionRoute: record.actionRoute,
+    actionLabel: record.actionLabel,
+    isRead: record.isRead,
+    createdAt: record.createdAt,
+  };
+}
+
+const monthKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+const dayKey = () => new Date().toISOString().slice(0, 10);
+
+type SeedRow = {
+  kind: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  actionRoute?: string;
+  actionLabel?: string;
+};
+
+/**
+ * Derive in-app notifications from the local DB.
+ *
+ * Each row carries a stable `kind` key (e.g. "overspend:Shopping:2026-05") so
+ * repeated runs of this function in the same month don't insert duplicates of
+ * the same warning. Generation is idempotent and cheap enough to run on every
+ * HomeScreen focus.
+ */
+export async function generatePeriodicInsights(userId: string): Promise<void> {
+  if (!userId) return;
+
+  const collection = database.get<NotificationModel>('notifications');
+  const existing = await collection
+    .query(Q.where('user_id', userId), Q.where('is_dismissed', false))
+    .fetch();
+  const existingKinds = new Set(existing.map((n) => n.kind));
+
+  const seeds: SeedRow[] = [];
+  const month = monthKey();
+  const today = dayKey();
+
+  // ── Overspend warnings (budget ≥ 80% used) ───────────────────────────────
+  const categories = await database
+    .get<CategoryModel>('categories')
+    .query(Q.where('user_id', userId), Q.where('is_active', true))
+    .fetch();
+
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const monthEnd = new Date(
+    monthStart.getFullYear(),
+    monthStart.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999
+  );
+
+  const txs = await database
+    .get<TransactionModel>('transactions')
+    .query(
+      Q.where('user_id', userId),
+      Q.where('type', 'expense'),
+      Q.where('date', Q.gte(monthStart.toISOString())),
+      Q.where('date', Q.lte(monthEnd.toISOString()))
+    )
+    .fetch();
+
+  const spendByCat: Record<string, number> = {};
+  for (const tx of txs) {
+    if (tx.isTransfer) continue;
+    const cat = (tx.category ?? '').toLowerCase();
+    if (!cat || cat === 'transfer') continue;
+    spendByCat[cat] = (spendByCat[cat] ?? 0) + tx.amount;
+  }
+
+  for (const cat of categories) {
+    if (!cat.budgetLimit || cat.budgetLimit <= 0) continue;
+    if (cat.categoryType === 'income') continue;
+    const spent = spendByCat[cat.name.toLowerCase()] ?? 0;
+    const pct = spent / cat.budgetLimit;
+    if (pct < 0.8) continue;
+
+    const kind = `${pct >= 1 ? 'over-budget' : 'budget-warn'}:${cat.name}:${month}`;
+    if (existingKinds.has(kind)) continue;
+
+    const remaining = Math.max(0, cat.budgetLimit - spent);
+    seeds.push({
+      kind,
+      type: 'warning',
+      title: pct >= 1 ? `${cat.name} over budget` : `${cat.name} budget alert`,
+      message:
+        pct >= 1
+          ? `You've spent ₱${Math.round(spent).toLocaleString('en-PH')} — that's ${Math.round(pct * 100)}% of your ${cat.name} budget.`
+          : `You've used ${Math.round(pct * 100)}% of your ${cat.name} budget. ₱${Math.round(remaining).toLocaleString('en-PH')} remaining this month.`,
+      actionRoute: 'Categories',
+      actionLabel: 'Review budget',
+    });
+  }
+
+  // ── Forget tracking (no expense tx in last 2 days) ───────────────────────
+  const twoDaysAgo = new Date();
+  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+  twoDaysAgo.setHours(0, 0, 0, 0);
+  const recent = await database
+    .get<TransactionModel>('transactions')
+    .query(
+      Q.where('user_id', userId),
+      Q.where('type', 'expense'),
+      Q.where('date', Q.gte(twoDaysAgo.toISOString())),
+      Q.take(1)
+    )
+    .fetch();
+
+  if (recent.length === 0 && txs.length > 0) {
+    const kind = `no-tx-2d:${today}`;
+    if (!existingKinds.has(kind)) {
+      seeds.push({
+        kind,
+        type: 'reminder',
+        title: 'Forget tracking?',
+        message:
+          "We noticed you haven't logged any transactions in the last 2 days. Keeping your ledger updated helps maintain accurate budgets.",
+        actionRoute: 'AddTransaction',
+        actionLabel: 'Add transaction',
+      });
+    }
+  }
+
+  // ── Highest-spend insight (once per month) ───────────────────────────────
+  const topEntry = Object.entries(spendByCat).sort((a, b) => b[1] - a[1])[0];
+  if (topEntry && topEntry[1] > 0) {
+    const kind = `top-spend:${month}`;
+    if (!existingKinds.has(kind)) {
+      const [topName, topAmt] = topEntry;
+      const pretty = topName.charAt(0).toUpperCase() + topName.slice(1);
+      seeds.push({
+        kind,
+        type: 'insight',
+        title: `${pretty} leads your spend`,
+        message: `So far this month, ${pretty} is your biggest category at ₱${Math.round(topAmt).toLocaleString('en-PH')}. Consider setting a budget cap if you don't already have one.`,
+        actionRoute: 'Categories',
+        actionLabel: 'Set budget',
+      });
+    }
+  }
+
+  if (seeds.length === 0) return;
+
+  const now = Date.now();
+  await database.write(async () => {
+    for (const seed of seeds) {
+      await collection.create((n) => {
+        n.userId = userId;
+        n.kind = seed.kind;
+        n.type = seed.type;
+        n.title = seed.title;
+        n.message = seed.message;
+        n.actionRoute = seed.actionRoute;
+        n.actionLabel = seed.actionLabel;
+        n.isRead = false;
+        n.isDismissed = false;
+        n.createdAt = now;
+      });
+    }
+  });
+}
+
+export const useNotifications = () => {
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!userId) {
+      setNotifications([]);
+      setLoading(false);
+      return undefined;
+    }
+
+    const sub = database
+      .get<NotificationModel>('notifications')
+      .query(Q.where('user_id', userId), Q.where('is_dismissed', false))
+      .observeWithColumns(['is_read', 'created_at'])
+      .subscribe((records) => {
+        const list = records.map(toPlain).sort((a, b) => {
+          if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
+          return b.createdAt - a.createdAt;
+        });
+        setNotifications(list);
+        setLoading(false);
+      });
+
+    return () => sub.unsubscribe();
+  }, [userId]);
+
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  const markAsRead = useCallback(async (id: string) => {
+    await database.write(async () => {
+      const rec = await database
+        .get<NotificationModel>('notifications')
+        .find(id);
+      if (!rec.isRead) {
+        await rec.update((n) => {
+          n.isRead = true;
+        });
+      }
+    });
+  }, []);
+
+  const markAllAsRead = useCallback(async () => {
+    if (!userId) return;
+    const records = await database
+      .get<NotificationModel>('notifications')
+      .query(Q.where('user_id', userId), Q.where('is_read', false))
+      .fetch();
+    if (records.length === 0) return;
+    await database.write(async () => {
+      for (const rec of records) {
+        await rec.update((n) => {
+          n.isRead = true;
+        });
+      }
+    });
+  }, [userId]);
+
+  const dismiss = useCallback(async (id: string) => {
+    await database.write(async () => {
+      const rec = await database
+        .get<NotificationModel>('notifications')
+        .find(id);
+      await rec.update((n) => {
+        n.isDismissed = true;
+      });
+    });
+  }, []);
+
+  const clearAll = useCallback(async () => {
+    if (!userId) return;
+    const records = await database
+      .get<NotificationModel>('notifications')
+      .query(Q.where('user_id', userId), Q.where('is_dismissed', false))
+      .fetch();
+    if (records.length === 0) return;
+    await database.write(async () => {
+      for (const rec of records) {
+        await rec.update((n) => {
+          n.isDismissed = true;
+        });
+      }
+    });
+  }, [userId]);
+
+  return {
+    notifications,
+    unreadCount,
+    loading,
+    markAsRead,
+    markAllAsRead,
+    dismiss,
+    clearAll,
+  };
+};

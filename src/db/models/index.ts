@@ -7,6 +7,7 @@ import BillReminder from './BillReminder';
 import MerchantMapping from './MerchantMapping';
 import RecurringIncome from './RecurringIncome';
 import RecurringBill from './RecurringBill';
+import Notification from './Notification';
 
 export {
   Account,
@@ -18,6 +19,7 @@ export {
   MerchantMapping,
   RecurringIncome,
   RecurringBill,
+  Notification,
 };
 
 export const modelClasses = [
@@ -30,4 +32,5 @@ export const modelClasses = [
   MerchantMapping,
   RecurringIncome,
   RecurringBill,
+  Notification,
 ];

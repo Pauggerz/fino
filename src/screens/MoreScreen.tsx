@@ -969,6 +969,7 @@ function MoreScreen() {
   const [showBillReminders, setShowBillReminders] = useState(false);
   const [quickViewBill, setQuickViewBill] = useState<BillReminder | null>(null);
   const [recurringExpanded, setRecurringExpanded] = useState(false);
+  const [toolsView, setToolsView] = useState<'list' | 'grid'>('list');
   const { forceSync } = useSync();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -1095,10 +1096,56 @@ function MoreScreen() {
         <ToolsCarousel />
 
         {/* ── Other tools ── */}
-        <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
-        <View style={styles.toolsGrid}>
+        <View style={styles.quickActionsHeader}>
+          <Text style={[styles.sectionLabel, styles.sectionLabelInline]}>
+            QUICK ACTIONS
+          </Text>
+          <TouchableOpacity
+            style={styles.viewToggleBtn}
+            onPress={() =>
+              setToolsView((v) => (v === 'list' ? 'grid' : 'list'))
+            }
+            activeOpacity={0.7}
+            accessibilityLabel={
+              toolsView === 'list'
+                ? 'Switch to grid view'
+                : 'Switch to list view'
+            }
+          >
+            <Ionicons
+              name={toolsView === 'list' ? 'grid-outline' : 'list-outline'}
+              size={18}
+              color={colors.textPrimary}
+            />
+          </TouchableOpacity>
+        </View>
+        <View style={toolsView === 'grid' ? styles.toolsGridWrap : styles.toolsGrid}>
           {otherTools.map((tool) => {
             const isRecurring = tool.id === 'recurring';
+            if (toolsView === 'grid') {
+              return (
+                <TouchableOpacity
+                  key={tool.id}
+                  style={[styles.toolTileGrid, { backgroundColor: colors.white }]}
+                  onPress={() => handleToolPress(tool.id)}
+                  activeOpacity={0.75}
+                >
+                  <View style={[styles.toolIconBox, { backgroundColor: tool.bg }]}>
+                    <Ionicons
+                      name={tool.icon as any}
+                      size={22}
+                      color={tool.color}
+                    />
+                  </View>
+                  <View>
+                    <Text style={styles.toolNameGrid}>{tool.label}</Text>
+                    <Text style={styles.toolDescGrid} numberOfLines={2}>
+                      {tool.desc}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }
             return (
               <React.Fragment key={tool.id}>
                 <TouchableOpacity
@@ -1222,6 +1269,77 @@ function MoreScreen() {
               </React.Fragment>
             );
           })}
+          {toolsView === 'grid' && recurringExpanded && (
+            <View
+              style={[
+                styles.recurringDropdown,
+                {
+                  width: '100%',
+                  backgroundColor: colors.white,
+                  borderColor: isDark ? colors.border : 'rgba(30,30,46,0.07)',
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.recurringRow}
+                onPress={() => handleToolPress('recurring-income')}
+                activeOpacity={0.75}
+              >
+                <View
+                  style={[
+                    styles.recurringIconBox,
+                    { backgroundColor: isDark ? '#0D2E23' : '#e8f5ee' },
+                  ]}
+                >
+                  <Ionicons name="trending-up" size={18} color="#3f6b52" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.recurringRowName}>Recurring Income</Text>
+                  <Text style={styles.recurringRowSub}>
+                    Salary, allowance, freelance retainers
+                  </Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={14}
+                  color={colors.textSecondary}
+                  style={{ opacity: 0.5 }}
+                />
+              </TouchableOpacity>
+              <View
+                style={[
+                  styles.recurringDivider,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+              <TouchableOpacity
+                style={styles.recurringRow}
+                onPress={() => handleToolPress('recurring-bills')}
+                activeOpacity={0.75}
+              >
+                <View
+                  style={[
+                    styles.recurringIconBox,
+                    { backgroundColor: isDark ? '#231640' : '#ede5ff' },
+                  ]}
+                >
+                  <Ionicons name="receipt" size={18} color="#7A4AB8" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.recurringRowName}>Recurring Bills</Text>
+                  <Text style={styles.recurringRowSub}>
+                    Rent, subscriptions, utilities
+                  </Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={14}
+                  color={colors.textSecondary}
+                  style={{ opacity: 0.5 }}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -1504,8 +1622,36 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       marginBottom: 12,
       marginHorizontal: spacing.screenPadding,
     },
+    // ── View toggle ──
+    quickActionsHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginHorizontal: spacing.screenPadding,
+      marginBottom: 12,
+    },
+    sectionLabelInline: {
+      marginHorizontal: 0,
+      marginBottom: 0,
+    },
+    viewToggleBtn: {
+      width: 30,
+      height: 30,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.catTileEmptyBg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: isDark ? colors.border : 'rgba(30,30,46,0.07)',
+    },
     // ── Other tools ──
     toolsGrid: {
+      marginHorizontal: spacing.screenPadding,
+      gap: 10,
+    },
+    toolsGridWrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
       marginHorizontal: spacing.screenPadding,
       gap: 10,
     },
@@ -1522,6 +1668,35 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       shadowOpacity: isDark ? 0 : 0.04,
       shadowRadius: 8,
       elevation: isDark ? 0 : 1,
+    },
+    toolTileGrid: {
+      width: '48%',
+      flexGrow: 1,
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      borderRadius: 18,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: isDark ? colors.border : 'rgba(30,30,46,0.07)',
+      padding: 14,
+      gap: 10,
+      minHeight: 120,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0 : 0.04,
+      shadowRadius: 8,
+      elevation: isDark ? 0 : 1,
+    },
+    toolNameGrid: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+      color: colors.textPrimary,
+    },
+    toolDescGrid: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 11.5,
+      color: colors.textSecondary,
+      lineHeight: 15,
+      marginTop: 2,
     },
     toolIconBox: {
       width: 44,

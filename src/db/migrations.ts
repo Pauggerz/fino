@@ -1,4 +1,8 @@
-import { schemaMigrations, addColumns, createTable } from '@nozbe/watermelondb/Schema/migrations';
+import {
+  schemaMigrations,
+  addColumns,
+  createTable,
+} from '@nozbe/watermelondb/Schema/migrations';
 
 /**
  * WatermelonDB schema migration registry.
@@ -38,7 +42,12 @@ export default schemaMigrations({
             { name: 'user_id', type: 'string', isIndexed: true },
             { name: 'title', type: 'string' },
             { name: 'amount', type: 'number' },
-            { name: 'account_id', type: 'string', isOptional: true, isIndexed: true },
+            {
+              name: 'account_id',
+              type: 'string',
+              isOptional: true,
+              isIndexed: true,
+            },
             { name: 'cadence', type: 'string' },
             { name: 'anchor_date', type: 'string' },
             { name: 'next_due_at', type: 'string', isIndexed: true },
@@ -54,7 +63,12 @@ export default schemaMigrations({
             { name: 'user_id', type: 'string', isIndexed: true },
             { name: 'title', type: 'string' },
             { name: 'amount', type: 'number' },
-            { name: 'account_id', type: 'string', isOptional: true, isIndexed: true },
+            {
+              name: 'account_id',
+              type: 'string',
+              isOptional: true,
+              isIndexed: true,
+            },
             { name: 'category', type: 'string', isOptional: true },
             { name: 'cadence', type: 'string' },
             { name: 'anchor_date', type: 'string' },
@@ -75,7 +89,9 @@ export default schemaMigrations({
       steps: [
         addColumns({
           table: 'transactions',
-          columns: [{ name: 'transaction_datetime', type: 'string', isOptional: true }],
+          columns: [
+            { name: 'transaction_datetime', type: 'string', isOptional: true },
+          ],
         }),
       ],
     },
@@ -100,7 +116,33 @@ export default schemaMigrations({
       steps: [
         addColumns({
           table: 'categories',
-          columns: [{ name: 'category_type', type: 'string', isOptional: true }],
+          columns: [
+            { name: 'category_type', type: 'string', isOptional: true },
+          ],
+        }),
+      ],
+    },
+    {
+      // v7 — local-only notifications table. Holds derived insights/warnings
+      // (e.g. "you're at 90% of your Shopping budget"). Not synced to Supabase
+      // — these are device-local computations regenerated on app load, and
+      // syncing them would just create cross-device duplicates.
+      toVersion: 7,
+      steps: [
+        createTable({
+          name: 'notifications',
+          columns: [
+            { name: 'user_id', type: 'string', isIndexed: true },
+            { name: 'kind', type: 'string', isIndexed: true },
+            { name: 'type', type: 'string' },
+            { name: 'title', type: 'string' },
+            { name: 'message', type: 'string' },
+            { name: 'action_route', type: 'string', isOptional: true },
+            { name: 'action_label', type: 'string', isOptional: true },
+            { name: 'is_read', type: 'boolean', isIndexed: true },
+            { name: 'is_dismissed', type: 'boolean' },
+            { name: 'created_at', type: 'number' },
+          ],
         }),
       ],
     },

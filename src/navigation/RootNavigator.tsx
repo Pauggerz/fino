@@ -53,6 +53,22 @@ const AccountsScreen = lazy(() => import('../screens/AccountsScreen'));
 const SankeyFullscreenScreen = lazy(
   () => import('../screens/SankeyFullscreenScreen')
 );
+const NotificationsScreen = lazy(
+  () => import('../screens/NotificationsScreen')
+);
+const SettingsScreen = lazy(() => import('../screens/SettingsScreen'));
+const AccountSettingsScreen = lazy(
+  () => import('../screens/AccountSettingsScreen')
+);
+const NotificationSettingsScreen = lazy(
+  () => import('../screens/NotificationSettingsScreen')
+);
+const CurrencySettingsScreen = lazy(
+  () => import('../screens/CurrencySettingsScreen')
+);
+const LanguageSettingsScreen = lazy(
+  () => import('../screens/LanguageSettingsScreen')
+);
 
 function ModalLoadingShim() {
   const { colors } = useTheme();
@@ -109,7 +125,9 @@ export type RootStackParamList = {
       note?: string;
     };
   };
-  ScreenshotScreen: { sharedImageUri?: string } | undefined;
+  ScreenshotScreen:
+    | { sharedImageUri?: string; initialSource?: 'camera' | 'upload' }
+    | undefined;
   ChatScreen: undefined;
   BillSplitter: undefined;
   UtangTracker: undefined;
@@ -120,6 +138,12 @@ export type RootStackParamList = {
   CashFlow: { accountId?: string } | undefined;
   Categories: undefined;
   Accounts: undefined;
+  Notifications: undefined;
+  Settings: undefined;
+  AccountSettings: { focus?: 'name' | 'email' | 'password' } | undefined;
+  NotificationSettings: undefined;
+  CurrencySettings: undefined;
+  LanguageSettings: undefined;
   TransactionDetail: { id: string };
   SankeyFullscreen: {
     income: number;
@@ -183,7 +207,16 @@ function TabNavigator() {
           onAddManual={() =>
             props.navigation.navigate('AddTransaction', { mode: 'expense' })
           }
-          onScan={() => props.navigation.navigate('ScreenshotScreen')}
+          onScan={() =>
+            props.navigation.navigate('ScreenshotScreen', {
+              initialSource: 'camera',
+            })
+          }
+          onUpload={() =>
+            props.navigation.navigate('ScreenshotScreen', {
+              initialSource: 'upload',
+            })
+          }
         />
       )}
       screenOptions={{
@@ -339,6 +372,36 @@ export default function RootNavigator() {
                 name="Accounts"
                 component={AccountsScreen}
                 options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="Notifications"
+                component={NotificationsScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="Settings"
+                component={SettingsScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="AccountSettings"
+                component={AccountSettingsScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="NotificationSettings"
+                component={NotificationSettingsScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="CurrencySettings"
+                component={CurrencySettingsScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="LanguageSettings"
+                component={LanguageSettingsScreen}
+                options={{ headerShown: false }}
               />
               <Stack.Screen
                 name="TransactionDetail"

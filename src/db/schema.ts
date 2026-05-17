@@ -12,8 +12,23 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
  * WatermelonDB can compare it cheaply during pullChanges.
  */
 export default appSchema({
-  version: 6,
+  version: 7,
   tables: [
+    tableSchema({
+      name: 'notifications',
+      columns: [
+        { name: 'user_id', type: 'string', isIndexed: true },
+        { name: 'kind', type: 'string', isIndexed: true },
+        { name: 'type', type: 'string' },
+        { name: 'title', type: 'string' },
+        { name: 'message', type: 'string' },
+        { name: 'action_route', type: 'string', isOptional: true },
+        { name: 'action_label', type: 'string', isOptional: true },
+        { name: 'is_read', type: 'boolean', isIndexed: true },
+        { name: 'is_dismissed', type: 'boolean' },
+        { name: 'created_at', type: 'number' },
+      ],
+    }),
     tableSchema({
       name: 'accounts',
       columns: [
@@ -120,7 +135,12 @@ export default appSchema({
         { name: 'user_id', type: 'string', isIndexed: true },
         { name: 'title', type: 'string' },
         { name: 'amount', type: 'number' },
-        { name: 'account_id', type: 'string', isOptional: true, isIndexed: true },
+        {
+          name: 'account_id',
+          type: 'string',
+          isOptional: true,
+          isIndexed: true,
+        },
         { name: 'category', type: 'string', isOptional: true },
         { name: 'cadence', type: 'string' },
         { name: 'anchor_date', type: 'string' },
@@ -137,7 +157,12 @@ export default appSchema({
         { name: 'user_id', type: 'string', isIndexed: true },
         { name: 'title', type: 'string' },
         { name: 'amount', type: 'number' },
-        { name: 'account_id', type: 'string', isOptional: true, isIndexed: true },
+        {
+          name: 'account_id',
+          type: 'string',
+          isOptional: true,
+          isIndexed: true,
+        },
         { name: 'category', type: 'string', isOptional: true },
         { name: 'cadence', type: 'string' },
         { name: 'anchor_date', type: 'string' },

@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   TouchableOpacity,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -31,8 +32,18 @@ import { MonthPickerModal } from '@/components/stats/MonthPickerModal';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 
 const MONTHS_SHORT = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 function categoryColor(cat: string | null): string {
@@ -100,7 +111,12 @@ export default function CashFlowScreen() {
   const insets = useSafeAreaInsets();
   const { accounts } = useAccounts();
 
-  const accountId = route.params?.accountId;
+  // Initialized from the route param so deep-links / nav from AccountDetail
+  // still scope correctly, but the user can change scope inline via the
+  // selector pill on the hero card.
+  const [accountId, setAccountId] = useState<string | null>(
+    route.params?.accountId ?? null
+  );
   const account = useMemo(
     () => (accountId ? accounts.find((a) => a.id === accountId) : null),
     [accounts, accountId]
@@ -110,6 +126,7 @@ export default function CashFlowScreen() {
     : accountId
       ? 'Account Cash Flow'
       : 'All Accounts';
+  const [accountPickerVisible, setAccountPickerVisible] = useState(false);
 
   const now = useMemo(() => new Date(), []);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -160,7 +177,10 @@ export default function CashFlowScreen() {
         selectedYear,
         selectedMonth + 1,
         0,
-        23, 59, 59, 999
+        23,
+        59,
+        59,
+        999
       ).toISOString();
       const sixMoStart = new Date(
         selectedYear,
@@ -174,7 +194,10 @@ export default function CashFlowScreen() {
         prevYearIdx,
         prevMonthIdx + 1,
         0,
-        23, 59, 59, 999
+        23,
+        59,
+        59,
+        999
       ).toISOString();
 
       const txCol = database.get<TransactionModel>('transactions');
@@ -348,12 +371,28 @@ export default function CashFlowScreen() {
           <Text style={[styles.headerEyebrow, { color: colors.textSecondary }]}>
             CASH FLOW
           </Text>
-          <Text
-            style={[styles.headerTitle, { color: colors.textPrimary }]}
-            numberOfLines={1}
+          <Pressable
+            onPress={() => setAccountPickerVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Filter by account: ${headerLabel}`}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.headerTitleBtn,
+              pressed && { opacity: 0.6 },
+            ]}
           >
-            {headerLabel}
-          </Text>
+            <Text
+              style={[styles.headerTitle, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
+              {headerLabel}
+            </Text>
+            <Ionicons
+              name="chevron-down"
+              size={14}
+              color={colors.textSecondary}
+            />
+          </Pressable>
         </View>
         <View style={styles.iconBtnSpacer} />
       </View>
@@ -416,6 +455,8 @@ export default function CashFlowScreen() {
             <CashFlowCard
               income={bundle.income}
               expenses={bundle.expense}
+              prevIncome={bundle.prevIncome}
+              prevExpenses={bundle.prevExpense}
               prevNet={
                 bundle.prevIncome === 0 && bundle.prevExpense === 0
                   ? null
@@ -425,6 +466,7 @@ export default function CashFlowScreen() {
               largest={bundle.largestExpense}
               txCount={bundle.txCount}
               daysElapsed={daysElapsed}
+              interactive={false}
             />
 
             <View style={styles.dualSection}>
@@ -461,7 +503,10 @@ export default function CashFlowScreen() {
                 </Text>
                 {bundle.transactions.length > 0 ? (
                   <Text
-                    style={[styles.txnHeaderCount, { color: colors.textSecondary }]}
+                    style={[
+                      styles.txnHeaderCount,
+                      { color: colors.textSecondary },
+                    ]}
                   >
                     {bundle.transactions.length}
                   </Text>
@@ -499,8 +544,8 @@ export default function CashFlowScreen() {
                             styles.txnTypeIcon,
                             {
                               backgroundColor: isInc
-                                ? colors.incomeGreen + '1F'
-                                : colors.expenseRed + '1F',
+                                ? `${colors.incomeGreen}1F`
+                                : `${colors.expenseRed}1F`,
                             },
                           ]}
                           accessibilityLabel={isInc ? 'Income' : 'Expense'}
@@ -558,9 +603,7 @@ export default function CashFlowScreen() {
                       ]}
                     >
                       <Pressable
-                        onPress={() =>
-                          setTxnPage((p) => Math.max(0, p - 1))
-                        }
+                        onPress={() => setTxnPage((p) => Math.max(0, p - 1))}
                         disabled={txnPage === 0}
                         accessibilityRole="button"
                         accessibilityLabel="Previous page"
@@ -588,16 +631,17 @@ export default function CashFlowScreen() {
                       </Pressable>
 
                       <Text
-                        style={[styles.pagerLabel, { color: colors.textSecondary }]}
+                        style={[
+                          styles.pagerLabel,
+                          { color: colors.textSecondary },
+                        ]}
                       >
                         Page {txnPage + 1} of {txnPageCount}
                       </Text>
 
                       <Pressable
                         onPress={() =>
-                          setTxnPage((p) =>
-                            Math.min(txnPageCount - 1, p + 1)
-                          )
+                          setTxnPage((p) => Math.min(txnPageCount - 1, p + 1))
                         }
                         disabled={txnPage >= txnPageCount - 1}
                         accessibilityRole="button"
@@ -606,8 +650,7 @@ export default function CashFlowScreen() {
                           styles.pagerBtn,
                           {
                             backgroundColor: colors.surfaceSubdued,
-                            opacity:
-                              txnPage >= txnPageCount - 1 ? 0.4 : 1,
+                            opacity: txnPage >= txnPageCount - 1 ? 0.4 : 1,
                           },
                         ]}
                       >
@@ -647,7 +690,121 @@ export default function CashFlowScreen() {
         }}
         onClose={() => setPickerVisible(false)}
       />
+
+      <Modal
+        visible={accountPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAccountPickerVisible(false)}
+      >
+        <Pressable
+          style={styles.acctModalBackdrop}
+          onPress={() => setAccountPickerVisible(false)}
+        >
+          <Pressable
+            style={[
+              styles.acctSheet,
+              {
+                backgroundColor: colors.white,
+                borderColor: colors.cardBorderTransparent,
+                paddingBottom: Math.max(insets.bottom, 16),
+              },
+            ]}
+            onPress={() => {}}
+          >
+            <View style={styles.acctSheetHandle} />
+            <Text
+              style={[styles.acctSheetTitle, { color: colors.textPrimary }]}
+            >
+              Filter cash flow
+            </Text>
+
+            <ScrollView style={{ maxHeight: 360 }}>
+              <AccountRow
+                label="All accounts"
+                sublabel={`${accounts.length} accounts`}
+                selected={accountId === null}
+                onPress={() => {
+                  setAccountId(null);
+                  setAccountPickerVisible(false);
+                }}
+                colors={colors}
+                styles={styles}
+              />
+              {accounts.map((a) => (
+                <AccountRow
+                  key={a.id}
+                  label={a.name}
+                  sublabel={fmtPeso(a.balance)}
+                  selected={accountId === a.id}
+                  onPress={() => {
+                    setAccountId(a.id);
+                    setAccountPickerVisible(false);
+                  }}
+                  colors={colors}
+                  styles={styles}
+                  accent={a.brand_colour}
+                />
+              ))}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
+  );
+}
+
+function AccountRow({
+  label,
+  sublabel,
+  selected,
+  onPress,
+  colors,
+  styles,
+  accent,
+}: {
+  label: string;
+  sublabel?: string;
+  selected: boolean;
+  onPress: () => void;
+  colors: any;
+  styles: ReturnType<typeof createStyles>;
+  accent?: string | null;
+}) {
+  const dotColor = accent ?? colors.textSecondary;
+  return (
+    <Pressable
+      onPress={onPress}
+      android_ripple={{ color: colors.surfaceSubdued }}
+      style={({ pressed }) => [
+        styles.acctRow,
+        {
+          backgroundColor: selected ? colors.surfaceSubdued : 'transparent',
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      <View style={[styles.acctDot, { backgroundColor: dotColor }]} />
+      <View style={{ flex: 1 }}>
+        <Text
+          style={[styles.acctRowLabel, { color: colors.textPrimary }]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+        {sublabel ? (
+          <Text
+            style={[styles.acctRowSub, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            {sublabel}
+          </Text>
+        ) : null}
+      </View>
+      {selected ? (
+        <Ionicons name="checkmark" size={18} color={colors.primary} />
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -680,10 +837,7 @@ function CategoryList({
       </Text>
       {rows.length === 0 ? (
         <Text
-          style={[
-            styles.empty,
-            { color: colors.textSecondary, marginTop: 8 },
-          ]}
+          style={[styles.empty, { color: colors.textSecondary, marginTop: 8 }]}
         >
           No data this month.
         </Text>
@@ -693,7 +847,7 @@ function CategoryList({
           return (
             <View key={r.key} style={styles.catRow}>
               <View
-                style={[styles.catBadge, { backgroundColor: accent + '22' }]}
+                style={[styles.catBadge, { backgroundColor: `${accent}22` }]}
               >
                 <Text style={[styles.catBadgeText, { color: accent }]}>
                   {pct}%
@@ -756,7 +910,13 @@ function createStyles(colors: any, topInset: number) {
       fontFamily: 'Nunito_800ExtraBold',
       fontSize: 18,
       letterSpacing: -0.4,
+    },
+    headerTitleBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
       marginTop: 2,
+      maxWidth: '100%',
     },
     iconBtn: {
       width: 38,
@@ -914,6 +1074,55 @@ function createStyles(colors: any, topInset: number) {
     pagerLabel: {
       fontFamily: 'Inter_500Medium',
       fontSize: 11,
+    },
+    acctModalBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'flex-end',
+    },
+    acctSheet: {
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingTop: 10,
+      paddingHorizontal: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    acctSheetHandle: {
+      alignSelf: 'center',
+      width: 40,
+      height: 4,
+      borderRadius: 999,
+      backgroundColor: colors.border,
+      marginBottom: 14,
+    },
+    acctSheetTitle: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 16,
+      letterSpacing: -0.2,
+      marginBottom: 8,
+      paddingHorizontal: 4,
+    },
+    acctRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      borderRadius: 14,
+    },
+    acctDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 999,
+    },
+    acctRowLabel: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14,
+    },
+    acctRowSub: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 11,
+      marginTop: 2,
     },
   });
 }

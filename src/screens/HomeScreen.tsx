@@ -44,6 +44,7 @@ import {
 import { useAccounts } from '@/hooks/useAccounts';
 import { useCategories, CategoryWithSpend } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
+import { generatePeriodicInsights } from '@/hooks/useNotifications';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { deleteTransaction } from '@/services/localMutations';
 import ProfileSidebar from '@/components/ProfileSidebar';
@@ -55,7 +56,6 @@ import type { ThemeColors } from '@/constants/theme';
 // ─── Rolling balance (slot-machine style) ────────────────────────────────────
 
 function formatBalanceString(n: number): string {
-  const neg = n < 0;
   const abs = Math.abs(n);
   const rounded = Math.round(abs * 100) / 100;
   const int = Math.floor(rounded);
@@ -68,7 +68,7 @@ function formatBalanceString(n: number): string {
     if (i > 0 && (s.length - i) % 3 === 0) out += ',';
     out += s[i];
   }
-  return `${neg ? '-' : ''}${out}.${frac}`;
+  return `${out}.${frac}`;
 }
 
 const REEL_DIGIT_H = 48; // must match heroAmount.lineHeight
@@ -238,8 +238,9 @@ function onTrackLabel(pct: number): string {
 function HomeScreen() {
   const navigation = useNavigation<any>();
   const { status: syncStatus } = useSync();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const userName = profile?.name || 'User';
+  const userId = user?.id;
 
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -399,6 +400,14 @@ function HomeScreen() {
         setToastVisible(true);
       }
 
+      // Derive any new in-app notifications (budget warnings, tracking
+      // reminders, top-spend insight) from current local data. Idempotent —
+      // each insight carries a stable `kind` key so re-running on every focus
+      // doesn't create duplicates.
+      if (userId) {
+        generatePeriodicInsights(userId).catch(() => {});
+      }
+
       return () => {
         // Sidebar uses a global Modal; always close it when Home loses focus
         // so it can never intercept touches on other screens.
@@ -406,6 +415,7 @@ function HomeScreen() {
       };
     }, [
       isPrivacyMode,
+      userId,
       greetingOpacity,
       greetingTransY,
       cardOpacity,
@@ -685,10 +695,25 @@ function HomeScreen() {
                 />
               ) : (
                 <>
-                  <Text style={styles.heroCurr}>₱</Text>
+                  {totalBalance < 0 && !isPrivacyMode && (
+                    <Text style={[styles.heroAmount, styles.heroNegTint]}>
+                      −
+                    </Text>
+                  )}
+                  <Text
+                    style={[
+                      styles.heroCurr,
+                      totalBalance < 0 && styles.heroNegTint,
+                    ]}
+                  >
+                    ₱
+                  </Text>
                   <RollingBalance
                     value={totalBalance}
-                    textStyle={styles.heroAmount}
+                    textStyle={[
+                      styles.heroAmount,
+                      totalBalance < 0 && styles.heroNegTint,
+                    ]}
                     isPrivacyMode={isPrivacyMode}
                   />
                 </>
@@ -1095,6 +1120,9 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       color: '#FFFFFF', // Ensures it stays bright white on the dark hero background
       letterSpacing: -2,
       lineHeight: 48,
+    },
+    heroNegTint: {
+      color: '#FF7B7B', // Legible red on the dark hero gradient
     },
     trendBadge: {
       alignSelf: 'flex-start',

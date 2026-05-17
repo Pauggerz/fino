@@ -22,7 +22,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  interpolate,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Q } from '@nozbe/watermelondb';
 import { useTheme } from '../contexts/ThemeContext';
@@ -36,34 +44,74 @@ import { EmptyInsights } from '@/components/empty/EmptyInsights';
 import { CATEGORY_COLOR } from '@/constants/categoryMappings';
 import fmtPeso from '@/utils/format';
 
-import { CashFlowCard, type MonthTrendPoint } from '@/components/stats/CashFlowCard';
+import {
+  CashFlowCard,
+  type MonthTrendPoint,
+} from '@/components/stats/CashFlowCard';
 import { TrajectoryChart } from '@/components/stats/TrajectoryChart';
-import { CategoryDonut, type DonutSlice } from '@/components/stats/CategoryDonut';
+import {
+  CategoryDonut,
+  type DonutSlice,
+} from '@/components/stats/CategoryDonut';
 import {
   TopSpendingCard,
   type MerchantRow,
   type TopTxRow,
 } from '@/components/stats/TopSpendingCard';
-import { ByAccountStrip, type AccountSpend } from '@/components/stats/ByAccountStrip';
-import { MoneyFlowSankey, type SankeyNode } from '@/components/stats/MoneyFlowSankey';
+import {
+  ByAccountStrip,
+  type AccountSpend,
+} from '@/components/stats/ByAccountStrip';
+import {
+  MoneyFlowSankey,
+  type SankeyNode,
+} from '@/components/stats/MoneyFlowSankey';
 import { FinoHeadline, FinoChip } from '@/components/stats/FinoChip';
 import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
-import { QuickScrollNav, DEFAULT_TABS } from '@/components/stats/QuickScrollNav';
+import {
+  QuickScrollNav,
+  DEFAULT_TABS,
+} from '@/components/stats/QuickScrollNav';
 import { MonthPickerModal } from '@/components/stats/MonthPickerModal';
 import DowPatternChart from '@/components/stats/DowPatternChart';
 import TimeOfDayChart from '@/components/stats/TimeOfDayChart';
 import { getInsights, type Insights } from '@/services/IntelligenceEngine';
+import {
+  checkDowPattern,
+  checkSankey,
+  checkTodPattern,
+  checkTrajectory,
+  type Sufficiency,
+} from '@/utils/sufficiency';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const MONTHS_SHORT = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 const MERCHANT_PALETTE = [
-  '#1B7A4B', '#0F5B3F', '#1F4FB6', '#0072FF', '#D31921',
-  '#7A4AB8', '#E8856A', '#5B8C6E', '#C97A20', '#A0153E',
+  '#1B7A4B',
+  '#0F5B3F',
+  '#1F4FB6',
+  '#0072FF',
+  '#D31921',
+  '#7A4AB8',
+  '#E8856A',
+  '#5B8C6E',
+  '#C97A20',
+  '#A0153E',
 ];
 
 function hashColor(seed: string): string {
@@ -147,7 +195,10 @@ function InsightsScreen() {
   const { user } = useAuth();
   const userId = user?.id;
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => createStyles(colors, insets.top), [colors, insets.top]);
+  const styles = useMemo(
+    () => createStyles(colors, insets.top),
+    [colors, insets.top]
+  );
   const [, startTransition] = useTransition();
 
   const isInitialLoadRef = useRef(true);
@@ -167,7 +218,11 @@ function InsightsScreen() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { accounts, error: accountsError, refetch: refetchAccounts } = useAccounts();
+  const {
+    accounts,
+    error: accountsError,
+    refetch: refetchAccounts,
+  } = useAccounts();
 
   const isCurrentMonth =
     selectedMonth === now.getMonth() && selectedYear === now.getFullYear();
@@ -175,7 +230,15 @@ function InsightsScreen() {
 
   const monthRange = useMemo(() => {
     const from = new Date(selectedYear, selectedMonth, 1).toISOString();
-    const to = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59, 999).toISOString();
+    const to = new Date(
+      selectedYear,
+      selectedMonth + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    ).toISOString();
     return { from, to };
   }, [selectedYear, selectedMonth]);
 
@@ -207,7 +270,7 @@ function InsightsScreen() {
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-      const y = contentOffset.y;
+      const { y } = contentOffset;
       navScrolled.value = withTiming(y > 60 ? 1 : 0, { duration: 180 });
       // Active section: highest index whose offset is above scroll position
       let next = 0;
@@ -255,8 +318,7 @@ function InsightsScreen() {
             });
           }
         } catch (err) {
-          if (__DEV__)
-            console.warn('[StatsScreen] cache read failed:', err);
+          if (__DEV__) console.warn('[StatsScreen] cache read failed:', err);
         }
       }
 
@@ -266,11 +328,24 @@ function InsightsScreen() {
           isInitialLoadRef.current = false;
         }
 
-        const sixMoStart = new Date(selectedYear, selectedMonth - 5, 1).toISOString();
+        const sixMoStart = new Date(
+          selectedYear,
+          selectedMonth - 5,
+          1
+        ).toISOString();
         const prevMonthIdx = selectedMonth === 0 ? 11 : selectedMonth - 1;
-        const prevYearIdx = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+        const prevYearIdx =
+          selectedMonth === 0 ? selectedYear - 1 : selectedYear;
         const prevFrom = new Date(prevYearIdx, prevMonthIdx, 1).toISOString();
-        const prevTo = new Date(prevYearIdx, prevMonthIdx + 1, 0, 23, 59, 59, 999).toISOString();
+        const prevTo = new Date(
+          prevYearIdx,
+          prevMonthIdx + 1,
+          0,
+          23,
+          59,
+          59,
+          999
+        ).toISOString();
 
         const txCol = database.get<TransactionModel>('transactions');
         const catCol = database.get<CategoryModel>('categories');
@@ -334,10 +409,16 @@ function InsightsScreen() {
         // Bucket boundaries: morning 5–12, afternoon 12–17, evening 17–21, night 21–5.
         const todTotals = [0, 0, 0, 0];
         const todCounts = [0, 0, 0, 0];
-        const acctExpense: Record<string, { amount: number; count: number }> = {};
+        const acctExpense: Record<string, { amount: number; count: number }> =
+          {};
         const merchantMap: Record<
           string,
-          { name: string; amount: number; count: number; category: string | null }
+          {
+            name: string;
+            amount: number;
+            count: number;
+            category: string | null;
+          }
         > = {};
         let txCount = 0;
 
@@ -356,7 +437,8 @@ function InsightsScreen() {
           if (t.amount > largestExpense) largestExpense = t.amount;
 
           const catKey = (t.category ?? '').trim().toLowerCase();
-          if (catKey) expenseByCat[catKey] = (expenseByCat[catKey] ?? 0) + t.amount;
+          if (catKey)
+            expenseByCat[catKey] = (expenseByCat[catKey] ?? 0) + t.amount;
 
           // Daily
           const day = new Date(t.date).getDate();
@@ -372,10 +454,13 @@ function InsightsScreen() {
           // 0 morning (5–12), 1 afternoon (12–17), 2 evening (17–21), 3 night.
           const hr = txDate.getHours();
           const todIdx =
-            hr >= 5 && hr < 12 ? 0
-            : hr >= 12 && hr < 17 ? 1
-            : hr >= 17 && hr < 21 ? 2
-            : 3;
+            hr >= 5 && hr < 12
+              ? 0
+              : hr >= 12 && hr < 17
+                ? 1
+                : hr >= 17 && hr < 21
+                  ? 2
+                  : 3;
           todTotals[todIdx] += t.amount;
           todCounts[todIdx] += 1;
 
@@ -411,17 +496,18 @@ function InsightsScreen() {
         //   1. Drop NaN / non-finite (defensive against bad rows from sync).
         //   2. Drop zero / negative amounts — they break donut + sankey math.
         //   3. Sort desc so downstream slicing (top 8 / top 6) keeps the leaders.
-        const expenseTotalsByCat: { key: string; label: string; amount: number }[] =
-          Object.entries(expenseByCat)
-            .filter(
-              ([, amount]) => Number.isFinite(amount) && amount > 0
-            )
-            .map(([key, amount]) => ({
-              key,
-              label: catLabelByKey[key] ?? cap(key),
-              amount,
-            }))
-            .sort((a, b) => b.amount - a.amount);
+        const expenseTotalsByCat: {
+          key: string;
+          label: string;
+          amount: number;
+        }[] = Object.entries(expenseByCat)
+          .filter(([, amount]) => Number.isFinite(amount) && amount > 0)
+          .map(([key, amount]) => ({
+            key,
+            label: catLabelByKey[key] ?? cap(key),
+            amount,
+          }))
+          .sort((a, b) => b.amount - a.amount);
 
         // Cumulative by day (1..daysInMonth)
         const cumulativeByDay: number[] = [];
@@ -458,7 +544,8 @@ function InsightsScreen() {
           .filter((t) => !isTransferRow(t) && !isAdjustmentRow(t))
           .slice(0, 5)
           .map((t) => {
-            const name = t.displayName ?? t.merchantName ?? cap(t.category ?? 'Expense');
+            const name =
+              t.displayName ?? t.merchantName ?? cap(t.category ?? 'Expense');
             return {
               key: t.id,
               name,
@@ -495,7 +582,8 @@ function InsightsScreen() {
         });
 
         // ── 6-month trend ──
-        const trendMap: Record<string, { income: number; expense: number }> = {};
+        const trendMap: Record<string, { income: number; expense: number }> =
+          {};
         sixMoTx.forEach((t) => {
           if (isTransferRow(t)) return;
           const ym = t.date.slice(0, 7);
@@ -661,6 +749,41 @@ function InsightsScreen() {
   const finoWhereChip = insights?.whereChip ?? buildWhereChip(bundle);
   const finoWhenChip = insights?.whenChip ?? buildWhenChip(bundle);
 
+  // Sufficiency gates. The engine is the source of truth once it resolves —
+  // its gates use the exact same input data the chips do, so the gate and
+  // the chip can never disagree. On cold start we fall back to recomputing
+  // from the local bundle, which is the same data the engine sees, so the
+  // visual stays stable across the engine-resolves transition.
+  const populatedWeekdays = useMemo(
+    () => bundle.dowAvg.reduce((n, v) => n + (v > 0 ? 1 : 0), 0),
+    [bundle.dowAvg]
+  );
+  const populatedTodBuckets = useMemo(
+    () => bundle.todTotals.reduce((n, v) => n + (v > 0 ? 1 : 0), 0),
+    [bundle.todTotals]
+  );
+  const sankeyGate: Sufficiency =
+    insights?.sufficiency?.sankey ??
+    checkSankey({
+      hasIncome: bundle.totalIncome > 0,
+      hasExpense: bundle.totalExpense > 0,
+    });
+  const trajectoryGate: Sufficiency =
+    insights?.sufficiency?.trajectory ??
+    checkTrajectory({ txCount: bundle.txCount, daysElapsed });
+  const dowGate: Sufficiency =
+    insights?.sufficiency?.dowPattern ??
+    checkDowPattern({
+      txCount: bundle.txCount,
+      populatedWeekdays,
+    });
+  const todGate: Sufficiency =
+    insights?.sufficiency?.todPattern ??
+    checkTodPattern({
+      txCount: bundle.txCount,
+      populatedBuckets: populatedTodBuckets,
+    });
+
   // ── Render ──
 
   if (loading && bundle.totalExpense === 0 && bundle.totalIncome === 0) {
@@ -747,10 +870,7 @@ function InsightsScreen() {
             onRefresh={async () => {
               setIsRefreshing(true);
               try {
-                await Promise.all([
-                  fetchStats(true),
-                  refetchAccounts(),
-                ]);
+                await Promise.all([fetchStats(true), refetchAccounts()]);
               } finally {
                 setIsRefreshing(false);
               }
@@ -762,23 +882,45 @@ function InsightsScreen() {
       >
         {/* 0: Month picker pill */}
         <View style={styles.monthPillRow}>
-          <View style={[styles.monthPill, { backgroundColor: colors.white, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.monthPill,
+              { backgroundColor: colors.white, borderColor: colors.border },
+            ]}
+          >
             <Pressable
               onPress={handlePrevMonth}
-              style={[styles.monthArrow, { backgroundColor: colors.surfaceSubdued }]}
+              style={[
+                styles.monthArrow,
+                { backgroundColor: colors.surfaceSubdued },
+              ]}
             >
-              <Ionicons name="chevron-back" size={14} color={colors.textSecondary} />
+              <Ionicons
+                name="chevron-back"
+                size={14}
+                color={colors.textSecondary}
+              />
             </Pressable>
-            <Pressable onPress={() => setMonthPickerVisible(true)} style={styles.monthLabelBtn}>
+            <Pressable
+              onPress={() => setMonthPickerVisible(true)}
+              style={styles.monthLabelBtn}
+            >
               <Text style={[styles.monthLabel, { color: colors.textPrimary }]}>
                 {monthNavLabel}
               </Text>
             </Pressable>
             <Pressable
               onPress={handleNextMonth}
-              style={[styles.monthArrow, { backgroundColor: colors.surfaceSubdued }]}
+              style={[
+                styles.monthArrow,
+                { backgroundColor: colors.surfaceSubdued },
+              ]}
             >
-              <Ionicons name="chevron-forward" size={14} color={colors.textSecondary} />
+              <Ionicons
+                name="chevron-forward"
+                size={14}
+                color={colors.textSecondary}
+              />
             </Pressable>
           </View>
         </View>
@@ -800,6 +942,8 @@ function InsightsScreen() {
           <CashFlowCard
             income={bundle.totalIncome}
             expenses={bundle.totalExpense}
+            prevIncome={bundle.prevTotalIncome}
+            prevExpenses={bundle.prevTotalExpense}
             prevNet={
               bundle.prevTotalIncome === 0 && bundle.prevTotalExpense === 0
                 ? null
@@ -811,12 +955,10 @@ function InsightsScreen() {
             daysElapsed={daysElapsed}
           />
           <NeedMoreData
-            enough={bundle.totalIncome > 0 && bundle.totalExpense > 0}
-            needed={2}
-            current={
-              (bundle.totalIncome > 0 ? 1 : 0) +
-              (bundle.totalExpense > 0 ? 1 : 0)
-            }
+            enough={sankeyGate.ok}
+            needed={sankeyGate.needed}
+            current={sankeyGate.current}
+            reason={sankeyGate.reason}
             colors={colors}
           >
             <MoneyFlowSankey
@@ -833,9 +975,10 @@ function InsightsScreen() {
             />
           </NeedMoreData>
           <NeedMoreData
-            enough={bundle.txCount >= 5}
-            needed={5}
-            current={bundle.txCount}
+            enough={trajectoryGate.ok}
+            needed={trajectoryGate.needed}
+            current={trajectoryGate.current}
+            reason={trajectoryGate.reason}
             colors={colors}
           >
             <TrajectoryChart
@@ -853,7 +996,9 @@ function InsightsScreen() {
         {/* 4: SECTION 02 — Where it went */}
         <View onLayout={handleSectionLayout(1)}>
           <SectionLabel num="02" title="Where it went" colors={colors} />
-          <FinoChip text={finoWhereChip} />
+          {bundle.totalExpense > 0 && bundle.expenseTotalsByCat.length > 0 ? (
+            <FinoChip text={finoWhereChip} />
+          ) : null}
           <CategoryDonut slices={donutSlices} />
           <TopSpendingCard
             merchants={bundle.topMerchants}
@@ -869,11 +1014,14 @@ function InsightsScreen() {
         {/* 5: SECTION 03 — When you spend */}
         <View onLayout={handleSectionLayout(2)}>
           <SectionLabel num="03" title="Spending patterns" colors={colors} />
-          <FinoChip text={finoWhenChip} />
+          {bundle.txCount >= 5 ? <FinoChip text={finoWhenChip} /> : null}
           <View
             style={[
               styles.dowCard,
-              { backgroundColor: colors.white, borderColor: colors.cardBorderTransparent },
+              {
+                backgroundColor: colors.white,
+                borderColor: colors.cardBorderTransparent,
+              },
             ]}
           >
             <View style={styles.dowHead}>
@@ -882,9 +1030,10 @@ function InsightsScreen() {
               </Text>
             </View>
             <NeedMoreData
-              enough={bundle.txCount >= 5}
-              needed={5}
-              current={bundle.txCount}
+              enough={dowGate.ok}
+              needed={dowGate.needed}
+              current={dowGate.current}
+              reason={dowGate.reason}
               colors={colors}
             >
               <DowPatternChart dowAvg={bundle.dowAvg} colors={colors} />
@@ -893,7 +1042,10 @@ function InsightsScreen() {
           <View
             style={[
               styles.dowCard,
-              { backgroundColor: colors.white, borderColor: colors.cardBorderTransparent },
+              {
+                backgroundColor: colors.white,
+                borderColor: colors.cardBorderTransparent,
+              },
             ]}
           >
             <View style={styles.dowHead}>
@@ -902,9 +1054,10 @@ function InsightsScreen() {
               </Text>
             </View>
             <NeedMoreData
-              enough={bundle.txCount >= 5}
-              needed={5}
-              current={bundle.txCount}
+              enough={todGate.ok}
+              needed={todGate.needed}
+              current={todGate.current}
+              reason={todGate.reason}
               colors={colors}
             >
               <TimeOfDayChart
@@ -975,7 +1128,11 @@ function InsightsEmptyState({
               { backgroundColor: colors.surfaceSubdued },
             ]}
           >
-            <Ionicons name="chevron-back" size={14} color={colors.textSecondary} />
+            <Ionicons
+              name="chevron-back"
+              size={14}
+              color={colors.textSecondary}
+            />
           </Pressable>
           <Pressable onPress={onPickMonth} style={styles.monthLabelBtn}>
             <Text style={[styles.monthLabel, { color: colors.textPrimary }]}>
@@ -999,13 +1156,21 @@ function InsightsEmptyState({
       </View>
 
       <EmptyInsights
-        title={isCurrentMonth ? 'Insights start with your first transaction' : `Nothing logged in ${monthLabel}`}
+        title={
+          isCurrentMonth
+            ? 'Insights start with your first transaction'
+            : `Nothing logged in ${monthLabel}`
+        }
         body={
           isCurrentMonth
             ? 'Add a transaction and we’ll surface trends, top categories, and spending patterns here.'
             : `You didn't log any transactions in ${monthLabel}. Use the picker above to view another month.`
         }
-        chipLabel={isCurrentMonth ? 'Waiting on your first entry' : 'No data for this month'}
+        chipLabel={
+          isCurrentMonth
+            ? 'Waiting on your first entry'
+            : 'No data for this month'
+        }
       />
 
       {monthPickerModal}
@@ -1022,20 +1187,28 @@ const emptyStyles = StyleSheet.create({
   },
 });
 
+// The reason string comes from @/utils/sufficiency — each gate writes its own
+// user-facing copy so this component doesn't have to guess. The legacy
+// `needed`/`current` props are kept as a fallback for callers that haven't
+// migrated to the sufficiency module yet (so a default message can be built).
 function NeedMoreData({
   enough,
   needed,
   current,
+  reason,
   colors,
   children,
 }: {
   enough: boolean;
   needed: number;
   current: number;
+  reason?: string;
   colors: any;
   children: React.ReactNode;
 }) {
-  if (enough) return <>{children}</>;
+  if (enough) return children as React.ReactElement;
+  const remaining = Math.max(needed - current, 1);
+  const fallback = `Log ${remaining} more transaction${remaining === 1 ? '' : 's'} this month to unlock this chart.`;
   return (
     <View style={needMoreStyles.wrap}>
       <View style={needMoreStyles.faded} pointerEvents="none">
@@ -1045,27 +1218,110 @@ function NeedMoreData({
         style={[
           needMoreStyles.overlay,
           {
-            backgroundColor: (colors.white ?? '#FFFFFF') + 'E6',
+            backgroundColor: `${colors.white ?? '#FFFFFF'}E6`,
             borderColor: colors.cardBorderTransparent,
           },
         ]}
       >
-        <Ionicons
-          name="bar-chart-outline"
-          size={18}
-          color={colors.textSecondary}
-        />
-        <Text
-          style={[needMoreStyles.title, { color: colors.textPrimary }]}
-        >
+        <NeedMoreDataPulse colors={colors} />
+        <Text style={[needMoreStyles.title, { color: colors.textPrimary }]}>
           Needs more data
         </Text>
-        <Text
-          style={[needMoreStyles.sub, { color: colors.textSecondary }]}
-        >
-          Log {Math.max(needed - current, 1)} more transaction
-          {needed - current === 1 ? '' : 's'} this month to unlock this chart.
+        <Text style={[needMoreStyles.sub, { color: colors.textSecondary }]}>
+          {reason && reason.length > 0 ? reason : fallback}
         </Text>
+      </View>
+    </View>
+  );
+}
+
+// Soft pulsing bars + halo behind the icon. Two short, staggered bars cycle
+// in height to suggest "still gathering" without being noisy. Honours reduced
+// motion — when disabled, the bars sit at mid height and the halo doesn't pulse.
+function NeedMoreDataPulse({ colors }: { colors: any }) {
+  const reduceMotion = useReducedMotion();
+  const t = useSharedValue(0);
+  const halo = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      t.value = 0.5;
+      halo.value = 0.5;
+      return;
+    }
+    t.value = withRepeat(
+      withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true
+    );
+    halo.value = withRepeat(
+      withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reduceMotion]);
+
+  const haloStyle = useAnimatedStyle(() => {
+    'worklet';
+
+    const s = interpolate(halo.value, [0, 1], [0.85, 1.15]);
+    const o = interpolate(halo.value, [0, 1], [0.35, 0.7]);
+    return { transform: [{ scale: s }], opacity: o };
+  });
+  const bar1 = useAnimatedStyle(() => {
+    'worklet';
+
+    const h = interpolate(t.value, [0, 1], [6, 14]);
+    return { height: h };
+  });
+  const bar2 = useAnimatedStyle(() => {
+    'worklet';
+
+    // Phase-shifted via a different stop so bars don't move in lockstep.
+    const v = (t.value + 0.5) % 1;
+    const h = interpolate(v, [0, 1], [10, 18]);
+    return { height: h };
+  });
+  const bar3 = useAnimatedStyle(() => {
+    'worklet';
+
+    const v = (t.value + 0.25) % 1;
+    const h = interpolate(v, [0, 1], [8, 16]);
+    return { height: h };
+  });
+
+  return (
+    <View style={needMoreStyles.pulseWrap}>
+      <Animated.View
+        style={[
+          needMoreStyles.pulseHalo,
+          { backgroundColor: colors.lavenderLight ?? colors.surfaceSubdued },
+          haloStyle,
+        ]}
+      />
+      <View style={needMoreStyles.pulseBars}>
+        <Animated.View
+          style={[
+            needMoreStyles.pulseBar,
+            { backgroundColor: colors.textSecondary },
+            bar1,
+          ]}
+        />
+        <Animated.View
+          style={[
+            needMoreStyles.pulseBar,
+            { backgroundColor: colors.textSecondary },
+            bar2,
+          ]}
+        />
+        <Animated.View
+          style={[
+            needMoreStyles.pulseBar,
+            { backgroundColor: colors.textSecondary },
+            bar3,
+          ]}
+        />
       </View>
     </View>
   );
@@ -1083,7 +1339,7 @@ const needMoreStyles = StyleSheet.create({
     left: 16,
     right: 16,
     top: '50%',
-    transform: [{ translateY: -42 }],
+    transform: [{ translateY: -52 }],
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 14,
@@ -1094,20 +1350,57 @@ const needMoreStyles = StyleSheet.create({
   title: {
     fontFamily: 'Nunito_700Bold',
     fontSize: 13,
+    marginTop: 4,
   },
   sub: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
     textAlign: 'center',
   },
+  pulseWrap: {
+    width: 36,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pulseHalo: {
+    position: 'absolute',
+    width: 32,
+    height: 22,
+    borderRadius: 12,
+  },
+  pulseBars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 3,
+  },
+  pulseBar: {
+    width: 4,
+    borderRadius: 2,
+    opacity: 0.9,
+  },
 });
 
-function SectionLabel({ num, title, colors }: { num: string; title: string; colors: any }) {
+function SectionLabel({
+  num,
+  title,
+  colors,
+}: {
+  num: string;
+  title: string;
+  colors: any;
+}) {
   return (
     <View style={sectionLabelStyles.row}>
-      <Text style={[sectionLabelStyles.num, { color: colors.textSecondary }]}>{num}</Text>
-      <Text style={[sectionLabelStyles.title, { color: colors.textPrimary }]}>{title}</Text>
-      <View style={[sectionLabelStyles.line, { backgroundColor: colors.border }]} />
+      <Text style={[sectionLabelStyles.num, { color: colors.textSecondary }]}>
+        {num}
+      </Text>
+      <Text style={[sectionLabelStyles.title, { color: colors.textPrimary }]}>
+        {title}
+      </Text>
+      <View
+        style={[sectionLabelStyles.line, { backgroundColor: colors.border }]}
+      />
     </View>
   );
 }
@@ -1187,7 +1480,15 @@ function buildWhenChip(b: StatsBundle): string {
   if (!peakDowValue) {
     return 'Need a few days of activity before patterns show up.';
   }
-  const days = ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'];
+  const days = [
+    'Mondays',
+    'Tuesdays',
+    'Wednesdays',
+    'Thursdays',
+    'Fridays',
+    'Saturdays',
+    'Sundays',
+  ];
   const todLabels = ['mornings', 'afternoons', 'evenings', 'nights'];
 
   // Combine day-of-week and time-of-day signals for a richer headline.
@@ -1203,8 +1504,7 @@ function buildWhenChip(b: StatsBundle): string {
     return `${days[peakDowIdx]} & ${todLabels[peakTodIdx]} dominate — ${todShare}% of spend lands in your ${todLabels[peakTodIdx].slice(0, -1)} window.`;
   }
 
-  const weekdayAvg =
-    b.dowAvg.slice(0, 5).reduce((s, v) => s + v, 0) / 5 || 1;
+  const weekdayAvg = b.dowAvg.slice(0, 5).reduce((s, v) => s + v, 0) / 5 || 1;
   const ratio = peakDowValue / weekdayAvg;
   if (peakDowIdx >= 5) {
     return `${days[peakDowIdx]} are your peak — ${ratio.toFixed(1)}× weekday average.`;

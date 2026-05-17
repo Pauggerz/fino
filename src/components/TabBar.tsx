@@ -29,6 +29,7 @@ interface TabBarProps {
   onTabPress: (tab: TabRoute) => void;
   onAddManual: () => void;
   onScan: () => void;
+  onUpload: () => void;
 }
 
 const TAB_ICONS: Record<TabRoute, [string, string]> = {
@@ -37,6 +38,77 @@ const TAB_ICONS: Record<TabRoute, [string, string]> = {
   stats: ['bar-chart-outline', 'bar-chart'],
   more: ['grid-outline', 'grid'],
 };
+
+interface LiquidIconProps {
+  isActive: boolean;
+  outlineName: string;
+  filledName: string;
+  activeColor: string;
+  inactiveColor: string;
+  haloColor: string;
+  size?: number;
+}
+
+function LiquidIcon({
+  isActive,
+  outlineName,
+  filledName,
+  activeColor,
+  inactiveColor,
+  haloColor,
+  size = 22,
+}: LiquidIconProps) {
+  const progress = useSharedValue(isActive ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(isActive ? 1 : 0, { duration: 320 });
+  }, [isActive, progress]);
+
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: interpolate(progress.value, [0, 1], [0.4, 1.1]) }],
+  }));
+  const outlineStyle = useAnimatedStyle(() => ({
+    opacity: 1 - progress.value,
+    transform: [{ scale: interpolate(progress.value, [0, 1], [1, 1.15]) }],
+  }));
+  const filledStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: interpolate(progress.value, [0, 1], [0.7, 1]) }],
+  }));
+
+  const box = size + 10;
+
+  return (
+    <View
+      style={{
+        width: box,
+        height: box,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Reanimated.View
+        style={[
+          {
+            position: 'absolute',
+            width: box,
+            height: box,
+            borderRadius: box / 2,
+            backgroundColor: haloColor,
+          },
+          haloStyle,
+        ]}
+      />
+      <Reanimated.View style={[{ position: 'absolute' }, outlineStyle]}>
+        <Ionicons name={outlineName as any} size={size} color={inactiveColor} />
+      </Reanimated.View>
+      <Reanimated.View style={[{ position: 'absolute' }, filledStyle]}>
+        <Ionicons name={filledName as any} size={size} color={activeColor} />
+      </Reanimated.View>
+    </View>
+  );
+}
 
 const TAB_LABELS: Record<TabRoute, string> = {
   home: 'Home',
@@ -50,6 +122,7 @@ export default function TabBar({
   onTabPress,
   onAddManual,
   onScan,
+  onUpload,
 }: TabBarProps) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -98,13 +171,14 @@ export default function TabBar({
     else openMenu();
   };
 
-  const pickAction = (which: 'manual' | 'scan') => {
+  const pickAction = (which: 'manual' | 'scan' | 'upload') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     closeMenu();
     // small delay so the close animation reads visually before nav slide-up
     setTimeout(() => {
       if (which === 'manual') onAddManual();
-      else onScan();
+      else if (which === 'scan') onScan();
+      else onUpload();
     }, 80);
   };
 
@@ -129,6 +203,13 @@ export default function TabBar({
       { scale: interpolate(progress.value, [0, 1], [0.6, 1]) },
     ],
   }));
+  const uploadStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [
+      { translateY: interpolate(progress.value, [0, 1], [90, 0]) },
+      { scale: interpolate(progress.value, [0, 1], [0.6, 1]) },
+    ],
+  }));
 
   const pillBg = colors.white;
   const fabBg = isDark ? '#FFFFFF' : '#1C1C1E';
@@ -137,6 +218,12 @@ export default function TabBar({
   const renderTab = (id: TabRoute) => {
     const isActive = visualActiveTab === id;
     const [outline, filled] = TAB_ICONS[id];
+    const inactiveColor = isDark
+      ? 'rgba(255,255,255,0.45)'
+      : 'rgba(0,0,0,0.35)';
+    const haloColor = isDark
+      ? 'rgba(91,140,110,0.22)'
+      : 'rgba(91,140,110,0.14)';
     return (
       <TouchableOpacity
         key={id}
@@ -155,16 +242,13 @@ export default function TabBar({
         accessibilityState={{ selected: isActive }}
         accessibilityLabel={`${TAB_LABELS[id]} tab`}
       >
-        <Ionicons
-          name={(isActive ? filled : outline) as any}
-          size={22}
-          color={
-            isActive
-              ? colors.primary
-              : isDark
-                ? 'rgba(255,255,255,0.45)'
-                : 'rgba(0,0,0,0.35)'
-          }
+        <LiquidIcon
+          isActive={isActive}
+          outlineName={outline}
+          filledName={filled}
+          activeColor={colors.primary}
+          inactiveColor={inactiveColor}
+          haloColor={haloColor}
         />
         <Text
           style={[
@@ -216,6 +300,43 @@ export default function TabBar({
             style={styles.dialColumn}
             pointerEvents="box-none"
           >
+            <Reanimated.View
+              style={[
+                styles.actionPill,
+                { backgroundColor: actionPillBg, shadowColor: '#000' },
+                uploadStyle,
+              ]}
+            >
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => pickAction('upload')}
+                style={styles.actionPillInner}
+                accessibilityLabel="Upload receipt"
+              >
+                <View
+                  style={[
+                    styles.actionIcon,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(201,184,245,0.18)'
+                        : '#EEEDFE',
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="cloud-upload-outline"
+                    size={18}
+                    color={isDark ? colors.lavender : '#4B2DA3'}
+                  />
+                </View>
+                <Text
+                  style={[styles.actionLabel, { color: actionPillText }]}
+                >
+                  Upload receipt
+                </Text>
+              </TouchableOpacity>
+            </Reanimated.View>
+
             <Reanimated.View
               style={[
                 styles.actionPill,

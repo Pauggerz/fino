@@ -15,6 +15,23 @@ import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import { analyzeTransactionText } from './aiCategoryMap';
 import fmtPeso from '@/utils/format';
+import {
+  median,
+  madSigma,
+  stddev,
+  tCritical95,
+  chi2Uniform,
+  linearRegression,
+} from '@/utils/statistics';
+import {
+  checkComposition,
+  checkDowPattern,
+  checkSankey,
+  checkTodPattern,
+  checkTrajectory,
+  checkTrendSlope,
+  type Sufficiency,
+} from '@/utils/sufficiency';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -43,6 +60,25 @@ export type TrajectoryForecast = {
   pacingOver: boolean;
   /** True when the projection used per-weekday weighting (vs flat dailyAvg). */
   usedDowWeighting: boolean;
+  /** Lower 95% bound on the EOM projection (Student-t for N<30, normal otherwise). */
+  ciLow: number;
+  /** Upper 95% bound on the EOM projection. */
+  ciHigh: number;
+  /** True when the CI used the t-distribution (i.e. daysElapsed < 30). */
+  ciUsedT: boolean;
+};
+
+export type TrendSlope = {
+  /** OLS slope of the 6-month net series in pesos / month. Sign = direction. */
+  slope: number;
+  /** Coefficient of determination, R² ∈ [0, 1]. */
+  r2: number;
+  /** Months that contributed to the regression (zero-spend months dropped). */
+  n: number;
+  /** 'up' when slope > 0 and R² ≥ 0.6; 'down' when slope < 0 and R² ≥ 0.6;
+   *  'flat' otherwise. We refuse to claim a direction below R² = 0.6 because
+   *  the fit isn't strong enough to call the slope. */
+  direction: 'up' | 'down' | 'flat';
 };
 
 export type RecurringBill = {
@@ -85,6 +121,21 @@ export type WeekDelta = {
   pctChange: number; // 0.25 → +25%
 };
 
+/**
+ * Per-card sufficiency verdicts. Each gate is documented in
+ * `docs/INSIGHTS_FORMULAS.md` §1.2 and implemented in `@/utils/sufficiency`.
+ * The screen reads these to decide whether to render each chart or surface
+ * the "needs more data" overlay with the gate's reason string.
+ */
+export type InsightsSufficiency = {
+  sankey: Sufficiency;
+  trajectory: Sufficiency;
+  composition: Sufficiency;
+  dowPattern: Sufficiency;
+  todPattern: Sufficiency;
+  trendSlope: Sufficiency;
+};
+
 export type Insights = {
   headline: string;
   whereChip: string;
@@ -97,6 +148,10 @@ export type Insights = {
   recurring: RecurringBill[];
   /** Localised financial coach tip — sentiment + actionable message. */
   coach: CoachMessage;
+  /** OLS slope + R² over the 6-month net series. Null when <3 months of data. */
+  trendSlope: TrendSlope | null;
+  /** Per-card sufficiency verdicts driving the "needs more data" overlays. */
+  sufficiency: InsightsSufficiency;
 };
 
 export type CategorySuggestion = {
@@ -134,7 +189,9 @@ function cap(s: string): string {
 
 // ─── Aggregation primitives ─────────────────────────────────────────────────
 
-function sumExpensesByCategory(txns: TransactionModel[]): Record<string, number> {
+function sumExpensesByCategory(
+  txns: TransactionModel[]
+): Record<string, number> {
   const out: Record<string, number> = {};
   for (const t of txns) {
     if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
@@ -171,29 +228,83 @@ function sumByMerchant(
 // ─── Detectors ──────────────────────────────────────────────────────────────
 
 /**
- * Anomalies: categories whose current-month spend is ≥50% above their
- * 3-month rolling average (excluding the current month). Only categories
- * with a baseline of at least one prior month with non-zero spend qualify
- * — avoids false-positives on first-time categories.
+ * Anomaly detection via the **Iglewicz-Hoaglin modified z-score** on a
+ * per-category, per-prior-month baseline. See §3.6 of
+ * `docs/INSIGHTS_FORMULAS.md` for the full derivation.
+ *
+ * Algorithm:
+ *   1. Bucket prior-3-month expense txns into a 3-element array `b` per
+ *      category. Months with zero spend in that category contribute a 0 —
+ *      not a missing observation. (A category appearing this month after
+ *      3 zeros is itself worth flagging.)
+ *   2. Compute median(b) and σ̂ = 1.4826 · MAD(b).
+ *   3. If σ̂ > 0 → flag when (current − median) / σ̂ > 3.5
+ *      (Iglewicz-Hoaglin outlier cutoff; conservative on heavy-tailed data).
+ *   4. If σ̂ = 0 (perfectly stable subscription) → fall back to
+ *      current > 1.5 · median (50% margin chosen wide enough to ignore
+ *      cent-level rounding).
+ *   5. Require ≥2 prior months with non-zero spend before flagging
+ *      (avoids "appeared once, now anomalous" false-positives).
+ *
+ * Result is sorted by `pctOver` desc so the worst offender drives the chip.
  */
 function detectAnomalies(
   currentByCat: Record<string, number>,
-  prior3MoByCat: Record<string, number>,
-  prior3MoMonthsCount: number
+  prior3MoTx: TransactionModel[],
+  priorMonthKeys: string[]
 ): Anomaly[] {
+  // Build month → category → amount. Initialise every prior month even when
+  // empty so the baseline array always has length = priorMonthKeys.length and
+  // zero-spend months count as 0 observations.
+  const byMonthCat: Record<string, Record<string, number>> = {};
+  for (const mk of priorMonthKeys) byMonthCat[mk] = {};
+  for (const t of prior3MoTx) {
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
+    const mk = t.date.slice(0, 7);
+    if (!(mk in byMonthCat)) continue;
+    const cat = (t.category ?? '').trim().toLowerCase();
+    if (!cat) continue;
+    byMonthCat[mk][cat] = (byMonthCat[mk][cat] ?? 0) + t.amount;
+  }
+
   const out: Anomaly[] = [];
   for (const [cat, current] of Object.entries(currentByCat)) {
-    const total3Mo = prior3MoByCat[cat] ?? 0;
-    if (total3Mo <= 0) continue;
-    const baseline = total3Mo / Math.max(1, prior3MoMonthsCount);
-    if (baseline <= 0 || current <= baseline * 1.5) continue;
-    out.push({
-      category: cat,
-      current,
-      baseline,
-      pctOver: (current - baseline) / baseline,
-    });
+    if (current <= 0) continue;
+    const baseline = priorMonthKeys.map((mk) => byMonthCat[mk][cat] ?? 0);
+    const monthsWithSpend = baseline.filter((b) => b > 0).length;
+
+    // Sufficiency gate — see checkAnomalyBaseline in @/utils/sufficiency.
+    if (monthsWithSpend < 2) continue;
+
+    const med = median(baseline);
+    const sigma = madSigma(baseline);
+
+    let flagged = false;
+    let pctOver = 0;
+    if (sigma > 0) {
+      // Robust z-score: M = (x − median) / (1.4826 · MAD). Cutoff |M| > 3.5
+      // is Iglewicz-Hoaglin (1993). We only flag positive-side excursions —
+      // *under*-spending isn't an action signal.
+      const z = (current - med) / sigma;
+      if (z > 3.5) {
+        flagged = true;
+        pctOver = med > 0 ? (current - med) / med : 0;
+      }
+    } else if (med > 0) {
+      // MAD = 0: baseline is perfectly stable (e.g. fixed-amount
+      // subscription). Z-score is undefined — fall back to a 50% margin
+      // on the median (wider than the z-score equivalent to avoid
+      // flagging on cent-level rounding).
+      if (current > med * 1.5) {
+        flagged = true;
+        pctOver = (current - med) / med;
+      }
+    }
+    if (!flagged) continue;
+
+    out.push({ category: cat, current, baseline: med, pctOver });
   }
+
   return out.sort((a, b) => b.pctOver - a.pctOver);
 }
 
@@ -244,6 +355,9 @@ function forecastTrajectory(
     month: number;
     /** Prior-month transactions used to derive day-of-week multipliers. */
     priorTxns: TransactionModel[];
+    /** Per-day expense totals for the elapsed days of the current month.
+     *  Used to estimate the variance of daily spend for the CI calculation. */
+    elapsedDailyTotals: number[];
   }
 ): TrajectoryForecast {
   const dailyAvg = daysElapsed > 0 ? monthSpent / daysElapsed : 0;
@@ -277,28 +391,49 @@ function forecastTrajectory(
     projected = dailyAvg * daysInMonth;
   }
 
+  // ── 95% confidence interval on the EOM projection ────────────────────
+  //
+  // We treat each elapsed day's expense total as an i.i.d. draw from a
+  // daily-spend distribution. The standard error of the sum of the
+  // remaining N_r days is then
+  //     SE(sum_remaining) = s_daily · √N_r
+  // (variance of a sum of i.i.d. variables = N · variance of one).
+  // For N_r < 30 we widen by Student-t; otherwise the normal approx (1.96).
+  //
+  // Caveat (documented in §5.1 of INSIGHTS_FORMULAS.md): real daily spend
+  // has weekly autocorrelation, so this SE is an under-estimate of the
+  // true uncertainty. We accept this — the directional message is robust
+  // to the simplification, and modelling AR(1) on ≤30 daily observations
+  // is not statistically defensible either.
+  const daysRemaining = Math.max(0, daysInMonth - daysElapsed);
+  const sDaily = stddev(args.elapsedDailyTotals);
+  let ciMargin = 0;
+  let ciUsedT = false;
+  if (sDaily > 0 && daysRemaining > 0 && daysElapsed >= 2) {
+    const seRemaining = sDaily * Math.sqrt(daysRemaining);
+    ciUsedT = daysElapsed < 30;
+    const t = ciUsedT ? tCritical95(daysElapsed - 1) : 1.96;
+    ciMargin = t * seRemaining;
+  }
+  const ciLow = Math.max(monthSpent, projected - ciMargin);
+  const ciHigh = projected + ciMargin;
+
   return {
     projected,
     spent: monthSpent,
     dailyAvg,
     daysElapsed,
-    daysRemaining: Math.max(0, daysInMonth - daysElapsed),
+    daysRemaining,
     rolling3MoAvg,
     pacingOver: rolling3MoAvg > 0 && projected > rolling3MoAvg,
     usedDowWeighting,
+    ciLow,
+    ciHigh,
+    ciUsedT,
   };
 }
 
 // ─── Recurring bill detection ───────────────────────────────────────────────
-
-function median(xs: number[]): number {
-  if (xs.length === 0) return 0;
-  const sorted = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[m - 1] + sorted[m]) / 2
-    : sorted[m];
-}
 
 /**
  * Detects recurring expenses across the prior 3 months. A merchant qualifies
@@ -652,18 +787,27 @@ export async function getInsights(
   const currentByCat = sumExpensesByCategory(monthTx);
   const merchantMap = sumByMerchant(monthTx);
 
-  // Prior 3-month aggregates
-  const prior3MoByCat: Record<string, number> = {};
+  // Prior 3-month aggregates. We track both the per-month sums (used for the
+  // rolling 3-mo baseline) and the explicit month keys (used by the anomaly
+  // detector so zero-spend months become 0 observations, not missing data).
   let prior3MoTotal = 0;
   const prior3MoMonthsSeen = new Set<string>();
   for (const t of prior3MoTx) {
     if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
-    const cat = (t.category ?? '').trim().toLowerCase();
-    if (cat) prior3MoByCat[cat] = (prior3MoByCat[cat] ?? 0) + t.amount;
     prior3MoTotal += t.amount;
     prior3MoMonthsSeen.add(t.date.slice(0, 7));
   }
   const prior3MoMonthsCount = prior3MoMonthsSeen.size || 1;
+  // Build the canonical list of prior month keys (3 entries, most recent
+  // last). We materialise empty months as well so MAD has a fixed-length
+  // baseline (see §3.6 of INSIGHTS_FORMULAS.md).
+  const priorMonthKeys: string[] = [];
+  for (let i = 3; i >= 1; i--) {
+    const dt = new Date(year, month - i, 1);
+    priorMonthKeys.push(
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+    );
+  }
 
   // Date math
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -672,19 +816,31 @@ export async function getInsights(
     today.getFullYear() === year && today.getMonth() === month;
   const daysElapsed = isCurrent ? today.getDate() : daysInMonth;
 
+  // Per-day expense totals for the elapsed days of the current month.
+  // Treated as i.i.d. draws by the trajectory CI calculation. We bucket by
+  // calendar day so multiple transactions on the same day collapse into a
+  // single daily total (the unit of analysis).
+  const dailyTotalsByDay: Record<number, number> = {};
+  for (const t of monthTx) {
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
+    const day = new Date(t.date).getDate();
+    if (day > daysElapsed) continue;
+    dailyTotalsByDay[day] = (dailyTotalsByDay[day] ?? 0) + t.amount;
+  }
+  const elapsedDailyTotals: number[] = [];
+  for (let d = 1; d <= daysElapsed; d++) {
+    elapsedDailyTotals.push(dailyTotalsByDay[d] ?? 0);
+  }
+
   // Run detectors
-  const anomalies = detectAnomalies(
-    currentByCat,
-    prior3MoByCat,
-    prior3MoMonthsCount
-  );
+  const anomalies = detectAnomalies(currentByCat, prior3MoTx, priorMonthKeys);
   const trajectory = forecastTrajectory(
     totalExpense,
     daysElapsed,
     daysInMonth,
     prior3MoTotal,
     prior3MoMonthsCount,
-    { year, month, priorTxns: prior3MoTx }
+    { year, month, priorTxns: prior3MoTx, elapsedDailyTotals }
   );
   const habits = recognizeHabits(merchantMap, daysElapsed, daysInMonth);
   const weekDeltas = isCurrent ? computeWeekDeltas(monthTx, today) : [];
@@ -698,6 +854,93 @@ export async function getInsights(
     isCurrent,
   });
 
+  // ── 6-month net trend (slope + R² via OLS) ───────────────────────────
+  //
+  // Build the 6-month net series and fit a line. We drop months with no
+  // activity at all (totalTx = 0) before fitting — a string of "0" months
+  // from before the user signed up shouldn't be fitted against. See §3.14
+  // of INSIGHTS_FORMULAS.md.
+  const sixMoStart = startOfMonthIso(year, month - 5);
+  const sixMoTx = await txCol
+    .query(
+      Q.where('user_id', userId),
+      Q.where('date', Q.gte(sixMoStart)),
+      Q.where('date', Q.lte(monthEnd))
+    )
+    .fetch();
+  const sixMoNetByMonth: Record<string, { net: number; txCount: number }> = {};
+  for (let i = 5; i >= 0; i--) {
+    const dt = new Date(year, month - i, 1);
+    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    sixMoNetByMonth[key] = { net: 0, txCount: 0 };
+  }
+  for (const t of sixMoTx) {
+    if (isTransferRow(t)) continue;
+    const key = t.date.slice(0, 7);
+    if (!(key in sixMoNetByMonth)) continue;
+    const slot = sixMoNetByMonth[key];
+    if (t.type === 'income') slot.net += t.amount;
+    else if (t.type === 'expense') slot.net -= t.amount;
+    slot.txCount += 1;
+  }
+  const trendPoints: number[] = [];
+  for (const key of Object.keys(sixMoNetByMonth)) {
+    const slot = sixMoNetByMonth[key];
+    if (slot.txCount > 0) trendPoints.push(slot.net);
+  }
+  let trendSlope: TrendSlope | null = null;
+  if (trendPoints.length >= 3) {
+    const reg = linearRegression(trendPoints);
+    // R² ≥ 0.6 is our threshold for asserting a direction — below this the
+    // fit isn't strong enough to call the slope (§3.14).
+    let direction: TrendSlope['direction'] = 'flat';
+    if (reg.r2 >= 0.6 && reg.slope > 0) direction = 'up';
+    else if (reg.r2 >= 0.6 && reg.slope < 0) direction = 'down';
+    trendSlope = {
+      slope: reg.slope,
+      r2: reg.r2,
+      n: reg.n,
+      direction,
+    };
+  }
+
+  // ── Sufficiency verdicts ────────────────────────────────────────────
+  //
+  // These drive the "needs more data" overlays on individual cards. Each
+  // gate is defined in @/utils/sufficiency and documented in §1.2 of
+  // INSIGHTS_FORMULAS.md.
+  const expenseTxCount = monthTx.reduce(
+    (acc, t) =>
+      acc +
+      (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense' ? 0 : 1),
+    0
+  );
+  const populatedWeekdays = countPopulatedWeekdays(monthTx);
+  const populatedTodBuckets = countPopulatedTodBuckets(monthTx);
+  const sufficiency: InsightsSufficiency = {
+    sankey: checkSankey({
+      hasIncome: totalIncome > 0,
+      hasExpense: totalExpense > 0,
+    }),
+    trajectory: checkTrajectory({
+      txCount: expenseTxCount,
+      daysElapsed,
+    }),
+    composition: checkComposition({
+      expenseTxCount,
+      categoryCount: Object.keys(currentByCat).length,
+    }),
+    dowPattern: checkDowPattern({
+      txCount: expenseTxCount,
+      populatedWeekdays,
+    }),
+    todPattern: checkTodPattern({
+      txCount: expenseTxCount,
+      populatedBuckets: populatedTodBuckets,
+    }),
+    trendSlope: checkTrendSlope({ monthsWithData: trendPoints.length }),
+  };
+
   // ── Build chip strings ─────────────────────────────────────────────
   const headline = composeHeadline({
     totalIncome,
@@ -705,6 +948,7 @@ export async function getInsights(
     trajectory,
     anomalies,
     coach,
+    trendSlope,
   });
   const whereChip = composeWhereChip({
     currentByCat,
@@ -724,7 +968,44 @@ export async function getInsights(
     weekDeltas,
     recurring,
     coach,
+    trendSlope,
+    sufficiency,
   };
+}
+
+/**
+ * Count distinct weekdays (Mon–Sun) on which the user logged at least one
+ * expense in the current month. Used by the DoW sufficiency gate — the
+ * "peak day" claim becomes hollow when 4+ weekdays sit empty.
+ */
+function countPopulatedWeekdays(txns: TransactionModel[]): number {
+  const seen = new Set<number>();
+  for (const t of txns) {
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
+    const dow = (new Date(t.date).getDay() + 6) % 7;
+    seen.add(dow);
+  }
+  return seen.size;
+}
+
+/**
+ * Count distinct time-of-day buckets (morning/afternoon/evening/night) on
+ * which the user logged at least one expense in the current month. Used by
+ * the TOD sufficiency gate.
+ *
+ * Bucket boundaries match the chart in StatsScreen:
+ *   morning 5–12, afternoon 12–17, evening 17–21, night otherwise.
+ */
+function countPopulatedTodBuckets(txns: TransactionModel[]): number {
+  const seen = new Set<number>();
+  for (const t of txns) {
+    if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
+    const hr = new Date(t.date).getHours();
+    const idx =
+      hr >= 5 && hr < 12 ? 0 : hr >= 12 && hr < 17 ? 1 : hr >= 17 && hr < 21 ? 2 : 3;
+    seen.add(idx);
+  }
+  return seen.size;
 }
 
 function composeHeadline(args: {
@@ -733,15 +1014,19 @@ function composeHeadline(args: {
   trajectory: TrajectoryForecast;
   anomalies: Anomaly[];
   coach: CoachMessage;
+  trendSlope: TrendSlope | null;
 }): string {
-  const { totalIncome, totalExpense, trajectory, anomalies, coach } = args;
+  const { totalIncome, totalExpense, trajectory, anomalies, coach, trendSlope } =
+    args;
   if (totalIncome === 0 && totalExpense === 0) {
     return 'No transactions yet this month — start tracking to see your trends.';
   }
-  // Anomalies are the loudest signal — surface them first.
+  // Anomalies are the loudest signal — surface them first. The chip uses the
+  // robust z-score above 3.5 (see §3.6 of INSIGHTS_FORMULAS.md), so a flagged
+  // category is genuinely out of band, not just "above the mean".
   if (anomalies.length > 0) {
     const top = anomalies[0];
-    return `Heads up — ${cap(top.category)} is ${(top.pctOver * 100).toFixed(0)}% above your 3-mo average (${fmtPeso(top.current)} vs ${fmtPeso(top.baseline)}).`;
+    return `Heads up — ${cap(top.category)} is ${(top.pctOver * 100).toFixed(0)}% above your 3-mo median (${fmtPeso(top.current)} vs ${fmtPeso(top.baseline)}).`;
   }
   // Negative-sentiment coach overrides everything else (overspend, etc.).
   if (coach.sentiment === 'negative') {
@@ -766,6 +1051,16 @@ function composeHeadline(args: {
   // Defer to the coach for cautious/positive nuance when no other signal fires.
   if (coach.sentiment === 'cautious' || coach.sentiment === 'positive') {
     return coach.message;
+  }
+  // OLS trend over the last 6 months — only surface a direction when the fit
+  // is strong (R² ≥ 0.6, enforced in TrendSlope.direction). Otherwise the
+  // slope is just connecting two noisy endpoints.
+  if (trendSlope && trendSlope.direction !== 'flat') {
+    const monthlyMove = Math.abs(trendSlope.slope);
+    if (trendSlope.direction === 'up') {
+      return `Net is trending up ${fmtPeso(monthlyMove)}/month over the last 6 months (R²=${trendSlope.r2.toFixed(2)}). Keeping ${pct}% of income.`;
+    }
+    return `Net is trending down ${fmtPeso(monthlyMove)}/month over the last 6 months (R²=${trendSlope.r2.toFixed(2)}). Review your top categories below.`;
   }
   if (pct >= 30) {
     return `Strong month — keeping ${pct}% of income (${fmtPeso(net)}).`;
@@ -810,15 +1105,24 @@ function composeWhenChip(args: {
   isCurrent: boolean;
 }): string {
   const { trajectory, monthTx, isCurrent } = args;
-  // Day-of-week peak (kept from the original chip — still the most useful
-  // "when" signal when no anomalies fire).
+  // Day-of-week totals AND time-of-day totals. We run a chi² goodness-of-fit
+  // test against the uniform null on each — see §3.9 / §3.10 of
+  // INSIGHTS_FORMULAS.md. The "peak day" / "peak window" claim is only made
+  // when the test is significant at α = 0.05 AND the expected count per
+  // bucket is ≥5 (NIST validity floor).
   const dowTotals = [0, 0, 0, 0, 0, 0, 0];
   const dowCounts = [0, 0, 0, 0, 0, 0, 0];
+  const todTotals = [0, 0, 0, 0];
   for (const t of monthTx) {
     if (isTransferRow(t) || isAdjustmentRow(t) || t.type !== 'expense') continue;
-    const dow = (new Date(t.date).getDay() + 6) % 7;
+    const date = new Date(t.date);
+    const dow = (date.getDay() + 6) % 7;
     dowTotals[dow] += t.amount;
     dowCounts[dow] += 1;
+    const hr = date.getHours();
+    const idx =
+      hr >= 5 && hr < 12 ? 0 : hr >= 12 && hr < 17 ? 1 : hr >= 17 && hr < 21 ? 2 : 3;
+    todTotals[idx] += t.amount;
   }
   const dowAvg = dowTotals.map((sum, i) =>
     dowCounts[i] > 0 ? sum / dowCounts[i] : 0
@@ -845,6 +1149,26 @@ function composeWhenChip(args: {
   }
   if (!peakValue) {
     return 'Need a few days of activity before patterns show up.';
+  }
+  // Significance test: if the DoW distribution isn't distinguishable from
+  // uniform, we refuse to crown a peak day. The threshold for the test
+  // statistic χ² with df=6 at α=0.05 is 12.59 (see chi2Critical95(6)).
+  const dowTest = chi2Uniform(dowTotals);
+  if (!dowTest.significant) {
+    // Fall back to TOD if that pattern is significant — same test, df=3,
+    // critical 7.81. Both insignificant → soften the claim.
+    const todTest = chi2Uniform(todTotals);
+    if (todTest.significant) {
+      const todLabels = ['mornings', 'afternoons', 'evenings', 'nights'];
+      const peakTod = todTotals.reduce(
+        (best, v, i) => (v > todTotals[best] ? i : best),
+        0
+      );
+      const todTotal = todTotals.reduce((s, v) => s + v, 0);
+      const share = Math.round((todTotals[peakTod] / todTotal) * 100);
+      return `Spend skews ${todLabels[peakTod]} — ${share}% of this month lands in that window.`;
+    }
+    return 'Spending is spread fairly evenly across the week so far.';
   }
   return `${dayLabels[peakIdx]} top your spending at ${fmtPeso(peakValue)} on average.`;
 }
