@@ -4,45 +4,38 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Q } from '@nozbe/watermelondb';
 
-export interface NotificationPrefs {
-  pushEnabled: boolean;
-  billReminders: boolean;
-  billReminderDaysBefore: 0 | 1 | 2 | 3;
-  billReminderHour: number; // 0–23
-  budgetAlerts: boolean;
-  budgetThreshold: 50 | 80 | 100;
-  weeklyDigest: boolean;
-  weeklyDigestDay: 0 | 1 | 2 | 3 | 4 | 5 | 6; // Sun=0
-  weeklyDigestHour: number;
-  inactivityReminder: boolean;
-  goalMilestones: boolean;
-  quietHoursEnabled: boolean;
-  quietHoursStart: number; // hour 0–23
-  quietHoursEnd: number;
-}
+import { database } from '@/db';
+import NotificationPrefsModel from '@/db/models/NotificationPrefs';
+import { useAuth } from './AuthContext';
+import {
+  DEFAULT_PREFS,
+  mapModelToPrefs,
+  upsertLocalPrefs,
+  type NotificationPrefs,
+} from '@/services/notificationPrefs';
+import { syncScheduledNotifications } from '@/services/localPushScheduler';
 
-export const DEFAULT_PREFS: NotificationPrefs = {
-  pushEnabled: true,
-  billReminders: true,
-  billReminderDaysBefore: 1,
-  billReminderHour: 9,
-  budgetAlerts: true,
-  budgetThreshold: 80,
-  weeklyDigest: true,
-  weeklyDigestDay: 0,
-  weeklyDigestHour: 20,
-  inactivityReminder: false,
-  goalMilestones: true,
-  quietHoursEnabled: false,
-  quietHoursStart: 22,
-  quietHoursEnd: 7,
-};
+/**
+ * Two-way bridge over the synced `notification_prefs` WatermelonDB table.
+ *
+ * Prefs now roam across devices and are visible to server dispatchers. The
+ * legacy AsyncStorage blob is migrated once (§6.17) and thereafter only mirrored
+ * for rollback safety. Every change kicks local-schedule reconciliation so OS
+ * reminders track the new settings (§5.3).
+ */
+
+// Re-exported for back-compat with existing screen imports.
+export type { NotificationPrefs };
+export { DEFAULT_PREFS };
 
 const STORAGE_KEY = '@fino_notification_prefs';
+const MIGRATED_KEY = '@fino_notification_prefs_migrated';
 
 interface NotificationPrefsContextType {
   prefs: NotificationPrefs;
@@ -59,50 +52,94 @@ const NotificationPrefsContext = createContext<NotificationPrefsContextType>({
   reset: () => {},
 });
 
+async function readLegacyAsyncStoragePrefs(): Promise<Partial<NotificationPrefs> | null> {
+  const stored = await AsyncStorage.getItem(STORAGE_KEY);
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored) as Partial<NotificationPrefs>;
+  } catch {
+    return null;
+  }
+}
+
 export function NotificationPrefsProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { user } = useAuth();
+  const userId = user?.id;
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
+  // Guards a one-shot row-creation so repeated observe emissions before the
+  // write commits don't spawn duplicate create attempts.
+  const seedingRef = useRef(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
-      if (!stored) return;
-      try {
-        const parsed = JSON.parse(stored) as Partial<NotificationPrefs>;
-        // Merge with defaults so new prefs added in updates get sane values.
-        setPrefs({ ...DEFAULT_PREFS, ...parsed });
-      } catch {
-        // ignore bad JSON
-      }
-    });
-  }, []);
+    if (!userId) {
+      setPrefs(DEFAULT_PREFS);
+      return undefined;
+    }
+    seedingRef.current = false;
 
-  const persist = useCallback((next: NotificationPrefs) => {
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
-  }, []);
+    const sub = database
+      .get<NotificationPrefsModel>('notification_prefs')
+      .query(Q.where('user_id', userId))
+      .observe()
+      .subscribe((rows) => {
+        if (rows.length > 0) {
+          setPrefs(mapModelToPrefs(rows[0]));
+          return;
+        }
+        // No local row yet — migrate from AsyncStorage (once) or seed defaults.
+        if (seedingRef.current) return;
+        seedingRef.current = true;
+        (async () => {
+          const legacy = await readLegacyAsyncStoragePrefs();
+          const seed: Partial<NotificationPrefs> = legacy ?? {};
+          await upsertLocalPrefs(userId, { ...DEFAULT_PREFS, ...seed });
+          await AsyncStorage.setItem(MIGRATED_KEY, 'true');
+        })().catch(() => {
+          seedingRef.current = false; // allow retry on next emission
+        });
+      });
+
+    return () => sub.unsubscribe();
+  }, [userId]);
 
   const updatePref = useCallback(
     <K extends keyof NotificationPrefs>(
       key: K,
       value: NotificationPrefs[K]
     ) => {
+      // Optimistic local update for instant UI.
       setPrefs((curr) => {
         const next = { ...curr, [key]: value };
-        persist(next);
+        AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
         return next;
       });
+      if (!userId) return;
+      upsertLocalPrefs(userId, { [key]: value })
+        .then(() => syncScheduledNotifications(userId))
+        .catch(() => {});
     },
-    [persist]
+    [userId]
   );
 
   const reset = useCallback(() => {
     setPrefs(DEFAULT_PREFS);
-    persist(DEFAULT_PREFS);
-  }, [persist]);
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_PREFS)).catch(
+      () => {}
+    );
+    if (!userId) return;
+    upsertLocalPrefs(userId, DEFAULT_PREFS)
+      .then(() => syncScheduledNotifications(userId))
+      .catch(() => {});
+  }, [userId]);
 
-  const value = useMemo(() => ({ prefs, updatePref, reset }), [prefs, updatePref, reset]);
+  const value = useMemo(
+    () => ({ prefs, updatePref, reset }),
+    [prefs, updatePref, reset]
+  );
 
   return (
     <NotificationPrefsContext.Provider value={value}>
