@@ -30,14 +30,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Q } from '@nozbe/watermelondb';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccounts } from '../hooks/useAccounts';
 import { useCategories } from '../hooks/useCategories';
 import { useNotifications } from '../hooks/useNotifications';
 import { supabase } from '../services/supabase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Q } from '@nozbe/watermelondb';
 import { database } from '../db';
 import type RecurringBillModel from '../db/models/RecurringBill';
 import type RecurringIncomeModel from '../db/models/RecurringIncome';
@@ -188,7 +188,7 @@ function ListRow({
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function ProfileSidebar({ visible, onClose }: Props) {
   const { colors, isDark, mode, setMode, accent, setAccent } = useTheme();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const userId = user?.id;
   const { accounts, loading, refetch: refetchAccounts } = useAccounts();
   const { categories, loading: loadingCategories } = useCategories();
@@ -256,7 +256,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
       AsyncStorage.getItem(deferKey),
     ]).then(([bills, incomes, deferredRaw]) => {
       const deferred = new Set<string>(
-        deferredRaw ? (JSON.parse(deferredRaw) as string[]) : [],
+        deferredRaw ? (JSON.parse(deferredRaw) as string[]) : []
       );
       setDeferredIds(deferred);
       const items: RecurringDueItem[] = [
@@ -366,7 +366,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
         text: 'Sign out',
         style: 'destructive',
         onPress: async () => {
-          await supabase.auth.signOut();
+          await signOut();
           setAuthEmail(null);
           setUserName('Guest');
           setUserInitial('G');
@@ -419,10 +419,10 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
           const bD = newDeferred.has(b.id) ? 1 : 0;
           if (aD !== bD) return aD - bD;
           return a.nextDueAt.localeCompare(b.nextDueAt);
-        }),
+        })
       );
     },
-    [userId, deferredIds],
+    [userId, deferredIds]
   );
 
   const handleConfirmRecurring = useCallback(
@@ -435,7 +435,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
         Alert.alert('Error', 'Could not record transaction. Please try again.');
       }
     },
-    [userId],
+    [userId]
   );
 
   const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
@@ -516,7 +516,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                   onClose();
                   setTimeout(
                     () => (navigation as any).navigate('Notifications'),
-                    260,
+                    260
                   );
                 }}
                 accessibilityLabel="Notifications"
@@ -532,9 +532,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                       styles.notifDot,
                       {
                         backgroundColor: colors.expenseRed,
-                        borderColor: isDark
-                          ? colors.surfaceSubdued
-                          : '#F4F4F8',
+                        borderColor: isDark ? colors.surfaceSubdued : '#F4F4F8',
                       },
                     ]}
                   />
@@ -575,9 +573,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                   styles.balanceAmount,
                   {
                     color:
-                      totalBalance < 0
-                        ? colors.expenseRed
-                        : colors.textPrimary,
+                      totalBalance < 0 ? colors.expenseRed : colors.textPrimary,
                   },
                 ]}
               >
@@ -767,7 +763,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                     onClose();
                     setTimeout(
                       () => (navigation as any).navigate('Accounts'),
-                      260,
+                      260
                     );
                   }}
                   activeOpacity={0.7}
@@ -825,7 +821,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                     const daysOverdue = Math.floor(
                       (new Date(today).getTime() -
                         new Date(item.nextDueAt).getTime()) /
-                        (1000 * 60 * 60 * 24),
+                        (1000 * 60 * 60 * 24)
                     );
                     const overdueLabel =
                       daysOverdue === 0
@@ -863,10 +859,15 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                       >
                         {/* Type icon */}
                         <View
-                          style={[styles.billIconBox, { backgroundColor: iconBg }]}
+                          style={[
+                            styles.billIconBox,
+                            { backgroundColor: iconBg },
+                          ]}
                         >
                           <Ionicons
-                            name={isBill ? 'arrow-up-outline' : 'arrow-down-outline'}
+                            name={
+                              isBill ? 'arrow-up-outline' : 'arrow-down-outline'
+                            }
                             size={18}
                             color={iconColor}
                           />
@@ -895,13 +896,20 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                               },
                             ]}
                           >
-                            {isDeferred ? 'Will notify again tomorrow' : overdueLabel}
+                            {isDeferred
+                              ? 'Will notify again tomorrow'
+                              : overdueLabel}
                           </Text>
                         </View>
 
                         {/* Right: amount + actions */}
                         <View style={{ alignItems: 'flex-end', gap: 5 }}>
-                          <Text style={[styles.billAmount, { color: colors.textPrimary }]}>
+                          <Text
+                            style={[
+                              styles.billAmount,
+                              { color: colors.textPrimary },
+                            ]}
+                          >
                             ₱
                             {item.amount.toLocaleString('en-PH', {
                               minimumFractionDigits: 0,
@@ -928,7 +936,11 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                                 <Text
                                   style={[
                                     styles.recurringActionText,
-                                    { color: isBill ? colors.expenseRed : colors.primary },
+                                    {
+                                      color: isBill
+                                        ? colors.expenseRed
+                                        : colors.primary,
+                                    },
                                   ]}
                                 >
                                   {isBill ? 'Paid' : 'Received'}
@@ -969,7 +981,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                     onClose();
                     setTimeout(
                       () => (navigation as any).navigate('RecurringBills'),
-                      260,
+                      260
                     );
                   }}
                 >
@@ -1041,7 +1053,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                           onClose();
                           setTimeout(
                             () => (navigation as any).navigate('Categories'),
-                            260,
+                            260
                           );
                         }}
                       >
@@ -1080,7 +1092,7 @@ export default function ProfileSidebar({ visible, onClose }: Props) {
                     onClose();
                     setTimeout(
                       () => (navigation as any).navigate('Categories'),
-                      260,
+                      260
                     );
                   }}
                 >
