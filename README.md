@@ -177,4 +177,35 @@ Run through this list to verify your setup is complete:
 
 ---
 
+## 🔔 Notifications & Push
+
+Fino runs two notification rails that both write into one local inbox
+(`NotificationsScreen`):
+
+- **Local scheduling** (`src/services/localPushScheduler.ts`) — bill reminders,
+  recurring bills, and payday nudges scheduled on-device via
+  `expo-notifications`. Works fully offline; reconciled after every sync pull
+  and on any bill/recurring mutation.
+- **Server push** — Supabase Edge Functions under `supabase/functions/`,
+  triggered by `pg_cron` (`supabase/cron.sql`), send via the Expo Push Service
+  (weekly digest, goal milestones, server-time-critical reminders).
+
+Setup (one-time):
+
+1. Apply the SQL in `supabase/` (`push_tokens.sql`, `notification_prefs.sql`,
+   `notification_deliveries.sql`) then deploy the Edge Functions and run
+   `supabase/cron.sql` (replace `<PROJECT_REF>`; store `edge_invoke_jwt` in
+   Vault). See the header comments in those files.
+2. EAS: provide `GOOGLE_SERVICES_JSON` (Android) and ensure
+   `aps-environment` (iOS) — `expo-notifications` wires the rest.
+3. Permissions are never requested on cold start — the priming screen
+   (`NotificationPrimingScreen`) or Settings → Notifications requests them.
+
+> **Known limitation:** Android Doze / battery optimisation can defer a *local*
+> scheduled notification past its intended time. For time-critical events prefer
+> the server-push rail (e.g. the weekly digest fires server-side at 8 PM). Push
+> requires a physical device — simulators/emulators can't receive Expo push.
+
+---
+
 > 💬 Questions? Reach out to **Christian** (Admin) on the team channel.
