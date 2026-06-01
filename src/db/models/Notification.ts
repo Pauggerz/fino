@@ -32,5 +32,9 @@ export default class Notification extends Model {
 
   @field('is_dismissed') isDismissed!: boolean;
 
+  // Snooze (§6.25): epoch ms until which this row is hidden from the inbox.
+  // A one-off local notification re-surfaces it when the time arrives.
+  @field('snoozed_until') snoozedUntil?: number;
+
   @field('created_at') createdAt!: number;
 }

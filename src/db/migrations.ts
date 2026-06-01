@@ -146,5 +146,44 @@ export default schemaMigrations({
         }),
       ],
     },
+    {
+      // v8 — push notifications subsystem.
+      //   • notification_prefs: synced per-user settings (id === user_id) so
+      //     server dispatchers honour the same toggles. Replaces the
+      //     AsyncStorage-only NotificationPrefsContext (migrated on first load).
+      //   • notifications.snoozed_until: supports the snooze flow (§6.25).
+      toVersion: 8,
+      steps: [
+        createTable({
+          name: 'notification_prefs',
+          columns: [
+            { name: 'user_id', type: 'string', isIndexed: true },
+            { name: 'push_enabled', type: 'boolean' },
+            { name: 'bill_reminders', type: 'boolean' },
+            { name: 'bill_reminder_days_before', type: 'number' },
+            { name: 'bill_reminder_hour', type: 'number' },
+            { name: 'budget_alerts', type: 'boolean' },
+            { name: 'budget_threshold', type: 'number' },
+            { name: 'weekly_digest', type: 'boolean' },
+            { name: 'weekly_digest_day', type: 'number' },
+            { name: 'weekly_digest_hour', type: 'number' },
+            { name: 'inactivity_reminder', type: 'boolean' },
+            { name: 'goal_milestones', type: 'boolean' },
+            { name: 'payday_reminders', type: 'boolean' },
+            { name: 'quiet_hours_enabled', type: 'boolean' },
+            { name: 'quiet_hours_start', type: 'number' },
+            { name: 'quiet_hours_end', type: 'number' },
+            { name: 'hide_amounts_on_lockscreen', type: 'boolean' },
+            { name: 'rate_limit_per_day', type: 'number' },
+            { name: 'timezone', type: 'string' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+        addColumns({
+          table: 'notifications',
+          columns: [{ name: 'snoozed_until', type: 'number', isOptional: true }],
+        }),
+      ],
+    },
   ],
 });
