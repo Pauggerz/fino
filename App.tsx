@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ShareIntentProvider } from 'expo-share-intent';
-import { StyleSheet, Linking } from 'react-native';
+import { StyleSheet, Linking, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -28,8 +28,8 @@ import {
 import DatabaseProvider from '@nozbe/watermelondb/react/DatabaseProvider';
 
 import RootNavigator from './src/navigation/RootNavigator';
-import { SyncProvider } from './src/contexts/SyncContext';
-import { AuthProvider } from './src/contexts/AuthContext';
+import { SyncProvider, useSyncVersion } from './src/contexts/SyncContext';
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { CurrencyProvider } from './src/contexts/CurrencyContext';
 import { I18nProvider } from './src/contexts/I18nContext';
 import { NotificationPrefsProvider } from './src/contexts/NotificationPrefsContext';
@@ -38,9 +38,90 @@ import { ACCOUNT_LOGOS } from './src/constants/accountLogos';
 import { ThemeProvider } from './src/contexts/ThemeContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { database } from './src/db';
+import {
+  setForegroundNotificationHandler,
+  attachNotificationListeners,
+  registerNotificationCategories,
+  syncBadgeCount,
+} from './src/services/notificationHandlers';
+import {
+  ensureAndroidChannels,
+  registerForPushNotificationsAsync,
+  addTokenRotationListener,
+  flushPendingTokenUpsert,
+} from './src/services/pushTokens';
+import { syncScheduledNotifications } from './src/services/localPushScheduler';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
+
+// Install the foreground-presentation policy as early as possible so a push
+// arriving before any component mounts is still handled (no-op on web).
+setForegroundNotificationHandler();
+
+/**
+ * Drives the push-notification lifecycle from inside the provider tree:
+ *  • foreground receive + tap listeners (once),
+ *  • per-user token capture + rotation listener,
+ *  • local-schedule reconciliation after each successful sync pull,
+ *  • pending-token / badge refresh on foreground.
+ * Renders nothing.
+ */
+function PushBootstrap() {
+  const { user } = useAuth();
+  const userId = user?.id;
+  const syncVersion = useSyncVersion();
+  const lastReconciledVersion = useRef(-1);
+
+  // Foreground listeners + iOS categories — attach once for the app's lifetime.
+  useEffect(() => {
+    const detach = attachNotificationListeners();
+    registerNotificationCategories();
+    return detach;
+  }, []);
+
+  // Per-user: ensure channels, capture token (if already permitted), watch for
+  // token rotation, flush any queued upsert, and seed schedule + badge.
+  useEffect(() => {
+    if (!userId) return undefined;
+    let removeRotation = () => {};
+    let cancelled = false;
+    (async () => {
+      await ensureAndroidChannels();
+      await registerForPushNotificationsAsync(userId);
+      if (cancelled) return;
+      removeRotation = addTokenRotationListener(userId);
+      await flushPendingTokenUpsert();
+      syncScheduledNotifications(userId);
+      syncBadgeCount();
+    })();
+    return () => {
+      cancelled = true;
+      removeRotation();
+    };
+  }, [userId]);
+
+  // Reconcile local schedules after each successful pull — newly-synced bills
+  // and recurring rows get their reminders scheduled.
+  useEffect(() => {
+    if (!userId || syncVersion === lastReconciledVersion.current) return;
+    lastReconciledVersion.current = syncVersion;
+    syncScheduledNotifications(userId);
+  }, [syncVersion, userId]);
+
+  // Retry queued token upsert + refresh badge whenever the app foregrounds.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        flushPendingTokenUpsert();
+        syncBadgeCount();
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  return null;
+}
 
 export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -127,28 +208,29 @@ export default function App() {
 
   return (
     <ShareIntentProvider>
-    <GestureHandlerRootView style={styles.container}>
-      <ErrorBoundary>
-        <DatabaseProvider database={database}>
-          <ThemeProvider>
-            <I18nProvider>
-              <SafeAreaProvider>
-                <AuthProvider>
-                  <CurrencyProvider>
-                    <NotificationPrefsProvider>
-                      <SyncProvider>
-                        <RootNavigator />
-                        <StatusBar style="auto" />
-                      </SyncProvider>
-                    </NotificationPrefsProvider>
-                  </CurrencyProvider>
-                </AuthProvider>
-              </SafeAreaProvider>
-            </I18nProvider>
-          </ThemeProvider>
-        </DatabaseProvider>
-      </ErrorBoundary>
-    </GestureHandlerRootView>
+      <GestureHandlerRootView style={styles.container}>
+        <ErrorBoundary>
+          <DatabaseProvider database={database}>
+            <ThemeProvider>
+              <I18nProvider>
+                <SafeAreaProvider>
+                  <AuthProvider>
+                    <CurrencyProvider>
+                      <NotificationPrefsProvider>
+                        <SyncProvider>
+                          <PushBootstrap />
+                          <RootNavigator />
+                          <StatusBar style="auto" />
+                        </SyncProvider>
+                      </NotificationPrefsProvider>
+                    </CurrencyProvider>
+                  </AuthProvider>
+                </SafeAreaProvider>
+              </I18nProvider>
+            </ThemeProvider>
+          </DatabaseProvider>
+        </ErrorBoundary>
+      </GestureHandlerRootView>
     </ShareIntentProvider>
   );
 }
