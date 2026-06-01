@@ -32,7 +32,12 @@ export default function AccountSettingsScreen() {
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { user, profile, refreshProfile } = useAuth();
+  const {
+    user,
+    profile,
+    refreshProfile,
+    signOut: signOutWithCleanup,
+  } = useAuth();
   const { t } = useTranslation();
 
   const initialFocus = (route.params?.focus as FocusArea) ?? null;
@@ -60,7 +65,14 @@ export default function AccountSettingsScreen() {
     if (!initialFocus) return;
     const y = sectionYs.current[initialFocus];
     if (typeof y === 'number' && scrollRef.current) {
-      setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(y - 12, 0), animated: true }), 200);
+      setTimeout(
+        () =>
+          scrollRef.current?.scrollTo({
+            y: Math.max(y - 12, 0),
+            animated: true,
+          }),
+        200
+      );
     }
   }, [initialFocus]);
 
@@ -118,46 +130,41 @@ export default function AccountSettingsScreen() {
     }
     setCurrentPassword('');
     setNewPassword('');
-    Alert.alert('Password changed', 'Use your new password next time you sign in.');
+    Alert.alert(
+      'Password changed',
+      'Use your new password next time you sign in.'
+    );
   };
 
   const signOut = () => {
-    Alert.alert(
-      t('alert.signOut.title'),
-      t('alert.signOut.body'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('settings.account.signOut'),
-          style: 'destructive',
-          onPress: async () => {
-            await supabase.auth.signOut();
-          },
+    Alert.alert(t('alert.signOut.title'), t('alert.signOut.body'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('settings.account.signOut'),
+        style: 'destructive',
+        onPress: async () => {
+          await signOutWithCleanup();
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const deleteAccount = () => {
-    Alert.alert(
-      t('alert.delete.title'),
-      t('alert.delete.body'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.delete'),
-          style: 'destructive',
-          onPress: async () => {
-            // Account deletion requires a server-side RPC (auth.admin endpoint
-            // can't be called from the client). Surface a contact link for now.
-            Alert.alert(
-              'Contact support',
-              'Send a deletion request to support@fino.app and we will erase your account within 7 days.'
-            );
-          },
+    Alert.alert(t('alert.delete.title'), t('alert.delete.body'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: async () => {
+          // Account deletion requires a server-side RPC (auth.admin endpoint
+          // can't be called from the client). Surface a contact link for now.
+          Alert.alert(
+            'Contact support',
+            'Send a deletion request to support@fino.app and we will erase your account within 7 days.'
+          );
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const inputStyle = {
@@ -200,7 +207,11 @@ export default function AccountSettingsScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {/* ── Profile (name) ── */}
-        <View onLayout={(e) => { sectionYs.current['name'] = e.nativeEvent.layout.y; }}>
+        <View
+          onLayout={(e) => {
+            sectionYs.current.name = e.nativeEvent.layout.y;
+          }}
+        >
           <SectionTitle>Profile</SectionTitle>
           <Group>
             <View style={{ padding: 16 }}>
@@ -224,7 +235,11 @@ export default function AccountSettingsScreen() {
         </View>
 
         {/* ── Email ── */}
-        <View onLayout={(e) => { sectionYs.current['email'] = e.nativeEvent.layout.y; }}>
+        <View
+          onLayout={(e) => {
+            sectionYs.current.email = e.nativeEvent.layout.y;
+          }}
+        >
           <SectionTitle>Email</SectionTitle>
           <Group>
             <View style={{ padding: 16 }}>
@@ -239,10 +254,15 @@ export default function AccountSettingsScreen() {
                 keyboardType="email-address"
                 autoComplete="email"
               />
-              <Text style={{
-                fontFamily: 'Inter_400Regular', fontSize: 12,
-                color: colors.textSecondary, marginTop: 8, marginLeft: 4,
-              }}>
+              <Text
+                style={{
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                  marginTop: 8,
+                  marginLeft: 4,
+                }}
+              >
                 You will receive a confirmation link at the new address.
               </Text>
               <PrimaryButton
@@ -255,7 +275,11 @@ export default function AccountSettingsScreen() {
         </View>
 
         {/* ── Password ── */}
-        <View onLayout={(e) => { sectionYs.current['password'] = e.nativeEvent.layout.y; }}>
+        <View
+          onLayout={(e) => {
+            sectionYs.current.password = e.nativeEvent.layout.y;
+          }}
+        >
           <SectionTitle>Password</SectionTitle>
           <Group>
             <View style={{ padding: 16 }}>
@@ -313,8 +337,14 @@ export default function AccountSettingsScreen() {
 }
 
 function PrimaryButton({
-  title, onPress, disabled,
-}: { title: string; onPress: () => void; disabled?: boolean }) {
+  title,
+  onPress,
+  disabled,
+}: {
+  title: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   const { colors } = useTheme();
   return (
     <TouchableOpacity
@@ -329,11 +359,13 @@ function PrimaryButton({
         marginTop: 14,
       }}
     >
-      <Text style={{
-        fontFamily: 'Inter_700Bold',
-        fontSize: 14,
-        color: disabled ? colors.textSecondary : colors.accentOn,
-      }}>
+      <Text
+        style={{
+          fontFamily: 'Inter_700Bold',
+          fontSize: 14,
+          color: disabled ? colors.textSecondary : colors.accentOn,
+        }}
+      >
         {title}
       </Text>
     </TouchableOpacity>
