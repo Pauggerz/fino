@@ -20,6 +20,8 @@ import {
 } from '@/hooks/useNotifications';
 import NotificationCard from '@/components/NotificationCard';
 import type { RootStackParamList } from '@/navigation/RootNavigator';
+import { routeFromNotification } from '@/services/notificationRouter';
+import { syncBadgeCount } from '@/services/notificationHandlers';
 
 export default function NotificationsScreen() {
   const { colors, isDark } = useTheme();
@@ -38,19 +40,20 @@ export default function NotificationsScreen() {
     clearAll,
   } = useNotifications();
 
+  // Shared with the push-tap handler so an inbox tap and a notification tap
+  // land on exactly the same screen (§5.4).
   const handleAction = useCallback(
     (item: NotificationItem) => {
-      markAsRead(item.id);
+      markAsRead(item.id).then(syncBadgeCount);
       if (!item.actionRoute) return;
-      const route = item.actionRoute as keyof RootStackParamList;
-      if (route === 'AddTransaction') {
-        navigation.navigate('AddTransaction', { mode: 'expense' });
-      } else {
-        navigation.navigate(route as any);
-      }
+      routeFromNotification({ route: item.actionRoute });
     },
-    [markAsRead, navigation]
+    [markAsRead]
   );
+
+  const handleMarkAllRead = useCallback(() => {
+    markAllAsRead().then(syncBadgeCount);
+  }, [markAllAsRead]);
 
   const handleClearAll = useCallback(() => {
     if (notifications.length === 0) return;
@@ -93,7 +96,7 @@ export default function NotificationsScreen() {
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {unreadCount > 0 && (
             <TouchableOpacity
-              onPress={markAllAsRead}
+              onPress={handleMarkAllRead}
               style={styles.iconButton}
               activeOpacity={0.7}
               accessibilityLabel="Mark all as read"
