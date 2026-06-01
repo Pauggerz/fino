@@ -17,7 +17,10 @@
       "bundleIdentifier": "com.fino.app",
       "buildNumber": "2.0.0",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       },
       "entitlements": {
         "com.apple.security.application-groups": [
@@ -25,7 +28,8 @@
         ],
         "com.apple.developer.applesignin": [
           "Default"
-        ]
+        ],
+        "com.apple.developer.usernotifications.time-sensitive": true
       }
     },
     "android": {
@@ -70,6 +74,15 @@
             "NSExtensionActivationSupportsImageWithMaxCount": 1
           },
           "iosShareAppGroupIdentifier": "group.com.fino.app"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#5a9e72",
+          "androidMode": "default",
+          "androidCollapsedTitle": "Fino"
         }
       ]
     ],
