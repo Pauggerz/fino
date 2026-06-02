@@ -34,6 +34,9 @@ yarn-error.*
 .env*.local
 CLAUDE.md
 
+# MCP server config (contains a personal access token)
+.mcp.json
+
 # scratch / planning docs (local only, not part of the repo)
 implementation_plan*.md
 plan*.md
