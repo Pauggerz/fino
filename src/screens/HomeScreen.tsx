@@ -48,7 +48,7 @@ import { generatePeriodicInsights } from '@/hooks/useNotifications';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { deleteTransaction } from '@/services/localMutations';
 import ProfileSidebar from '@/components/ProfileSidebar';
-import HomeBellButton from '@/components/HomeBellButton';
+import HomeNotificationDot from '@/components/HomeNotificationDot';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { AmbientOrb } from '@/components/empty/AnimatedAmbient';
 import { EmptyTransactions } from '@/components/empty/EmptyTransactions';
@@ -574,6 +574,7 @@ function HomeScreen() {
                   {userName.charAt(0).toUpperCase()}
                 </Text>
               </LinearGradient>
+              <HomeNotificationDot borderColor={colors.background} />
             </TouchableOpacity>
           </View>
         </RAnim.View>
@@ -680,8 +681,6 @@ function HomeScreen() {
                     />
                   </RAnim.View>
                 </TouchableOpacity>
-
-                <HomeBellButton color={colors.whiteTransparent65} />
               </View>
             </View>
 

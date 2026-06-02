@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { Q } from '@nozbe/watermelondb';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { database } from '@/db';
 import NotificationModel from '@/db/models/Notification';
@@ -197,9 +198,57 @@ async function handleAction(
   return false;
 }
 
+// Dedupe key of the last notification response we've already acted on. Persisted
+// so a tap routes exactly once, ever — even across cold starts / JS reloads.
+const HANDLED_RESPONSE_KEY = '@fino_handled_notif_response_id';
+
+/**
+ * Stable, never-empty identity for a delivered notification, used to make each
+ * one route at most once. Prefers our own payload `kind` (always present and
+ * unique for Fino notifications); falls back to the OS request id, then
+ * title+body. The OS `request.identifier` can be empty for some Android push
+ * deliveries, so it must not be relied on alone — an empty key would skip the
+ * dedupe and re-route on every launch.
+ */
+function responseDedupeKey(
+  response: Notifications.NotificationResponse
+): string {
+  const req = response.notification.request;
+  const data = req.content.data as Partial<NotificationData> | undefined;
+  return (
+    data?.kind ||
+    req.identifier ||
+    `${req.content.title ?? ''}|${req.content.body ?? ''}`
+  );
+}
+
 async function processResponse(
   response: Notifications.NotificationResponse
 ): Promise<void> {
+  // expo-notifications keeps returning the launch response from
+  // getLastNotificationResponseAsync() and replays it to the response listener
+  // every time it re-attaches (each cold start / dev reload). Acting on each
+  // delivered notification at most once stops the app from re-routing —
+  // defaulting to the Notifications inbox for routeless payloads — on every
+  // launch (§6.14).
+  const dedupeKey = responseDedupeKey(response);
+  const handled = await AsyncStorage.getItem(HANDLED_RESPONSE_KEY);
+  if (__DEV__) {
+    // TEMP diagnostic — remove once the auto-open is confirmed fixed.
+    console.warn('[notif/processResponse]', {
+      dedupeKey,
+      handled,
+      willSkip: handled === dedupeKey,
+      route: (
+        response.notification.request.content.data as
+          | Partial<NotificationData>
+          | undefined
+      )?.route,
+    });
+  }
+  if (handled === dedupeKey) return;
+  await AsyncStorage.setItem(HANDLED_RESPONSE_KEY, dedupeKey);
+
   const { content } = response.notification.request;
   const data = content.data as Partial<NotificationData> | undefined;
   // Background taps never fired the receive listener — materialise here too.
@@ -208,7 +257,21 @@ async function processResponse(
   await syncBadgeCount();
 
   const consumed = await handleAction(response.actionIdentifier, data);
-  if (!consumed) routeFromPayload(data);
+  // Only route for responses that actually point somewhere. A contentless,
+  // routeless response (no route AND no kind — e.g. a stale/empty ghost
+  // notification left in the OS) would otherwise hit the inbox fallback and pop
+  // the Notifications screen on launch. Genuine Fino notifications always carry a
+  // kind, so this never suppresses a real tap.
+  if (!consumed && (data?.route || data?.kind)) routeFromPayload(data);
+
+  // Belt-and-suspenders: also clear the persisted last response so other
+  // consumers (e.g. useLastNotificationResponse) don't re-fire on it either.
+  try {
+    await Notifications.clearLastNotificationResponseAsync();
+  } catch (err) {
+    if (__DEV__)
+      console.warn('[notificationHandlers] clear last response failed:', err);
+  }
 }
 
 /**
@@ -253,6 +316,13 @@ export function attachNotificationListeners(): () => void {
 export async function handleColdStartNotification(): Promise<void> {
   if (Platform.OS === 'web') return;
   const response = await Notifications.getLastNotificationResponseAsync();
+  if (__DEV__) {
+    // TEMP diagnostic — remove once the auto-open is confirmed fixed.
+    console.warn(
+      '[notif/coldStart] getLastResponse =',
+      response ? 'present' : 'null'
+    );
+  }
   if (!response) return;
   await processResponse(response);
 }
