@@ -11,5 +11,5 @@
       "@expo/vector-icons/*": ["node_modules/expo/node_modules/@expo/vector-icons/*"]
     }
   },
-  "exclude": ["node_modules", "backend/node_modules"]
+  "exclude": ["node_modules", "backend/node_modules", "supabase/functions"]
 }
