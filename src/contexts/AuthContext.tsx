@@ -7,8 +7,11 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
+import { deregisterPushToken } from '../services/pushTokens';
 import { User } from '../types';
 
 interface AuthContextData {
@@ -18,6 +21,12 @@ interface AuthContextData {
   isLoading: boolean;
   profileError: boolean;
   refreshProfile: () => Promise<void>;
+  /**
+   * Sign out with push cleanup: deactivates this device's push token (while the
+   * session is still valid for RLS) and clears scheduled OS notifications +
+   * badge so the device is clean if reused by another account (§6.13).
+   */
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
@@ -83,6 +92,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user) await fetchProfile(user.id);
   }, [user]);
 
+  const signOut = useCallback(async () => {
+    // Deregister the push token first — RLS on push_tokens needs auth.uid(),
+    // which disappears once supabase.auth.signOut() resolves.
+    try {
+      if (user?.id) await deregisterPushToken(user.id);
+    } catch (err) {
+      if (__DEV__) console.warn('[Auth] push deregister failed:', err);
+    }
+    try {
+      if (Platform.OS !== 'web') {
+        await Notifications.cancelAllScheduledNotificationsAsync();
+        await Notifications.setBadgeCountAsync(0);
+      }
+    } catch (err) {
+      if (__DEV__) console.warn('[Auth] notification cleanup failed:', err);
+    }
+    await supabase.auth.signOut();
+  }, [user]);
+
   useEffect(() => {
     // `getSession` and `onAuthStateChange` both fire on mount with the same
     // session, which used to race the PGRST116 insert-fallback and could
@@ -135,8 +163,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       profileError,
       refreshProfile,
+      signOut,
     }),
-    [session, user, profile, isLoading, profileError, refreshProfile]
+    [session, user, profile, isLoading, profileError, refreshProfile, signOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

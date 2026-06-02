@@ -12,7 +12,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
  * WatermelonDB can compare it cheaply during pullChanges.
  */
 export default appSchema({
-  version: 7,
+  version: 8,
   tables: [
     tableSchema({
       name: 'notifications',
@@ -26,7 +26,38 @@ export default appSchema({
         { name: 'action_label', type: 'string', isOptional: true },
         { name: 'is_read', type: 'boolean', isIndexed: true },
         { name: 'is_dismissed', type: 'boolean' },
+        // Snooze (§6.25): while > now, useNotifications hides the row and a
+        // one-off local notification is scheduled to re-surface it.
+        { name: 'snoozed_until', type: 'number', isOptional: true },
         { name: 'created_at', type: 'number' },
+      ],
+    }),
+    // Per-user notification preferences. Synced (id === user_id). Mirrors the
+    // server public.notification_prefs table so dispatchers honour the same
+    // toggles. See src/contexts/NotificationPrefsContext.tsx.
+    tableSchema({
+      name: 'notification_prefs',
+      columns: [
+        { name: 'user_id', type: 'string', isIndexed: true },
+        { name: 'push_enabled', type: 'boolean' },
+        { name: 'bill_reminders', type: 'boolean' },
+        { name: 'bill_reminder_days_before', type: 'number' },
+        { name: 'bill_reminder_hour', type: 'number' },
+        { name: 'budget_alerts', type: 'boolean' },
+        { name: 'budget_threshold', type: 'number' },
+        { name: 'weekly_digest', type: 'boolean' },
+        { name: 'weekly_digest_day', type: 'number' },
+        { name: 'weekly_digest_hour', type: 'number' },
+        { name: 'inactivity_reminder', type: 'boolean' },
+        { name: 'goal_milestones', type: 'boolean' },
+        { name: 'payday_reminders', type: 'boolean' },
+        { name: 'quiet_hours_enabled', type: 'boolean' },
+        { name: 'quiet_hours_start', type: 'number' },
+        { name: 'quiet_hours_end', type: 'number' },
+        { name: 'hide_amounts_on_lockscreen', type: 'boolean' },
+        { name: 'rate_limit_per_day', type: 'number' },
+        { name: 'timezone', type: 'string' },
+        { name: 'updated_at', type: 'number' },
       ],
     }),
     tableSchema({

@@ -37,7 +37,8 @@ type TableName =
   | 'bill_reminders'
   | 'merchant_mappings'
   | 'recurring_incomes'
-  | 'recurring_bills';
+  | 'recurring_bills'
+  | 'notification_prefs';
 
 const SYNCED_TABLES: TableName[] = [
   'accounts',
@@ -49,6 +50,9 @@ const SYNCED_TABLES: TableName[] = [
   'merchant_mappings',
   'recurring_incomes',
   'recurring_bills',
+  // Singleton-per-user row keyed id === user_id. Round-trips through the
+  // generic engine because the server table carries id/updated_at/deleted_at.
+  'notification_prefs',
 ];
 
 /**
@@ -66,6 +70,8 @@ const SERVER_CREATED_COLUMN: Record<TableName, boolean> = {
   merchant_mappings: true,
   recurring_incomes: true,
   recurring_bills: true,
+  // No local server_created_at column — the row's created_at is server-only.
+  notification_prefs: false,
 };
 
 const toMs = (iso?: string | null): number => (iso ? new Date(iso).getTime() : 0);

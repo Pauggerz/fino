@@ -48,6 +48,7 @@ import { generatePeriodicInsights } from '@/hooks/useNotifications';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
 import { deleteTransaction } from '@/services/localMutations';
 import ProfileSidebar from '@/components/ProfileSidebar';
+import HomeNotificationDot from '@/components/HomeNotificationDot';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { AmbientOrb } from '@/components/empty/AnimatedAmbient';
 import { EmptyTransactions } from '@/components/empty/EmptyTransactions';
@@ -573,6 +574,7 @@ function HomeScreen() {
                   {userName.charAt(0).toUpperCase()}
                 </Text>
               </LinearGradient>
+              <HomeNotificationDot borderColor={colors.background} />
             </TouchableOpacity>
           </View>
         </RAnim.View>
@@ -645,39 +647,41 @@ function HomeScreen() {
                 </Text>
               </View>
 
-              {/* EYE ICON TOGGLE */}
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
-                    () => {}
-                  );
-                  eyeScale.value = withSpring(
-                    0.82,
-                    { damping: 6, stiffness: 300 },
-                    () => {
-                      eyeScale.value = withSpring(1, {
-                        damping: 10,
-                        stiffness: 260,
-                      });
-                    }
-                  );
-                  setIsPrivacyMode(!isPrivacyMode);
-                }}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityLabel={
-                  isPrivacyMode ? 'Show balance' : 'Hide balance'
-                }
-                accessibilityRole="button"
-              >
-                <RAnim.View style={eyeAnim}>
-                  <Ionicons
-                    name={isPrivacyMode ? 'eye-off' : 'eye'}
-                    size={22}
-                    color={colors.whiteTransparent65}
-                  />
-                </RAnim.View>
-              </TouchableOpacity>
+              <View style={styles.heroHeaderActions}>
+                {/* EYE ICON TOGGLE */}
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    Haptics.impactAsync(
+                      Haptics.ImpactFeedbackStyle.Light
+                    ).catch(() => {});
+                    eyeScale.value = withSpring(
+                      0.82,
+                      { damping: 6, stiffness: 300 },
+                      () => {
+                        eyeScale.value = withSpring(1, {
+                          damping: 10,
+                          stiffness: 260,
+                        });
+                      }
+                    );
+                    setIsPrivacyMode(!isPrivacyMode);
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityLabel={
+                    isPrivacyMode ? 'Show balance' : 'Hide balance'
+                  }
+                  accessibilityRole="button"
+                >
+                  <RAnim.View style={eyeAnim}>
+                    <Ionicons
+                      name={isPrivacyMode ? 'eye-off' : 'eye'}
+                      size={22}
+                      color={colors.whiteTransparent65}
+                    />
+                  </RAnim.View>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <Text style={styles.heroLabel}>Total balance</Text>
@@ -1048,6 +1052,11 @@ const createStyles = (colors: ThemeColors, isDark: boolean, topInset: number) =>
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: 8,
+    },
+    heroHeaderActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
     },
     unifiedDividerRow: {
       flexDirection: 'row',

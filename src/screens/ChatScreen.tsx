@@ -24,7 +24,6 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import {
   sendMessage,
-  detectTransaction,
   ChatMessage,
   UserFinancialContext,
   DetectedTransaction,
@@ -36,13 +35,8 @@ import { useCategories } from '@/hooks/useCategories';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import { getInsights, type Insights } from '@/services/IntelligenceEngine';
-
-const DEFAULT_PROMPTS = [
-  'Summarize my month',
-  'How much did I spend on food?',
-  'What is my biggest expense?',
-  'Did I get paid yet?',
-];
+import { useIncomeCategories } from '@/hooks/useIncomeCategories';
+import { parseChatTransaction } from '@/services/parseChatTransaction';
 
 const STEP_SETS: Record<string, string[]> = {
   spend:      ['Fetching your transactions', 'Calculating totals', 'Identifying top categories'],
@@ -592,10 +586,10 @@ export default function ChatScreen() {
   const { totalBalance, accounts } = useAccounts();
   const { totalIncome, totalExpense: monthlySpent } = useMonthlyTotals();
   const { categories } = useCategories();
+  const { categories: incomeCategories } = useIncomeCategories();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
-  const [showPrompts, setShowPrompts] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [geminiHistory, setGeminiHistory] = useState<ChatMessage[]>([]);
   const [recentTxns, setRecentTxns] = useState<RecentTx[]>([]);
@@ -707,19 +701,6 @@ export default function ChatScreen() {
     };
   }, [totalBalance, totalIncome, monthlySpent, categories, recentTxns, insights]);
 
-  const suggestedPrompts = useMemo(() => {
-    const prompts: string[] = [];
-    if (insights?.anomalies?.[0]) prompts.push(`Why is my ${insights.anomalies[0].category} spending so high?`);
-    if (insights?.trajectory?.pacingOver) prompts.push('How can I cut back this month?');
-    if (insights?.recurring?.length) prompts.push('What bills are coming up?');
-    if (insights?.habits?.[0]) prompts.push(`Am I overspending on ${insights.habits[0].merchant}?`);
-    for (const d of DEFAULT_PROMPTS) {
-      if (prompts.length >= 4) break;
-      if (!prompts.includes(d)) prompts.push(d);
-    }
-    return prompts.slice(0, 4);
-  }, [insights]);
-
   const categoryNames = useMemo(() => categories.map((c) => c.name), [categories]);
   const hasTransactions = recentTxns.length > 0 || monthlySpent > 0;
   const isSendDisabled = !inputText.trim() || isTyping;
@@ -768,9 +749,9 @@ export default function ChatScreen() {
 
   const handleSend = async (textOverride?: string) => {
     const textToSend = textOverride ?? inputText;
-    if (!textToSend.trim()) return;
+    const trimmed = textToSend.trim();
+    if (!trimmed) return;
 
-    setShowPrompts(false);
     setInputText('');
 
     // Abort any in-flight stream so it stops updating streamingText
@@ -779,49 +760,65 @@ export default function ChatScreen() {
     setStreamingText('');
 
     const userMsgId = Date.now().toString();
-    setMessages((prev) => [...prev, { id: userMsgId, type: 'user', text: textToSend.trim(), timestamp: nowTime() }]);
+    setMessages((prev) => [...prev, { id: userMsgId, type: 'user', text: trimmed, timestamp: nowTime() }]);
     setLastMsgId(userMsgId);
 
+    // Parse transaction synchronously using the same offline taxonomy the
+    // Add Transaction sheet uses. Multi-amount inputs ("chicken 50 and rice
+    // 50") sum into a single transaction with a structured display name.
+    const parsed = parseChatTransaction(
+      trimmed,
+      accounts.map((a) => ({ id: a.id, name: a.name })),
+      categoryNames,
+      incomeCategories
+    );
+
+    // Log the transaction up front — the offline parser is the source of
+    // truth, so logging must succeed even when the LLM round-trip fails
+    // (e.g. Gemini free-tier quota errors).
+    if (parsed) {
+      const tx: DetectedTransaction = {
+        isTransaction: true,
+        amount: parsed.amount,
+        displayName: parsed.displayName,
+        category: parsed.category,
+        type: parsed.type,
+        accountHint: null,
+      };
+      if (parsed.accountId) {
+        await doLogTransaction(tx, parsed.accountId);
+      } else {
+        setPendingTx(tx);
+        setShowAccountPicker(true);
+      }
+    }
+
     // Pick context-aware steps and show thinking indicator
-    setCurrentSteps(pickSteps(textToSend.trim()));
+    setCurrentSteps(pickSteps(trimmed));
     setIsTyping(true);
 
     try {
-      const [reply, detected] = await Promise.all([
-        sendMessage(textToSend.trim(), geminiHistory, financialContext),
-        detectTransaction(textToSend.trim(), categoryNames),
-      ]);
+      const reply = await sendMessage(trimmed, geminiHistory, financialContext);
 
       setGeminiHistory((prev) => [
         ...prev,
-        { role: 'user', text: textToSend.trim() },
+        { role: 'user', text: trimmed },
         { role: 'model', text: reply },
       ]);
 
-      // Stop thinking steps, add message with full text stored
       setIsTyping(false);
+
+      // Set streaming state BEFORE the message is added so the new bubble
+      // renders blank from the first frame — otherwise the full text flashes
+      // for one render (msg.text=reply, streamingMsgId still stale) before
+      // the typewriter "restarts" it at character 0, which reads as the
+      // reply disappearing.
       const aiMsgId = `ai-${Date.now()}`;
-      setMessages((prev) => [...prev, { id: aiMsgId, type: 'ai', text: reply, timestamp: nowTime() }]);
-      setLastMsgId(aiMsgId);
-
-      // Handle detected transaction
-      if (detected.isTransaction && detected.amount != null) {
-        const hint = detected.accountHint?.toLowerCase() ?? '';
-        const matched = hint ? accounts.find((a) => a.name.toLowerCase().includes(hint)) : null;
-        if (accounts.length === 1) {
-          await doLogTransaction(detected, accounts[0].id);
-        } else if (matched) {
-          await doLogTransaction(detected, matched.id);
-        } else {
-          setPendingTx(detected);
-          setShowAccountPicker(true);
-        }
-      }
-
-      // ── Typewriter effect ──────────────────────────────────────────────────
       const gen = ++streamGenRef.current;
       setStreamingMsgId(aiMsgId);
       setStreamingText('');
+      setMessages((prev) => [...prev, { id: aiMsgId, type: 'ai', text: reply, timestamp: nowTime() }]);
+      setLastMsgId(aiMsgId);
 
       for (let i = 1; i <= reply.length; i++) {
         if (streamGenRef.current !== gen) break;
@@ -830,15 +827,36 @@ export default function ChatScreen() {
         scrollViewRef.current?.scrollToEnd({ animated: false });
       }
 
+      // Flip streamingMsgId to null only — leave streamingText stale. The
+      // message falls back to msg.text (the stored full reply). Clearing
+      // streamingText here would race with the streamingMsgId flip in some
+      // batch orderings and could leave the bubble blank.
       if (streamGenRef.current === gen) {
         setStreamingMsgId(null);
-        setStreamingText('');
       }
     } catch (err) {
       console.error('[Fino AI] handleSend error:', err);
       setIsTyping(false);
+
+      // Gemini free-tier 429s should not look like a "something broke" error
+      // — and if we already logged a transaction, the user still deserves an
+      // acknowledgement that mentions what was recorded.
+      const message = String((err as { message?: unknown })?.message ?? err ?? '');
+      const isQuota = /429|quota|rate.?limit/i.test(message);
+
+      let fallbackText: string;
+      if (parsed) {
+        const sign = parsed.type === 'expense' ? '-' : '+';
+        const amt = parsed.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 });
+        fallbackText = `Got it — logged ${parsed.displayName} (${sign}₱${amt}). 🧾`;
+      } else if (isQuota) {
+        fallbackText = "I'm at my AI usage limit right now. Try again in a minute.";
+      } else {
+        fallbackText = 'Something went wrong. Please try again.';
+      }
+
       const errId = `err-${Date.now()}`;
-      setMessages((prev) => [...prev, { id: errId, type: 'ai', text: 'Something went wrong. Please try again.', timestamp: nowTime() }]);
+      setMessages((prev) => [...prev, { id: errId, type: 'ai', text: fallbackText, timestamp: nowTime() }]);
       setLastMsgId(errId);
     }
   };
@@ -872,22 +890,6 @@ export default function ChatScreen() {
       </TouchableOpacity>
     </View>
   );
-
-  const renderSuggestedPrompts = () => {
-    if (!showPrompts) return null;
-    return (
-      <View style={styles.suggestedContainer}>
-        <Text style={styles.suggestedLabel}>TRY ASKING</Text>
-        <View style={styles.suggestedChipsWrapper}>
-          {suggestedPrompts.map((prompt) => (
-            <TouchableOpacity key={prompt} style={styles.suggestedChip} onPress={() => handleSend(prompt)}>
-              <Text style={styles.suggestedChipText}>{prompt}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-    );
-  };
 
   const renderMessage = (msg: Message) => {
     const isNew = msg.id === lastMsgId;
@@ -1076,7 +1078,6 @@ export default function ChatScreen() {
           >
             {messages.map(renderMessage)}
             {isTyping ? <ThinkingSteps steps={currentSteps} colors={colors} isDark={isDark} /> : null}
-            {renderSuggestedPrompts()}
           </ScrollView>
         )}
 
@@ -1086,49 +1087,6 @@ export default function ChatScreen() {
             { paddingBottom: isKeyboardVisible ? 16 : Math.max(insets.bottom, 16) },
           ]}
         >
-          {/* Quick action chips */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.quickActions}
-            keyboardShouldPersistTaps="handled"
-          >
-            <TouchableOpacity
-              style={[styles.quickActionBtn, styles.quickActionBtnPrimary]}
-              activeOpacity={0.75}
-              onPress={() => navigation.navigate('AddTransaction', { mode: 'expense' })}
-            >
-              <Ionicons name="add" size={14} color={colors.primary} />
-              <Text style={[styles.quickActionText, styles.quickActionTextPrimary]}>
-                Add Transaction
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickActionBtn}
-              activeOpacity={0.75}
-              onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
-            >
-              <Ionicons name="bar-chart-outline" size={14} color={colors.textSecondary} />
-              <Text style={styles.quickActionText}>Analytics</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickActionBtn}
-              activeOpacity={0.75}
-              onPress={() => navigation.navigate('RecurringBills')}
-            >
-              <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-              <Text style={styles.quickActionText}>Bills</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickActionBtn}
-              activeOpacity={0.75}
-              onPress={() => navigation.navigate('ScreenshotScreen')}
-            >
-              <Ionicons name="scan-outline" size={14} color={colors.textSecondary} />
-              <Text style={styles.quickActionText}>Scan Receipt</Text>
-            </TouchableOpacity>
-          </ScrollView>
-
           <View style={styles.inputWrapper}>
             <TextInput
               style={styles.inputField}
@@ -1364,36 +1322,6 @@ const createStyles = (colors: any, isDark: boolean) =>
       marginTop: 1,
     },
 
-    // ─── Quick action row (above input) ───
-    quickActions: {
-      flexDirection: 'row',
-      flexWrap: 'nowrap',
-      gap: 6,
-      paddingBottom: 8,
-    },
-    quickActionBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5,
-      paddingHorizontal: 11,
-      paddingVertical: 7,
-      borderRadius: 9999,
-      backgroundColor: colors.surfaceSubdued,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    quickActionBtnPrimary: {
-      backgroundColor: colors.primaryLight ?? colors.surfaceSubdued,
-      borderColor: colors.primary + '40',
-    },
-    quickActionText: {
-      fontFamily: 'Inter_600SemiBold',
-      fontSize: 11.5,
-      color: colors.textSecondary,
-    },
-    quickActionTextPrimary: {
-      color: colors.primary,
-    },
     followupWrapper: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
     followupChip: {
       backgroundColor: colors.chatAIBubbleBg,
@@ -1404,18 +1332,6 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingVertical: 8,
     },
     followupChipText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.chatAILabel },
-    suggestedContainer: { marginTop: 10, marginBottom: 20 },
-    suggestedLabel: { fontFamily: 'Inter_700Bold', fontSize: 11, color: colors.chatAILabel, letterSpacing: 0.5, marginBottom: 10, marginLeft: 4 },
-    suggestedChipsWrapper: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    suggestedChip: {
-      backgroundColor: colors.white,
-      borderWidth: 1,
-      borderColor: isDark ? '#333333' : '#DCDAE8',
-      borderRadius: 16,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-    },
-    suggestedChipText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.chatAILabel },
     inputContainer: {
       backgroundColor: colors.background,
       paddingHorizontal: spacing.screenPadding,

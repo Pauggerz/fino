@@ -1737,7 +1737,7 @@ const createStyles = (colors: any, isDark: boolean, topInset: number) =>
     notifBtn: {
       width: 36,
       height: 36,
-      borderRadius: 12,
+      borderRadius: 18,
       backgroundColor: isDark
         ? colors.blackTransparent15
         : 'rgba(30,30,46,0.06)',

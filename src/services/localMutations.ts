@@ -12,6 +12,10 @@ import type MerchantMappingModel from '../db/models/MerchantMapping';
 import type RecurringIncomeModel from '../db/models/RecurringIncome';
 import type RecurringBillModel from '../db/models/RecurringBill';
 import { triggerSync } from './watermelonSync';
+import {
+  scheduleReconcile,
+  cancelScheduledForEntity,
+} from './localPushScheduler';
 
 const accounts = () => database.get<AccountModel>('accounts');
 const transactions = () => database.get<TransactionModel>('transactions');
@@ -19,9 +23,12 @@ const categories = () => database.get<CategoryModel>('categories');
 const debts = () => database.get<DebtModel>('debts');
 const savingsGoals = () => database.get<SavingsGoalModel>('savings_goals');
 const billReminders = () => database.get<BillReminderModel>('bill_reminders');
-const merchantMappings = () => database.get<MerchantMappingModel>('merchant_mappings');
-const recurringIncomes = () => database.get<RecurringIncomeModel>('recurring_incomes');
-const recurringBills = () => database.get<RecurringBillModel>('recurring_bills');
+const merchantMappings = () =>
+  database.get<MerchantMappingModel>('merchant_mappings');
+const recurringIncomes = () =>
+  database.get<RecurringIncomeModel>('recurring_incomes');
+const recurringBills = () =>
+  database.get<RecurringBillModel>('recurring_bills');
 
 function uuidv4(): string {
   return Crypto.randomUUID();
@@ -47,7 +54,8 @@ function toDayString(value: string): string {
 /** Fire-and-forget sync — never blocks the caller's UI. */
 function syncInBackground(): void {
   triggerSync().catch((err) => {
-    if (__DEV__) console.warn('[localMutations] background sync failed:', err?.message);
+    if (__DEV__)
+      console.warn('[localMutations] background sync failed:', err?.message);
   });
 }
 
@@ -75,7 +83,9 @@ export type NewTransactionInput = {
  * Both writes happen inside a single WatermelonDB batch — if the process is
  * killed mid-write SQLite rolls back cleanly.
  */
-export async function createTransaction(input: NewTransactionInput): Promise<string> {
+export async function createTransaction(
+  input: NewTransactionInput
+): Promise<string> {
   const txId = input.id ?? uuidv4();
   const amount = toCents(input.amount);
   await database.write(async () => {
@@ -131,7 +141,7 @@ export type UpdateTransactionPatch = {
  */
 export async function updateTransaction(
   transactionId: string,
-  patch: UpdateTransactionPatch,
+  patch: UpdateTransactionPatch
 ): Promise<void> {
   await database.write(async () => {
     const tx = await transactions().find(transactionId);
@@ -155,7 +165,7 @@ export async function updateTransaction(
           balanceMutations.push(
             acc.prepareUpdate((a) => {
               a.balance = toCents(a.balance + net);
-            }),
+            })
           );
         }
       } else {
@@ -167,16 +177,20 @@ export async function updateTransaction(
           }),
           newAcc.prepareUpdate((a) => {
             a.balance = toCents(a.balance + forwardDelta);
-          }),
+          })
         );
       }
     }
 
     const txUpdate = tx.prepareUpdate((t) => {
-      if (patch.displayName !== undefined) t.displayName = patch.displayName ?? undefined;
-      if (patch.transactionNote !== undefined) t.transactionNote = patch.transactionNote ?? undefined;
-      if (patch.category !== undefined) t.category = patch.category ?? undefined;
-      if (patch.merchantName !== undefined) t.merchantName = patch.merchantName ?? undefined;
+      if (patch.displayName !== undefined)
+        t.displayName = patch.displayName ?? undefined;
+      if (patch.transactionNote !== undefined)
+        t.transactionNote = patch.transactionNote ?? undefined;
+      if (patch.category !== undefined)
+        t.category = patch.category ?? undefined;
+      if (patch.merchantName !== undefined)
+        t.merchantName = patch.merchantName ?? undefined;
       if (patch.accountId !== undefined) t.accountId = patch.accountId;
       if (patch.date !== undefined) {
         t.date = toDayString(patch.date);
@@ -302,7 +316,12 @@ export async function saveTransfer(params: {
 
 export async function updateAccount(
   accountId: string,
-  patch: Partial<Pick<AccountModel, 'name' | 'type' | 'brandColour' | 'letterAvatar' | 'sortOrder'>>,
+  patch: Partial<
+    Pick<
+      AccountModel,
+      'name' | 'type' | 'brandColour' | 'letterAvatar' | 'sortOrder'
+    >
+  >
 ): Promise<void> {
   await database.write(async () => {
     const acc = await accounts().find(accountId);
@@ -357,7 +376,7 @@ export async function deleteAccount(accountId: string): Promise<void> {
     const txUpdates = relatedTxs.map((tx) =>
       tx.prepareUpdate((t) => {
         t.accountDeleted = true;
-      }),
+      })
     );
 
     await database.batch(accountDelete, ...txUpdates);
@@ -403,7 +422,19 @@ export async function createCategory(input: {
 
 export async function updateCategory(
   categoryId: string,
-  patch: Partial<Pick<CategoryModel, 'name' | 'emoji' | 'tileBgColour' | 'textColour' | 'budgetLimit' | 'isActive' | 'sortOrder' | 'categoryType'>>,
+  patch: Partial<
+    Pick<
+      CategoryModel,
+      | 'name'
+      | 'emoji'
+      | 'tileBgColour'
+      | 'textColour'
+      | 'budgetLimit'
+      | 'isActive'
+      | 'sortOrder'
+      | 'categoryType'
+    >
+  >
 ): Promise<void> {
   await database.write(async () => {
     const cat = await categories().find(categoryId);
@@ -455,15 +486,22 @@ export async function createDebt(input: {
 
 export async function updateDebt(
   debtId: string,
-  patch: Partial<Pick<DebtModel, 'debtorName' | 'description' | 'totalAmount' | 'amountPaid' | 'dueDate'>>,
+  patch: Partial<
+    Pick<
+      DebtModel,
+      'debtorName' | 'description' | 'totalAmount' | 'amountPaid' | 'dueDate'
+    >
+  >
 ): Promise<void> {
   await database.write(async () => {
     const d = await debts().find(debtId);
     await d.update((rec) => {
       if (patch.debtorName !== undefined) rec.debtorName = patch.debtorName;
       if (patch.description !== undefined) rec.description = patch.description;
-      if (patch.totalAmount !== undefined) rec.totalAmount = toCents(patch.totalAmount);
-      if (patch.amountPaid !== undefined) rec.amountPaid = toCents(patch.amountPaid);
+      if (patch.totalAmount !== undefined)
+        rec.totalAmount = toCents(patch.totalAmount);
+      if (patch.amountPaid !== undefined)
+        rec.amountPaid = toCents(patch.amountPaid);
       if (patch.dueDate !== undefined) rec.dueDate = patch.dueDate;
     });
   });
@@ -508,15 +546,28 @@ export async function createSavingsGoal(input: {
 
 export async function updateSavingsGoal(
   goalId: string,
-  patch: Partial<Pick<SavingsGoalModel, 'name' | 'description' | 'targetAmount' | 'currentAmount' | 'targetDate' | 'icon' | 'color'>>,
+  patch: Partial<
+    Pick<
+      SavingsGoalModel,
+      | 'name'
+      | 'description'
+      | 'targetAmount'
+      | 'currentAmount'
+      | 'targetDate'
+      | 'icon'
+      | 'color'
+    >
+  >
 ): Promise<void> {
   await database.write(async () => {
     const g = await savingsGoals().find(goalId);
     await g.update((rec) => {
       if (patch.name !== undefined) rec.name = patch.name;
       if (patch.description !== undefined) rec.description = patch.description;
-      if (patch.targetAmount !== undefined) rec.targetAmount = toCents(patch.targetAmount);
-      if (patch.currentAmount !== undefined) rec.currentAmount = toCents(patch.currentAmount);
+      if (patch.targetAmount !== undefined)
+        rec.targetAmount = toCents(patch.targetAmount);
+      if (patch.currentAmount !== undefined)
+        rec.currentAmount = toCents(patch.currentAmount);
       if (patch.targetDate !== undefined) rec.targetDate = patch.targetDate;
       if (patch.icon !== undefined) rec.icon = patch.icon;
       if (patch.color !== undefined) rec.color = patch.color;
@@ -555,33 +606,51 @@ export async function createBillReminder(input: {
     });
   });
   syncInBackground();
+  scheduleReconcile(input.userId);
   return id;
 }
 
 export async function updateBillReminder(
   billId: string,
-  patch: Partial<Pick<BillReminderModel, 'title' | 'amount' | 'merchantName' | 'dueDate' | 'isRecurring' | 'isPaid'>>,
+  patch: Partial<
+    Pick<
+      BillReminderModel,
+      'title' | 'amount' | 'merchantName' | 'dueDate' | 'isRecurring' | 'isPaid'
+    >
+  >
 ): Promise<void> {
+  let userId = '';
   await database.write(async () => {
     const b = await billReminders().find(billId);
+    userId = b.userId;
     await b.update((rec) => {
       if (patch.title !== undefined) rec.title = patch.title;
-      if (patch.amount !== undefined) rec.amount = patch.amount === null ? undefined : toCents(patch.amount);
-      if (patch.merchantName !== undefined) rec.merchantName = patch.merchantName;
+      if (patch.amount !== undefined)
+        rec.amount = patch.amount === null ? undefined : toCents(patch.amount);
+      if (patch.merchantName !== undefined)
+        rec.merchantName = patch.merchantName;
       if (patch.dueDate !== undefined) rec.dueDate = patch.dueDate;
       if (patch.isRecurring !== undefined) rec.isRecurring = patch.isRecurring;
       if (patch.isPaid !== undefined) rec.isPaid = patch.isPaid;
     });
   });
   syncInBackground();
+  // Cancel immediately when paid (reconcile would also drop it, but instantly
+  // here); otherwise reschedule against the new due date / hour.
+  if (patch.isPaid) await cancelScheduledForEntity(billId);
+  scheduleReconcile(userId);
 }
 
 export async function deleteBillReminder(billId: string): Promise<void> {
+  let userId = '';
   await database.write(async () => {
     const b = await billReminders().find(billId);
+    userId = b.userId;
     await b.markAsDeleted();
   });
   syncInBackground();
+  await cancelScheduledForEntity(billId);
+  scheduleReconcile(userId);
 }
 
 export async function upsertMerchantMapping(input: {
@@ -591,7 +660,10 @@ export async function upsertMerchantMapping(input: {
 }): Promise<void> {
   await database.write(async () => {
     const existing = await merchantMappings()
-      .query(Q.where('user_id', input.userId), Q.where('merchant_raw', input.merchantRaw))
+      .query(
+        Q.where('user_id', input.userId),
+        Q.where('merchant_raw', input.merchantRaw)
+      )
       .fetch();
     if (existing.length > 0) {
       await existing[0].update((m) => {
@@ -623,7 +695,7 @@ export type RecurringCadence = 'daily' | 'weekly' | 'monthly' | 'yearly';
 export function computeNextDueDate(
   cadence: RecurringCadence,
   anchorDate: string,
-  from: Date = new Date(),
+  from: Date = new Date()
 ): string {
   const fromDay = from.toISOString().slice(0, 10);
   const next = new Date(`${anchorDate}T00:00:00`);
@@ -644,7 +716,7 @@ export function computeNextDueDate(
 export function advanceNextDueDate(
   cadence: RecurringCadence,
   anchorDate: string,
-  from: Date = new Date(),
+  from: Date = new Date()
 ): string {
   const fromDay = from.toISOString().slice(0, 10);
   const next = new Date(`${anchorDate}T00:00:00`);
@@ -683,6 +755,7 @@ export async function createRecurringIncome(input: {
     });
   });
   syncInBackground();
+  scheduleReconcile(input.userId);
   return id;
 }
 
@@ -697,38 +770,50 @@ export async function updateRecurringIncome(
     anchorDate: string;
     isActive: boolean;
     lastPostedAt: string | undefined;
-  }>,
+  }>
 ): Promise<void> {
+  let userId = '';
   await database.write(async () => {
     const r = await recurringIncomes().find(id);
+    userId = r.userId;
     await r.update((rec) => {
       // Use `in` not `!== undefined` so explicit clears propagate.
-      if ('title' in patch && patch.title !== undefined) rec.title = patch.title;
-      if ('amount' in patch && patch.amount !== undefined) rec.amount = toCents(patch.amount);
+      if ('title' in patch && patch.title !== undefined)
+        rec.title = patch.title;
+      if ('amount' in patch && patch.amount !== undefined)
+        rec.amount = toCents(patch.amount);
       if ('accountId' in patch) rec.accountId = patch.accountId;
       if ('category' in patch) rec.category = patch.category;
-      if ('cadence' in patch && patch.cadence !== undefined) rec.cadence = patch.cadence;
-      if ('anchorDate' in patch && patch.anchorDate !== undefined) rec.anchorDate = patch.anchorDate;
-      if ('isActive' in patch && patch.isActive !== undefined) rec.isActive = patch.isActive;
+      if ('cadence' in patch && patch.cadence !== undefined)
+        rec.cadence = patch.cadence;
+      if ('anchorDate' in patch && patch.anchorDate !== undefined)
+        rec.anchorDate = patch.anchorDate;
+      if ('isActive' in patch && patch.isActive !== undefined)
+        rec.isActive = patch.isActive;
       if ('lastPostedAt' in patch) rec.lastPostedAt = patch.lastPostedAt;
       // Keep nextDueAt aligned whenever schedule changes.
       if (patch.cadence !== undefined || patch.anchorDate !== undefined) {
         rec.nextDueAt = computeNextDueDate(
           patch.cadence ?? rec.cadence,
-          patch.anchorDate ?? rec.anchorDate,
+          patch.anchorDate ?? rec.anchorDate
         );
       }
     });
   });
   syncInBackground();
+  scheduleReconcile(userId);
 }
 
 export async function deleteRecurringIncome(id: string): Promise<void> {
+  let userId = '';
   await database.write(async () => {
     const r = await recurringIncomes().find(id);
+    userId = r.userId;
     await r.markAsDeleted();
   });
   syncInBackground();
+  await cancelScheduledForEntity(id);
+  scheduleReconcile(userId);
 }
 
 // ─── Recurring bills ────────────────────────────────────────────────────────
@@ -759,6 +844,7 @@ export async function createRecurringBill(input: {
     });
   });
   syncInBackground();
+  scheduleReconcile(input.userId);
   return id;
 }
 
@@ -773,33 +859,43 @@ export async function updateRecurringBill(
     anchorDate: string;
     isActive: boolean;
     lastPaidAt: string | undefined;
-  }>,
+  }>
 ): Promise<void> {
+  let userId = '';
   await database.write(async () => {
     const r = await recurringBills().find(id);
+    userId = r.userId;
     await r.update((rec) => {
-      if ('title' in patch && patch.title !== undefined) rec.title = patch.title;
-      if ('amount' in patch && patch.amount !== undefined) rec.amount = toCents(patch.amount);
+      if ('title' in patch && patch.title !== undefined)
+        rec.title = patch.title;
+      if ('amount' in patch && patch.amount !== undefined)
+        rec.amount = toCents(patch.amount);
       if ('accountId' in patch) rec.accountId = patch.accountId;
       if ('category' in patch) rec.category = patch.category;
-      if ('cadence' in patch && patch.cadence !== undefined) rec.cadence = patch.cadence;
-      if ('anchorDate' in patch && patch.anchorDate !== undefined) rec.anchorDate = patch.anchorDate;
-      if ('isActive' in patch && patch.isActive !== undefined) rec.isActive = patch.isActive;
+      if ('cadence' in patch && patch.cadence !== undefined)
+        rec.cadence = patch.cadence;
+      if ('anchorDate' in patch && patch.anchorDate !== undefined)
+        rec.anchorDate = patch.anchorDate;
+      if ('isActive' in patch && patch.isActive !== undefined)
+        rec.isActive = patch.isActive;
       if ('lastPaidAt' in patch) rec.lastPaidAt = patch.lastPaidAt;
       if (patch.cadence !== undefined || patch.anchorDate !== undefined) {
         rec.nextDueAt = computeNextDueDate(
           patch.cadence ?? rec.cadence,
-          patch.anchorDate ?? rec.anchorDate,
+          patch.anchorDate ?? rec.anchorDate
         );
       }
     });
   });
   syncInBackground();
+  scheduleReconcile(userId);
 }
 
 export async function markRecurringBillPaid(id: string): Promise<void> {
+  let userId = '';
   await database.write(async () => {
     const r = await recurringBills().find(id);
+    userId = r.userId;
     const today = new Date().toISOString().slice(0, 10);
     const next = advanceNextDueDate(r.cadence, r.anchorDate, new Date());
     await r.update((rec) => {
@@ -808,19 +904,27 @@ export async function markRecurringBillPaid(id: string): Promise<void> {
     });
   });
   syncInBackground();
+  // next_due_at advanced — reschedule the reminder for the new occurrence.
+  scheduleReconcile(userId);
 }
 
 export async function deleteRecurringBill(id: string): Promise<void> {
+  let userId = '';
   await database.write(async () => {
     const r = await recurringBills().find(id);
+    userId = r.userId;
     await r.markAsDeleted();
   });
   syncInBackground();
+  await cancelScheduledForEntity(id);
+  scheduleReconcile(userId);
 }
 
 export async function markRecurringIncomePosted(id: string): Promise<void> {
+  let userId = '';
   await database.write(async () => {
     const r = await recurringIncomes().find(id);
+    userId = r.userId;
     const today = new Date().toISOString().slice(0, 10);
     const next = advanceNextDueDate(r.cadence, r.anchorDate, new Date());
     await r.update((rec) => {
@@ -829,6 +933,7 @@ export async function markRecurringIncomePosted(id: string): Promise<void> {
     });
   });
   syncInBackground();
+  scheduleReconcile(userId);
 }
 
 export async function processRecurringTransaction(
@@ -840,7 +945,7 @@ export async function processRecurringTransaction(
     category?: string;
   },
   type: 'bill' | 'income',
-  userId: string,
+  userId: string
 ): Promise<void> {
   // Without an account we can't post a transaction. Fail loudly so the UI can
   // tell the user to edit the recurring entry and pick one — previously this

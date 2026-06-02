@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Q } from '@nozbe/watermelondb';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAccounts } from '@/hooks/useAccounts';
 import {
   ACCOUNT_LOGOS,
@@ -38,6 +39,7 @@ import {
 import { getCanonicalBrandName } from '@/components/WalletCard';
 import { Skeleton } from '@/components/Skeleton';
 import { ToolsCarousel } from '@/components/ToolsCarousel';
+import ProfileSidebar from '@/components/ProfileSidebar';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext'; // 🌙 <-- Global Theme Context
 import { useSync } from '@/contexts/SyncContext';
@@ -960,6 +962,9 @@ function MoreScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
+  const { profile } = useAuth();
+  const userName = profile?.name || 'User';
+  const [sidebarVisible, setSidebarVisible] = useState(false);
 
   const styles = useMemo(
     () => createMainStyles(colors, isDark),
@@ -1078,6 +1083,21 @@ function MoreScreen() {
     >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Tools</Text>
+        <TouchableOpacity
+          onPress={() => setSidebarVisible(true)}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Open profile menu"
+        >
+          <LinearGradient
+            colors={[colors.primary, colors.primaryDark]}
+            style={styles.headerAvatar}
+          >
+            <Text style={styles.headerAvatarLetter}>
+              {userName.charAt(0).toUpperCase()}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -1353,6 +1373,10 @@ function MoreScreen() {
         visible={showBillReminders}
         onClose={() => setShowBillReminders(false)}
       />
+      <ProfileSidebar
+        visible={sidebarVisible}
+        onClose={() => setSidebarVisible(false)}
+      />
     </View>
   );
 }
@@ -1375,6 +1399,18 @@ const createMainStyles = (colors: any, isDark: boolean) =>
       fontSize: 27,
       color: colors.textPrimary,
       letterSpacing: -0.4,
+    },
+    headerAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerAvatarLetter: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 15,
+      color: '#FFFFFF',
     },
     loginBtn: {
       paddingHorizontal: 12,

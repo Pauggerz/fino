@@ -6,6 +6,8 @@ import NotificationModel, { NotificationType } from '@/db/models/Notification';
 import type CategoryModel from '@/db/models/Category';
 import type TransactionModel from '@/db/models/Transaction';
 import { useAuth } from '@/contexts/AuthContext';
+import { readNotificationPrefs } from '@/services/notificationPrefs';
+import { fireImmediateIfPermitted } from '@/services/localPushScheduler';
 
 export interface NotificationItem {
   id: string;
@@ -196,6 +198,29 @@ export async function generatePeriodicInsights(userId: string): Promise<void> {
       });
     }
   });
+
+  // §6.22: raise an OS notification alongside the new in-app warning, gated by
+  // the matching category pref + system permission. The inbox row already
+  // exists (just written above), so these fire with inboxInsert disabled.
+  const prefs = await readNotificationPrefs(userId);
+  for (const seed of seeds) {
+    const isBudget =
+      seed.kind.startsWith('budget-warn:') ||
+      seed.kind.startsWith('over-budget:');
+    const isInactivity = seed.kind.startsWith('no-tx-2d:');
+    const allowed =
+      (isBudget && prefs.budgetAlerts) ||
+      (isInactivity && prefs.inactivityReminder);
+    if (!allowed) continue;
+    await fireImmediateIfPermitted({
+      kind: seed.kind,
+      title: seed.title,
+      body: seed.message,
+      notificationType: seed.type,
+      route: seed.actionRoute,
+      channelId: isBudget ? 'budget-alerts' : 'general',
+    });
+  }
 }
 
 export const useNotifications = () => {

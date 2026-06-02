@@ -1,7 +1,9 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, ScrollView, Platform, Linking } from 'react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from '../contexts/I18nContext';
 import { useNotificationPrefs } from '../contexts/NotificationPrefsContext';
@@ -12,6 +14,8 @@ import {
   SettingsHeader,
   ThemedSwitch,
 } from '../components/settings/SettingsPrimitives';
+
+type PermissionState = 'granted' | 'denied' | 'undetermined' | 'unknown';
 
 function formatHour(h: number): string {
   const period = h >= 12 ? 'PM' : 'AM';
@@ -37,8 +41,76 @@ export default function NotificationSettingsScreen() {
   const enabled = prefs.pushEnabled;
   const dim = (on: boolean) => ({ opacity: enabled ? 1 : on ? 0.5 : 0.45 });
 
+  // OS-level permission state. Refresh on focus so returning from the system
+  // settings screen or the priming flow shows the up-to-date status.
+  const [permission, setPermission] = useState<PermissionState>('unknown');
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      if (Platform.OS === 'web') {
+        setPermission('unknown');
+        return undefined;
+      }
+      Notifications.getPermissionsAsync()
+        .then((p) => {
+          if (active) setPermission(p.status as PermissionState);
+        })
+        .catch(() => {});
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+
+  const permissionMeta: {
+    label: string;
+    subtitle: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    onPress?: () => void;
+    showChevron: boolean;
+  } = (() => {
+    switch (permission) {
+      case 'granted':
+        return {
+          label: 'Notifications allowed',
+          subtitle: 'Fino can send notifications to this device.',
+          icon: 'checkmark-circle-outline',
+          showChevron: false,
+        };
+      case 'denied':
+        return {
+          label: 'Notifications are off',
+          subtitle: 'Blocked in system settings. Tap to open Settings.',
+          icon: 'alert-circle-outline',
+          onPress: () => Linking.openSettings(),
+          showChevron: true,
+        };
+      case 'undetermined':
+        return {
+          label: 'Turn on notifications',
+          subtitle: 'Get bill reminders, budget alerts, and goal nudges.',
+          icon: 'notifications-outline',
+          onPress: () => navigation.navigate('NotificationPriming'),
+          showChevron: true,
+        };
+      default:
+        return {
+          label: 'Notifications',
+          subtitle: 'Manage how Fino reaches you.',
+          icon: 'notifications-outline',
+          showChevron: false,
+        };
+    }
+  })();
+
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+        paddingTop: insets.top,
+      }}
+    >
       <SettingsHeader
         title={t('settings.section.notifications')}
         onBack={() => navigation.goBack()}
@@ -50,6 +122,19 @@ export default function NotificationSettingsScreen() {
           paddingBottom: 40 + insets.bottom,
         }}
       >
+        {Platform.OS !== 'web' && (
+          <Group>
+            <Row
+              icon={permissionMeta.icon}
+              title={permissionMeta.label}
+              subtitle={permissionMeta.subtitle}
+              onPress={permissionMeta.onPress}
+              showChevron={permissionMeta.showChevron}
+              isLast
+            />
+          </Group>
+        )}
+
         <Group>
           <Row
             icon="notifications-outline"
@@ -96,6 +181,17 @@ export default function NotificationSettingsScreen() {
               }
             />
             <Row
+              icon="cash-outline"
+              title="Payday reminders"
+              subtitle="A nudge on payday to log income when it lands."
+              trailing={
+                <ThemedSwitch
+                  value={prefs.paydayReminders}
+                  onValueChange={(v) => updatePref('paydayReminders', v)}
+                />
+              }
+            />
+            <Row
               icon="alert-circle-outline"
               title={t('settings.notifications.inactivity')}
               subtitle={t('settings.notifications.inactivitySub')}
@@ -138,6 +234,24 @@ export default function NotificationSettingsScreen() {
             />
           </Group>
 
+          <SectionTitle>Privacy</SectionTitle>
+          <Group>
+            <Row
+              icon="lock-closed-outline"
+              title="Hide amounts on lockscreen"
+              subtitle="Redact peso amounts in notifications until you unlock."
+              trailing={
+                <ThemedSwitch
+                  value={prefs.hideAmountsOnLockscreen}
+                  onValueChange={(v) =>
+                    updatePref('hideAmountsOnLockscreen', v)
+                  }
+                />
+              }
+              isLast
+            />
+          </Group>
+
           <SectionTitle>Quiet hours</SectionTitle>
           <Group>
             <Row
@@ -170,7 +284,8 @@ export default function NotificationSettingsScreen() {
           }}
         >
           Notifications respect your device-level permissions for Fino. If push
-          isn't working, check Settings → Notifications → Fino on your device.
+          isn&apos;t working, check Settings → Notifications → Fino on your
+          device.
         </Text>
       </ScrollView>
     </View>

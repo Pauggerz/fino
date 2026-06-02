@@ -16,6 +16,8 @@ import { useShareIntent } from 'expo-share-intent';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import { navigationRef } from './navigationRef';
+import { handleColdStartNotification } from '../services/notificationHandlers';
 import FABActionSheet from '../components/FABActionSheet';
 import HomeScreen from '../screens/HomeScreen';
 import FeedScreen from '../screens/FeedScreen';
@@ -62,6 +64,9 @@ const AccountSettingsScreen = lazy(
 );
 const NotificationSettingsScreen = lazy(
   () => import('../screens/NotificationSettingsScreen')
+);
+const NotificationPrimingScreen = lazy(
+  () => import('../screens/NotificationPrimingScreen')
 );
 const CurrencySettingsScreen = lazy(
   () => import('../screens/CurrencySettingsScreen')
@@ -139,6 +144,7 @@ export type RootStackParamList = {
   Categories: undefined;
   Accounts: undefined;
   Notifications: undefined;
+  NotificationPriming: undefined;
   Settings: undefined;
   AccountSettings: { focus?: 'name' | 'email' | 'password' } | undefined;
   NotificationSettings: undefined;
@@ -275,7 +281,14 @@ export default function RootNavigator() {
   if (isLoading || hasOnboarded === null) return null;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        // A tap that cold-started the app is handled once navigation is ready
+        // (§6.14). Listeners cover foreground/background taps.
+        handleColdStartNotification();
+      }}
+    >
       <ShareIntentHandler />
       <Suspense fallback={<ModalLoadingShim />}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -376,6 +389,11 @@ export default function RootNavigator() {
               <Stack.Screen
                 name="Notifications"
                 component={NotificationsScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="NotificationPriming"
+                component={NotificationPrimingScreen}
                 options={{ headerShown: false, presentation: 'modal' }}
               />
               <Stack.Screen

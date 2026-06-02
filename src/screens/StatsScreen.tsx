@@ -1544,9 +1544,9 @@ function createStyles(colors: any, topInset: number) {
       letterSpacing: -0.6,
     },
     notifBtn: {
-      width: 38,
-      height: 38,
-      borderRadius: 12,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       borderWidth: StyleSheet.hairlineWidth,
       alignItems: 'center',
       justifyContent: 'center',
