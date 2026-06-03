@@ -9,6 +9,7 @@ import RecurringIncome from './RecurringIncome';
 import RecurringBill from './RecurringBill';
 import Notification from './Notification';
 import NotificationPrefs from './NotificationPrefs';
+import ChatMessage from './ChatMessage';
 
 export {
   Account,
@@ -22,6 +23,7 @@ export {
   RecurringBill,
   Notification,
   NotificationPrefs,
+  ChatMessage,
 };
 
 export const modelClasses = [
@@ -36,4 +38,5 @@ export const modelClasses = [
   RecurringBill,
   Notification,
   NotificationPrefs,
+  ChatMessage,
 ];
