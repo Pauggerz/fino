@@ -14,29 +14,31 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Icon } from '../components/icons/Icon';
 import { FinoIntelIcon } from '../components/icons/FinoIntelIcon';
+import ProfileSidebar from '../components/ProfileSidebar';
 import { useNavigation } from '@react-navigation/native';
 import { Q } from '@nozbe/watermelondb';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import {
-  sendMessage,
-  ChatMessage,
-  UserFinancialContext,
-  DetectedTransaction,
-} from '@/services/gemini';
 import { createTransaction } from '@/services/localMutations';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { useCategories } from '@/hooks/useCategories';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
-import { getInsights, type Insights } from '@/services/IntelligenceEngine';
+import type ChatMessageModel from '@/db/models/ChatMessage';
 import { useIncomeCategories } from '@/hooks/useIncomeCategories';
-import { parseChatTransaction } from '@/services/parseChatTransaction';
+import {
+  parseChatTransaction,
+  routeMessage,
+  type ChatTx,
+  type BrainContext,
+} from '@/intelligence';
+import { saveChatMessage, loadChatHistory } from '@/services/chatMutations';
 
 const STEP_SETS: Record<string, string[]> = {
   spend:      ['Fetching your transactions', 'Calculating totals', 'Identifying top categories'],
@@ -69,20 +71,11 @@ type TxData = {
   txType: 'expense' | 'income';
 };
 
-type HeroData = {
-  greeting: string;
-  title: string;
-  balance: number;
-  spent: number;
-  income: number;
-};
-
 type Message = {
   id: string;
   type: 'ai' | 'user';
   text: string;
   richData?: RichRow[];
-  heroData?: HeroData;
   followUps?: string[];
   timestamp: string;
   txData?: TxData;
@@ -98,6 +91,30 @@ type RecentTx = {
 
 function nowTime() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Map a persisted chat_messages row back into a renderable Message. */
+function rowToMessage(row: ChatMessageModel): Message {
+  const base: Message = {
+    id: row.id,
+    type: row.role === 'user' ? 'user' : 'ai',
+    text: row.text,
+    timestamp: new Date(row.createdAt).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  };
+  if (row.payload) {
+    try {
+      const parsed = JSON.parse(row.payload) as Partial<Message>;
+      if (parsed.txData) base.txData = parsed.txData;
+      if (parsed.richData) base.richData = parsed.richData;
+      if (parsed.followUps) base.followUps = parsed.followUps;
+    } catch {
+      // Corrupt payload — fall back to a plain text bubble.
+    }
+  }
+  return base;
 }
 
 // ─── STEP ROW (single line inside ThinkingSteps) ────────────────────────────
@@ -371,7 +388,7 @@ function AccountPickerModal({
 }: {
   visible: boolean;
   accounts: AccountItem[];
-  pendingTx: DetectedTransaction | null;
+  pendingTx: ChatTx | null;
   onSelect: (accountId: string) => void;
   onDismiss: () => void;
   colors: any;
@@ -579,7 +596,7 @@ export default function ChatScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
 
   const { colors, isDark } = useTheme();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const userId = user?.id;
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
@@ -591,10 +608,19 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [geminiHistory, setGeminiHistory] = useState<ChatMessage[]>([]);
   const [recentTxns, setRecentTxns] = useState<RecentTx[]>([]);
-  const [insights, setInsights] = useState<Insights | null>(null);
   const [lastMsgId, setLastMsgId] = useState<string | null>(null);
+
+  // Profile drawer (right) — same component HomeScreen uses.
+  const [sidebarVisible, setSidebarVisible] = useState(false);
+
+  // Live insight context for the offline brain: this month's spend grouped by
+  // category + last month's total expense. Feeds the breakdown / compare / cut
+  // suggestion prompts so they answer with real numbers.
+  const [insight, setInsight] = useState<{
+    topCategories: { name: string; amount: number }[];
+    lastMonthSpent: number;
+  }>({ topCategories: [], lastMonthSpent: 0 });
 
   // Streaming / typewriter state
   const [currentSteps, setCurrentSteps] = useState<string[]>(STEP_SETS.default);
@@ -604,11 +630,10 @@ export default function ChatScreen() {
   const streamGenRef = useRef(0);
 
   // Transaction logging state
-  const [pendingTx, setPendingTx] = useState<DetectedTransaction | null>(null);
+  const [pendingTx, setPendingTx] = useState<ChatTx | null>(null);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   // Keyboard state
-  const [headerHeight, setHeaderHeight] = useState(0);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   useEffect(() => {
@@ -648,67 +673,94 @@ export default function ChatScreen() {
     return () => sub.unsubscribe();
   }, [userId]);
 
+  // Month-scoped aggregation for the insight prompts. Querying from the start
+  // of last month lets one observer cover both this month's by-category
+  // breakdown and last month's total. Mirrors useMonthlyTotals' transfer /
+  // adjustment exclusions so the numbers line up with the rest of the app.
   useEffect(() => {
-    if (!userId) return;
-    const today = new Date();
-    getInsights(userId, today.getFullYear(), today.getMonth())
-      .then(setInsights)
-      .catch(() => {});
+    if (!userId) {
+      setInsight({ topCategories: [], lastMonthSpent: 0 });
+      return undefined;
+    }
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1,
+    ).toISOString();
+    const endOfThisMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    ).toISOString();
+
+    const query = database
+      .get<TransactionModel>('transactions')
+      .query(
+        Q.where('user_id', userId),
+        Q.where('date', Q.gte(startOfLastMonth)),
+        Q.where('date', Q.lte(endOfThisMonth)),
+        Q.where('account_deleted', false),
+      );
+
+    const sub = query
+      .observeWithColumns(['amount', 'type', 'date', 'is_transfer', 'category'])
+      .subscribe((records) => {
+        const byCategory: Record<string, number> = {};
+        let lastMonthSpent = 0;
+        for (const tx of records) {
+          if (tx.type !== 'expense') continue;
+          const cat = (tx.category ?? '').toLowerCase();
+          if (tx.isTransfer || cat === 'transfer' || cat === 'adjustment') {
+            continue;
+          }
+          if (new Date(tx.date) >= startOfThisMonth) {
+            const name = tx.category || 'Other';
+            byCategory[name] = (byCategory[name] ?? 0) + tx.amount;
+          } else {
+            lastMonthSpent += tx.amount;
+          }
+        }
+        const topCategories = Object.entries(byCategory)
+          .map(([name, amount]) => ({ name, amount }))
+          .sort((a, b) => b.amount - a.amount);
+        setInsight({ topCategories, lastMonthSpent });
+      });
+    return () => sub.unsubscribe();
   }, [userId]);
 
+  // Load the persisted (local-only) chat thread on mount / user change.
   useEffect(() => {
-    const hour = new Date().getHours();
-    const greet =
-      hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-    const saved = Math.max(0, totalIncome - monthlySpent);
-    const title =
-      saved > 0
-        ? `You're saving ₱${saved.toLocaleString('en-PH', { maximumFractionDigits: 0 })} this month`
-        : "Here's your snapshot this month";
-
-    setMessages([
-      {
-        id: 'msg-welcome',
-        type: 'ai',
-        text: '',
-        heroData: {
-          greeting: `${greet} 👋`,
-          title,
-          balance: totalBalance,
-          spent: monthlySpent,
-          income: totalIncome,
-        },
-        timestamp: nowTime(),
-      },
-    ]);
-  }, [monthlySpent, totalIncome, totalBalance]);
-
-  const financialContext = useMemo<UserFinancialContext>(() => {
-    const totalBudget = categories.reduce((sum, c) => sum + (c.budget_limit ?? 0), 0);
-    return {
-      totalBalance,
-      monthlyIncome: totalIncome,
-      monthlySpent,
-      totalBudget: totalBudget > 0 ? totalBudget : null,
-      categoryBreakdown: categories.map((c) => ({ name: c.name, spent: c.spent, budget: c.budget_limit ?? null })),
-      recentTransactions: recentTxns,
-      anomalies: insights?.anomalies,
-      trajectory: insights?.trajectory,
-      recurringBills: insights?.recurring.slice(0, 5).map((r) => ({ merchant: r.merchant, amount: r.amount, daysUntilNext: r.daysUntilNext })),
-      habits: insights?.habits.map((h) => ({ merchant: h.merchant, visitsPerMonth: h.visitsPerMonth, avgAmount: h.avgAmount, monthlySpend: h.monthlySpend })),
-      coachMessage: insights?.coach,
-      weekDeltas: insights?.weekDeltas,
+    if (!userId) {
+      setMessages([]);
+      return undefined;
+    }
+    let cancelled = false;
+    loadChatHistory(userId)
+      .then((rows) => {
+        if (!cancelled) setMessages(rows.map(rowToMessage));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
     };
-  }, [totalBalance, totalIncome, monthlySpent, categories, recentTxns, insights]);
+  }, [userId]);
 
   const categoryNames = useMemo(() => categories.map((c) => c.name), [categories]);
   const hasTransactions = recentTxns.length > 0 || monthlySpent > 0;
   const isSendDisabled = !inputText.trim() || isTyping;
+  const profileInitial =
+    (profile?.name ?? '').trim().charAt(0).toUpperCase() || 'U';
 
   // ─── LOG TRANSACTION ───────────────────────────────────────────────────────
 
-  const doLogTransaction = async (tx: DetectedTransaction, accountId: string) => {
-    if (!userId || tx.amount == null) return;
+  const doLogTransaction = async (tx: ChatTx, accountId: string) => {
+    if (!userId) return;
     const account = accounts.find((a) => a.id === accountId);
     try {
       await createTransaction({
@@ -723,23 +775,25 @@ export default function ChatScreen() {
       });
 
       const confirmId = `tx-${Date.now()}`;
+      const txData: TxData = {
+        amount: tx.amount,
+        displayName: tx.displayName ?? 'Transaction',
+        category: tx.category ?? 'Other',
+        accountName: account?.name ?? 'Account',
+        txType: tx.type,
+      };
       setMessages((prev) => [
         ...prev,
-        {
-          id: confirmId,
-          type: 'ai',
-          text: '',
-          txData: {
-            amount: tx.amount!,
-            displayName: tx.displayName ?? 'Transaction',
-            category: tx.category ?? 'Other',
-            accountName: account?.name ?? 'Account',
-            txType: tx.type,
-          },
-          timestamp: nowTime(),
-        },
+        { id: confirmId, type: 'ai', text: '', txData, timestamp: nowTime() },
       ]);
       setLastMsgId(confirmId);
+      // Persist the confirmation card so it survives reopening the chat.
+      saveChatMessage({
+        userId,
+        role: 'ai',
+        text: '',
+        payload: JSON.stringify({ txData }),
+      }).catch(() => {});
     } catch (err) {
       console.error('[Fino AI] createTransaction error:', err);
     }
@@ -762,10 +816,13 @@ export default function ChatScreen() {
     const userMsgId = Date.now().toString();
     setMessages((prev) => [...prev, { id: userMsgId, type: 'user', text: trimmed, timestamp: nowTime() }]);
     setLastMsgId(userMsgId);
+    if (userId) {
+      saveChatMessage({ userId, role: 'user', text: trimmed }).catch(() => {});
+    }
 
-    // Parse transaction synchronously using the same offline taxonomy the
-    // Add Transaction sheet uses. Multi-amount inputs ("chicken 50 and rice
-    // 50") sum into a single transaction with a structured display name.
+    // Offline transaction parse + log, using the same taxonomy the Add
+    // Transaction sheet uses. Multi-amount inputs ("chicken 50 and rice 50")
+    // sum into one transaction. This never touches the network.
     const parsed = parseChatTransaction(
       trimmed,
       accounts.map((a) => ({ id: a.id, name: a.name })),
@@ -773,91 +830,72 @@ export default function ChatScreen() {
       incomeCategories
     );
 
-    // Log the transaction up front — the offline parser is the source of
-    // truth, so logging must succeed even when the LLM round-trip fails
-    // (e.g. Gemini free-tier quota errors).
+    // A parsed transaction is acknowledged by the green TxConfirmCard — logged
+    // inline when the account is known, or after the account picker resolves.
+    // No chat reply is generated in that case.
     if (parsed) {
-      const tx: DetectedTransaction = {
-        isTransaction: true,
-        amount: parsed.amount,
-        displayName: parsed.displayName,
-        category: parsed.category,
-        type: parsed.type,
-        accountHint: null,
-      };
       if (parsed.accountId) {
-        await doLogTransaction(tx, parsed.accountId);
+        await doLogTransaction(parsed, parsed.accountId);
       } else {
-        setPendingTx(tx);
+        setPendingTx(parsed);
         setShowAccountPicker(true);
       }
+      return;
     }
 
-    // Pick context-aware steps and show thinking indicator
+    // Otherwise produce an offline reply via the local brain. A short delay
+    // keeps the ThinkingSteps animation visible now that there's no network
+    // latency to fill it.
     setCurrentSteps(pickSteps(trimmed));
     setIsTyping(true);
 
-    try {
-      const reply = await sendMessage(trimmed, geminiHistory, financialContext);
+    const now = new Date();
+    const brainCtx: BrainContext = {
+      balance: totalBalance,
+      income: totalIncome,
+      spent: monthlySpent,
+      lastMonthSpent: insight.lastMonthSpent,
+      topCategories: insight.topCategories,
+      dayOfMonth: now.getDate(),
+      daysInMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
+    };
+    const reply = routeMessage(trimmed, brainCtx);
+    await new Promise<void>((r) => setTimeout(r, 500 + Math.floor(Math.random() * 350)));
 
-      setGeminiHistory((prev) => [
-        ...prev,
-        { role: 'user', text: trimmed },
-        { role: 'model', text: reply },
-      ]);
+    setIsTyping(false);
 
-      setIsTyping(false);
+    // Set streaming state BEFORE the message is added so the new bubble renders
+    // blank from the first frame — otherwise the full text flashes for one
+    // render before the typewriter "restarts" it at character 0.
+    const aiMsgId = `ai-${Date.now()}`;
+    const gen = ++streamGenRef.current;
+    setStreamingMsgId(aiMsgId);
+    setStreamingText('');
+    setMessages((prev) => [
+      ...prev,
+      { id: aiMsgId, type: 'ai', text: reply.text, followUps: reply.followUps, timestamp: nowTime() },
+    ]);
+    setLastMsgId(aiMsgId);
+    if (userId) {
+      saveChatMessage({
+        userId,
+        role: 'ai',
+        text: reply.text,
+        payload: reply.followUps ? JSON.stringify({ followUps: reply.followUps }) : null,
+      }).catch(() => {});
+    }
 
-      // Set streaming state BEFORE the message is added so the new bubble
-      // renders blank from the first frame — otherwise the full text flashes
-      // for one render (msg.text=reply, streamingMsgId still stale) before
-      // the typewriter "restarts" it at character 0, which reads as the
-      // reply disappearing.
-      const aiMsgId = `ai-${Date.now()}`;
-      const gen = ++streamGenRef.current;
-      setStreamingMsgId(aiMsgId);
-      setStreamingText('');
-      setMessages((prev) => [...prev, { id: aiMsgId, type: 'ai', text: reply, timestamp: nowTime() }]);
-      setLastMsgId(aiMsgId);
+    for (let i = 1; i <= reply.text.length; i++) {
+      if (streamGenRef.current !== gen) break;
+      await new Promise<void>((r) => setTimeout(r, i <= 3 ? 50 : 15));
+      setStreamingText(reply.text.slice(0, i));
+      scrollViewRef.current?.scrollToEnd({ animated: false });
+    }
 
-      for (let i = 1; i <= reply.length; i++) {
-        if (streamGenRef.current !== gen) break;
-        await new Promise<void>((r) => setTimeout(r, i <= 3 ? 50 : 15));
-        setStreamingText(reply.slice(0, i));
-        scrollViewRef.current?.scrollToEnd({ animated: false });
-      }
-
-      // Flip streamingMsgId to null only — leave streamingText stale. The
-      // message falls back to msg.text (the stored full reply). Clearing
-      // streamingText here would race with the streamingMsgId flip in some
-      // batch orderings and could leave the bubble blank.
-      if (streamGenRef.current === gen) {
-        setStreamingMsgId(null);
-      }
-    } catch (err) {
-      console.error('[Fino AI] handleSend error:', err);
-      setIsTyping(false);
-
-      // Gemini free-tier 429s should not look like a "something broke" error
-      // — and if we already logged a transaction, the user still deserves an
-      // acknowledgement that mentions what was recorded.
-      const message = String((err as { message?: unknown })?.message ?? err ?? '');
-      const isQuota = /429|quota|rate.?limit/i.test(message);
-
-      let fallbackText: string;
-      if (parsed) {
-        const sign = parsed.type === 'expense' ? '-' : '+';
-        const amt = parsed.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 });
-        fallbackText = `Got it — logged ${parsed.displayName} (${sign}₱${amt}). 🧾`;
-      } else if (isQuota) {
-        fallbackText = "I'm at my AI usage limit right now. Try again in a minute.";
-      } else {
-        fallbackText = 'Something went wrong. Please try again.';
-      }
-
-      const errId = `err-${Date.now()}`;
-      setMessages((prev) => [...prev, { id: errId, type: 'ai', text: fallbackText, timestamp: nowTime() }]);
-      setLastMsgId(errId);
+    // Flip streamingMsgId to null only — leave streamingText stale; the message
+    // falls back to msg.text (the stored full reply).
+    if (streamGenRef.current === gen) {
+      setStreamingMsgId(null);
     }
   };
 
@@ -891,6 +929,116 @@ export default function ChatScreen() {
     </View>
   );
 
+  // Gemini-style landing: shown when the user has data but no chat thread yet.
+  // A calm greeting, a single subtle finance "glance", and four insight prompts
+  // that route straight through handleSend (and the data-aware brain).
+  const renderLanding = () => {
+    const hour = new Date().getHours();
+    const greet =
+      hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    const firstName = (profile?.name ?? '').trim().split(/\s+/)[0];
+    const saved = Math.max(0, totalIncome - monthlySpent);
+    const suggestions: {
+      label: string;
+      sub: string;
+      prompt: string;
+      icon: keyof typeof Ionicons.glyphMap;
+      tint: string;
+    }[] = [
+      {
+        label: 'Spending breakdown',
+        sub: 'See this month by category',
+        prompt: 'Give me a spending breakdown for this month',
+        icon: 'bar-chart-outline',
+        tint: '#3A7BD5',
+      },
+      {
+        label: 'Compare to last month',
+        sub: 'Am I up or down vs last month?',
+        prompt: 'How does my spending compare to last month?',
+        icon: 'swap-horizontal-outline',
+        tint: colors.chatAILabel,
+      },
+      {
+        label: 'Where can I cut?',
+        sub: 'Find easy wins to trim',
+        prompt: 'Where can I cut back this month?',
+        icon: 'cut-outline',
+        tint: colors.expenseRed,
+      },
+      {
+        label: 'Savings forecast',
+        sub: "Where you'll land this month",
+        prompt: "What's my savings forecast for this month?",
+        icon: 'trending-up-outline',
+        tint: colors.primary,
+      },
+    ];
+
+    return (
+      <ScrollView
+        style={styles.bodyScroll}
+        contentContainerStyle={styles.landingScroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.landingSpacer} />
+
+        <Text style={styles.landingEyebrow}>
+          {greet}
+          {firstName ? `, ${firstName}` : ''}
+        </Text>
+        <Text style={styles.landingTitle}>What can I{'\n'}help you with?</Text>
+
+        <TouchableOpacity
+          style={styles.glance}
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
+        >
+          <View style={styles.glanceDot} />
+          <Text style={styles.glanceAmt}>
+            ₱{totalBalance.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+          </Text>
+          {saved > 0 ? (
+            <>
+              <Text style={styles.glanceSep}>·</Text>
+              <Text style={styles.glanceSave}>
+                saving ₱{saved.toLocaleString('en-PH', { maximumFractionDigits: 0 })} this month
+              </Text>
+            </>
+          ) : null}
+          <Ionicons
+            name="chevron-forward"
+            size={15}
+            color={colors.textSecondary}
+            style={{ marginLeft: 2 }}
+          />
+        </TouchableOpacity>
+
+        <View style={styles.suggestions}>
+          {suggestions.map((s) => (
+            <TouchableOpacity
+              key={s.prompt}
+              style={styles.suggCard}
+              activeOpacity={0.8}
+              onPress={() => handleSend(s.prompt)}
+            >
+              <View style={[styles.suggTile, { backgroundColor: `${s.tint}22` }]}>
+                <Ionicons name={s.icon} size={18} color={s.tint} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.suggLabel}>{s.label}</Text>
+                <Text style={styles.suggSub}>{s.sub}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.landingSpacer} />
+      </ScrollView>
+    );
+  };
+
   const renderMessage = (msg: Message) => {
     const isNew = msg.id === lastMsgId;
     const isStreaming = msg.id === streamingMsgId;
@@ -911,200 +1059,162 @@ export default function ChatScreen() {
 
     return (
       <AnimatedMessage key={msg.id} isNew={isNew}>
-        <View style={styles.aiMsgWrapper}>
-          <View style={styles.aiBubble}>
-            <View style={styles.aiLabelRow}>
-              <View style={styles.aiIconBox}>
-                <FinoIntelIcon size={10} color="#fff" />
-              </View>
+        <View style={styles.aiRow}>
+          <View style={styles.aiAvatar}>
+            <FinoIntelIcon size={15} color="#fff" />
+          </View>
+
+          <View style={styles.aiMsgWrapper}>
+            <View style={styles.aiBubble}>
               <Text style={styles.aiLabelText}>Fino</Text>
+
+              {displayText ? (
+                <Text style={styles.aiText}>
+                  {displayText}
+                  {isStreaming ? (showCursor ? '|' : ' ') : ''}
+                </Text>
+              ) : null}
+
+              {/* Only show rich cards / tx card when not streaming */}
+              {!isStreaming && msg.richData ? (
+                <View style={styles.richCard}>
+                  {msg.richData.map((row) => (
+                    <View key={row.label} style={styles.richCardRow}>
+                      <Text style={styles.richCardLabel}>{row.label}</Text>
+                      <Text style={[styles.richCardValue, row.color ? { color: row.color } : undefined]}>
+                        {row.value}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              {!isStreaming && msg.txData ? (
+                <TxConfirmCard tx={msg.txData} colors={colors} isDark={isDark} />
+              ) : null}
             </View>
 
-            {displayText ? (
-              <Text style={styles.aiText}>
-                {displayText}
-                {isStreaming ? (showCursor ? '|' : ' ') : ''}
-              </Text>
-            ) : null}
+            {!isStreaming && <Text style={styles.timestampAi}>{msg.timestamp}</Text>}
 
-            {!isStreaming && msg.heroData ? (
-              <View style={styles.heroCard}>
-                <Text style={styles.heroGreet}>{msg.heroData.greeting}</Text>
-                <Text style={styles.heroTitle}>{msg.heroData.title}</Text>
-                <View style={styles.heroRow}>
-                  <View style={styles.heroCol}>
-                    <Text style={styles.heroColLabel}>Balance</Text>
-                    <Text style={styles.heroColValue}>
-                      ₱{msg.heroData.balance.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
-                    </Text>
-                  </View>
-                  <View style={[styles.heroCol, styles.heroColDivided]}>
-                    <Text style={styles.heroColLabel}>Spent</Text>
-                    <Text style={[styles.heroColValue, { color: '#FFB4A8' }]}>
-                      ₱{msg.heroData.spent.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
-                    </Text>
-                  </View>
-                  <View style={[styles.heroCol, styles.heroColDivided]}>
-                    <Text style={styles.heroColLabel}>Income</Text>
-                    <Text style={[styles.heroColValue, { color: '#9DEAB1' }]}>
-                      ₱{msg.heroData.income.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            ) : null}
-
-            {/* Only show rich cards / tx card when not streaming */}
-            {!isStreaming && msg.richData ? (
-              <View style={styles.richCard}>
-                {msg.richData.map((row) => (
-                  <View key={row.label} style={styles.richCardRow}>
-                    <Text style={styles.richCardLabel}>{row.label}</Text>
-                    <Text style={[styles.richCardValue, row.color ? { color: row.color } : undefined]}>
-                      {row.value}
-                    </Text>
-                  </View>
+            {!isStreaming && msg.followUps ? (
+              <View style={styles.followupWrapper}>
+                {msg.followUps.map((prompt) => (
+                  <TouchableOpacity key={prompt} style={styles.followupChip} onPress={() => handleSend(prompt)}>
+                    <Text style={styles.followupChipText}>{prompt}</Text>
+                  </TouchableOpacity>
                 ))}
               </View>
             ) : null}
-
-            {!isStreaming && msg.txData ? (
-              <TxConfirmCard tx={msg.txData} colors={colors} isDark={isDark} />
-            ) : null}
           </View>
-
-          {!isStreaming && <Text style={styles.timestampAi}>{msg.timestamp}</Text>}
-
-          {!isStreaming && msg.followUps ? (
-            <View style={styles.followupWrapper}>
-              {msg.followUps.map((prompt) => (
-                <TouchableOpacity key={prompt} style={styles.followupChip} onPress={() => handleSend(prompt)}>
-                  <Text style={styles.followupChipText}>{prompt}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : null}
         </View>
       </AnimatedMessage>
     );
   };
 
+  const renderBody = () => {
+    if (!hasTransactions) return renderEmptyGuard();
+    if (messages.length === 0) return renderLanding();
+    return (
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.bodyScroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        onLayout={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
+      >
+        {messages.map(renderMessage)}
+        {isTyping ? <ThinkingSteps steps={currentSteps} colors={colors} isDark={isDark} /> : null}
+      </ScrollView>
+    );
+  };
+
   return (
     <View style={styles.container}>
-      {/* ─── HEADER ─── */}
-      <View
-        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
-        style={[styles.chatHeader, { paddingTop: Math.max(insets.top, 12) }]}
-      >
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={8}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <View style={styles.avatar}>
-          <FinoIntelIcon size={22} color="#fff" filled />
-          <View style={[styles.avatarStatusDot, { backgroundColor: isTyping ? '#F59E0B' : '#22C55E' }]} />
-        </View>
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle} numberOfLines={1}>Fino AI</Text>
-          <Text style={styles.headerSubtitle} numberOfLines={1}>
-            {isTyping ? 'Thinking…' : 'Online · Knows your finances'}
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={styles.headerActionBtn}
-          activeOpacity={0.7}
-          onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
-          hitSlop={6}
-        >
-          <Ionicons name="stats-chart-outline" size={18} color={colors.textSecondary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* ─── STATS STRIP ─── */}
-      {hasTransactions ? (
-        <View style={styles.statsStrip}>
-          <TouchableOpacity
-            style={styles.statCell}
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
-          >
-            <Text style={styles.statLabel}>Balance</Text>
-            <Text style={[styles.statValue, { color: colors.incomeGreen }]}>
-              ₱{totalBalance.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
-            </Text>
-            <Text style={styles.statSub}>Across {accounts.length} {accounts.length === 1 ? 'account' : 'accounts'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.statCell, styles.statCellDivided]}
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
-          >
-            <Text style={styles.statLabel}>Spent</Text>
-            <Text style={[styles.statValue, { color: colors.expenseRed }]}>
-              ₱{monthlySpent.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
-            </Text>
-            <Text style={styles.statSub}>This month</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.statCell, styles.statCellDivided]}
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate('Tabs', { screen: 'stats' })}
-          >
-            <Text style={styles.statLabel}>Income</Text>
-            <Text style={[styles.statValue, { color: colors.incomeGreen }]}>
-              ₱{totalIncome.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
-            </Text>
-            <Text style={styles.statSub}>This month</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      {/* ─── KEYBOARD AVOIDING VIEW ─── */}
+      {/* The composer rides above the keyboard. This screen is a native-stack
+          'modal', whose window does NOT resize for the keyboard — so the KAV
+          has to do the lifting. We use 'padding' (not 'height'): it lifts the
+          composer the same way, but collapses back to 0 cleanly on retract,
+          where 'height' left a stale gap below the bar. The body below is
+          flex:1 so it absorbs the lift and the composer stays pinned. */}
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: colors.background }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={headerHeight}
+        behavior="padding"
       >
-        {!hasTransactions ? (
-          renderEmptyGuard()
-        ) : (
-          <ScrollView
-            ref={scrollViewRef}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-            onLayout={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
+        {/* ─── HEADER ─── */}
+        <View style={[styles.chatHeader, { paddingTop: Math.max(insets.top, 12) }]}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+
+          <View style={styles.headerWordmarkWrap}>
+            <Text style={styles.headerWordmark}>Fino</Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.profileBtn}
+            activeOpacity={0.8}
+            onPress={() => setSidebarVisible(true)}
+            hitSlop={6}
           >
-            {messages.map(renderMessage)}
-            {isTyping ? <ThinkingSteps steps={currentSteps} colors={colors} isDark={isDark} /> : null}
-          </ScrollView>
-        )}
+            <Text style={styles.profileInitial}>{profileInitial}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {renderBody()}
 
         <View
           style={[
             styles.inputContainer,
-            { paddingBottom: isKeyboardVisible ? 16 : Math.max(insets.bottom, 16) },
+            { paddingBottom: isKeyboardVisible ? 14 : Math.max(insets.bottom, 14) },
           ]}
         >
-          <View style={styles.inputWrapper}>
+          <View style={styles.composerInner}>
             <TextInput
               style={styles.inputField}
               value={inputText}
               onChangeText={setInputText}
-              placeholder="Ask or log a transaction..."
+              placeholder="Ask or log a transaction…"
               placeholderTextColor={colors.textSecondary}
               editable
               multiline
               maxLength={200}
             />
-            <TouchableOpacity
-              style={[styles.sendBtn, isSendDisabled ? styles.sendBtnDisabled : undefined]}
-              onPress={() => handleSend()}
-              disabled={isSendDisabled}
-            >
-              <Ionicons name="arrow-up" size={18} color="#FFF" />
-            </TouchableOpacity>
+            <View style={styles.composerToolbar}>
+              <TouchableOpacity
+                style={styles.composerIconBtn}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate('ScreenshotScreen')}
+                hitSlop={6}
+              >
+                <Ionicons name="add" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <View style={{ flex: 1 }} />
+
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => handleSend()}
+                disabled={isSendDisabled}
+              >
+                {isSendDisabled ? (
+                  <View style={[styles.sendBtn, styles.sendBtnDisabled]}>
+                    <Ionicons name="arrow-up" size={18} color={colors.textSecondary} />
+                  </View>
+                ) : (
+                  <LinearGradient
+                    colors={['#7C65C8', '#4B2DA3']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.sendBtn}
+                  >
+                    <Ionicons name="arrow-up" size={18} color="#FFF" />
+                  </LinearGradient>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -1120,6 +1230,9 @@ export default function ChatScreen() {
         isDark={isDark}
         insetBottom={insets.bottom}
       />
+
+      {/* ─── PROFILE DRAWER ─── */}
+      <ProfileSidebar visible={sidebarVisible} onClose={() => setSidebarVisible(false)} />
     </View>
   );
 }
@@ -1146,48 +1259,27 @@ const createStyles = (colors: any, isDark: boolean) =>
       justifyContent: 'center',
       marginLeft: -4,
     },
-    avatar: {
-      width: 40,
-      height: 40,
-      borderRadius: 12,
-      backgroundColor: colors.chatAILabel,
-      alignItems: 'center',
-      justifyContent: 'center',
-      position: 'relative',
-    },
-    avatarStatusDot: {
-      position: 'absolute',
-      bottom: -1,
-      right: -1,
-      width: 11,
-      height: 11,
-      borderRadius: 5.5,
-      borderWidth: 2,
-      borderColor: colors.background,
-    },
-    headerInfo: { flex: 1, minWidth: 0 },
-    headerTitle: {
+    headerWordmarkWrap: { flex: 1, alignItems: 'center' },
+    headerWordmark: {
       fontFamily: 'Nunito_800ExtraBold',
-      fontSize: 16,
+      fontSize: 17,
       color: colors.textPrimary,
-      letterSpacing: -0.3,
+      letterSpacing: -0.2,
     },
-    headerSubtitle: {
-      fontFamily: 'Inter_500Medium',
-      fontSize: 11,
-      color: colors.textSecondary,
-      marginTop: 1,
-    },
-    headerActionBtn: {
+    profileBtn: {
       width: 36,
       height: 36,
-      borderRadius: 10,
-      backgroundColor: colors.surfaceSubdued,
-      borderWidth: 1,
-      borderColor: colors.border,
+      borderRadius: 18,
+      backgroundColor: colors.primary,
       alignItems: 'center',
       justifyContent: 'center',
     },
+    profileInitial: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 15,
+      color: '#FFF',
+    },
+    bodyScroll: { flex: 1 },
     scrollContent: { padding: spacing.screenPadding, paddingBottom: 24 },
     emptyStateContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
     emptyEmoji: { fontSize: 48, marginBottom: 16 },
@@ -1196,7 +1288,23 @@ const createStyles = (colors: any, isDark: boolean) =>
     emptyBody: { fontFamily: 'Inter_400Regular', fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
     emptyBtn: { backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 16, borderRadius: 16 },
     emptyBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#FFF' },
-    aiMsgWrapper: { alignItems: 'flex-start', marginBottom: 20, maxWidth: '85%' },
+    aiRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      marginBottom: 20,
+      maxWidth: '85%',
+    },
+    aiAvatar: {
+      width: 28,
+      height: 28,
+      borderRadius: 9,
+      backgroundColor: colors.chatAILabel,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 2,
+    },
+    aiMsgWrapper: { flex: 1, alignItems: 'flex-start' },
     aiBubble: {
       backgroundColor: colors.chatAIBubbleBg,
       borderWidth: 0.5,
@@ -1207,16 +1315,12 @@ const createStyles = (colors: any, isDark: boolean) =>
       borderBottomLeftRadius: 16,
       padding: 14,
     },
-    aiLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 6 },
-    aiIconBox: {
-      width: 16,
-      height: 16,
-      borderRadius: 4,
-      backgroundColor: colors.chatAILabel,
-      alignItems: 'center',
-      justifyContent: 'center',
+    aiLabelText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.chatAILabel,
+      marginBottom: 6,
     },
-    aiLabelText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.chatAILabel },
     aiText: { fontFamily: 'Inter_400Regular', fontSize: 14, color: colors.chatAIText, lineHeight: 20 },
     timestampAi: { fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary, marginTop: 6, marginLeft: 4 },
     userMsgWrapper: { alignItems: 'flex-end', marginBottom: 20 },
@@ -1236,91 +1340,66 @@ const createStyles = (colors: any, isDark: boolean) =>
     richCardLabel: { fontFamily: 'Inter_400Regular', fontSize: 13, color: colors.textSecondary },
     richCardValue: { fontFamily: 'DMMono_500Medium', fontSize: 14, color: colors.textPrimary },
 
-    // ─── Hero welcome card (in chat) ───
-    heroCard: {
-      marginTop: 12,
-      backgroundColor: colors.heroCardBg,
-      borderRadius: 22,
-      padding: 18,
-      overflow: 'hidden',
+    // ─── Landing (Gemini-style empty thread) ───
+    landingScroll: {
+      flexGrow: 1,
+      paddingHorizontal: spacing.screenPadding,
+      paddingBottom: 12,
     },
-    heroGreet: {
-      fontFamily: 'Inter_600SemiBold',
+    landingSpacer: { flex: 1, minHeight: 12 },
+    landingEyebrow: {
+      fontFamily: 'Inter_700Bold',
       fontSize: 12,
-      color: colors.heroSub ?? 'rgba(255,255,255,0.7)',
-      marginBottom: 4,
-    },
-    heroTitle: {
-      fontFamily: 'Nunito_800ExtraBold',
-      fontSize: 18,
-      color: colors.heroOn ?? '#FFF',
-      letterSpacing: -0.3,
-      lineHeight: 23,
-      marginBottom: 14,
-    },
-    heroRow: {
-      flexDirection: 'row',
-      backgroundColor: colors.blackTransparent15 ?? 'rgba(0,0,0,0.15)',
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.whiteTransparent12 ?? 'rgba(255,255,255,0.12)',
-      paddingVertical: 10,
-      paddingHorizontal: 4,
-    },
-    heroCol: { flex: 1, paddingHorizontal: 10 },
-    heroColDivided: {
-      borderLeftWidth: 1,
-      borderLeftColor: colors.whiteTransparent12 ?? 'rgba(255,255,255,0.12)',
-    },
-    heroColLabel: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 9,
-      letterSpacing: 0.6,
-      color: colors.heroSub ?? 'rgba(255,255,255,0.55)',
+      letterSpacing: 1.2,
       textTransform: 'uppercase',
-      marginBottom: 3,
+      color: colors.chatAILabel,
+      marginBottom: 8,
     },
-    heroColValue: {
-      fontFamily: 'DMMono_500Medium',
-      fontSize: 14,
-      color: colors.heroOn ?? '#FFF',
-    },
-
-    // ─── Stats strip (below header) ───
-    statsStrip: {
-      flexDirection: 'row',
-      backgroundColor: colors.background,
-      borderBottomWidth: 1,
-      borderBottomColor: isDark ? '#333' : 'rgba(0,0,0,0.05)',
-    },
-    statCell: {
-      flex: 1,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-    },
-    statCellDivided: {
-      borderLeftWidth: 1,
-      borderLeftColor: isDark ? '#222' : 'rgba(0,0,0,0.05)',
-    },
-    statLabel: {
-      fontFamily: 'Inter_700Bold',
-      fontSize: 9,
-      letterSpacing: 0.6,
-      color: colors.textSecondary,
-      textTransform: 'uppercase',
-      marginBottom: 2,
-    },
-    statValue: {
-      fontFamily: 'DMMono_500Medium',
-      fontSize: 13,
+    landingTitle: {
+      fontFamily: 'Nunito_900Black',
+      fontSize: 34,
+      lineHeight: 38,
+      letterSpacing: -0.8,
       color: colors.textPrimary,
     },
-    statSub: {
-      fontFamily: 'Inter_500Medium',
-      fontSize: 9,
-      color: colors.textSecondary,
-      marginTop: 1,
+    glance: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 8,
+      marginTop: 18,
+      backgroundColor: colors.surfaceSubdued,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
     },
+    glanceDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.incomeGreen },
+    glanceAmt: { fontFamily: 'DMMono_500Medium', fontSize: 13, color: colors.textPrimary },
+    glanceSep: { fontFamily: 'Inter_400Regular', fontSize: 12, color: colors.textSecondary },
+    glanceSave: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.incomeGreen },
+    suggestions: { marginTop: 26, gap: 11 },
+    suggCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 13,
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 18,
+      paddingVertical: 13,
+      paddingHorizontal: 15,
+    },
+    suggTile: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    suggLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14.5, color: colors.textPrimary },
+    suggSub: { fontFamily: 'Inter_500Medium', fontSize: 11.5, color: colors.textSecondary, marginTop: 1 },
 
     followupWrapper: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
     followupChip: {
@@ -1335,39 +1414,49 @@ const createStyles = (colors: any, isDark: boolean) =>
     inputContainer: {
       backgroundColor: colors.background,
       paddingHorizontal: spacing.screenPadding,
-      paddingTop: 12,
+      paddingTop: 10,
       borderTopWidth: 1,
       borderTopColor: isDark ? '#333333' : 'rgba(0,0,0,0.05)',
     },
-    inputWrapper: {
-      flexDirection: 'row',
-      alignItems: 'flex-end',
+    composerInner: {
       backgroundColor: colors.white,
-      borderWidth: 1.5,
-      borderColor: colors.chatAIBubbleBorder,
-      borderRadius: 14,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 24,
+      paddingHorizontal: 6,
+      paddingTop: 4,
+      paddingBottom: 6,
     },
     inputField: {
-      flex: 1,
       fontFamily: 'Inter_400Regular',
       fontSize: 15,
       color: colors.textPrimary,
-      maxHeight: 100,
+      maxHeight: 96,
       minHeight: 24,
-      paddingTop: 8,
-      paddingBottom: 8,
+      paddingHorizontal: 12,
+      paddingTop: 10,
+      paddingBottom: 6,
     },
-    sendBtn: {
-      width: 32,
-      height: 32,
-      borderRadius: 12,
-      backgroundColor: colors.chatAILabel,
+    composerToolbar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 4,
+    },
+    composerIconBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.surfaceSubdued,
       alignItems: 'center',
       justifyContent: 'center',
-      marginLeft: 8,
-      marginBottom: 4,
     },
-    sendBtnDisabled: { backgroundColor: isDark ? '#333333' : '#DCDAE8' },
+    sendBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sendBtnDisabled: { backgroundColor: isDark ? '#2A2A30' : '#ECEAF2' },
   });

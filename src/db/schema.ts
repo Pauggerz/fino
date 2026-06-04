@@ -12,8 +12,24 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
  * WatermelonDB can compare it cheaply during pullChanges.
  */
 export default appSchema({
-  version: 8,
+  version: 9,
   tables: [
+    // Local-only chat history for the Fino chatbot. Deliberately NOT in
+    // SYNCED_TABLES (src/services/watermelonSync.ts) — conversations stay on
+    // device and never reach Supabase. No updated_at/deleted_at because the
+    // table never round-trips through the sync engine.
+    tableSchema({
+      name: 'chat_messages',
+      columns: [
+        { name: 'user_id', type: 'string', isIndexed: true },
+        { name: 'role', type: 'string' },
+        { name: 'text', type: 'string' },
+        // JSON blob for non-text message shapes (e.g. the TxConfirmCard's
+        // txData). Null for plain text messages.
+        { name: 'payload', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number', isIndexed: true },
+      ],
+    }),
     tableSchema({
       name: 'notifications',
       columns: [

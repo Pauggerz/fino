@@ -1,4 +1,4 @@
-import { extractItems } from '../src/services/aiCategoryMap';
+import { extractItems } from '../src/intelligence/categorize/categorize';
 
 const newFillers = [
   'very', 'really', 'so', 'too', 'quite', 'just', 'only', 'even', 'also',

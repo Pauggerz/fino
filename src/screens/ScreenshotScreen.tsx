@@ -15,7 +15,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,25 +38,12 @@ import { CategoryIcon } from '@/components/CategoryIcon';
 import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 import {
   createDebouncedAnalyzer,
+  parseReceipt,
+  resolveReceipt,
   type AIAnalysisResult,
-} from '../services/aiCategoryMap';
+} from '@/intelligence';
+import type { FieldStatus, ParsedField, ParsedReceipt } from '@/intelligence';
 import { suggestCategory } from '../services/IntelligenceEngine';
-
-type FieldStatus = 'confirmed' | 'check' | 'fixed';
-
-interface ParsedField {
-  value: string | number | null;
-  confidence: number;
-  status: FieldStatus;
-}
-
-interface ParsedReceipt {
-  account: ParsedField; // value = account UUID
-  merchant: ParsedField;
-  amount: ParsedField;
-  date: ParsedField;
-  wallet?: ParsedField; // value = raw OCR wallet name e.g. 'GCash'
-}
 
 type EditableField = 'merchant' | 'amount';
 
@@ -263,9 +249,6 @@ export default function ScreenshotScreen() {
     ? Object.values(parsedData).some((f) => f.status === 'check')
     : false;
 
-  const toStatus = (confidence: number): FieldStatus =>
-    confidence >= 0.85 ? 'confirmed' : 'check';
-
   const handleCamera = async () => {
     setSelectedSource('camera');
     const result = await ImagePicker.requestCameraPermissionsAsync();
@@ -312,122 +295,26 @@ export default function ScreenshotScreen() {
     setParsedData(null);
 
     try {
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: 'base64',
+      const raw = await parseReceipt(uri);
+      const { parsed, matchedAccount, category } = resolveReceipt(raw, {
+        accounts,
+        categories,
+        lastUsedAccountId,
       });
-      const { data, error } = await supabase.functions.invoke('parse-receipt', {
-        body: { imageBase64: base64, mimeType: 'image/jpeg' },
-      });
-      if (error) throw new Error(error.message);
 
-      // Match detected account name → account UUID
-      // Use wallet (text-based) first, fall back to account (UI-based)
-      const detectedWalletName: string | null = data.wallet?.value ?? null;
-      const detectedWalletConf: number = data.wallet?.confidence ?? 0;
-      const detectedAccountName: string | null =
-        detectedWalletName ?? data.account?.value ?? null;
-      const detectedAccountConf: number = detectedWalletName
-        ? detectedWalletConf
-        : (data.account?.confidence ?? 0);
-      const fallbackAccount =
-        lastUsedAccountId && accounts.find((a) => a.id === lastUsedAccountId)
-          ? lastUsedAccountId
-          : (accounts[0]?.id ?? '');
-      let matchedAccountId = fallbackAccount;
-      let accountConf = detectedAccountConf > 0 ? detectedAccountConf : 0.4;
-      let matchedAccount: (typeof accounts)[0] | undefined;
-
-      if (detectedAccountName && accounts.length > 0) {
-        const lower = detectedAccountName.toLowerCase();
-        matchedAccount = accounts.find((a) => {
-          const accountLower = a.name.toLowerCase();
-          // Forward: account name contains detected (e.g. "gcash wallet" contains "gcash")
-          if (accountLower.includes(lower)) return true;
-          // Reverse with word boundary: "gcash wallet" contains whole word "gcash"
-          // but "gcash" does NOT contain whole word "cash" (no word boundary before 'c')
-          const escaped = accountLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          return new RegExp(`\\b${escaped}\\b`).test(lower);
-        });
-        if (matchedAccount) {
-          matchedAccountId = matchedAccount.id;
-          accountConf =
-            detectedAccountConf >= 0.85
-              ? detectedAccountConf
-              : Math.max(detectedAccountConf, 0.4);
-        }
+      // Preselect a category chip the user actually has; only a real OCR match
+      // flips the signal to 'merchant' (a plain first-category fallback doesn't).
+      if (category) {
+        setSelectedCategory(category.name);
+        if (category.signal === 'merchant') setSignalSource('merchant');
       }
 
-      const merchantConf: number =
-        data.merchant?.confidence ?? data.merchant_confidence ?? 0;
-      const amountConf: number =
-        data.amount?.confidence ?? data.amount_confidence ?? 0;
-      const dateConf: number =
-        data.date?.confidence ?? data.date_confidence ?? 0;
+      setParsedData(parsed);
 
-      // Match the parser's suggested category against the user's actual
-      // expense category list (case-insensitive). The parser uses master
-      // taxonomy keys like "food" or "transport"; match those against the
-      // user's category names so we pick a chip they actually have.
-      const suggestedRaw: string = String(data.category?.value ?? '').trim();
-      if (suggestedRaw && categories.length > 0) {
-        const lower = suggestedRaw.toLowerCase();
-        const match =
-          categories.find((c) => c.name.toLowerCase() === lower) ??
-          categories.find((c) => (c.emoji ?? '').toLowerCase() === lower);
-        if (match) {
-          setSelectedCategory(match.name);
-          setSignalSource('merchant');
-        } else if (categories[0]) {
-          setSelectedCategory(categories[0].name);
-        }
-      } else if (categories[0]) {
-        setSelectedCategory(categories[0].name);
-      }
-
-      const result: ParsedReceipt = {
-        account: {
-          value: matchedAccountId,
-          confidence: accountConf,
-          status: toStatus(accountConf),
-        },
-        merchant: {
-          value: data.merchant?.value ?? data.merchant ?? '',
-          confidence: merchantConf,
-          status: toStatus(merchantConf),
-        },
-        amount: {
-          value: data.amount?.value ?? data.amount ?? '',
-          confidence: amountConf,
-          status: toStatus(amountConf),
-        },
-        date: {
-          value: data.date?.value ?? data.date ?? '',
-          confidence: dateConf,
-          status: toStatus(dateConf),
-        },
-        wallet: (() => {
-          if (detectedWalletName) {
-            return {
-              value: detectedWalletName,
-              confidence: detectedWalletConf,
-              status: toStatus(detectedWalletConf),
-            };
-          }
-          if (data.account?.value) {
-            return {
-              value: data.account.value,
-              confidence: data.account.confidence ?? 0,
-              status: toStatus(data.account.confidence ?? 0),
-            };
-          }
-          return undefined;
-        })(),
-      };
-      setParsedData(result);
-
-      // Auto-select account based on detected wallet
+      // Auto-select the account the detected wallet/account name matched.
       if (matchedAccount) {
-        setSelectedAccount(matchedAccount);
+        const full = accounts.find((a) => a.id === matchedAccount.id);
+        if (full) setSelectedAccount(full);
       }
     } catch (err: any) {
       Alert.alert('OCR Error', err.message || 'Failed to parse receipt.');

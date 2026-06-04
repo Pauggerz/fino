@@ -1,6 +1,6 @@
 /**
  * Standalone terminal test runner for the offline taxonomy / bubble-up
- * resolver in `src/services/aiCategoryMap.ts`.
+ * resolver in `src/intelligence/categorize/categorize.ts`.
  *
  * Run from the repo root:
  *   npx tsx scripts/test-taxonomy.ts
@@ -20,8 +20,8 @@ import {
   extractItems,
   type AIAnalysisResult,
   type Category,
-} from '../src/services/aiCategoryMap';
-import { TAXONOMY } from '../src/constants/taxonomy';
+} from '../src/intelligence/categorize/categorize';
+import { TAXONOMY } from '../src/intelligence/taxonomy/taxonomy';
 
 // ─── Tiny test harness ──────────────────────────────────────────────────────
 

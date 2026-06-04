@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fino AI — Chat Redesign Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* ───────────────────────────────────────────────────────────
+     FINO DESIGN TOKENS  (from src/constants/theme.ts)
+     ─────────────────────────────────────────────────────────── */
+  :root {
+    --nunito: 'Nunito', system-ui, sans-serif;
+    --inter:  'Inter', system-ui, sans-serif;
+    --mono:   'DM Mono', ui-monospace, monospace;
+  }
+
+  /* DARK (matches the Gemini reference; Fino dark Forest) */
+  .theme-dark {
+    --bg:            #0E0E10;
+    --surface:       #18181C;
+    --surfaceSub:    #202024;
+    --border:        #28282E;
+    --textPrimary:   #EEEAE4;
+    --textSecondary: #88888F;
+    --primary:       #5DB87E;
+    --aiBubbleBg:    #191424;
+    --aiBubbleBorder:#332858;
+    --aiText:        #EEEAE4;
+    --aiLabel:       #A890D8;
+    --userBg:        #172A1E;
+    --heroBg:        #172A1E;
+    --heroOn:        #E8F2EB;
+    --heroSub:       rgba(232,242,235,0.55);
+    --expense:       #E05C5C;
+    --income:        #5DB87E;
+    --inputBg:       #18181C;
+    --chipBg:        #1A1726;
+    --chipBorder:    #2A2440;
+    --divider:       #232328;
+  }
+
+  /* LIGHT (Fino warm light, Forest) */
+  .theme-light {
+    --bg:            #F7F5F2;
+    --surface:       #FFFFFF;
+    --surfaceSub:    #F0EFEA;
+    --border:        #e0dfd7;
+    --textPrimary:   #1E1E2E;
+    --textSecondary: #8A8A9A;
+    --primary:       #5B8C6E;
+    --aiBubbleBg:    #EEEDFE;
+    --aiBubbleBorder:#AFA9EC;
+    --aiText:        #26215C;
+    --aiLabel:       #534AB7;
+    --userBg:        #2d6a4f;
+    --heroBg:        #2a4f3a;
+    --heroOn:        #F2EFE8;
+    --heroSub:       rgba(242,239,232,0.62);
+    --expense:       #C0503A;
+    --income:        #3f6b52;
+    --inputBg:       #FFFFFF;
+    --chipBg:        #FFFFFF;
+    --chipBorder:    #e0dfd7;
+    --divider:       rgba(0,0,0,0.05);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: var(--inter);
+    background:
+      radial-gradient(1200px 600px at 10% -10%, #20202a 0%, transparent 55%),
+      radial-gradient(1000px 500px at 110% 110%, #1a2420 0%, transparent 55%),
+      #101013;
+    color: #d8d8de;
+    min-height: 100vh;
+    padding: 36px 20px 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 26px;
+  }
+
+  /* ─── Page header / controls ─── */
+  .page-head { text-align: center; max-width: 760px; }
+  .page-head h1 {
+    font-family: var(--nunito); font-weight: 900; font-size: 26px;
+    letter-spacing: -0.5px; color: #f3f1ec; margin-bottom: 8px;
+  }
+  .page-head p { font-size: 14px; line-height: 1.55; color: #9a9aa3; }
+  .page-head .accent { color: #A890D8; font-weight: 600; }
+
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .seg {
+    display: inline-flex; background: #1c1c22; border: 1px solid #2c2c34;
+    border-radius: 999px; padding: 4px; gap: 2px;
+  }
+  .seg button {
+    font-family: var(--inter); font-weight: 600; font-size: 12.5px;
+    color: #9a9aa3; background: transparent; border: none; cursor: pointer;
+    padding: 7px 16px; border-radius: 999px; transition: all .18s ease;
+  }
+  .seg button.active { background: #5DB87E; color: #07120c; }
+  .seg.purple button.active { background: #A890D8; color: #16101f; }
+
+  /* ─── Phone frame ─── */
+  .stage { display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+
+  .phone {
+    width: 380px; height: 800px;
+    border-radius: 46px; padding: 12px;
+    background: linear-gradient(160deg, #2a2a32, #131318);
+    box-shadow: 0 40px 90px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset;
+    position: relative;
+  }
+  .screen {
+    width: 100%; height: 100%; border-radius: 36px; overflow: hidden;
+    background: var(--bg); color: var(--textPrimary);
+    display: flex; flex-direction: column; position: relative;
+    font-family: var(--inter);
+  }
+  .phone-label {
+    position: absolute; bottom: -30px; left: 0; right: 0; text-align: center;
+    font-size: 12.5px; font-weight: 600; color: #8a8a93; letter-spacing: .3px;
+  }
+
+  /* ─── Status bar ─── */
+  .statusbar {
+    height: 44px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px; font-size: 13px; font-weight: 600; color: var(--textPrimary);
+    flex-shrink: 0;
+  }
+  .statusbar .icons { display: flex; gap: 6px; align-items: center; opacity: .85; }
+  .statusbar .icons svg { width: 16px; height: 16px; }
+
+  /* ─── App header ─── */
+  .appbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 6px 16px 12px; flex-shrink: 0;
+  }
+  .appbar .icon-btn {
+    width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
+    display: grid; place-items: center; cursor: pointer; color: var(--textPrimary);
+    background: transparent; border: none;
+  }
+  .appbar .icon-btn.bordered {
+    background: var(--surfaceSub); border: 1px solid var(--border); color: var(--textSecondary);
+  }
+  .appbar .title-wrap { flex: 1; display: flex; align-items: center; gap: 10px; }
+  .fino-mark {
+    width: 34px; height: 34px; border-radius: 11px; flex-shrink: 0;
+    background: linear-gradient(150deg, #7C65C8, #4B2DA3);
+    display: grid; place-items: center;
+    box-shadow: 0 6px 16px rgba(75,45,163,0.4);
+    position: relative;
+  }
+  .fino-mark.dot::after {
+    content: ''; position: absolute; bottom: -2px; right: -2px;
+    width: 11px; height: 11px; border-radius: 50%; background: #22C55E;
+    border: 2px solid var(--bg);
+  }
+  .appbar .htext .name { font-family: var(--nunito); font-weight: 800; font-size: 16px; letter-spacing: -0.3px; }
+  .appbar .htext .sub { font-size: 11px; font-weight: 500; color: var(--textSecondary); margin-top: 1px; }
+  .appbar.center .title-wrap { justify-content: center; }
+  .appbar.center .name { font-family: var(--nunito); font-weight: 800; font-size: 17px; letter-spacing: -0.2px; }
+
+  .avatar-btn {
+    width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
+    background: conic-gradient(from 210deg, #5DB87E, #A890D8, #E07A5F, #5DB87E);
+    padding: 2px; border: none;
+  }
+  .avatar-btn span {
+    display: grid; place-items: center; width: 100%; height: 100%;
+    border-radius: 50%; background: #1d1d22; color: #fff; font-size: 14px; font-weight: 700;
+  }
+
+  /* ─── Body scroll ─── */
+  .body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+  /* ─── LANDING STATE (Gemini-style) ─── */
+  .landing { flex: 1; display: flex; flex-direction: column; padding: 8px 22px 0; }
+  .landing .spacer { flex: 1; min-height: 12px; }
+
+  .greeting { margin-bottom: 4px; }
+  .greeting .eyebrow {
+    font-size: 12px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase;
+    color: var(--aiLabel); margin-bottom: 8px;
+  }
+  .greeting h2 {
+    font-family: var(--nunito); font-weight: 900; font-size: 34px; line-height: 1.08;
+    letter-spacing: -0.8px; color: var(--textPrimary);
+  }
+  .greeting h2 .muted { color: var(--textSecondary); }
+
+  /* subtle, optional one-line finance glance (replaces the crossed-out stats card) */
+  .glance {
+    margin-top: 18px; display: inline-flex; align-self: flex-start; align-items: center; gap: 8px;
+    background: var(--surfaceSub); border: 1px solid var(--border);
+    border-radius: 999px; padding: 8px 14px 8px 12px; cursor: pointer;
+  }
+  .glance .dotmark { width: 8px; height: 8px; border-radius: 50%; background: var(--income); }
+  .glance .amt { font-family: var(--mono); font-weight: 500; font-size: 13px; color: var(--textPrimary); }
+  .glance .sep { color: var(--textSecondary); font-size: 12px; }
+  .glance .save { font-size: 12px; font-weight: 600; color: var(--income); }
+  .glance .chev { color: var(--textSecondary); display: grid; place-items: center; }
+
+  /* suggestion chips — Gemini layout, Fino styling */
+  .suggestions { display: flex; flex-direction: column; gap: 11px; margin-top: 26px; }
+  .sugg {
+    display: flex; align-items: center; gap: 13px;
+    background: var(--chipBg); border: 1px solid var(--chipBorder);
+    border-radius: 18px; padding: 13px 15px; cursor: pointer;
+    transition: transform .14s ease, border-color .14s ease;
+  }
+  .sugg:hover { transform: translateY(-1px); border-color: var(--aiLabel); }
+  .sugg .tile {
+    width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+    display: grid; place-items: center;
+  }
+  .sugg .tile svg { width: 18px; height: 18px; }
+  .sugg .label { font-size: 14.5px; font-weight: 600; color: var(--textPrimary); }
+  .sugg .label small { display: block; font-size: 11.5px; font-weight: 500; color: var(--textSecondary); margin-top: 1px; }
+
+  /* tile color variants pulled from Fino category palette */
+  .t-scan   { background: rgba(168,144,216,0.16); color: var(--aiLabel); }
+  .t-log    { background: rgba(93,184,126,0.16);  color: var(--income); }
+  .t-spend  { background: rgba(46,122,184,0.16);  color: #5A9FE8; }
+  .t-save   { background: rgba(224,122,95,0.16);  color: #E07A5F; }
+
+  /* ─── CONVERSATION STATE ─── */
+  .thread { flex: 1; overflow-y: auto; padding: 14px 18px 8px; display: flex; flex-direction: column; }
+  .thread::-webkit-scrollbar { width: 0; }
+
+  .msg-ai { align-self: flex-start; max-width: 86%; margin-bottom: 20px; }
+  .ai-bubble {
+    background: var(--aiBubbleBg); border: 1px solid var(--aiBubbleBorder);
+    border-radius: 4px 16px 16px 16px; padding: 13px 14px;
+  }
+  .ai-label { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+  .ai-label .ic { width: 16px; height: 16px; border-radius: 5px; background: linear-gradient(150deg,#7C65C8,#4B2DA3); display: grid; place-items: center; }
+  .ai-label .ic svg { width: 9px; height: 9px; }
+  .ai-label .tx { font-size: 12px; font-weight: 600; color: var(--aiLabel); }
+  .ai-text { font-size: 14px; line-height: 1.45; color: var(--aiText); }
+  .ts { font-size: 10px; color: var(--textSecondary); margin-top: 6px; margin-left: 4px; }
+
+  .msg-user { align-self: flex-end; max-width: 80%; margin-bottom: 20px; display: flex; flex-direction: column; align-items: flex-end; }
+  .user-bubble {
+    background: var(--userBg); color: #fff;
+    border-radius: 16px 4px 16px 16px; padding: 12px 14px;
+    font-size: 14px; line-height: 1.45;
+  }
+  .ts.right { margin-left: 0; margin-right: 4px; }
+
+  /* thinking steps */
+  .thinking {
+    align-self: flex-start; max-width: 86%; margin-bottom: 20px;
+    background: rgba(124,101,200,0.12); border: 1px solid rgba(124,101,200,0.35);
+    border-radius: 4px 16px 16px 16px; padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 9px; min-width: 200px;
+  }
+  .step { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+  .step .ring { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid rgba(168,144,216,0.3); border-top-color: var(--aiLabel); animation: spin .75s linear infinite; }
+  .step .chk { color: var(--aiLabel); width: 13px; text-align: center; }
+  .step.done { color: var(--textSecondary); opacity: .55; }
+  .step.active { color: var(--aiText); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* tx confirm card */
+  .tx-card {
+    background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.3);
+    border-radius: 14px; padding: 14px; margin-top: 10px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .tx-head { display: flex; align-items: center; gap: 8px; }
+  .tx-head .box { width: 26px; height: 26px; border-radius: 8px; background: #22C55E; display: grid; place-items: center; }
+  .tx-head .box svg { width: 14px; height: 14px; }
+  .tx-head .t { font-size: 12.5px; font-weight: 700; color: #22C55E; }
+  .tx-mid { display: flex; justify-content: space-between; align-items: center; }
+  .tx-mid .nm { font-size: 14px; font-weight: 600; color: var(--textPrimary); }
+  .tx-mid .am { font-family: var(--mono); font-weight: 500; font-size: 15px; color: var(--expense); }
+  .tx-meta { display: flex; gap: 8px; }
+  .tx-meta span { font-size: 11px; font-weight: 500; color: var(--textSecondary); background: rgba(255,255,255,0.06); border-radius: 8px; padding: 4px 8px; }
+  .theme-light .tx-meta span { background: rgba(0,0,0,0.06); }
+
+  /* follow-up chips */
+  .followups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .fu {
+    background: var(--aiBubbleBg); border: 1px solid var(--aiBubbleBorder);
+    border-radius: 999px; padding: 8px 13px; font-size: 12px; font-weight: 600; color: var(--aiLabel); cursor: pointer;
+  }
+
+  /* ─── INPUT BAR (Gemini-style) ─── */
+  .composer { flex-shrink: 0; padding: 8px 16px 18px; }
+  .composer-inner {
+    background: var(--inputBg); border: 1px solid var(--border);
+    border-radius: 26px; padding: 6px 6px 6px 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  }
+  .composer .field {
+    display: flex; align-items: flex-end; padding: 8px 8px 6px;
+  }
+  .composer textarea {
+    flex: 1; border: none; outline: none; resize: none; background: transparent;
+    font-family: var(--inter); font-size: 15px; line-height: 1.4; color: var(--textPrimary);
+    max-height: 90px; padding: 4px 6px;
+  }
+  .composer textarea::placeholder { color: var(--textSecondary); }
+  .composer .toolbar { display: flex; align-items: center; gap: 6px; padding: 2px 4px 0; }
+  .composer .tbtn {
+    width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer;
+    display: grid; place-items: center; background: var(--surfaceSub); color: var(--textSecondary);
+  }
+  .composer .tbtn.ghost { background: transparent; }
+  .composer .grow { flex: 1; }
+  .composer .mode {
+    height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border);
+    background: transparent; color: var(--textSecondary); font-size: 12px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  }
+  .composer .mode .dt { width: 6px; height: 6px; border-radius: 50%; background: var(--aiLabel); }
+  .composer .send {
+    width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer;
+    display: grid; place-items: center; color: #fff;
+    background: linear-gradient(150deg,#7C65C8,#4B2DA3);
+    box-shadow: 0 4px 12px rgba(75,45,163,0.45);
+  }
+  .composer .send.disabled { background: var(--surfaceSub); color: var(--textSecondary); box-shadow: none; }
+
+  .hidden { display: none !important; }
+
+  .note {
+    max-width: 760px; font-size: 13px; line-height: 1.6; color: #9a9aa3;
+    background: #16161b; border: 1px solid #26262e; border-radius: 14px; padding: 16px 18px;
+  }
+  .note b { color: #cfcfd6; }
+  .note ul { margin: 8px 0 0 18px; }
+  .note li { margin-bottom: 5px; }
+</style>
+</head>
+<body>
+
+  <div class="page-head">
+    <h1>Fino AI — Chat Redesign</h1>
+    <p>Gemini's calm, spacious layout — a big personalised greeting, action suggestions, and a floating composer —
+       rebuilt entirely in <span class="accent">Fino's</span> visual language (Forest + AI-lavender, Nunito / Inter / DM&nbsp;Mono, real theme tokens).
+       The cluttered stats strip and forced hero card are gone; finances stay one subtle tap away.</p>
+  </div>
+
+  <div class="controls">
+    <div class="seg" id="themeSeg">
+      <button data-theme="dark" class="active">Dark</button>
+      <button data-theme="light">Light</button>
+    </div>
+    <div class="seg purple" id="stateSeg">
+      <button data-state="landing" class="active">Landing</button>
+      <button data-state="chat">Conversation</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="phone">
+      <div class="screen theme-dark" id="screen">
+
+        <!-- STATUS BAR -->
+        <div class="statusbar">
+          <span>2:43</span>
+          <div class="icons">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 17h2v-3H2v3zm4 0h2V9H6v8zm4 0h2V4h-2v13zm4 0h2v-6h-2v6zm4 0h2V7h-2v10z"/></svg>
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21l11-18H1z" opacity=".9"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2"/></svg>
+          </div>
+        </div>
+
+        <!-- APP HEADER (landing) — back button (left) + profile (right) -->
+        <div class="appbar center" id="appbarLanding">
+          <button class="icon-btn">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div class="title-wrap">
+            <div class="name">Fino</div>
+          </div>
+          <button class="avatar-btn"><span>G</span></button>
+        </div>
+
+        <!-- APP HEADER (chat = back + identity) -->
+        <div class="appbar hidden" id="appbarChat">
+          <button class="icon-btn">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div class="title-wrap">
+            <div class="fino-mark dot">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M5 5h11M5 10h14M5 15h9"/><circle cx="18" cy="16" r="2.4" fill="#fff" stroke="none"/></svg>
+            </div>
+            <div class="htext">
+              <div class="name">Fino AI</div>
+              <div class="sub">Online · Knows your finances</div>
+            </div>
+          </div>
+          <button class="icon-btn bordered">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+
+        <div class="body">
+
+          <!-- ════════ LANDING ════════ -->
+          <div class="landing" id="viewLanding">
+            <div class="spacer"></div>
+
+            <div class="greeting">
+              <div class="eyebrow">Good evening, George</div>
+              <h2>What can I<br>help you with?</h2>
+            </div>
+
+            <!-- subtle finance glance: the only number on screen -->
+            <div class="glance">
+              <span class="dotmark"></span>
+              <span class="amt">₱178,131</span>
+              <span class="sep">·</span>
+              <span class="save">saving ₱1,563 this month</span>
+              <span class="chev"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span>
+            </div>
+
+            <div class="suggestions">
+              <div class="sugg" data-fill="Give me a spending breakdown for this month">
+                <div class="tile t-spend">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16l3.5-4 3 2.5L20 8"/></svg>
+                </div>
+                <div class="label">Spending breakdown<small>See this month by category</small></div>
+              </div>
+
+              <div class="sugg" data-fill="How does my spending compare to last month?">
+                <div class="tile t-scan">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18V9M12 18V5M17 18v-6"/></svg>
+                </div>
+                <div class="label">Compare to last month<small>Am I up or down vs last month?</small></div>
+              </div>
+
+              <div class="sugg" data-fill="Where can I cut back this month?">
+                <div class="tile t-save">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.5 15.5M14.5 14.5L20 20M8.5 8.5L12 12"/></svg>
+                </div>
+                <div class="label">Where can I cut?<small>Find easy wins to trim</small></div>
+              </div>
+
+              <div class="sugg" data-fill="What's my savings forecast for this month?">
+                <div class="tile t-log">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
+                </div>
+                <div class="label">Savings forecast<small>Where you'll land this month</small></div>
+              </div>
+            </div>
+
+            <div class="spacer"></div>
+          </div>
+
+          <!-- ════════ CONVERSATION ════════ -->
+          <div class="thread hidden" id="viewChat">
+            <div class="msg-user">
+              <div class="user-bubble">grab 240 from gcash</div>
+              <div class="ts right">2:41 PM</div>
+            </div>
+
+            <div class="msg-ai">
+              <div class="tx-card" style="margin-top:0">
+                <div class="tx-head">
+                  <div class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></div>
+                  <div class="t">Transaction Logged</div>
+                </div>
+                <div class="tx-mid">
+                  <div class="nm">Grab ride</div>
+                  <div class="am">-₱240.00</div>
+                </div>
+                <div class="tx-meta"><span>Transport</span><span>GCash</span></div>
+              </div>
+              <div class="ts">2:41 PM</div>
+            </div>
+
+            <div class="msg-user">
+              <div class="user-bubble">where did my money go this month?</div>
+              <div class="ts right">2:42 PM</div>
+            </div>
+
+            <div class="thinking">
+              <div class="step done"><span class="chk">✓</span> Fetching your transactions</div>
+              <div class="step done"><span class="chk">✓</span> Calculating totals</div>
+              <div class="step active"><span class="ring"></span> Identifying top categories…</div>
+            </div>
+
+            <div class="msg-ai">
+              <div class="ai-bubble">
+                <div class="ai-label">
+                  <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M5 6h10M5 12h14M5 18h8"/></svg></div>
+                  <div class="tx">Fino</div>
+                </div>
+                <div class="ai-text">You've spent <b>₱3,437</b> this month — that's 9% less than last month, nice. Most of it went to Food (₱1,420) and Transport (₱860).</div>
+              </div>
+              <div class="ts">2:42 PM</div>
+              <div class="followups">
+                <div class="fu">Show food spend</div>
+                <div class="fu">Compare to last month</div>
+                <div class="fu">Where can I cut?</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- COMPOSER -->
+        <div class="composer">
+          <div class="composer-inner">
+            <div class="field">
+              <textarea rows="1" id="ta" placeholder="Ask or log a transaction…"></textarea>
+            </div>
+            <div class="toolbar">
+              <button class="tbtn" title="Attach / scan receipt">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+              <button class="mode" title="Fino capabilities"><span class="dt"></span>Fino</button>
+              <div class="grow"></div>
+              <button class="send disabled" id="sendBtn">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="phone-label">Tap a suggestion, type, or switch states above ↑</div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>What changed vs. the current screen (the crossed-out one):</b>
+    <ul>
+      <li><b>Killed the top stats strip + forced green hero card.</b> They dominated the screen on every open. The one number that earns its place — balance &amp; monthly savings — survives as a single subtle, tappable <i>glance</i> pill.</li>
+      <li><b>Gemini's calm landing.</b> A time-aware greeting in Nunito display + four insight suggestions (Spending breakdown · Compare to last month · Where can I cut? · Savings forecast) instead of a wall of data. Header = back button (left) + profile (right).</li>
+      <li><b>Floating composer.</b> Rounded pill with a “+” (attach / scan), a “Fino” capability pill (where Gemini puts “Pro”), and a gradient AI-lavender send button. No mic.</li>
+      <li><b>Fino DNA retained.</b> AI-lavender bubble with the Fino mark, green user bubbles, the animated thinking-steps, the green transaction-confirm card, and follow-up chips are all unchanged — and every colour is a real theme token (works across all 7 accents + light/dark).</li>
+    </ul>
+  </div>
+
+<script>
+  // Theme toggle
+  const screen = document.getElementById('screen');
+  document.getElementById('themeSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#themeSeg button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    screen.classList.toggle('theme-dark', b.dataset.theme === 'dark');
+    screen.classList.toggle('theme-light', b.dataset.theme === 'light');
+  });
+
+  // State toggle (landing / chat)
+  const viewLanding = document.getElementById('viewLanding');
+  const viewChat = document.getElementById('viewChat');
+  const abLanding = document.getElementById('appbarLanding');
+  const abChat = document.getElementById('appbarChat');
+  document.getElementById('stateSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#stateSeg button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    const chat = b.dataset.state === 'chat';
+    viewLanding.classList.toggle('hidden', chat);
+    viewChat.classList.toggle('hidden', !chat);
+    abLanding.classList.toggle('hidden', chat);
+    abChat.classList.toggle('hidden', !chat);
+  });
+
+  // Composer: fill from suggestion, enable send
+  const ta = document.getElementById('ta');
+  const sendBtn = document.getElementById('sendBtn');
+  function refreshSend() { sendBtn.classList.toggle('disabled', ta.value.trim() === ''); }
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 90) + 'px';
+    refreshSend();
+  });
+  document.querySelectorAll('.sugg').forEach(s => {
+    s.addEventListener('click', () => { ta.value = s.dataset.fill; ta.dispatchEvent(new Event('input')); ta.focus(); });
+  });
+  document.querySelectorAll('.fu').forEach(f => {
+    f.addEventListener('click', () => { ta.value = f.textContent; ta.dispatchEvent(new Event('input')); ta.focus(); });
+  });
+</script>
+</body>
+</html>
