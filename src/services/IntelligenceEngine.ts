@@ -13,7 +13,7 @@
 import { Q } from '@nozbe/watermelondb';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
-import { analyzeTransactionText } from './aiCategoryMap';
+import { analyzeTransactionText } from '@/intelligence/categorize/categorize';
 import fmtPeso from '@/utils/format';
 import {
   median,

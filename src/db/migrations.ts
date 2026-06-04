@@ -187,7 +187,7 @@ export default schemaMigrations({
     },
     {
       // v9 — local-only chat history for the Fino chatbot. The chat is now
-      // offline-first (replies come from src/services/finoBrain.ts, not
+      // offline-first (replies come from src/intelligence/convo/brain.ts, not
       // Gemini) and the thread persists on device. NOT synced to Supabase —
       // it's intentionally absent from SYNCED_TABLES, so conversations never
       // leave the device.

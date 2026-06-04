@@ -32,8 +32,12 @@ import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import type ChatMessageModel from '@/db/models/ChatMessage';
 import { useIncomeCategories } from '@/hooks/useIncomeCategories';
-import { parseChatTransaction, type ChatTx } from '@/services/parseChatTransaction';
-import { routeMessage, type BrainContext } from '@/services/finoBrain';
+import {
+  parseChatTransaction,
+  routeMessage,
+  type ChatTx,
+  type BrainContext,
+} from '@/intelligence';
 import { saveChatMessage, loadChatHistory } from '@/services/chatMutations';
 
 const STEP_SETS: Record<string, string[]> = {

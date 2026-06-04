@@ -1,7 +1,7 @@
 /**
  * One-off — prints per-master keyword counts. Run via `npx tsx scripts/count-taxonomy.ts`.
  */
-import { aiMappings } from '../src/services/aiCategoryMap';
+import { aiMappings } from '../src/intelligence/categorize/categorize';
 
 const counts: Record<string, number> = {};
 for (const v of Object.values(aiMappings)) {

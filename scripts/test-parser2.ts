@@ -1,4 +1,4 @@
-import { extractItems, buildDisplayName } from '../src/services/aiCategoryMap';
+import { extractItems, buildDisplayName } from '../src/intelligence/categorize/categorize';
 
 const text1 = "I bought rottiserrie chicken 900 gcash";
 console.log("No account surface 1:", extractItems(text1));

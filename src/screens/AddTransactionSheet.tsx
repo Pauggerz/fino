@@ -56,11 +56,10 @@ import {
   detectAccount,
   buildAmountState,
   buildDisplayName,
+  matchIncomeKeyword,
   type AIAnalysisResult,
-  type Category,
-} from '../services/aiCategoryMap';
+} from '@/intelligence';
 import { suggestCategory } from '../services/IntelligenceEngine';
-import { matchIncomeKeyword } from '../services/incomeKeywords';
 import { useAuth } from '../contexts/AuthContext';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAccounts } from '@/hooks/useAccounts';

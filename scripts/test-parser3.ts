@@ -1,4 +1,4 @@
-import { extractItems } from '../src/services/aiCategoryMap';
+import { extractItems } from '../src/intelligence/categorize/categorize';
 
 const texts = [
   "I bought rottiserrie chicken 900 gcash",

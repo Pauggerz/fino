@@ -1,4 +1,4 @@
-import { extractItems, buildDisplayName } from '../src/services/aiCategoryMap';
+import { extractItems, buildDisplayName } from '../src/intelligence/categorize/categorize';
 
 const testCases = [
     // --- FOOD & DINING (1-60) ---

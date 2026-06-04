@@ -16,8 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import * as FileSystem from 'expo-file-system/legacy';
-import { supabase } from '../services/supabase';
+import { parseSplitReceipt, normalizeSplitItems } from '@/intelligence';
 import { useTheme } from '../contexts/ThemeContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -597,37 +596,14 @@ export default function BillSplitterScreen() {
     setReceiptTotal(null);
 
     try {
-      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-      const { data, error } = await supabase.functions.invoke('split-receipt', {
-        body: { imageBase64: base64, mimeType: 'image/jpeg' },
-      });
-      if (error) {
-        let detail = error.message;
-        try {
-          const ctx = (error as any).context;
-          if (ctx?.json) {
-            const body = await ctx.json();
-            if (body?.error)
-              detail = body.error + (body.details ? `: ${body.details}` : '');
-          } else if (typeof ctx?.text === 'function') {
-            detail = await ctx.text();
-          }
-        } catch { /* ignore */ }
-        throw new Error(detail);
-      }
+      const raw = await parseSplitReceipt(uri);
+      const {
+        merchant: detectedMerchant,
+        total,
+        items: lineItems,
+      } = normalizeSplitItems(raw);
 
-      const parsed = data as {
-        merchant?: string | null;
-        items?: {
-          name: string;
-          price: number;
-          unit_price?: number;
-          quantity?: number;
-        }[];
-        total?: number | null;
-      };
-
-      if (!parsed.items || parsed.items.length === 0) {
+      if (lineItems.length === 0) {
         Alert.alert(
           'No items found',
           'Could not detect individual items on this receipt. Try a clearer photo.'
@@ -636,14 +612,16 @@ export default function BillSplitterScreen() {
         return;
       }
 
-      setMerchant(parsed.merchant ?? null);
-      setReceiptTotal(parsed.total ?? null);
+      setMerchant(detectedMerchant);
+      setReceiptTotal(total);
       setItems(
-        parsed.items.map((item, i) => {
-          const qty = item.quantity ?? 1;
-          const total = item.price ?? (item.unit_price ? item.unit_price * qty : 0);
-          return { id: `item-${i}`, name: item.name, price: total, quantity: qty, assignees: {} };
-        })
+        lineItems.map((item, i) => ({
+          id: `item-${i}`,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          assignees: {},
+        }))
       );
       setPhase('assigning');
     } catch (err: any) {

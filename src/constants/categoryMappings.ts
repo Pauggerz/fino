@@ -2,10 +2,10 @@
  * Category metadata constants — emoji, colors, default category lists.
  *
  * The flat keyword → category dictionary that used to live here moved to the
- * hierarchical taxonomy at `src/constants/taxonomy.ts`. The backward-compatible
- * flat shape is re-exported as `aiMappings` from `services/aiCategoryMap.ts`,
- * derived from the taxonomy at module load. To add or change keywords, edit
- * the relevant TaxonomyNode in `taxonomy.ts` — not this file.
+ * hierarchical taxonomy at `src/intelligence/taxonomy/taxonomy.ts`. The
+ * backward-compatible flat shape is re-exported as `aiMappings` from
+ * `@/intelligence`, derived from the taxonomy at module load. To add or change
+ * keywords, edit the relevant TaxonomyNode in that taxonomy file — not this one.
  */
 
 // Maps DB emoji key → display emoji (for use in feed rows, pills, etc.)
