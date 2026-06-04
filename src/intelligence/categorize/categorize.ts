@@ -1,5 +1,16 @@
-import { TAXONOMY, type TaxonomyNode, type MasterCategory } from '../constants/taxonomy';
-import { transitions } from '../constants/transitions';
+import { TAXONOMY, type TaxonomyNode, type MasterCategory } from '../taxonomy/taxonomy';
+import { transitions } from '../../constants/transitions';
+import { levenshtein, maxEditsFor } from '../core/editDistance';
+import { tokenize } from '../core/normalize';
+import {
+  extractAmounts,
+  buildAmountState,
+  type CalculatorState,
+} from '../core/amounts';
+
+// Re-export the relocated primitives so the `@/intelligence` public surface
+// stays unchanged after the core/ extraction (see FINO_INTELLIGENCE_V2.md §3).
+export { extractAmounts, buildAmountState, type CalculatorState };
 
 export type Category = MasterCategory;
 
@@ -145,50 +156,6 @@ export interface AIAnalysisResult {
   /** Full taxonomy path for the matched keyword, leaf → master. Useful for
    *  debugging and the optional "why this category?" tutorial. */
   taxonomyPath: string[];
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Bounded Levenshtein distance — returns early once `max` is exceeded.
- * Used to allow typo-tolerant keyword matching (max 2 edits) without ever
- * letting unrelated short words masquerade as matches.
- */
-function levenshtein(a: string, b: string, max: number): number {
-  if (a === b) return 0;
-  const al = a.length;
-  const bl = b.length;
-  if (Math.abs(al - bl) > max) return max + 1;
-  if (al === 0) return bl;
-  if (bl === 0) return al;
-
-  let prev = new Array<number>(bl + 1);
-  let curr = new Array<number>(bl + 1);
-  for (let j = 0; j <= bl; j++) prev[j] = j;
-
-  for (let i = 1; i <= al; i++) {
-    curr[0] = i;
-    let rowMin = curr[0];
-    for (let j = 1; j <= bl; j++) {
-      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
-      curr[j] = Math.min(
-        prev[j] + 1, // deletion
-        curr[j - 1] + 1, // insertion
-        prev[j - 1] + cost // substitution
-      );
-      if (curr[j] < rowMin) rowMin = curr[j];
-    }
-    if (rowMin > max) return max + 1;
-    [prev, curr] = [curr, prev];
-  }
-  return prev[bl];
-}
-
-/** Acceptable typo tolerance scales with keyword length to avoid false positives. */
-function maxEditsFor(keyword: string): number {
-  if (keyword.length <= 3) return 0; // "sm", "tm", "tnt" — exact only
-  if (keyword.length <= 5) return 1;
-  return 2;
 }
 
 // ─── Account detection ──────────────────────────────────────────────────────
@@ -341,80 +308,6 @@ export function detectAccount(
   }
 
   return null;
-}
-
-const AMOUNT_REGEX =
-  /(?<![A-Za-z\d])(?:₱|php|p)?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:pesos?|piso|php)?(?![A-Za-z\d])/gi;
-
-/**
- * Extract numeric amounts from free-form text.
- *
- * The pattern is anchored on both sides so multi-digit numbers are kept
- * whole — e.g. "1234" extracts as [1234], not [123, 4].
- *
- * Examples:
- *   "I eat at Jollibee and spent 100 pesos" → [100]
- *   "apple 10 mango 20"                     → [10, 20]
- *   "₱1,250.50 for groceries"               → [1250.5]
- *   "rent 12500"                            → [12500]
- */
-export function extractAmounts(text: string): number[] {
-  if (!text) return [];
-  const out: number[] = [];
-  AMOUNT_REGEX.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = AMOUNT_REGEX.exec(text)) !== null) {
-    const raw = m[1].replace(/,/g, '');
-    const n = parseFloat(raw);
-    if (Number.isFinite(n) && n > 0) out.push(n);
-  }
-  return out;
-}
-
-// ─── Calculator-state population ────────────────────────────────────────────
-
-export type CalculatorState = {
-  /** First operand for the pending operation (empty string if none). */
-  firstOperand: string;
-  /** Pending operator, currently always '+' for AI-extracted multi-amount text. */
-  operator: '+' | null;
-  /** Active input — what the user would see in the main amount slot. */
-  amount: string;
-};
-
-function fmtAmount(n: number): string {
-  return String(Math.round(n * 100) / 100);
-}
-
-/**
- * Translates a list of extracted amounts into calculator-state suitable for
- * the Add Transaction sheet. Two or more amounts produce a pending "+" so
- * the user sees `firstOperand + activeAmount` (e.g. `20 + 10`) and can hit
- * `=` to total — matching how the keypad behaves manually.
- */
-export function buildAmountState(amounts: number[]): CalculatorState | null {
-  if (!amounts || amounts.length === 0) return null;
-  if (amounts.length === 1) {
-    return { firstOperand: '', operator: null, amount: fmtAmount(amounts[0]) };
-  }
-  // Collapse all-but-last as the pending first operand. The user sees
-  // "(running sum) + (latest)" which mirrors a manual chain like 20 + 10.
-  const last = amounts[amounts.length - 1];
-  const rest = amounts.slice(0, -1);
-  const sum = rest.reduce((s, n) => s + n, 0);
-  return {
-    firstOperand: fmtAmount(sum),
-    operator: '+',
-    amount: fmtAmount(last),
-  };
-}
-
-function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean);
 }
 
 /**

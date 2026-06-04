@@ -3,8 +3,8 @@ import {
   detectAccount,
   buildDisplayName,
   type AccountLite,
-} from './aiCategoryMap';
-import { matchIncomeKeyword, looksLikeIncome } from './incomeKeywords';
+} from './categorize';
+import { matchIncomeKeyword, looksLikeIncome } from './income';
 
 export type ChatTx = {
   amount: number;
