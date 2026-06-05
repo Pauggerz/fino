@@ -29,7 +29,26 @@ export type IntentId =
   | 'savings'
   | 'count'
   | 'coach'
-  | 'overspend';
+  | 'overspend'
+  | 'transactions'
+  | 'categoryOf'
+  | 'salaryStatus'
+  | 'billStatus'
+  | 'summary'
+  | 'budgetStatus'
+  | 'needsVsWants'
+  | 'dowPattern'
+  | 'incomeShare'
+  | 'trend'
+  | 'typicalSpend'
+  | 'subscriptionCut'
+  | 'emergencyFund'
+  | 'goalPlan'
+  | 'bonusAdvice'
+  | 'improveSavings'
+  | 'cutAmount'
+  | 'ruleOfThumb'
+  | 'impulseTips';
 
 type Trigger = { term: string; weight: number };
 
@@ -229,6 +248,242 @@ const INTENT_DEFS: IntentDef[] = [
       t('too much', 2),
       t('lampas', 3),
       t('sobra', 2),
+    ],
+  },
+  {
+    id: 'transactions',
+    blurb: 'list, find, or filter your transactions',
+    triggers: [
+      t('transactions', 2),
+      t('transaction', 2),
+      t('transaction history', 4),
+      t('recent transactions', 4),
+      t('last transactions', 3),
+      t('list transactions', 4),
+      t('show transactions', 4),
+      t('recent activity', 3),
+      t('purchases', 2),
+      t('my purchases', 3),
+      t('charge', 1),
+    ],
+  },
+  {
+    id: 'categoryOf',
+    blurb: 'tell you which category a purchase fell under',
+    // No bare "which/what category" trigger — that collides with topCategory
+    // ("which category drains the most"). The strong signal is "fall under" /
+    // "categorized", plus the `category did/was my <X>` canonicalize rule.
+    triggers: [
+      t('fall under', 4),
+      t('falls under', 4),
+      t('categorized', 3),
+      t('categorized as', 4),
+      t('category of', 3),
+      t('tagged as', 2),
+    ],
+  },
+  {
+    id: 'salaryStatus',
+    blurb: 'check if your salary has come in yet',
+    triggers: [
+      t('did my salary', 5),
+      t('salary hit', 4),
+      t('salary in', 3),
+      t('did i get paid', 5),
+      t('got paid', 3),
+      t('have i been paid', 5),
+      t('paid yet', 3),
+      t('sweldo na', 4),
+      t('sahod na', 4),
+    ],
+  },
+  {
+    id: 'billStatus',
+    blurb: 'check if a bill or subscription is paid, and list subscriptions',
+    triggers: [
+      t('did i pay', 5),
+      t('have i paid', 5),
+      t('already paid', 3),
+      t('bill paid', 3),
+      t('paid my', 3),
+      t('subscriptions', 4),
+      t('subscription', 3),
+      t('recurring', 2),
+    ],
+  },
+  {
+    id: 'summary',
+    blurb: 'summarize your money for a week, month, quarter, or year',
+    triggers: [
+      t('spending summary', 5), // canonicalize anchor
+      t('summary', 3),
+      t('summarize', 4),
+      t('summarise', 4),
+      t('recap', 3),
+      t('overview', 3),
+      t('digest', 3),
+      t('cash flow', 3),
+      t('cashflow', 3),
+      t('how did i do', 4),
+      t('income vs expense', 4),
+      t('fixed vs variable', 5),
+    ],
+  },
+  {
+    id: 'budgetStatus',
+    blurb: 'check how you are tracking against your budgets',
+    triggers: [
+      t('budget status', 5), // canonicalize anchor (never fires on "over budget")
+      t('budget', 2),
+      t('budget health', 5),
+      t('within budget', 4),
+      t('under budget', 3),
+      t('stay under', 3),
+      t('budget left', 4),
+      t('on track to stay', 4),
+    ],
+  },
+  {
+    id: 'needsVsWants',
+    blurb: 'split your spending into needs vs wants',
+    triggers: [
+      // Anchor weight clears `compare` even when the phrase reads "needs VERSUS
+      // wants" (which also trips the compare canon). The anchor only fires on the
+      // needs/(vs|and|or)/wants pattern, so a high weight is safe here.
+      t('needs wants', 9), // canonicalize anchor
+      t('needs vs wants', 5),
+      t('needs versus wants', 5),
+      t('necessities', 4),
+      t('need or want', 4),
+    ],
+  },
+  {
+    id: 'dowPattern',
+    blurb: 'find which day of the week you spend the most',
+    triggers: [
+      t('day of week', 5), // canonicalize anchor
+      t('day of the week', 5),
+      t('what day', 3),
+      t('which day', 3),
+      t('busiest day', 4),
+    ],
+  },
+  {
+    id: 'incomeShare',
+    blurb: 'see what percent of your income a category takes',
+    triggers: [
+      t('income share', 5), // canonicalize anchor
+      t('percentage of my income', 5),
+      t('percent of my income', 5),
+      t('of my income', 3),
+      t('income goes', 4),
+    ],
+  },
+  {
+    id: 'trend',
+    blurb: 'see if a category is trending up or down',
+    triggers: [
+      t('spending trend', 5), // canonicalize anchor
+      t('trending', 4),
+      t('trending up', 4),
+      t('trending down', 4),
+      t('trend', 3),
+      t('going up', 2),
+      t('over time', 2),
+    ],
+  },
+  {
+    id: 'typicalSpend',
+    blurb: 'see what you typically spend on something per month',
+    triggers: [
+      t('typical spend', 5), // canonicalize anchor
+      t('typically spend', 4),
+      t('typically', 3),
+      t('usually spend', 4),
+      t('on average', 3),
+      t('how much do i normally', 4),
+    ],
+  },
+  {
+    id: 'subscriptionCut',
+    blurb: 'help you cut recurring subscription costs',
+    triggers: [
+      t('cut subscriptions', 6), // canonicalize anchor
+      t('cancel subscription', 5),
+      t('cancel subscriptions', 5),
+      t('subscription costs', 4),
+      t('canceling', 2),
+      t('cancelling', 2),
+    ],
+  },
+  {
+    id: 'emergencyFund',
+    blurb: 'plan an emergency fund',
+    triggers: [
+      t('emergency fund', 6),
+      t('emergency savings', 5),
+      t('rainy day fund', 5),
+      t('rainy day', 3),
+    ],
+  },
+  {
+    id: 'goalPlan',
+    blurb: 'plan how to save for something you want',
+    triggers: [
+      t('goal plan', 6), // canonicalize anchor
+      t('save for', 4),
+      t('saving for', 4),
+      t('save up for', 5),
+      t('put away for', 4),
+    ],
+  },
+  {
+    id: 'bonusAdvice',
+    blurb: 'suggest what to do with a bonus or windfall',
+    triggers: [
+      t('bonus advice', 6), // canonicalize anchor
+      t('bonus', 5),
+      t('13th month', 5),
+      t('windfall', 5),
+    ],
+  },
+  {
+    id: 'improveSavings',
+    blurb: 'help you improve your savings rate',
+    triggers: [
+      t('improve savings', 6), // canonicalize anchor
+      t('boost savings', 5),
+      t('better savings rate', 5),
+      t('save a bigger', 4),
+    ],
+  },
+  {
+    id: 'cutAmount',
+    blurb: 'find a specific amount to cut from your budget',
+    triggers: [
+      t('cut amount', 6), // canonicalize anchor
+      t('free up', 3),
+    ],
+  },
+  {
+    id: 'ruleOfThumb',
+    blurb: 'share a budgeting rule of thumb (50/30/20)',
+    triggers: [
+      t('rule of thumb', 6), // canonicalize anchor
+      t('50 30 20', 5),
+      t('how should i budget', 4),
+      t('budget my salary', 4),
+      t('budget my income', 4),
+    ],
+  },
+  {
+    id: 'impulseTips',
+    blurb: 'give tips to avoid impulse buying',
+    triggers: [
+      t('impulse tips', 6), // canonicalize anchor
+      t('impulse', 6),
+      t('impulse buying', 6),
+      t('impulse buy', 6),
     ],
   },
 ];
