@@ -7,10 +7,12 @@
  * This is the Convo brain's time-slot extractor (FINO_INTELLIGENCE_V2.md §4.2).
  * It is dictionary + rule based — no NLP toolchain, ships to Hermes as-is.
  *
- * Scope note: the live `BrainContext` only carries this-month and last-month
- * aggregates, so today/week ranges parse correctly but the bridge will tell the
- * user to open Insights for sub-month views. Parsing the full grammar now keeps
- * the slot layer honest and ready for richer data sources later.
+ * V3: the brain now queries a real transaction snapshot, so the full grammar
+ * (years, quarters, named months, weekdays, weekend, last-30-days) resolves to
+ * concrete ranges the query engine filters on — no more "open Insights for
+ * sub-month views" deferral. Parameterized ranges (a specific month / weekday /
+ * quarter) share a key (`namedMonth` / `weekday` / `quarter`) and carry the
+ * specifics in `label` + `start`/`end`.
  */
 
 export type TimeRangeKey =
@@ -19,7 +21,14 @@ export type TimeRangeKey =
   | 'thisWeek'
   | 'lastWeek'
   | 'thisMonth'
-  | 'lastMonth';
+  | 'lastMonth'
+  | 'thisYear'
+  | 'lastYear'
+  | 'quarter'
+  | 'namedMonth'
+  | 'weekday'
+  | 'weekend'
+  | 'last30Days';
 
 export type TimeRange = {
   key: TimeRangeKey;
@@ -46,7 +55,16 @@ const addDays = (d: Date, n: number): Date => {
 /** Monday-start week index: 0 = Mon … 6 = Sun. */
 const mondayOffset = (d: Date): number => (d.getDay() + 6) % 7;
 
-function rangeFor(key: TimeRangeKey, now: Date): TimeRange {
+/** The six self-contained keys whose range is fully determined by the key. */
+type SimpleKey =
+  | 'today'
+  | 'yesterday'
+  | 'thisWeek'
+  | 'lastWeek'
+  | 'thisMonth'
+  | 'lastMonth';
+
+function rangeFor(key: SimpleKey, now: Date): TimeRange {
   switch (key) {
     case 'today':
       return {
@@ -111,34 +129,188 @@ function rangeFor(key: TimeRangeKey, now: Date): TimeRange {
   }
 }
 
+// ─── Parameterized range builders (V3) ───────────────────────────────────────
+
+const startOfMonth = (y: number, m: number): Date =>
+  new Date(y, m, 1, 0, 0, 0, 0);
+const endOfMonth = (y: number, m: number): Date =>
+  new Date(y, m + 1, 0, 23, 59, 59, 999);
+
+const cap = (s: string): string =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
+/** offset 0 = this year, -1 = last year. */
+function buildYear(now: Date, offset: number): TimeRange {
+  const y = now.getFullYear() + offset;
+  return {
+    key: offset === 0 ? 'thisYear' : 'lastYear',
+    label: offset === 0 ? 'this year' : 'last year',
+    start: new Date(y, 0, 1, 0, 0, 0, 0),
+    end: new Date(y, 11, 31, 23, 59, 59, 999),
+  };
+}
+
+/** q ∈ 1..4, current calendar year. */
+function buildQuarter(now: Date, q: number): TimeRange {
+  const y = now.getFullYear();
+  const startMonth = (q - 1) * 3;
+  return {
+    key: 'quarter',
+    label: `Q${q}`,
+    start: startOfMonth(y, startMonth),
+    end: endOfMonth(y, startMonth + 2),
+  };
+}
+
+/** monthIndex 0..11 → its most recent occurrence (this year if already begun,
+ *  otherwise last year). */
+function buildNamedMonth(now: Date, monthIndex: number, label: string): TimeRange {
+  const y = monthIndex > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
+  return {
+    key: 'namedMonth',
+    label: cap(label),
+    start: startOfMonth(y, monthIndex),
+    end: endOfMonth(y, monthIndex),
+  };
+}
+
+/** targetDow uses JS `getDay()` numbering (0 = Sun … 6 = Sat). Resolves to the
+ *  most recent occurrence on or before `now`. */
+function buildWeekday(now: Date, targetDow: number, label: string): TimeRange {
+  const offset = (now.getDay() - targetDow + 7) % 7;
+  const day = addDays(now, -offset);
+  return {
+    key: 'weekday',
+    label: cap(label),
+    start: startOfDay(day),
+    end: endOfDay(day),
+  };
+}
+
+/** The most recent Saturday–Sunday pair that has already begun. */
+function buildWeekend(now: Date): TimeRange {
+  // Most recent Saturday on or before today (getDay() 6 = Sat).
+  const offsetToSat = (now.getDay() - 6 + 7) % 7;
+  const sat = addDays(now, -offsetToSat);
+  return {
+    key: 'weekend',
+    label: 'the weekend',
+    start: startOfDay(sat),
+    end: endOfDay(addDays(sat, 1)),
+  };
+}
+
+/** Rolling 30-day window ending today (inclusive). */
+function buildLast30(now: Date): TimeRange {
+  return {
+    key: 'last30Days',
+    label: 'the last 30 days',
+    start: startOfDay(addDays(now, -29)),
+    end: endOfDay(now),
+  };
+}
+
+const MONTH_DEFS: { re: RegExp; index: number; label: string }[] = [
+  { re: /\bjan(uary)?\b/, index: 0, label: 'January' },
+  { re: /\bfeb(ruary)?\b/, index: 1, label: 'February' },
+  { re: /\b(mar(ch)?)\b/, index: 2, label: 'March' },
+  { re: /\bapr(il)?\b/, index: 3, label: 'April' },
+  // Guard "may" against the modal verb ("may I…", "may be") — only the month.
+  { re: /\bmay\b(?!\s+(?:i|we|you|be|not|have|just))/, index: 4, label: 'May' },
+  { re: /\bjun(e)?\b/, index: 5, label: 'June' },
+  { re: /\bjul(y)?\b/, index: 6, label: 'July' },
+  { re: /\baug(ust)?\b/, index: 7, label: 'August' },
+  { re: /\bsep(t|tember)?\b/, index: 8, label: 'September' },
+  { re: /\boct(ober)?\b/, index: 9, label: 'October' },
+  { re: /\bnov(ember)?\b/, index: 10, label: 'November' },
+  { re: /\bdec(ember)?\b/, index: 11, label: 'December' },
+];
+
+const WEEKDAY_DEFS: { re: RegExp; dow: number; label: string }[] = [
+  { re: /\b(mon(day)?)\b/, dow: 1, label: 'Monday' },
+  { re: /\b(tue(s|sday)?)\b/, dow: 2, label: 'Tuesday' },
+  { re: /\b(wed(nesday)?)\b/, dow: 3, label: 'Wednesday' },
+  { re: /\b(thu(r|rs|rsday)?)\b/, dow: 4, label: 'Thursday' },
+  { re: /\b(fri(day)?)\b/, dow: 5, label: 'Friday' },
+  { re: /\b(sat(urday)?)\b/, dow: 6, label: 'Saturday' },
+  { re: /\b(sun(day)?)\b/, dow: 0, label: 'Sunday' },
+];
+
+const QUARTER_DEFS: { re: RegExp; q: number }[] = [
+  { re: /\b(q1|first quarter|1st quarter|quarter 1)\b/, q: 1 },
+  { re: /\b(q2|second quarter|2nd quarter|quarter 2)\b/, q: 2 },
+  { re: /\b(q3|third quarter|3rd quarter|quarter 3)\b/, q: 3 },
+  { re: /\b(q4|fourth quarter|4th quarter|quarter 4)\b/, q: 4 },
+];
+
+type Pattern = { re: RegExp; build: (now: Date) => TimeRange };
+
+const simple = (key: SimpleKey, re: RegExp): Pattern => ({
+  re,
+  build: (now) => rangeFor(key, now),
+});
+
 /**
- * Ordered phrase table — most-specific first so "this month" wins before the
- * bare "month", and "ngayong buwan" (this month) before "ngayon" (today).
+ * Ordered phrase table — most-specific first so "this month" wins before a bare
+ * month name, and explicit "today"/"yesterday" win before a weekday name.
  * Patterns match on the already-normalized (lowercased, diacritic-folded)
  * message; word boundaries keep "today" out of "todays".
  */
-const PATTERNS: { key: TimeRangeKey; re: RegExp }[] = [
+const PATTERNS: Pattern[] = [
+  // Months (most specific keyed phrases first so "last month" beats "month").
+  simple(
+    'lastMonth',
+    /\b(last month|past month|nakaraang buwan|noong isang buwan|nakaraan buwan|miaging bulan|prev month|previous month)\b/
+  ),
+  simple(
+    'thisMonth',
+    /\b(this month|ngayong buwan|karong bulan|current month|buwang ito|sa buwan na ito)\b/
+  ),
+  // Quarters.
+  ...QUARTER_DEFS.map(
+    ({ re, q }): Pattern => ({ re, build: (now) => buildQuarter(now, q) })
+  ),
+  // Years.
   {
-    key: 'lastMonth',
-    re: /\b(last month|past month|nakaraang buwan|noong isang buwan|nakaraan buwan|miaging bulan|prev month|previous month)\b/,
+    re: /\b(last year|past year|previous year|prev year|nakaraang taon|miaging tuig)\b/,
+    build: (now) => buildYear(now, -1),
   },
   {
-    key: 'thisMonth',
-    re: /\b(this month|ngayong buwan|karong bulan|current month|buwang ito|sa buwan na ito)\b/,
+    re: /\b(this year|current year|ngayong taon|karong tuig|year to date|ytd)\b/,
+    build: (now) => buildYear(now, 0),
   },
+  // Named months ("march", "in april", "for q1" already handled above).
+  ...MONTH_DEFS.map(
+    ({ re, index, label }): Pattern => ({
+      re,
+      build: (now) => buildNamedMonth(now, index, label),
+    })
+  ),
+  // Weeks.
+  simple(
+    'lastWeek',
+    /\b(last week|past week|nakaraang linggo|noong isang linggo|miaging semana|prev week|previous week)\b/
+  ),
+  simple(
+    'thisWeek',
+    /\b(this week|ngayong linggo|karong semana|current week|linggong ito)\b/
+  ),
+  // Weekend + rolling 30-day window.
+  { re: /\b(weekend|katapusan ng linggo)\b/, build: (now) => buildWeekend(now) },
   {
-    key: 'lastWeek',
-    re: /\b(last week|past week|nakaraang linggo|noong isang linggo|miaging semana|prev week|previous week)\b/,
+    re: /\b(last 30 days|past 30 days|last thirty days|nakaraang 30 araw|huling 30 araw|30 days)\b/,
+    build: (now) => buildLast30(now),
   },
-  {
-    key: 'thisWeek',
-    re: /\b(this week|ngayong linggo|karong semana|current week|linggong ito)\b/,
-  },
-  { key: 'yesterday', re: /\b(yesterday|kahapon|gahapon)\b/ },
-  {
-    key: 'today',
-    re: /\b(today|ngayong araw|karong adlaw|karon|so far today)\b/,
-  },
+  // Days (explicit today/yesterday before weekday names).
+  simple('yesterday', /\b(yesterday|kahapon|gahapon)\b/),
+  simple('today', /\b(today|ngayong araw|karong adlaw|karon|so far today)\b/),
+  // Specific weekday ("on tuesday").
+  ...WEEKDAY_DEFS.map(
+    ({ re, dow, label }): Pattern => ({
+      re,
+      build: (now) => buildWeekday(now, dow, label),
+    })
+  ),
 ];
 
 /**
@@ -151,8 +323,8 @@ export function parseTimeRange(
   now: Date = new Date()
 ): TimeRange | null {
   if (!text) return null;
-  for (const { key, re } of PATTERNS) {
-    if (re.test(text)) return rangeFor(key, now);
+  for (const { re, build } of PATTERNS) {
+    if (re.test(text)) return build(now);
   }
   return null;
 }

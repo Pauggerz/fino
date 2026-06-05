@@ -30,15 +30,28 @@ import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { useCategories } from '@/hooks/useCategories';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
+import type RecurringIncomeModel from '@/db/models/RecurringIncome';
 import type ChatMessageModel from '@/db/models/ChatMessage';
 import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import {
   parseChatTransaction,
   routeMessage,
+  selectProactiveCoach,
   type ChatTx,
   type BrainContext,
+  type ChatCard,
+  type CardAction,
+  type TxLite,
 } from '@/intelligence';
+import { getInsights, type Insights } from '@/services/IntelligenceEngine';
+import { ChatCardView, Reveal, REVEAL_STAGGER_MS } from '@/components/chat';
 import { saveChatMessage, loadChatHistory } from '@/services/chatMutations';
+
+/** Each "working" step (Fetching → Analyzing → Generating) holds for this long
+ *  before the next one lights up; the parent waits steps×this so the indicator
+ *  lands on the final step exactly as the (already-computed) reply swaps in.
+ *  Mirrors the "Default" pace in docs/chat-timing-mockup.html. */
+const WORK_STAGE_MS = 430;
 
 const STEP_SETS: Record<string, string[]> = {
   spend:      ['Fetching your transactions', 'Calculating totals', 'Identifying top categories'],
@@ -61,8 +74,6 @@ function pickSteps(text: string): string[] {
   return STEP_SETS.default;
 }
 
-type RichRow = { label: string; value: string; color?: string };
-
 type TxData = {
   amount: number;
   displayName: string;
@@ -75,7 +86,11 @@ type Message = {
   id: string;
   type: 'ai' | 'user';
   text: string;
-  richData?: RichRow[];
+  /** Typed graphical payload from the brain (FINO_CHATBOT_CARDS.md). Reply
+   *  cards are snapshots: frozen into payload, never recomputed (§6). */
+  card?: ChatCard;
+  /** Reply-level action buttons under the bubble (V3 advice cards). */
+  actions?: CardAction[];
   followUps?: string[];
   timestamp: string;
   txData?: TxData;
@@ -108,7 +123,8 @@ function rowToMessage(row: ChatMessageModel): Message {
     try {
       const parsed = JSON.parse(row.payload) as Partial<Message>;
       if (parsed.txData) base.txData = parsed.txData;
-      if (parsed.richData) base.richData = parsed.richData;
+      if (parsed.card) base.card = parsed.card;
+      if (parsed.actions) base.actions = parsed.actions;
       if (parsed.followUps) base.followUps = parsed.followUps;
     } catch {
       // Corrupt payload — fall back to a plain text bubble.
@@ -175,18 +191,28 @@ function StepRow({ text, status, colors }: { text: string; status: StepStatus; c
 
 // ─── THINKING STEPS (replaces ThinkingBubble) ────────────────────────────────
 
-function ThinkingSteps({ steps, colors, isDark }: { steps: string[]; colors: any; isDark: boolean }) {
+function ThinkingSteps({
+  steps,
+  colors,
+  isDark,
+  stageMs = WORK_STAGE_MS,
+}: {
+  steps: string[];
+  colors: any;
+  isDark: boolean;
+  stageMs?: number;
+}) {
   // statuses grows from ['active'] as steps complete
   const [statuses, setStatuses] = useState<StepStatus[]>(['active']);
 
   useEffect(() => {
-    if (steps.length <= 1) return;
-    let cumDelay = 0;
+    if (steps.length <= 1) return undefined;
     const timeouts: ReturnType<typeof setTimeout>[] = [];
 
+    // Advance one step per `stageMs` (deterministic, so the beat matches the
+    // parent's steps×stageMs wait). The last step stays 'active' until the
+    // parent unmounts this on the reply.
     steps.slice(0, -1).forEach((_, i) => {
-      cumDelay += 520 + Math.floor(Math.random() * 280);
-      const d = cumDelay;
       timeouts.push(
         setTimeout(() => {
           setStatuses((prev) => {
@@ -195,7 +221,7 @@ function ThinkingSteps({ steps, colors, isDark }: { steps: string[]; colors: any
             next.push('active');
             return next;
           });
-        }, d)
+        }, (i + 1) * stageMs)
       );
     });
 
@@ -397,9 +423,12 @@ function AccountPickerModal({
 }) {
   const slideAnim = useRef(new Animated.Value(300)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  // Stay mounted through the slide-out animation, then unmount once it settles.
+  const [rendered, setRendered] = useState(visible);
 
   useEffect(() => {
     if (visible) {
+      setRendered(true);
       Animated.parallel([
         Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 65, useNativeDriver: true }),
         Animated.timing(backdropOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
@@ -408,11 +437,13 @@ function AccountPickerModal({
       Animated.parallel([
         Animated.timing(slideAnim, { toValue: 300, duration: 220, useNativeDriver: true }),
         Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
-      ]).start();
+      ]).start(({ finished }) => {
+        if (finished) setRendered(false);
+      });
     }
   }, [visible]);
 
-  if (!visible && slideAnim._value === 300) return null;
+  if (!rendered) return null;
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { minimumFractionDigits: 2 });
@@ -609,6 +640,15 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [recentTxns, setRecentTxns] = useState<RecentTx[]>([]);
+  // Bounded transaction snapshot the offline brain queries for record-level
+  // answers ("last 5", "the ₱1,500 charge", "over ₱5k this year"). Built from a
+  // trailing analytical window and injected into BrainContext.transactions so the
+  // brain stays pure & synchronous (FINO_CHATBOT V3 §"core lever").
+  const [txSnapshot, setTxSnapshot] = useState<TxLite[]>([]);
+  // Configured recurring income (for "did my salary hit yet?").
+  const [recurringIncome, setRecurringIncome] = useState<
+    { label: string; amount: number; dayOfMonth?: number }[]
+  >([]);
   const [lastMsgId, setLastMsgId] = useState<string | null>(null);
 
   // Profile drawer (right) — same component HomeScreen uses.
@@ -622,12 +662,18 @@ export default function ChatScreen() {
     lastMonthSpent: number;
   }>({ topCategories: [], lastMonthSpent: 0 });
 
-  // Streaming / typewriter state
+  // Full IntelligenceEngine insights (anomalies / trajectory / coach), resolved
+  // async here and injected into the synchronous brain via BrainContext so it
+  // can answer with forecast / coach cards (FINO_CHATBOT_CARDS.md §1, §2).
+  const [engineInsights, setEngineInsights] = useState<Insights | null>(null);
+  // The live, unpersisted proactive coach card is dismissible per session (§5/§6).
+  const [proactiveDismissed, setProactiveDismissed] = useState(false);
+
+  // The intent-aware "working" steps shown while the reply is produced.
   const [currentSteps, setCurrentSteps] = useState<string[]>(STEP_SETS.default);
-  const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
-  const [streamingText, setStreamingText] = useState('');
-  const [showCursor, setShowCursor] = useState(true);
-  const streamGenRef = useRef(0);
+  // Drops concurrent sends (e.g. a follow-up tap during the working beat) so a
+  // reply is never produced twice in parallel.
+  const isBusyRef = useRef(false);
 
   // Transaction logging state
   const [pendingTx, setPendingTx] = useState<ChatTx | null>(null);
@@ -647,13 +693,6 @@ export default function ChatScreen() {
     return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
-  // Blinking cursor while streaming
-  useEffect(() => {
-    if (!streamingMsgId) return;
-    const id = setInterval(() => setShowCursor((p) => !p), 500);
-    return () => clearInterval(id);
-  }, [streamingMsgId]);
-
   useEffect(() => {
     if (!userId) { setRecentTxns([]); return; }
     const query = database
@@ -670,6 +709,71 @@ export default function ChatScreen() {
         }))
       );
     });
+    return () => sub.unsubscribe();
+  }, [userId]);
+
+  // Bounded analytical snapshot for the brain's transaction-query layer. Window:
+  // the earlier of (start of this calendar year) and (13 months ago) → now, so
+  // "this year" and "vs last 3 months" both resolve, capped to the most recent
+  // ~2,000 rows to keep it light. Re-emits as transactions change.
+  useEffect(() => {
+    if (!userId) { setTxSnapshot([]); return undefined; }
+    const now = new Date();
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const thirteenMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 13, 1);
+    const windowStart = (
+      startOfYear < thirteenMonthsAgo ? startOfYear : thirteenMonthsAgo
+    ).toISOString();
+
+    const query = database
+      .get<TransactionModel>('transactions')
+      .query(
+        Q.where('user_id', userId),
+        Q.where('account_deleted', false),
+        Q.where('date', Q.gte(windowStart)),
+        Q.sortBy('date', Q.desc),
+        Q.take(2000),
+      );
+    const sub = query
+      .observeWithColumns(['amount', 'type', 'category', 'merchant_name', 'display_name', 'date', 'account_id'])
+      .subscribe((records) => {
+        setTxSnapshot(
+          records.map((r) => ({
+            id: r.id,
+            amount: r.amount,
+            type: r.type as TxLite['type'],
+            category: r.category ?? null,
+            merchant: r.merchantName ?? r.displayName ?? null,
+            name: r.displayName ?? null,
+            date: r.date,
+            accountId: r.accountId,
+          })),
+        );
+      });
+    return () => sub.unsubscribe();
+  }, [userId]);
+
+  // Active recurring income → "did my salary hit yet?" expectation.
+  useEffect(() => {
+    if (!userId) { setRecurringIncome([]); return undefined; }
+    const sub = database
+      .get<RecurringIncomeModel>('recurring_incomes')
+      .query(Q.where('user_id', userId), Q.where('is_active', true))
+      .observeWithColumns(['title', 'amount', 'next_due_at', 'anchor_date'])
+      .subscribe((records) => {
+        setRecurringIncome(
+          records.map((r) => {
+            const anchor = r.nextDueAt || r.anchorDate;
+            const d = anchor ? new Date(anchor) : null;
+            return {
+              label: r.title,
+              amount: r.amount,
+              dayOfMonth:
+                d && !Number.isNaN(d.getTime()) ? d.getDate() : undefined,
+            };
+          }),
+        );
+      });
     return () => sub.unsubscribe();
   }, [userId]);
 
@@ -734,6 +838,45 @@ export default function ChatScreen() {
     return () => sub.unsubscribe();
   }, [userId]);
 
+  // Resolve the full IntelligenceEngine insights for the current month, refreshed
+  // (debounced) when transactions change. `getInsights` is async; we resolve it
+  // here and inject the result into the synchronous brain via BrainContext, so
+  // the offline/sync law holds (FINO_CHATBOT_CARDS.md §1 ⚠️).
+  useEffect(() => {
+    if (!userId) {
+      setEngineInsights(null);
+      return undefined;
+    }
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchInsights = () => {
+      getInsights(userId, year, month)
+        .then((res) => {
+          if (!cancelled) setEngineInsights(res);
+        })
+        .catch(() => {});
+    };
+
+    fetchInsights();
+    const sub = database
+      .get<TransactionModel>('transactions')
+      .query(Q.where('user_id', userId))
+      .observeWithColumns(['amount', 'type', 'date', 'is_transfer', 'category'])
+      .subscribe(() => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(fetchInsights, 400);
+      });
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      sub.unsubscribe();
+    };
+  }, [userId]);
+
   // Load the persisted (local-only) chat thread on mount / user change.
   useEffect(() => {
     if (!userId) {
@@ -752,6 +895,45 @@ export default function ChatScreen() {
   }, [userId]);
 
   const categoryNames = useMemo(() => categories.map((c) => c.name), [categories]);
+
+  // Context the brain queries (V3): account balances, per-category budgets, and
+  // the tx snapshot enriched with account names. Memoized so the per-send ctx
+  // build stays cheap.
+  const accountsForBrain = useMemo(
+    () =>
+      accounts.map((a) => ({
+        id: a.id,
+        name: a.name,
+        balance: a.balance,
+        type: a.type,
+      })),
+    [accounts]
+  );
+  const budgetsForBrain = useMemo(
+    () =>
+      categories
+        .filter((c) => (c.budget_limit ?? 0) > 0)
+        .map((c) => ({ category: c.name, limit: c.budget_limit as number })),
+    [categories]
+  );
+  const txForBrain = useMemo(() => {
+    const nameById = new Map(accounts.map((a) => [a.id, a.name]));
+    return txSnapshot.map((t) => ({
+      ...t,
+      accountName: nameById.get(t.accountId),
+    }));
+  }, [txSnapshot, accounts]);
+
+  // The proactive opening coach card: recomputed live from current insights,
+  // never persisted (FINO_CHATBOT_CARDS.md §5/§6). Null unless there's a
+  // non-neutral, noteworthy nudge — so the chat doesn't open with filler.
+  const proactiveCard = useMemo(
+    () =>
+      engineInsights && !proactiveDismissed
+        ? selectProactiveCoach(engineInsights)
+        : null,
+    [engineInsights, proactiveDismissed]
+  );
   const hasTransactions = recentTxns.length > 0 || monthlySpent > 0;
   const isSendDisabled = !inputText.trim() || isTyping;
   const profileInitial =
@@ -804,14 +986,10 @@ export default function ChatScreen() {
   const handleSend = async (textOverride?: string) => {
     const textToSend = textOverride ?? inputText;
     const trimmed = textToSend.trim();
-    if (!trimmed) return;
+    if (!trimmed || isBusyRef.current) return;
 
+    isBusyRef.current = true;
     setInputText('');
-
-    // Abort any in-flight stream so it stops updating streamingText
-    streamGenRef.current += 1;
-    setStreamingMsgId(null);
-    setStreamingText('');
 
     const userMsgId = Date.now().toString();
     setMessages((prev) => [...prev, { id: userMsgId, type: 'user', text: trimmed, timestamp: nowTime() }]);
@@ -820,82 +998,103 @@ export default function ChatScreen() {
       saveChatMessage({ userId, role: 'user', text: trimmed }).catch(() => {});
     }
 
-    // Offline transaction parse + log, using the same taxonomy the Add
-    // Transaction sheet uses. Multi-amount inputs ("chicken 50 and rice 50")
-    // sum into one transaction. This never touches the network.
-    const parsed = parseChatTransaction(
-      trimmed,
-      accounts.map((a) => ({ id: a.id, name: a.name })),
-      categoryNames,
-      incomeCategories
-    );
+    try {
+      // Offline transaction parse + log, using the same taxonomy the Add
+      // Transaction sheet uses. Multi-amount inputs ("chicken 50 and rice 50")
+      // sum into one transaction. This never touches the network.
+      const parsed = parseChatTransaction(
+        trimmed,
+        accounts.map((a) => ({ id: a.id, name: a.name })),
+        categoryNames,
+        incomeCategories
+      );
 
-    // A parsed transaction is acknowledged by the green TxConfirmCard — logged
-    // inline when the account is known, or after the account picker resolves.
-    // No chat reply is generated in that case.
-    if (parsed) {
-      if (parsed.accountId) {
-        await doLogTransaction(parsed, parsed.accountId);
-      } else {
-        setPendingTx(parsed);
-        setShowAccountPicker(true);
+      // A parsed transaction is acknowledged by the green TxConfirmCard — logged
+      // inline when the account is known, or after the account picker resolves.
+      // No chat reply is generated in that case.
+      if (parsed) {
+        if (parsed.accountId) {
+          await doLogTransaction(parsed, parsed.accountId);
+        } else {
+          setPendingTx(parsed);
+          setShowAccountPicker(true);
+        }
+        return;
       }
-      return;
-    }
 
-    // Otherwise produce an offline reply via the local brain. A short delay
-    // keeps the ThinkingSteps animation visible now that there's no network
-    // latency to fill it.
-    setCurrentSteps(pickSteps(trimmed));
-    setIsTyping(true);
+      // Otherwise produce an offline reply via the local brain. The reply is
+      // computed synchronously; the ONLY wait is the deliberate "working" beat
+      // (Thinking → Analyzing → Generating) that signals Fino is on it.
+      const steps = pickSteps(trimmed);
+      setCurrentSteps(steps);
+      setIsTyping(true);
 
-    const now = new Date();
-    const brainCtx: BrainContext = {
-      balance: totalBalance,
-      income: totalIncome,
-      spent: monthlySpent,
-      lastMonthSpent: insight.lastMonthSpent,
-      topCategories: insight.topCategories,
-      dayOfMonth: now.getDate(),
-      daysInMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
-    };
-    const reply = routeMessage(trimmed, brainCtx);
-    await new Promise<void>((r) => setTimeout(r, 500 + Math.floor(Math.random() * 350)));
+      const now = new Date();
+      const brainCtx: BrainContext = {
+        balance: totalBalance,
+        income: totalIncome,
+        spent: monthlySpent,
+        lastMonthSpent: insight.lastMonthSpent,
+        topCategories: insight.topCategories,
+        dayOfMonth: now.getDate(),
+        daysInMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
+        now: now.toISOString(),
+        insights: engineInsights ?? undefined,
+        transactions: txForBrain,
+        accounts: accountsForBrain,
+        budgets: budgetsForBrain,
+        recurringIncome,
+      };
+      const reply = routeMessage(trimmed, brainCtx);
 
-    setIsTyping(false);
+      // Let the staged indicator work through to its final step, landing as the
+      // reply swaps in (ThinkingSteps advances one step per WORK_STAGE_MS).
+      await new Promise<void>((r) =>
+        setTimeout(r, steps.length * WORK_STAGE_MS)
+      );
 
-    // Set streaming state BEFORE the message is added so the new bubble renders
-    // blank from the first frame — otherwise the full text flashes for one
-    // render before the typewriter "restarts" it at character 0.
-    const aiMsgId = `ai-${Date.now()}`;
-    const gen = ++streamGenRef.current;
-    setStreamingMsgId(aiMsgId);
-    setStreamingText('');
-    setMessages((prev) => [
-      ...prev,
-      { id: aiMsgId, type: 'ai', text: reply.text, followUps: reply.followUps, timestamp: nowTime() },
-    ]);
-    setLastMsgId(aiMsgId);
-    if (userId) {
-      saveChatMessage({
-        userId,
-        role: 'ai',
-        text: reply.text,
-        payload: reply.followUps ? JSON.stringify({ followUps: reply.followUps }) : null,
-      }).catch(() => {});
-    }
+      setIsTyping(false);
 
-    for (let i = 1; i <= reply.text.length; i++) {
-      if (streamGenRef.current !== gen) break;
-      await new Promise<void>((r) => setTimeout(r, i <= 3 ? 50 : 15));
-      setStreamingText(reply.text.slice(0, i));
-      scrollViewRef.current?.scrollToEnd({ animated: false });
-    }
-
-    // Flip streamingMsgId to null only — leave streamingText stale; the message
-    // falls back to msg.text (the stored full reply).
-    if (streamGenRef.current === gen) {
-      setStreamingMsgId(null);
+      // Render the full reply at once — the bubble fades in as a block
+      // (AnimatedMessage) and any card assembles itself (ChatCardView reveal).
+      // No typewriter: the text arrives instantly instead of crawling.
+      const aiMsgId = `ai-${Date.now()}`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: aiMsgId,
+          type: 'ai',
+          text: reply.text,
+          card: reply.card,
+          actions: reply.actions,
+          followUps: reply.followUps,
+          timestamp: nowTime(),
+        },
+      ]);
+      setLastMsgId(aiMsgId);
+      if (userId) {
+        // Snapshot the card + actions + follow-ups into payload so the reply
+        // renders identically on reopen — frozen as-of-asked (CARDS.md §6).
+        const payload =
+          reply.card || reply.actions || reply.followUps
+            ? JSON.stringify({
+                card: reply.card,
+                actions: reply.actions,
+                followUps: reply.followUps,
+              })
+            : null;
+        saveChatMessage({
+          userId,
+          role: 'ai',
+          text: reply.text,
+          payload,
+        }).catch(() => {});
+      }
+      requestAnimationFrame(() =>
+        scrollViewRef.current?.scrollToEnd({ animated: true })
+      );
+    } finally {
+      isBusyRef.current = false;
     }
   };
 
@@ -904,6 +1103,62 @@ export default function ChatScreen() {
     if (pendingTx) {
       await doLogTransaction(pendingTx, accountId);
       setPendingTx(null);
+    }
+  };
+
+  // Dispatch a brain-emitted card/reply action (V3). `navigate` opens a screen
+  // (optionally pre-filled, so "do" actions confirm on the real screen — no
+  // silent writes); `prompt` re-enters the send path with a canned query.
+  const handleCardAction = (action: CardAction) => {
+    if (action.kind === 'prompt') {
+      handleSend(action.send);
+      return;
+    }
+    const p = (action.params ?? {}) as Record<string, unknown>;
+    switch (action.target) {
+      case 'insights':
+        navigation.navigate('Tabs', { screen: 'stats' });
+        break;
+      case 'addTransaction':
+        navigation.navigate('AddTransaction', {
+          mode: (p.mode as 'expense' | 'income') ?? 'expense',
+          prefill: p.prefill as never,
+        });
+        break;
+      case 'transactionDetail':
+        if (typeof p.id === 'string') {
+          navigation.navigate('TransactionDetail', { id: p.id });
+        }
+        break;
+      case 'savingsGoal':
+        navigation.navigate('SavingsGoal', {
+          name: p.name as string | undefined,
+          target: p.target as number | undefined,
+          monthlyContribution: p.monthlyContribution as number | undefined,
+        });
+        break;
+      case 'recurringBills':
+        navigation.navigate('RecurringBills');
+        break;
+      case 'recurringIncome':
+        navigation.navigate('RecurringIncome');
+        break;
+      case 'categories':
+        navigation.navigate('Categories', {
+          focusCategory: p.focusCategory as string | undefined,
+          budgetLimit: p.budgetLimit as number | undefined,
+        });
+        break;
+      case 'accounts':
+        navigation.navigate('Accounts');
+        break;
+      case 'cashFlow':
+        navigation.navigate('CashFlow', {
+          accountId: p.accountId as string | undefined,
+        });
+        break;
+      default:
+        break;
     }
   };
 
@@ -1039,10 +1294,31 @@ export default function ChatScreen() {
     );
   };
 
+  // Live, dismissible proactive coach card pinned above the thread (§5/§6).
+  const renderProactiveCard = () => {
+    if (!proactiveCard) return null;
+    return (
+      <View style={styles.proactiveWrap}>
+        <View style={styles.proactiveHead}>
+          <Text style={styles.proactiveEyebrow}>FOR YOU</Text>
+          <TouchableOpacity
+            onPress={() => setProactiveDismissed(true)}
+            hitSlop={10}
+          >
+            <Ionicons name="close" size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        <ChatCardView
+          card={proactiveCard}
+          colors={colors}
+          onAction={handleCardAction}
+        />
+      </View>
+    );
+  };
+
   const renderMessage = (msg: Message) => {
     const isNew = msg.id === lastMsgId;
-    const isStreaming = msg.id === streamingMsgId;
-    const displayText = isStreaming ? streamingText : msg.text;
 
     if (msg.type === 'user') {
       return (
@@ -1068,42 +1344,58 @@ export default function ChatScreen() {
             <View style={styles.aiBubble}>
               <Text style={styles.aiLabelText}>Fino</Text>
 
-              {displayText ? (
-                <Text style={styles.aiText}>
-                  {displayText}
-                  {isStreaming ? (showCursor ? '|' : ' ') : ''}
-                </Text>
+              {msg.text ? (
+                <Text style={styles.aiText}>{msg.text}</Text>
               ) : null}
 
-              {/* Only show rich cards / tx card when not streaming */}
-              {!isStreaming && msg.richData ? (
-                <View style={styles.richCard}>
-                  {msg.richData.map((row) => (
-                    <View key={row.label} style={styles.richCardRow}>
-                      <Text style={styles.richCardLabel}>{row.label}</Text>
-                      <Text style={[styles.richCardValue, row.color ? { color: row.color } : undefined]}>
-                        {row.value}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
+              {msg.card ? (
+                <ChatCardView
+                  card={msg.card}
+                  colors={colors}
+                  onAction={handleCardAction}
+                  animateIn={isNew}
+                />
               ) : null}
 
-              {!isStreaming && msg.txData ? (
+              {msg.txData ? (
                 <TxConfirmCard tx={msg.txData} colors={colors} isDark={isDark} />
               ) : null}
             </View>
 
-            {!isStreaming && <Text style={styles.timestampAi}>{msg.timestamp}</Text>}
+            <Text style={styles.timestampAi}>{msg.timestamp}</Text>
 
-            {!isStreaming && msg.followUps ? (
-              <View style={styles.followupWrapper}>
+            {msg.actions && msg.actions.length > 0 ? (
+              <Reveal
+                animate={isNew}
+                delay={REVEAL_STAGGER_MS * 2}
+                style={styles.replyActionWrapper}
+              >
+                {msg.actions.map((a) => (
+                  <TouchableOpacity
+                    key={a.label}
+                    style={styles.replyActionBtn}
+                    activeOpacity={0.8}
+                    onPress={() => handleCardAction(a)}
+                  >
+                    <Text style={styles.replyActionText}>{a.label}</Text>
+                    <Ionicons name="arrow-forward" size={14} color={colors.primary} />
+                  </TouchableOpacity>
+                ))}
+              </Reveal>
+            ) : null}
+
+            {msg.followUps ? (
+              <Reveal
+                animate={isNew}
+                delay={REVEAL_STAGGER_MS * 3}
+                style={styles.followupWrapper}
+              >
                 {msg.followUps.map((prompt) => (
                   <TouchableOpacity key={prompt} style={styles.followupChip} onPress={() => handleSend(prompt)}>
                     <Text style={styles.followupChipText}>{prompt}</Text>
                   </TouchableOpacity>
                 ))}
-              </View>
+              </Reveal>
             ) : null}
           </View>
         </View>
@@ -1125,6 +1417,7 @@ export default function ChatScreen() {
         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
         onLayout={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
       >
+        {renderProactiveCard()}
         {messages.map(renderMessage)}
         {isTyping ? <ThinkingSteps steps={currentSteps} colors={colors} isDark={isDark} /> : null}
       </ScrollView>
@@ -1335,10 +1628,21 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     userText: { fontFamily: 'Inter_400Regular', fontSize: 14, color: '#FFF', lineHeight: 20 },
     timestampUser: { fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary, marginTop: 6, marginRight: 4 },
-    richCard: { backgroundColor: colors.white, borderRadius: 12, padding: 12, marginTop: 12, gap: 8 },
-    richCardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    richCardLabel: { fontFamily: 'Inter_400Regular', fontSize: 13, color: colors.textSecondary },
-    richCardValue: { fontFamily: 'DMMono_500Medium', fontSize: 14, color: colors.textPrimary },
+
+    // ─── Proactive coach card (live, unpersisted) ───
+    proactiveWrap: { marginBottom: 16 },
+    proactiveHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 2,
+    },
+    proactiveEyebrow: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      letterSpacing: 1.2,
+      color: colors.textSecondary,
+    },
 
     // ─── Landing (Gemini-style empty thread) ───
     landingScroll: {
@@ -1411,6 +1715,21 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingVertical: 8,
     },
     followupChipText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.chatAILabel },
+    // Reply-level action buttons (V3) — slightly more prominent than follow-up
+    // chips since they navigate / pre-fill a screen.
+    replyActionWrapper: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+    replyActionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      backgroundColor: colors.chatAIBubbleBg,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      borderRadius: 16,
+      paddingHorizontal: 13,
+      paddingVertical: 8,
+    },
+    replyActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.primary },
     inputContainer: {
       backgroundColor: colors.background,
       paddingHorizontal: spacing.screenPadding,

@@ -33,7 +33,11 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Q } from '@nozbe/watermelondb';
@@ -116,6 +120,7 @@ function findColorIdx(hex: string | null | undefined): number {
 export default function CategoryScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Categories'>>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
@@ -135,6 +140,27 @@ export default function CategoryScreen() {
 
   // Modal state
   const [editing, setEditing] = useState<CategoryRow | null>(null);
+  // A budget the chatbot's "Set/Edit budget" action staged for the focused
+  // category, seeded into the edit modal so the user just confirms it.
+  const [prefillBudget, setPrefillBudget] = useState<number | null>(null);
+
+  // Open the edit modal for the category the chatbot focused (and stage a
+  // suggested budget), once the rows are loaded. Fires once per param payload.
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    const p = route.params;
+    if (!p?.focusCategory || prefilledRef.current || rows.length === 0) return;
+    const match = rows.find(
+      (r) =>
+        r.category_type === 'expense' &&
+        r.name.toLowerCase() === p.focusCategory!.toLowerCase()
+    );
+    if (!match) return;
+    prefilledRef.current = true;
+    setType('expense');
+    setPrefillBudget(p.budgetLimit != null ? p.budgetLimit : null);
+    setEditing(match);
+  }, [route.params, rows]);
   const [adding, setAdding] = useState(false);
 
   // Guards the auto-seed below from re-firing on every emission while the
@@ -697,13 +723,20 @@ export default function CategoryScreen() {
       <CategoryFormModal
         visible={editing !== null}
         mode="edit"
-        initial={editing}
+        initial={
+          editing && prefillBudget != null
+            ? { ...editing, budget_limit: prefillBudget }
+            : editing
+        }
         type={editing?.category_type ?? type}
         styles={styles}
         colors={colors}
         isDark={isDark}
         canDelete={editing !== null}
-        onClose={() => setEditing(null)}
+        onClose={() => {
+          setEditing(null);
+          setPrefillBudget(null);
+        }}
         onSave={(draft) => {
           if (editing) return handleSaveEdit(editing.id, draft);
         }}

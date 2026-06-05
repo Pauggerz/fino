@@ -43,8 +43,37 @@ import {
 import modelJson from './classifier/model.json';
 import type { BrainContext, BrainResponse } from './types';
 
-export type { BrainContext, BrainResponse } from './types';
+export type {
+  BrainContext,
+  BrainResponse,
+  ChatCard,
+  ChatCardKind,
+  BreakdownCard,
+  BreakdownSegment,
+  CompareCard,
+  ForecastCard,
+  CoachCard,
+  CoachReason,
+  TxListCard,
+  TxListRow,
+  StatusCard,
+  SummaryCard,
+  BudgetCard,
+  BudgetRow,
+  NeedsWantsCard,
+  PatternCard,
+  PatternBar,
+  CardStatus,
+  CardAction,
+  NavTarget,
+  DeltaDirection,
+  TxLite,
+  AccountSummary,
+  BudgetLite,
+  RecurringIncomeLite,
+} from './types';
 export type { IntentId } from './intents';
+export { selectProactiveCoach } from './coach';
 
 const MODEL = modelJson as unknown as NbModel;
 
@@ -58,6 +87,27 @@ const DATA_INTENTS = new Set<IntentId>([
   'compare',
   'cut',
   'savings',
+  'coach',
+  'overspend',
+  'transactions',
+  'categoryOf',
+  'salaryStatus',
+  'billStatus',
+  'summary',
+  'budgetStatus',
+  'needsVsWants',
+  'dowPattern',
+  'incomeShare',
+  'trend',
+  'typicalSpend',
+  'subscriptionCut',
+  'emergencyFund',
+  'goalPlan',
+  'bonusAdvice',
+  'improveSavings',
+  'cutAmount',
+  'ruleOfThumb',
+  'impulseTips',
 ]);
 
 // Open-set gate for the classifier. NB softmax saturates, so we reject on raw

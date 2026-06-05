@@ -11,6 +11,7 @@
     "prepare": "husky install",
     "test:taxonomy": "npx --yes tsx scripts/test-taxonomy.ts",
     "test:brain": "npx --yes tsx scripts/test-brain.ts",
+    "test:query": "npx --yes tsx scripts/test-query.ts",
     "train:brain": "npx --yes tsx scripts/train-brain.ts"
   },
   "dependencies": {
