@@ -224,10 +224,166 @@ export const CORPUS: CorpusRow[] = [
   { text: 'pila ka beses ko mipalit og kape', label: 'count' },
   { text: 'how many times did i shop', label: 'count' },
 
+  // ── transactions (V3 — list / find / filter) ────────────────────────────────
+  { text: 'show me my last five transactions', label: 'transactions' },
+  { text: 'list my recent transactions', label: 'transactions' },
+  { text: 'what are my latest purchases', label: 'transactions' },
+  { text: 'pull up my transaction history', label: 'transactions' },
+  { text: 'show my recent activity', label: 'transactions' },
+  { text: 'what did i buy recently', label: 'transactions' },
+  { text: 'display my last ten expenses', label: 'transactions' },
+  { text: 'find all transactions over 5000 this year', label: 'transactions' },
+  { text: 'what was the 1500 charge on tuesday', label: 'transactions' },
+  { text: 'show my biggest single expense yesterday', label: 'transactions' },
+  { text: 'ipakita ang huling mga transaksyon ko', label: 'transactions' },
+  { text: 'ano ang mga binili ko kamakailan', label: 'transactions' },
+  { text: 'unsa akong bag-ong mga transaksyon', label: 'transactions' },
+
+  // ── categoryOf (V3) ──────────────────────────────────────────────────────────
+  {
+    text: 'which category did my spotify payment fall under',
+    label: 'categoryOf',
+  },
+  { text: 'what category was my netflix charge', label: 'categoryOf' },
+  { text: 'where did my grab ride get categorized', label: 'categoryOf' },
+  { text: 'what category is my lazada purchase under', label: 'categoryOf' },
+  { text: 'which bucket did that payment land in', label: 'categoryOf' },
+  { text: 'anong kategorya ng bayad ko sa spotify', label: 'categoryOf' },
+  { text: 'asa nga kategorya ang akong netflix', label: 'categoryOf' },
+
+  // ── salaryStatus (V3) ────────────────────────────────────────────────────────
+  { text: 'did my salary hit my account yet', label: 'salaryStatus' },
+  { text: 'have i been paid this month', label: 'salaryStatus' },
+  { text: 'did i get my paycheck', label: 'salaryStatus' },
+  { text: 'is my salary in yet', label: 'salaryStatus' },
+  { text: 'did payroll come through', label: 'salaryStatus' },
+  { text: 'pumasok na ba ang sweldo ko', label: 'salaryStatus' },
+  { text: 'sahod na ba ako', label: 'salaryStatus' },
+  { text: 'na credit na ba ang suweldo ko', label: 'salaryStatus' },
+
+  // ── billStatus (V3) ──────────────────────────────────────────────────────────
+  { text: 'did i pay my internet bill yet', label: 'billStatus' },
+  { text: 'have i paid the electricity bill', label: 'billStatus' },
+  { text: 'is my rent paid this month', label: 'billStatus' },
+  { text: 'show me my subscription payments for march', label: 'billStatus' },
+  { text: 'what subscriptions am i paying for', label: 'billStatus' },
+  { text: 'did i settle my water bill', label: 'billStatus' },
+  { text: 'bayad na ba ako sa kuryente', label: 'billStatus' },
+  { text: 'nabayran na ba nako ang internet', label: 'billStatus' },
+
+  // ── summary (V3) ─────────────────────────────────────────────────────────────
+  { text: 'give me a summary of my spending this month', label: 'summary' },
+  { text: 'summarize my finances for the quarter', label: 'summary' },
+  { text: 'recap my spending for q1', label: 'summary' },
+  { text: 'how did i do financially last month', label: 'summary' },
+  { text: 'what does my cash flow look like this week', label: 'summary' },
+  { text: 'give me an overview of income versus expenses', label: 'summary' },
+  { text: 'break down my fixed and variable costs', label: 'summary' },
+  { text: 'daily digest of my spending today', label: 'summary' },
+  { text: 'buod ng gastos ko ngayong buwan', label: 'summary' },
+
+  // ── budgetStatus (V3) ────────────────────────────────────────────────────────
+  { text: 'am i on track to stay under my budget', label: 'budgetStatus' },
+  { text: 'how am i doing against my budget', label: 'budgetStatus' },
+  { text: 'how much budget do i have left', label: 'budgetStatus' },
+  { text: 'am i within my shopping budget', label: 'budgetStatus' },
+  { text: 'is my food budget okay', label: 'budgetStatus' },
+  { text: 'budget health check', label: 'budgetStatus' },
+  { text: 'magkano pa natitira sa budget ko', label: 'budgetStatus' },
+
+  // ── needsVsWants (V3) ────────────────────────────────────────────────────────
+  { text: 'show me my needs versus wants', label: 'needsVsWants' },
+  { text: 'how much goes to needs and wants', label: 'needsVsWants' },
+  { text: 'split my spending into needs and wants', label: 'needsVsWants' },
+  { text: 'how much of my spending is necessities', label: 'needsVsWants' },
+  { text: 'whats my needs to wants ratio', label: 'needsVsWants' },
+
+  // ── dowPattern (V3) ──────────────────────────────────────────────────────────
+  { text: 'what day of the week do i spend the most', label: 'dowPattern' },
+  { text: 'which day do i usually spend most', label: 'dowPattern' },
+  { text: 'when during the week do i spend more', label: 'dowPattern' },
+  { text: 'what is my heaviest spending day', label: 'dowPattern' },
+  { text: 'anong araw ako pinakamalaki gumastos', label: 'dowPattern' },
+
+  // ── incomeShare (V3) ─────────────────────────────────────────────────────────
+  { text: 'what percentage of my income goes to rent', label: 'incomeShare' },
+  { text: 'how much of my income goes to food', label: 'incomeShare' },
+  { text: 'what share of my salary goes to bills', label: 'incomeShare' },
+  { text: 'what portion of my income is rent', label: 'incomeShare' },
+
+  // ── trend (V3) ───────────────────────────────────────────────────────────────
+  { text: 'is my transport spending trending up or down', label: 'trend' },
+  { text: 'is my food spending going up over time', label: 'trend' },
+  { text: 'whats the trend in my spending', label: 'trend' },
+  { text: 'is my dining spending increasing lately', label: 'trend' },
+  { text: 'pataas ba o pababa ang gastos ko', label: 'trend' },
+
+  // ── typicalSpend (V3) ────────────────────────────────────────────────────────
+  { text: 'how much do i typically spend on coffee', label: 'typicalSpend' },
+  { text: 'whats my average monthly spend on food', label: 'typicalSpend' },
+  { text: 'how much do i usually spend on groceries', label: 'typicalSpend' },
+  { text: 'what do i normally spend on transport', label: 'typicalSpend' },
+
+  // ── subscriptionCut (V3 — Category 4) ────────────────────────────────────────
+  { text: 'how can i cut down on my subscriptions', label: 'subscriptionCut' },
+  { text: 'help me reduce my subscription costs', label: 'subscriptionCut' },
+  { text: 'which subscriptions should i cancel', label: 'subscriptionCut' },
+  {
+    text: 'are there recurring expenses i should cancel',
+    label: 'subscriptionCut',
+  },
+
+  // ── emergencyFund (V3) ───────────────────────────────────────────────────────
+  { text: 'how do i build an emergency fund', label: 'emergencyFund' },
+  { text: 'help me start an emergency fund', label: 'emergencyFund' },
+  { text: 'how big should my emergency fund be', label: 'emergencyFund' },
+  { text: 'advice on a rainy day fund', label: 'emergencyFund' },
+
+  // ── goalPlan (V3) ────────────────────────────────────────────────────────────
+  { text: 'i want to save for a new laptop', label: 'goalPlan' },
+  { text: 'how do i save up for a vacation', label: 'goalPlan' },
+  { text: 'help me save for a phone', label: 'goalPlan' },
+  { text: 'i need to save for a car', label: 'goalPlan' },
+  { text: 'gusto kong mag ipon para sa laptop', label: 'goalPlan' },
+
+  // ── bonusAdvice (V3) ─────────────────────────────────────────────────────────
+  { text: 'what should i do with my bonus', label: 'bonusAdvice' },
+  { text: 'how should i spend my year end bonus', label: 'bonusAdvice' },
+  { text: 'what to do with my 13th month pay', label: 'bonusAdvice' },
+  { text: 'i got a windfall what now', label: 'bonusAdvice' },
+
+  // ── improveSavings (V3) ──────────────────────────────────────────────────────
+  { text: 'how can i improve my savings rate', label: 'improveSavings' },
+  { text: 'help me boost my savings', label: 'improveSavings' },
+  { text: 'how to grow my savings faster', label: 'improveSavings' },
+  { text: 'how do i get a better savings rate', label: 'improveSavings' },
+
+  // ── cutAmount (V3) ───────────────────────────────────────────────────────────
+  { text: 'where can i cut 2000 from my budget', label: 'cutAmount' },
+  { text: 'how do i trim 1000 from my spending', label: 'cutAmount' },
+  { text: 'i need to free up 3000 this month', label: 'cutAmount' },
+  { text: 'help me cut 5000 pesos this month', label: 'cutAmount' },
+
+  // ── ruleOfThumb (V3) ─────────────────────────────────────────────────────────
+  { text: 'whats a good rule of thumb for budgeting', label: 'ruleOfThumb' },
+  { text: 'how should i budget my salary', label: 'ruleOfThumb' },
+  { text: 'whats the 50 30 20 rule', label: 'ruleOfThumb' },
+  { text: 'how should i divide up my income', label: 'ruleOfThumb' },
+
+  // ── impulseTips (V3) ─────────────────────────────────────────────────────────
+  { text: 'how do i avoid impulse buying', label: 'impulseTips' },
+  { text: 'tips to stop impulse purchases', label: 'impulseTips' },
+  { text: 'help me control impulse spending', label: 'impulseTips' },
+  { text: 'how to resist buying on impulse', label: 'impulseTips' },
+
   // ── unknown (out-of-scope rejection) ─────────────────────────────────────────
   { text: "what's the weather today", label: 'unknown' },
   { text: 'what is the weather', label: 'unknown' },
   { text: 'will it rain tomorrow', label: 'unknown' },
+  { text: 'is it going to rain later', label: 'unknown' },
+  { text: 'is it going to be hot today', label: 'unknown' },
+  { text: 'will the weather be nice later', label: 'unknown' },
+  { text: 'whats the forecast for later', label: 'unknown' },
   { text: 'tell me a joke', label: 'unknown' },
   { text: 'say something funny', label: 'unknown' },
   { text: 'sing me a song', label: 'unknown' },
