@@ -27,7 +27,9 @@ export type IntentId =
   | 'compare'
   | 'cut'
   | 'savings'
-  | 'count';
+  | 'count'
+  | 'coach'
+  | 'overspend';
 
 type Trigger = { term: string; weight: number };
 
@@ -199,6 +201,34 @@ const INTENT_DEFS: IntentDef[] = [
       t('how many', 3),
       t('ilang beses', 4),
       t('pila ka beses', 4),
+    ],
+  },
+  {
+    id: 'coach',
+    blurb: 'give you a money-coach tip on how you are doing',
+    triggers: [
+      t('advice', 3),
+      t('advise', 3),
+      t('what should i do', 4),
+      t('how am i doing', 4),
+      t('any tips', 3),
+      t('tips', 2),
+      t('recommend', 2),
+      t('coach', 2),
+      t('payo', 3),
+    ],
+  },
+  {
+    id: 'overspend',
+    blurb: 'flag if you are overspending in a category',
+    triggers: [
+      t('overspend', 4),
+      t('overspending', 4),
+      t('over budget', 3),
+      t('spending too much', 4),
+      t('too much', 2),
+      t('lampas', 3),
+      t('sobra', 2),
     ],
   },
 ];
