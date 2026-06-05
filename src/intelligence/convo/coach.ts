@@ -22,6 +22,7 @@ import type { ChatCard, CardAction } from './types';
 import { buildCoachCard, sentimentToStatus } from './cards';
 
 const OPEN_INSIGHTS: CardAction = {
+  kind: 'navigate',
   label: 'Open Insights',
   target: 'insights',
 };
