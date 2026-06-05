@@ -5,6 +5,7 @@
  */
 
 export { ChatCardView } from './ChatCardView';
+export { Reveal, REVEAL_FADE_MS, REVEAL_STAGGER_MS } from './Reveal';
 export { MiniBars } from './MiniBars';
 export { MiniSparkline } from './MiniSparkline';
 export { ProgressBar } from './ProgressBar';
