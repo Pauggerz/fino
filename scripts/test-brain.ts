@@ -21,11 +21,15 @@
 import {
   classifyMessage,
   routeMessage,
+  selectProactiveCoach,
   type BrainContext,
   type IntentId,
+  type ChatCard,
 } from '../src/intelligence/convo/brain';
 import type { TimeRangeKey } from '../src/intelligence/core/time';
 import type { MasterCategory } from '../src/intelligence/taxonomy/taxonomy';
+// Type-only — erased by tsx, never eval-loads IntelligenceEngine (RN-coupled).
+import type { Insights, Sentiment } from '../src/services/IntelligenceEngine';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -195,6 +199,31 @@ const cases: Case[] = [
     intent: 'count',
   },
 
+  // coach (money-coach tip)
+  {
+    desc: 'EN how am i doing',
+    text: 'how am i doing this month',
+    intent: 'coach',
+  },
+  { desc: 'EN any advice', text: 'any advice for me', intent: 'coach' },
+  { desc: 'EN what should i do', text: 'what should i do', intent: 'coach' },
+  { desc: 'TL payo', text: 'may payo ka ba', intent: 'coach' },
+
+  // overspend (anomaly)
+  { desc: 'EN overspending', text: 'am i overspending', intent: 'overspend' },
+  {
+    desc: 'EN spending too much',
+    text: 'am i spending too much',
+    intent: 'overspend',
+  },
+  {
+    desc: 'EN overspend on food',
+    text: 'am i overspending on food',
+    intent: 'overspend',
+    category: 'food',
+  },
+  { desc: 'TL lampas', text: 'lampas na ba ako', intent: 'overspend' },
+
   // ── Classifier fallback (rule-silent paraphrases) ──────────────────────────
   // These deliberately miss every weighted trigger / canonical reduction, so a
   // pass proves the Naive-Bayes layer resolved them. Kept OUT of the training
@@ -263,6 +292,50 @@ const CTX: BrainContext = {
   dayOfMonth: 15,
   daysInMonth: 30,
 };
+
+// Minimal-but-valid Insights fixture so the forecast / coach card builders and
+// the proactive selector can be exercised offline (FINO_CHATBOT_CARDS.md §2).
+const okGate = { ok: true, current: 30, needed: 1, reason: '' };
+function buildInsights(overrides: Partial<Insights> = {}): Insights {
+  return {
+    headline: 'Pacing a touch hot',
+    whereChip: 'Food',
+    whenChip: 'this month',
+    anomalies: [
+      { category: 'Food', current: 8000, baseline: 5000, pctOver: 0.6 },
+    ],
+    trajectory: {
+      projected: 26000,
+      spent: 18000,
+      dailyAvg: 1200,
+      daysElapsed: 15,
+      daysRemaining: 15,
+      rolling3MoAvg: 22000,
+      pacingOver: true,
+      usedDowWeighting: false,
+      ciLow: 24000,
+      ciHigh: 28000,
+      ciUsedT: true,
+    },
+    habits: [],
+    weekDeltas: [],
+    recurring: [],
+    coach: {
+      sentiment: 'cautious',
+      message: "You're pacing a bit hot — easing off Food would help.",
+    },
+    trendSlope: null,
+    sufficiency: {
+      sankey: okGate,
+      trajectory: okGate,
+      composition: okGate,
+      dowPattern: okGate,
+      todPattern: okGate,
+      trendSlope: okGate,
+    },
+    ...overrides,
+  };
+}
 
 // ─── Runner ──────────────────────────────────────────────────────────────────
 
@@ -335,6 +408,116 @@ for (const c of FALLBACK_CASES) {
     /didn't quite catch/.test(reply.text),
     `[oos-reply] ${c.desc}`,
     `"${c.text}" → did not return the fallback reply`
+  );
+}
+
+// ─── Card payloads (FINO_CHATBOT_CARDS.md P3) ────────────────────────────────
+// Assert the DATA the brain emits (kind + key fields), not pixels (§9).
+
+const INSIGHTS = buildInsights();
+const CTX_INS: BrainContext = { ...CTX, insights: INSIGHTS };
+
+type CardCase = {
+  desc: string;
+  text: string;
+  kind: ChatCard['kind'];
+  /** Extra field-level assertion on the emitted card. */
+  check?: (card: ChatCard) => boolean;
+};
+
+const cardCases: CardCase[] = [
+  {
+    desc: 'breakdown card',
+    text: 'give me a spending breakdown',
+    kind: 'breakdown',
+  },
+  { desc: 'compare card', text: 'compare to last month', kind: 'compare' },
+  {
+    desc: 'forecast card',
+    text: 'am i on track to save',
+    kind: 'forecast',
+    check: (c) =>
+      c.kind === 'forecast' &&
+      c.data.projected === 26000 &&
+      c.data.status === 'watch',
+  },
+  { desc: 'coach card', text: 'how am i doing this month', kind: 'coach' },
+  {
+    desc: 'overspend card',
+    text: 'am i overspending',
+    kind: 'coach',
+    check: (c) => c.kind === 'coach' && (c.data.reasons?.length ?? 0) > 0,
+  },
+];
+
+for (const cc of cardCases) {
+  const reply = routeMessage(cc.text, CTX_INS);
+  check(
+    reply.card?.kind === cc.kind,
+    `[card]   ${cc.desc}`,
+    `"${cc.text}" → got ${reply.card?.kind ?? 'none'}, expected ${cc.kind}`
+  );
+  if (cc.check && reply.card) {
+    check(
+      cc.check(reply.card),
+      `[card+]  ${cc.desc}`,
+      `"${cc.text}" → field assertion failed`
+    );
+  }
+}
+
+// Breakdown card without last-month data carries no delta chip; with it, does.
+{
+  const noLast = routeMessage('give me a spending breakdown', {
+    ...CTX_INS,
+    lastMonthSpent: 0,
+  });
+  const ok =
+    noLast.card?.kind === 'breakdown' && noLast.card.data.delta === undefined;
+  check(
+    ok,
+    '[card+]  breakdown no-delta without last month',
+    'expected breakdown card with no delta'
+  );
+  const withLast = routeMessage('give me a spending breakdown', CTX_INS);
+  const ok2 =
+    withLast.card?.kind === 'breakdown' &&
+    withLast.card.data.delta !== undefined;
+  check(
+    ok2,
+    '[card+]  breakdown has delta with last month',
+    'expected breakdown card with a delta'
+  );
+}
+
+// Cards degrade gracefully to text-only when no insights are present.
+{
+  const noIns = routeMessage('am i on track to save', CTX);
+  check(
+    noIns.card === undefined && noIns.text.length > 0,
+    '[card+]  forecast degrades without insights',
+    'expected text-only reply'
+  );
+}
+
+// Proactive selector: non-neutral → coach card; neutral → null (no noise).
+{
+  const pro = selectProactiveCoach(INSIGHTS);
+  check(
+    pro?.kind === 'coach',
+    '[proactive] non-neutral → coach card',
+    `got ${pro?.kind ?? 'null'}`
+  );
+  const neutral = selectProactiveCoach(
+    buildInsights({
+      anomalies: [],
+      coach: { sentiment: 'neutral' as Sentiment, message: 'All steady.' },
+    })
+  );
+  check(
+    neutral === null,
+    '[proactive] neutral → null',
+    `got ${neutral?.kind ?? 'null'}`
   );
 }
 
