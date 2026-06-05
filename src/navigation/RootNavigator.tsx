@@ -136,12 +136,18 @@ export type RootStackParamList = {
   ChatScreen: undefined;
   BillSplitter: undefined;
   UtangTracker: undefined;
-  SavingsGoal: undefined;
+  // Optional prefill so the chatbot's "Create goal" action can stage a goal
+  // for the user to confirm (FINO_CHATBOT V3 — prefill + confirm).
+  SavingsGoal:
+    | { name?: string; target?: number; monthlyContribution?: number }
+    | undefined;
   FinancialEducation: undefined;
   RecurringIncome: undefined;
   RecurringBills: undefined;
   CashFlow: { accountId?: string } | undefined;
-  Categories: undefined;
+  // Optional prefill so the chatbot's "Set a budget" action can focus/stage a
+  // category budget for the user to confirm.
+  Categories: { focusCategory?: string; budgetLimit?: number } | undefined;
   Accounts: undefined;
   Notifications: undefined;
   NotificationPriming: undefined;
