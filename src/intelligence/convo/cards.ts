@@ -22,6 +22,16 @@ import type {
   CoachReason,
   CardStatus,
   DeltaDirection,
+  TxLite,
+  TxListCard,
+  TxListRow,
+  StatusCard,
+  SummaryCard,
+  BudgetCard,
+  BudgetRow,
+  NeedsWantsCard,
+  PatternCard,
+  PatternBar,
 } from './types';
 import { peso, pctOf } from './nlg';
 
@@ -166,5 +176,157 @@ export function buildCoachCard(
     title: coachTitle(status),
     message: ins.coach.message,
     reasons: reasons.length ? reasons : undefined,
+  };
+}
+
+// ─── Transaction list + status (V3, Category 1) ──────────────────────────────
+
+/** Best human label for a transaction row. */
+function txLabel(t: TxLite): string {
+  return (
+    t.name?.trim() || t.merchant?.trim() || t.category?.trim() || 'Transaction'
+  );
+}
+
+/** Map a `TxLite` to a renderable `TxListRow` (tappable → TransactionDetail). */
+export function buildTxRow(t: TxLite): TxListRow {
+  return {
+    id: t.id,
+    name: txLabel(t),
+    category: t.category,
+    amount: t.amount,
+    type: t.type,
+    date: t.date,
+  };
+}
+
+/**
+ * Build a transaction-list card from an already-selected, already-sorted set of
+ * rows. The bridge does the filtering/sorting/slicing; this just maps + frames.
+ * `total` is the sum of the FULL match set (pre-slice); `matchCount` its size.
+ */
+export function buildTxListCard(
+  title: string,
+  rows: TxLite[],
+  opts: { total?: number; matchCount?: number } = {}
+): TxListCard {
+  return {
+    title,
+    rows: rows.map(buildTxRow),
+    total: opts.total,
+    matchCount: opts.matchCount,
+  };
+}
+
+/** Build a yes/no status card, optionally carrying the matched transaction. */
+export function buildStatusCard(args: {
+  yes: boolean;
+  status: CardStatus;
+  title: string;
+  message: string;
+  tx?: TxLite;
+}): StatusCard {
+  return {
+    yes: args.yes,
+    status: args.status,
+    title: args.title,
+    message: args.message,
+    tx: args.tx ? buildTxRow(args.tx) : undefined,
+  };
+}
+
+// ─── Summary / budget / needs-wants / pattern (V3, Categories 2 & 3) ──────────
+
+const MAX_SUMMARY_SEGMENTS = 4;
+
+/** Build a range-scoped summary card from already-aggregated in/out + top cats. */
+export function buildSummaryCard(args: {
+  label: string;
+  income: number;
+  expense: number;
+  segments: { name: string; amount: number }[];
+}): SummaryCard {
+  const net = args.income - args.expense;
+  return {
+    label: args.label,
+    income: args.income,
+    expense: args.expense,
+    net,
+    savingsRate: args.income > 0 ? net / args.income : undefined,
+    segments: args.segments
+      .slice(0, MAX_SUMMARY_SEGMENTS)
+      .map((c, i) => ({ label: c.name, amount: c.amount, role: `cat-${i}` })),
+  };
+}
+
+/** Spent-vs-limit verdict. `over` once exceeded; `watch` when near the cap or
+ *  the spend pace is outrunning the elapsed month; else `good`. */
+export function budgetRowStatus(
+  spent: number,
+  limit: number,
+  monthProgress?: number
+): CardStatus {
+  if (limit <= 0) return 'watch';
+  const used = spent / limit;
+  if (used > 1) return 'over';
+  if (used >= 0.9) return 'watch';
+  if (
+    monthProgress != null &&
+    monthProgress > 0 &&
+    used > monthProgress + 0.1
+  ) {
+    return 'watch';
+  }
+  return 'good';
+}
+
+/** Build a budget-health card from per-category spent + limit pairs. */
+export function buildBudgetCard(
+  rows: { label: string; spent: number; limit: number }[],
+  monthProgress?: number
+): BudgetCard {
+  const built: BudgetRow[] = rows.map((r) => ({
+    label: r.label,
+    spent: r.spent,
+    limit: r.limit,
+    status: budgetRowStatus(r.spent, r.limit, monthProgress),
+  }));
+  // Worst first (over → watch → good), then by how full the bar is.
+  const rank: Record<CardStatus, number> = { over: 0, watch: 1, good: 2 };
+  built.sort(
+    (a, b) =>
+      rank[a.status] - rank[b.status] ||
+      b.spent / Math.max(1, b.limit) - a.spent / Math.max(1, a.limit)
+  );
+  return { rows: built, monthProgress };
+}
+
+/** Build a needs-vs-wants card from the heuristic split. */
+export function buildNeedsWantsCard(split: {
+  need: number;
+  want: number;
+  unknown?: number;
+}): NeedsWantsCard {
+  const total = split.need + split.want;
+  return {
+    need: split.need,
+    want: split.want,
+    needPct: total > 0 ? split.need / total : 0,
+    unknown: split.unknown && split.unknown > 0 ? split.unknown : undefined,
+  };
+}
+
+/** Build a pattern card (day-of-week bars or a short trend series). */
+export function buildPatternCard(args: {
+  title: string;
+  caption: string;
+  bars: PatternBar[];
+  direction?: DeltaDirection;
+}): PatternCard {
+  return {
+    title: args.title,
+    caption: args.caption,
+    bars: args.bars,
+    direction: args.direction,
   };
 }
