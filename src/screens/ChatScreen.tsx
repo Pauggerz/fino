@@ -35,9 +35,14 @@ import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import {
   parseChatTransaction,
   routeMessage,
+  selectProactiveCoach,
   type ChatTx,
   type BrainContext,
+  type ChatCard,
+  type CardAction,
 } from '@/intelligence';
+import { getInsights, type Insights } from '@/services/IntelligenceEngine';
+import { ChatCardView } from '@/components/chat';
 import { saveChatMessage, loadChatHistory } from '@/services/chatMutations';
 
 const STEP_SETS: Record<string, string[]> = {
@@ -61,8 +66,6 @@ function pickSteps(text: string): string[] {
   return STEP_SETS.default;
 }
 
-type RichRow = { label: string; value: string; color?: string };
-
 type TxData = {
   amount: number;
   displayName: string;
@@ -75,7 +78,9 @@ type Message = {
   id: string;
   type: 'ai' | 'user';
   text: string;
-  richData?: RichRow[];
+  /** Typed graphical payload from the brain (FINO_CHATBOT_CARDS.md). Reply
+   *  cards are snapshots: frozen into payload, never recomputed (§6). */
+  card?: ChatCard;
   followUps?: string[];
   timestamp: string;
   txData?: TxData;
@@ -108,7 +113,7 @@ function rowToMessage(row: ChatMessageModel): Message {
     try {
       const parsed = JSON.parse(row.payload) as Partial<Message>;
       if (parsed.txData) base.txData = parsed.txData;
-      if (parsed.richData) base.richData = parsed.richData;
+      if (parsed.card) base.card = parsed.card;
       if (parsed.followUps) base.followUps = parsed.followUps;
     } catch {
       // Corrupt payload — fall back to a plain text bubble.
@@ -397,9 +402,12 @@ function AccountPickerModal({
 }) {
   const slideAnim = useRef(new Animated.Value(300)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  // Stay mounted through the slide-out animation, then unmount once it settles.
+  const [rendered, setRendered] = useState(visible);
 
   useEffect(() => {
     if (visible) {
+      setRendered(true);
       Animated.parallel([
         Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 65, useNativeDriver: true }),
         Animated.timing(backdropOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
@@ -408,11 +416,13 @@ function AccountPickerModal({
       Animated.parallel([
         Animated.timing(slideAnim, { toValue: 300, duration: 220, useNativeDriver: true }),
         Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
-      ]).start();
+      ]).start(({ finished }) => {
+        if (finished) setRendered(false);
+      });
     }
   }, [visible]);
 
-  if (!visible && slideAnim._value === 300) return null;
+  if (!rendered) return null;
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { minimumFractionDigits: 2 });
@@ -622,6 +632,13 @@ export default function ChatScreen() {
     lastMonthSpent: number;
   }>({ topCategories: [], lastMonthSpent: 0 });
 
+  // Full IntelligenceEngine insights (anomalies / trajectory / coach), resolved
+  // async here and injected into the synchronous brain via BrainContext so it
+  // can answer with forecast / coach cards (FINO_CHATBOT_CARDS.md §1, §2).
+  const [engineInsights, setEngineInsights] = useState<Insights | null>(null);
+  // The live, unpersisted proactive coach card is dismissible per session (§5/§6).
+  const [proactiveDismissed, setProactiveDismissed] = useState(false);
+
   // Streaming / typewriter state
   const [currentSteps, setCurrentSteps] = useState<string[]>(STEP_SETS.default);
   const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
@@ -734,6 +751,45 @@ export default function ChatScreen() {
     return () => sub.unsubscribe();
   }, [userId]);
 
+  // Resolve the full IntelligenceEngine insights for the current month, refreshed
+  // (debounced) when transactions change. `getInsights` is async; we resolve it
+  // here and inject the result into the synchronous brain via BrainContext, so
+  // the offline/sync law holds (FINO_CHATBOT_CARDS.md §1 ⚠️).
+  useEffect(() => {
+    if (!userId) {
+      setEngineInsights(null);
+      return undefined;
+    }
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchInsights = () => {
+      getInsights(userId, year, month)
+        .then((res) => {
+          if (!cancelled) setEngineInsights(res);
+        })
+        .catch(() => {});
+    };
+
+    fetchInsights();
+    const sub = database
+      .get<TransactionModel>('transactions')
+      .query(Q.where('user_id', userId))
+      .observeWithColumns(['amount', 'type', 'date', 'is_transfer', 'category'])
+      .subscribe(() => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(fetchInsights, 400);
+      });
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      sub.unsubscribe();
+    };
+  }, [userId]);
+
   // Load the persisted (local-only) chat thread on mount / user change.
   useEffect(() => {
     if (!userId) {
@@ -752,6 +808,17 @@ export default function ChatScreen() {
   }, [userId]);
 
   const categoryNames = useMemo(() => categories.map((c) => c.name), [categories]);
+
+  // The proactive opening coach card: recomputed live from current insights,
+  // never persisted (FINO_CHATBOT_CARDS.md §5/§6). Null unless there's a
+  // non-neutral, noteworthy nudge — so the chat doesn't open with filler.
+  const proactiveCard = useMemo(
+    () =>
+      engineInsights && !proactiveDismissed
+        ? selectProactiveCoach(engineInsights)
+        : null,
+    [engineInsights, proactiveDismissed]
+  );
   const hasTransactions = recentTxns.length > 0 || monthlySpent > 0;
   const isSendDisabled = !inputText.trim() || isTyping;
   const profileInitial =
@@ -858,9 +925,14 @@ export default function ChatScreen() {
       topCategories: insight.topCategories,
       dayOfMonth: now.getDate(),
       daysInMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
+      insights: engineInsights ?? undefined,
     };
     const reply = routeMessage(trimmed, brainCtx);
-    await new Promise<void>((r) => setTimeout(r, 500 + Math.floor(Math.random() * 350)));
+    // Brief "thinking" beat so ThinkingSteps registers — kept short; the reply
+    // is already computed synchronously, so a long delay is pure dead time.
+    await new Promise<void>((r) =>
+      setTimeout(r, 240 + Math.floor(Math.random() * 160))
+    );
 
     setIsTyping(false);
 
@@ -873,24 +945,53 @@ export default function ChatScreen() {
     setStreamingText('');
     setMessages((prev) => [
       ...prev,
-      { id: aiMsgId, type: 'ai', text: reply.text, followUps: reply.followUps, timestamp: nowTime() },
+      {
+        id: aiMsgId,
+        type: 'ai',
+        text: reply.text,
+        card: reply.card,
+        followUps: reply.followUps,
+        timestamp: nowTime(),
+      },
     ]);
     setLastMsgId(aiMsgId);
     if (userId) {
+      // Snapshot the card + follow-ups into payload so the reply renders
+      // identically on reopen — frozen as-of-asked (FINO_CHATBOT_CARDS.md §6).
+      const payload =
+        reply.card || reply.followUps
+          ? JSON.stringify({ card: reply.card, followUps: reply.followUps })
+          : null;
       saveChatMessage({
         userId,
         role: 'ai',
         text: reply.text,
-        payload: reply.followUps ? JSON.stringify({ followUps: reply.followUps }) : null,
+        payload,
       }).catch(() => {});
     }
 
-    for (let i = 1; i <= reply.text.length; i++) {
+    // Typewriter, but bounded: reveal in chunks so the total reveal stays ~0.6s
+    // regardless of length, and each tick is one full-list re-render — so we cap
+    // those (and the per-tick scroll layout pass) instead of firing once per
+    // character. Long coach/breakdown replies no longer drag.
+    const { text } = reply;
+    const TICK_MS = 16;
+    const MAX_TICKS = 36;
+    const step = Math.max(1, Math.ceil(text.length / MAX_TICKS));
+    let shown = 0;
+    let tick = 0;
+    while (shown < text.length) {
       if (streamGenRef.current !== gen) break;
-      await new Promise<void>((r) => setTimeout(r, i <= 3 ? 50 : 15));
-      setStreamingText(reply.text.slice(0, i));
-      scrollViewRef.current?.scrollToEnd({ animated: false });
+      shown = Math.min(text.length, shown + step);
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise<void>((r) => setTimeout(r, TICK_MS));
+      setStreamingText(text.slice(0, shown));
+      tick += 1;
+      if (tick % 3 === 0) {
+        scrollViewRef.current?.scrollToEnd({ animated: false });
+      }
     }
+    scrollViewRef.current?.scrollToEnd({ animated: false });
 
     // Flip streamingMsgId to null only — leave streamingText stale; the message
     // falls back to msg.text (the stored full reply).
@@ -904,6 +1005,14 @@ export default function ChatScreen() {
     if (pendingTx) {
       await doLogTransaction(pendingTx, accountId);
       setPendingTx(null);
+    }
+  };
+
+  // Deep-link from a card's optional action chip (FINO_CHATBOT_CARDS.md §10 Q4).
+  // Reuses the existing Stats-tab navigation (same as the header shortcut).
+  const handleCardAction = (target: CardAction['target']) => {
+    if (target === 'insights') {
+      navigation.navigate('Tabs', { screen: 'stats' });
     }
   };
 
@@ -1039,6 +1148,29 @@ export default function ChatScreen() {
     );
   };
 
+  // Live, dismissible proactive coach card pinned above the thread (§5/§6).
+  const renderProactiveCard = () => {
+    if (!proactiveCard) return null;
+    return (
+      <View style={styles.proactiveWrap}>
+        <View style={styles.proactiveHead}>
+          <Text style={styles.proactiveEyebrow}>FOR YOU</Text>
+          <TouchableOpacity
+            onPress={() => setProactiveDismissed(true)}
+            hitSlop={10}
+          >
+            <Ionicons name="close" size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        <ChatCardView
+          card={proactiveCard}
+          colors={colors}
+          onAction={handleCardAction}
+        />
+      </View>
+    );
+  };
+
   const renderMessage = (msg: Message) => {
     const isNew = msg.id === lastMsgId;
     const isStreaming = msg.id === streamingMsgId;
@@ -1075,18 +1207,13 @@ export default function ChatScreen() {
                 </Text>
               ) : null}
 
-              {/* Only show rich cards / tx card when not streaming */}
-              {!isStreaming && msg.richData ? (
-                <View style={styles.richCard}>
-                  {msg.richData.map((row) => (
-                    <View key={row.label} style={styles.richCardRow}>
-                      <Text style={styles.richCardLabel}>{row.label}</Text>
-                      <Text style={[styles.richCardValue, row.color ? { color: row.color } : undefined]}>
-                        {row.value}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
+              {/* Only show graphical cards / tx card when not streaming */}
+              {!isStreaming && msg.card ? (
+                <ChatCardView
+                  card={msg.card}
+                  colors={colors}
+                  onAction={handleCardAction}
+                />
               ) : null}
 
               {!isStreaming && msg.txData ? (
@@ -1125,6 +1252,7 @@ export default function ChatScreen() {
         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
         onLayout={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
       >
+        {renderProactiveCard()}
         {messages.map(renderMessage)}
         {isTyping ? <ThinkingSteps steps={currentSteps} colors={colors} isDark={isDark} /> : null}
       </ScrollView>
@@ -1335,10 +1463,21 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     userText: { fontFamily: 'Inter_400Regular', fontSize: 14, color: '#FFF', lineHeight: 20 },
     timestampUser: { fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary, marginTop: 6, marginRight: 4 },
-    richCard: { backgroundColor: colors.white, borderRadius: 12, padding: 12, marginTop: 12, gap: 8 },
-    richCardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    richCardLabel: { fontFamily: 'Inter_400Regular', fontSize: 13, color: colors.textSecondary },
-    richCardValue: { fontFamily: 'DMMono_500Medium', fontSize: 14, color: colors.textPrimary },
+
+    // ─── Proactive coach card (live, unpersisted) ───
+    proactiveWrap: { marginBottom: 16 },
+    proactiveHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 2,
+    },
+    proactiveEyebrow: {
+      fontFamily: 'Inter_700Bold',
+      fontSize: 10,
+      letterSpacing: 1.2,
+      color: colors.textSecondary,
+    },
 
     // ─── Landing (Gemini-style empty thread) ───
     landingScroll: {
