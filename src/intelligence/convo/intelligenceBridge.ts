@@ -10,11 +10,23 @@
  * greeting / thanks / count handlers.
  */
 
-import type { BrainContext, BrainResponse } from './types';
+import type { BrainContext, BrainResponse, CardAction } from './types';
 import type { IntentId } from './intents';
 import { CAPABILITY_BLURBS } from './intents';
 import type { Slots } from './slots';
 import { peso, pctOf, pick } from './nlg';
+import {
+  buildBreakdownCard,
+  buildCompareCard,
+  buildForecastCard,
+  buildCoachCard,
+} from './cards';
+
+/** The single optional deep-link chip cards may carry (§10 Q4). */
+const OPEN_INSIGHTS: CardAction = {
+  label: 'Open Insights',
+  target: 'insights',
+};
 
 /** A clean example prompt per intent — used as clarify chips and help hints. */
 export const EXAMPLE_PROMPTS: Partial<Record<IntentId, string>> = {
@@ -26,6 +38,8 @@ export const EXAMPLE_PROMPTS: Partial<Record<IntentId, string>> = {
   compare: 'Compare to last month',
   cut: 'Where can I cut back?',
   savings: 'Am I on track to save?',
+  coach: 'How am I doing this month?',
+  overspend: 'Am I overspending anywhere?',
 };
 
 const FALLBACK_FOLLOWUPS = [
@@ -181,8 +195,10 @@ function answerBreakdown(ctx: BrainContext): BrainResponse {
     .slice(0, 4)
     .map((c) => `• ${c.name} — ${peso(c.amount)}`)
     .join('\n');
+  const data = buildBreakdownCard(ctx);
   return {
     text: `You've spent ${peso(ctx.spent)} this month. Here's where it went:\n${lines}`,
+    card: data ? { kind: 'breakdown', data } : undefined,
     followUps,
   };
 }
@@ -214,6 +230,8 @@ function answerCompare(ctx: BrainContext): BrainResponse {
       followUps,
     };
   }
+  const data = buildCompareCard(ctx);
+  const card = data ? ({ kind: 'compare', data } as const) : undefined;
   const diff = ctx.spent - ctx.lastMonthSpent;
   const pct = pctOf(Math.abs(diff), ctx.lastMonthSpent);
   if (diff < 0) {
@@ -221,6 +239,7 @@ function answerCompare(ctx: BrainContext): BrainResponse {
       text: `You're spending less this month — ${peso(ctx.spent)} vs ${peso(
         ctx.lastMonthSpent
       )} last month, down ${pct}%. Nice work. 📉`,
+      card,
       followUps,
     };
   }
@@ -229,6 +248,7 @@ function answerCompare(ctx: BrainContext): BrainResponse {
       text: `You're spending more this month — ${peso(ctx.spent)} vs ${peso(
         ctx.lastMonthSpent
       )} last month, up ${pct}%. Want to see where it's going?`,
+      card,
       followUps,
     };
   }
@@ -236,6 +256,7 @@ function answerCompare(ctx: BrainContext): BrainResponse {
     text: `You're right on pace — ${peso(
       ctx.spent
     )} this month, the same as last month.`,
+    card,
     followUps,
   };
 }
@@ -268,12 +289,21 @@ function answerSavings(ctx: BrainContext): BrainResponse {
       followUps,
     };
   }
+  // The forecast card narrates the trajectory math when there's enough data
+  // (sufficiency-gated inside buildForecastCard); otherwise the reply degrades
+  // to text only (FINO_CHATBOT_CARDS.md §9).
+  const fcData = buildForecastCard(ctx);
+  const card = fcData
+    ? ({ kind: 'forecast', data: fcData, action: OPEN_INSIGHTS } as const)
+    : undefined;
+
   const saved = Math.max(0, ctx.income - ctx.spent);
   if (saved <= 0) {
     return {
       text: `Heads up — you've spent more than you've earned this month so far (${peso(
         ctx.spent
       )} out vs ${peso(ctx.income)} in). Want to find where to cut back?`,
+      card,
       followUps,
     };
   }
@@ -289,6 +319,7 @@ function answerSavings(ctx: BrainContext): BrainResponse {
       text: `You've saved ${peso(saved)} so far this month (about ${rate}% of your income), but at your current pace you're on track to spend ${peso(
         projectedSpend
       )} — more than you've earned. Easing off now would lock those savings in.`,
+      card,
       followUps,
     };
   }
@@ -297,6 +328,81 @@ function answerSavings(ctx: BrainContext): BrainResponse {
     text: `You're saving ${peso(saved)} so far this month — about ${rate}% of your income. At this pace you'll finish the month around ${peso(
       projectedSaved
     )} saved. 🎯`,
+    card,
+    followUps,
+  };
+}
+
+function answerCoach(ctx: BrainContext): BrainResponse {
+  const followUps = ['Where can I cut back?', 'Am I overspending anywhere?'];
+  const ins = ctx.insights;
+  if (!ins) {
+    // No engine insights yet → degrade to a lightweight nudge off the context.
+    if (!ctx.topCategories.length) {
+      return {
+        text: "Log a few expenses this month and I'll coach you on where your money's going and how to tighten up.",
+        followUps,
+      };
+    }
+    const top = ctx.topCategories[0];
+    return {
+      text: `Your biggest spend this month is ${top.name} at ${peso(
+        top.amount
+      )}. Keep an eye on it and you'll free up room to save.`,
+      followUps,
+    };
+  }
+  const data = buildCoachCard(ins);
+  return {
+    text: ins.coach.message,
+    card: { kind: 'coach', data, action: OPEN_INSIGHTS },
+    followUps,
+  };
+}
+
+function answerOverspend(ctx: BrainContext, slots: Slots): BrainResponse {
+  const followUps = ['Give me a spending breakdown', 'Where can I cut back?'];
+  const ins = ctx.insights;
+  const focusLabel = slots.category?.label;
+
+  if (!ins) {
+    return {
+      text: focusLabel
+        ? `I can't check ${focusLabel} against your usual yet — open the Insights tab for the full anomaly view.`
+        : "I track overspending against your 3-month baseline in the Insights tab — open it and I'll flag any category running hot.",
+      followUps,
+    };
+  }
+
+  const focus = focusLabel?.toLowerCase();
+  const focused = focus
+    ? ins.anomalies.find((a) => a.category.toLowerCase() === focus)
+    : undefined;
+
+  // A specific category was asked about and it's within its normal range.
+  if (focus && !focused) {
+    return {
+      text: `Your ${focusLabel} spending looks normal this month — it's tracking close to your usual. 👍`,
+      followUps,
+    };
+  }
+
+  if (!ins.anomalies.length) {
+    return {
+      text: "Nothing's running hot this month — your categories are all tracking near their usual levels. 👍",
+      followUps,
+    };
+  }
+
+  const data = buildCoachCard(ins, { focusCategory: focusLabel });
+  const worst =
+    focused ?? [...ins.anomalies].sort((a, b) => b.pctOver - a.pctOver)[0];
+  const overPct = Math.round(worst.pctOver * 100);
+  return {
+    text: `Yes — your ${worst.category} spending is about ${overPct}% over your usual (${peso(
+      worst.current
+    )} vs ${peso(worst.baseline)}). Worth easing off there.`,
+    card: { kind: 'coach', data, action: OPEN_INSIGHTS },
     followUps,
   };
 }
@@ -350,6 +456,10 @@ export function answerDataIntent(
       return answerCut(ctx);
     case 'savings':
       return answerSavings(ctx);
+    case 'coach':
+      return answerCoach(ctx);
+    case 'overspend':
+      return answerOverspend(ctx, slots);
     default:
       return null;
   }
