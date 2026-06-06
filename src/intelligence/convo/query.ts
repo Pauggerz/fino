@@ -135,7 +135,9 @@ export function groupByDayOfWeek(txns: TxLite[]): DowBucket[] {
     count: 0,
   }));
   for (const t of txns) {
-    const dow = (new Date(t.date).getDay() + 6) % 7; // 0 = Mon
+    const d = new Date(t.date);
+    if (Number.isNaN(d.getTime())) continue; // skip malformed dates (NaN → no bucket)
+    const dow = (d.getDay() + 6) % 7; // 0 = Mon
     buckets[dow].amount += t.amount;
     buckets[dow].count += 1;
   }

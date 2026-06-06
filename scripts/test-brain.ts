@@ -983,6 +983,44 @@ const CTX_TX: BrainContext = {
   );
 }
 
+// ─── Phase 0: temporal spend (snapshot ranges) + time clarify ────────────────
+{
+  // "this week" → snapshot-sliced spend (only Jollibee ₱120 falls in this week,
+  // Mon 15–Sun 21), NOT the Insights punt.
+  const wk = routeMessage('how much did i spend this week', CTX_TX);
+  check(
+    /spent/i.test(wk.text) &&
+      /this week/.test(wk.text) &&
+      !/Insights/.test(wk.text),
+    '[phase0]  spend this week → snapshot total, not Insights punt',
+    `text "${wk.text}"`
+  );
+
+  // "last 7 days" → rolling window total from the snapshot (Jun 9–15).
+  const l7 = routeMessage('how much did i spend in the last 7 days', CTX_TX);
+  check(
+    /last 7 days/.test(l7.text) && /spent/i.test(l7.text),
+    '[phase0]  spend last 7 days → snapshot window total',
+    `text "${l7.text}"`
+  );
+
+  // Vague temporal ("lately") → a time clarify with chips, not a silent answer.
+  const vague = routeMessage('how much did i spend lately', CTX_TX);
+  check(
+    /time range/i.test(vague.text) && (vague.followUps?.length ?? 0) === 3,
+    '[phase0]  vague "lately" → time clarify with chips',
+    `text "${vague.text}"`
+  );
+
+  // Without a snapshot, a sub-month range degrades honestly (no invented number).
+  const noSnap = routeMessage('how much did i spend this week', { ...CTX });
+  check(
+    /Insights/.test(noSnap.text),
+    '[phase0]  spend this week, no snapshot → honest Insights punt',
+    `text "${noSnap.text}"`
+  );
+}
+
 // ─── Categories 2 & 3: pattern / summary / budget / needs-wants cards (V3) ────
 
 const CTX_TX_BUDGET: BrainContext = {

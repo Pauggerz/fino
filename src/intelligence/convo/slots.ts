@@ -55,6 +55,10 @@ export type Slots = {
    *  "internet bill"), for `query.matchMerchant`. Only set when there's a clear
    *  "my X payment / bill / charge" style phrase. */
   merchant?: string;
+  /** A clearly-temporal phrase was present but didn't resolve to a concrete
+   *  range ("lately", "the past few days") — the brain should clarify the
+   *  window rather than silently defaulting to "this month". */
+  timeRangeUnresolved?: boolean;
 };
 
 export type SlotOptions = {
@@ -77,6 +81,12 @@ const UNDER_RE = new RegExp(
 const BETWEEN_RE = new RegExp(
   String.raw`\bbetween\s*₱?\s*${NUM}\s*(?:and|to|-|–)\s*₱?\s*${NUM}`
 );
+
+/** Clearly-temporal but unparseable phrasing — triggers a time clarify instead
+ *  of a silent "this month" default. Tight on purpose: no bare "recent", which
+ *  is a recency sort for transactions, not a vague window. */
+const VAGUE_TIME_RE =
+  /\b(recently|lately|nowadays|these days|the other day|past few|last few|a while (?:ago|back)|some time ago|a few days|a couple of days|couple days|kamakailan)\b/;
 
 const LIMIT_RE =
   /\b(?:last|latest|recent|top|first|previous|show(?: me)?|give me)\s+(\d{1,3})\b/;
@@ -149,6 +159,7 @@ export function extractSlots(
 
   const timeRange = parseTimeRange(normalized, opts.now);
   if (timeRange) slots.timeRange = timeRange;
+  else if (VAGUE_TIME_RE.test(normalized)) slots.timeRangeUnresolved = true;
 
   slots.amounts = extractAmounts(expanded);
 

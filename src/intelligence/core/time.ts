@@ -28,7 +28,9 @@ export type TimeRangeKey =
   | 'namedMonth'
   | 'weekday'
   | 'weekend'
-  | 'last30Days';
+  | 'last30Days'
+  | 'lastNDays'
+  | 'daysAgo';
 
 export type TimeRange = {
   key: TimeRangeKey;
@@ -164,8 +166,13 @@ function buildQuarter(now: Date, q: number): TimeRange {
 
 /** monthIndex 0..11 → its most recent occurrence (this year if already begun,
  *  otherwise last year). */
-function buildNamedMonth(now: Date, monthIndex: number, label: string): TimeRange {
-  const y = monthIndex > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
+function buildNamedMonth(
+  now: Date,
+  monthIndex: number,
+  label: string
+): TimeRange {
+  const y =
+    monthIndex > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
   return {
     key: 'namedMonth',
     label: cap(label),
@@ -210,6 +217,56 @@ function buildLast30(now: Date): TimeRange {
   };
 }
 
+const MONTHS_SHORT = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+const fmtShortDate = (d: Date): string =>
+  `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
+
+/** Rolling N-day window ending today (inclusive) — generalizes buildLast30. */
+function buildLastNDays(now: Date, n: number): TimeRange {
+  const days = Math.max(1, n);
+  return {
+    key: 'lastNDays',
+    label: `the last ${days} days`,
+    start: startOfDay(addDays(now, -(days - 1))),
+    end: endOfDay(now),
+  };
+}
+
+/** Rolling N-week (N×7-day) window ending today (inclusive). */
+function buildLastNWeeks(now: Date, n: number): TimeRange {
+  const weeks = Math.max(1, n);
+  return {
+    key: 'lastNDays',
+    label: weeks === 1 ? 'the last week' : `the last ${weeks} weeks`,
+    start: startOfDay(addDays(now, -(weeks * 7 - 1))),
+    end: endOfDay(now),
+  };
+}
+
+/** The single calendar day N days before today ("3 days ago"). */
+function buildDaysAgo(now: Date, n: number): TimeRange {
+  const d = addDays(now, -Math.max(0, n));
+  return {
+    key: 'daysAgo',
+    label: fmtShortDate(d),
+    start: startOfDay(d),
+    end: endOfDay(d),
+  };
+}
+
 const MONTH_DEFS: { re: RegExp; index: number; label: string }[] = [
   { re: /\bjan(uary)?\b/, index: 0, label: 'January' },
   { re: /\bfeb(ruary)?\b/, index: 1, label: 'February' },
@@ -243,7 +300,19 @@ const QUARTER_DEFS: { re: RegExp; q: number }[] = [
   { re: /\b(q4|fourth quarter|4th quarter|quarter 4)\b/, q: 4 },
 ];
 
-type Pattern = { re: RegExp; build: (now: Date) => TimeRange };
+// Relative rolling windows + "N days ago". The N is captured and read in
+// parseTimeRange; these sit AFTER the fixed "last 30 days" rule so that exact
+// phrase keeps its dedicated `last30Days` key.
+const LAST_N_DAYS_RE =
+  /\b(?:last|past|previous|nakaraang|huling)\s+(\d{1,3})\s+(?:days?|araw)\b/;
+const LAST_N_WEEKS_RE =
+  /\b(?:last|past|previous|nakaraang|huling)\s+(\d{1,3})\s+(?:weeks?|linggo)\b/;
+const N_DAYS_AGO_RE = /\b(\d{1,3})\s+(?:days?|araw)\s+ago\b/;
+
+type Pattern = {
+  re: RegExp;
+  build: (now: Date, m: RegExpMatchArray) => TimeRange;
+};
 
 const simple = (key: SimpleKey, re: RegExp): Pattern => ({
   re,
@@ -296,10 +365,26 @@ const PATTERNS: Pattern[] = [
     /\b(this week|ngayong linggo|karong semana|current week|linggong ito)\b/
   ),
   // Weekend + rolling 30-day window.
-  { re: /\b(weekend|katapusan ng linggo)\b/, build: (now) => buildWeekend(now) },
+  {
+    re: /\b(weekend|katapusan ng linggo)\b/,
+    build: (now) => buildWeekend(now),
+  },
   {
     re: /\b(last 30 days|past 30 days|last thirty days|nakaraang 30 araw|huling 30 araw|30 days)\b/,
     build: (now) => buildLast30(now),
+  },
+  // Relative rolling windows ("last 7 days", "past 2 weeks") + "N days ago".
+  {
+    re: LAST_N_WEEKS_RE,
+    build: (now, m) => buildLastNWeeks(now, parseInt(m[1], 10)),
+  },
+  {
+    re: LAST_N_DAYS_RE,
+    build: (now, m) => buildLastNDays(now, parseInt(m[1], 10)),
+  },
+  {
+    re: N_DAYS_AGO_RE,
+    build: (now, m) => buildDaysAgo(now, parseInt(m[1], 10)),
   },
   // Days (explicit today/yesterday before weekday names).
   simple('yesterday', /\b(yesterday|kahapon|gahapon)\b/),
@@ -324,7 +409,8 @@ export function parseTimeRange(
 ): TimeRange | null {
   if (!text) return null;
   for (const { re, build } of PATTERNS) {
-    if (re.test(text)) return build(now);
+    const m = re.exec(text);
+    if (m) return build(now, m);
   }
   return null;
 }

@@ -20,6 +20,7 @@ import type {
 import type { IntentId } from './intents';
 import { CAPABILITY_BLURBS } from './intents';
 import type { Slots } from './slots';
+import type { TimeRange } from '../core/time';
 import { peso, pctOf, pick } from './nlg';
 import {
   buildBreakdownCard,
@@ -197,13 +198,11 @@ function answerSpend(
   seed: string
 ): BrainResponse {
   const followUps = ['Give me a spending breakdown', 'Compare to last month'];
+  const tr = slots.timeRange;
+  const txns = ctx.transactions ?? [];
 
-  // Category-scoped: "how much on food" — answerable for THIS month only, from
-  // the by-category breakdown we hold.
-  if (
-    slots.category &&
-    (!slots.timeRange || slots.timeRange.key === 'thisMonth')
-  ) {
+  // Category-scoped, this-month: answer from the by-category aggregate we hold.
+  if (slots.category && (!tr || tr.key === 'thisMonth')) {
     const match = ctx.topCategories.find(
       (c) =>
         c.name.toLowerCase() === slots.category!.label.toLowerCase() ||
@@ -221,8 +220,8 @@ function answerSpend(
     };
   }
 
-  // Last month total.
-  if (slots.timeRange?.key === 'lastMonth') {
+  // Last-month total comes from the authoritative monthly aggregate.
+  if (tr?.key === 'lastMonth') {
     if (ctx.lastMonthSpent <= 0) {
       return {
         text: "I don't have any spending logged for last month.",
@@ -235,12 +234,36 @@ function answerSpend(
     };
   }
 
-  // Sub-month windows aren't in the chat context — be honest, don't guess.
-  if (slots.timeRange && slots.timeRange.key !== 'thisMonth') {
+  // Any other concrete range (today / a week / a quarter / "last 7 days" / a
+  // weekday …) is answered precisely from the transaction snapshot — no more
+  // silently collapsing sub-month windows to the month total.
+  if (tr && tr.key !== 'thisMonth') {
+    const when = whenPhrase(tr);
+    if (txns.length) {
+      const total = sumAmount(
+        selectTx(txns, {
+          range: { start: tr.start, end: tr.end },
+          type: 'expense',
+          categories: slotCats(slots),
+        })
+      );
+      const subj = slots.category ? ` on ${slots.category.label}` : '';
+      if (total <= 0) {
+        return {
+          text: `I don't see any${subj || ' spending'} ${when}.`,
+          followUps,
+        };
+      }
+      return {
+        text: `You spent ${peso(total)}${subj} ${when}.`,
+        followUps,
+      };
+    }
+    // No snapshot to slice — be honest rather than guess a number.
     return {
       text: `In chat I track spending by month — this month you're at ${peso(
         ctx.spent
-      )} so far. For a ${slots.timeRange.label} view, open the Insights tab.`,
+      )} so far. For a ${tr.label} view, open the Insights tab.`,
       followUps,
     };
   }
@@ -605,6 +628,30 @@ function scopeLabel(slots: Slots): string {
   else if (slots.amountMax != null) bits.push(`under ${peso(slots.amountMax)}`);
   if (slots.timeRange) bits.push(slots.timeRange.label);
   return bits.length ? ` ${bits.join(' ')}` : '';
+}
+
+/** Narration suffix for a resolved range so totals read naturally: "today",
+ *  "in March", "on Tuesday", "over the weekend", "in the last 7 days". */
+function whenPhrase(tr: TimeRange): string {
+  switch (tr.key) {
+    case 'weekday':
+    case 'daysAgo':
+      return `on ${tr.label}`;
+    case 'weekend':
+      return 'over the weekend';
+    case 'today':
+    case 'yesterday':
+    case 'thisWeek':
+    case 'lastWeek':
+    case 'thisMonth':
+    case 'lastMonth':
+    case 'thisYear':
+    case 'lastYear':
+      return tr.label;
+    default:
+      // quarter / namedMonth / lastNDays / last30Days
+      return `in ${tr.label}`;
+  }
 }
 
 function answerTransactions(
@@ -1429,6 +1476,22 @@ export function answerClarify(a: IntentId, b: IntentId): BrainResponse {
   return {
     text: 'Want to make sure I get this right — which did you mean?',
     followUps: chips.length === 2 ? chips : FALLBACK_FOLLOWUPS,
+  };
+}
+
+/**
+ * Clarify when a clearly-temporal phrase ("lately", "the past few days") was
+ * used but didn't resolve to a concrete range — offer common windows as one-tap
+ * chips instead of silently assuming "this month" and answering the wrong span.
+ */
+export function answerTimeClarify(): BrainResponse {
+  return {
+    text: 'Over what time range? Tap one or tell me the exact dates:',
+    followUps: [
+      'How much did I spend this week?',
+      'How much did I spend in the last 7 days?',
+      'How much did I spend this month?',
+    ],
   };
 }
 

@@ -143,6 +143,16 @@ console.log('Sort / take / aggregate');
   eq('dow has 7 buckets', dow.length, 7);
   eq('dow Monday label', dow[0].label, 'Mon');
 
+  // A malformed date must be skipped, not crash (NaN day-of-week → no bucket).
+  const bad = tx('bad', 999, 'expense', 'Food', 'Mystery', 'not-a-date');
+  const dowBad = groupByDayOfWeek([...selectTx(TXNS, { type: 'expense' }), bad]);
+  eq('dow tolerates bad date (7 buckets)', dowBad.length, 7);
+  eq(
+    'dow excludes the bad-date amount',
+    dowBad.reduce((s, b) => s + b.amount, 0),
+    dow.reduce((s, b) => s + b.amount, 0)
+  );
+
   eq('matchMerchant internet', matchMerchant(TXNS, 'internet')[0]?.id, 'h');
   eq('matchMerchant none', matchMerchant(TXNS, 'netflix').length, 0);
 
@@ -250,6 +260,64 @@ console.log('Needs vs wants (V3 additions)');
   eq('want total', split.want, 5800); // Shopping + Coffee
   eq('classified total', split.classified, 9800);
   check('needCats sorted desc', split.needCats[0].name === 'Bills');
+}
+
+// ─── Relative windows + vague time (Phase 0) ─────────────────────────────────
+// NOW = Mon 15 Jun 2026, so a rolling N-day window ends on the 15th.
+
+console.log('Relative windows + vague time (Phase 0)');
+{
+  const t = (s: string) => parseTimeRange(s, NOW);
+
+  // last/past N days → rolling window ending today.
+  eq('last 7 days key', t('last 7 days')?.key, 'lastNDays');
+  eq(
+    'last 7 days start day',
+    t('spending in the last 7 days')?.start.getDate(),
+    9
+  );
+  eq('last 7 days end day', t('last 7 days')?.end.getDate(), 15);
+  eq('past 3 days start day', t('past 3 days')?.start.getDate(), 13);
+
+  // last/past N weeks → rolling N×7-day window.
+  eq('last 2 weeks key', t('last 2 weeks')?.key, 'lastNDays');
+  eq('last 2 weeks start day', t('last 2 weeks')?.start.getDate(), 2);
+  eq('last 2 weeks label', t('last 2 weeks')?.label, 'the last 2 weeks');
+
+  // "N days ago" → that single calendar day.
+  eq('3 days ago key', t('3 days ago')?.key, 'daysAgo');
+  eq(
+    '3 days ago start day',
+    t('what did i spend 3 days ago')?.start.getDate(),
+    12
+  );
+  eq('3 days ago end same day', t('3 days ago')?.end.getDate(), 12);
+
+  // Back-compat: the fixed "last 30 days" rule keeps its dedicated key.
+  eq('last 30 days still last30Days', t('last 30 days')?.key, 'last30Days');
+
+  // Vague temporal → unresolved flag (clarify), never a silent range.
+  const s = (raw: string) => extractSlots(normalize(raw), { now: NOW });
+  check(
+    'lately → no range',
+    s('how much did i spend lately').timeRange === undefined
+  );
+  check(
+    'lately → unresolved',
+    s('how much did i spend lately').timeRangeUnresolved === true
+  );
+  check(
+    'past few days → unresolved',
+    s('what did i spend in the past few days').timeRangeUnresolved === true
+  );
+  check(
+    'plain spend → not flagged',
+    s('how much did i spend').timeRangeUnresolved === undefined
+  );
+  check(
+    'recent transactions → not vague',
+    s('show me my recent transactions').timeRangeUnresolved === undefined
+  );
 }
 
 // ─── Summary ─────────────────────────────────────────────────────────────────
