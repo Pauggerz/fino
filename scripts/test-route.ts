@@ -13,6 +13,7 @@
  */
 
 import { looksLikeQuestion } from '../src/intelligence/convo/route';
+import { isAbusive } from '../src/intelligence/convo/safety';
 import { parseChatTransaction } from '../src/intelligence/categorize/parseTransaction';
 
 // One account → a parsed transaction auto-resolves (no picker), so a non-null
@@ -70,16 +71,47 @@ const cases: Case[] = [
 let passed = 0;
 let failed = 0;
 
-console.log('Log-vs-ask gate\n');
-for (const c of cases) {
-  const got = decide(c.text);
-  if (got === c.want) {
+function check(label: string, ok: boolean, extra = ''): void {
+  if (ok) {
     passed += 1;
   } else {
     failed += 1;
-    console.error(`  ✗ "${c.text}" → ${got}, want ${c.want}`);
+    console.error(`  ✗ ${label}${extra ? ` — ${extra}` : ''}`);
   }
 }
+
+console.log('Log-vs-ask gate\n');
+for (const c of cases) {
+  const got = decide(c.text);
+  check(`route "${c.text}" → ${c.want}`, got === c.want, `got ${got}`);
+}
+
+// ── Income TYPE decision (tightened) — ambiguous nouns stay EXPENSE (#13) ─────
+const parse = (text: string) =>
+  parseChatTransaction(text, ACCOUNTS, EXPENSE_CATS, INCOME_CATS);
+
+check('"pay 500 for the bill" → expense', parse('pay 500 for the bill')?.type === 'expense');
+check('"gift 500" → expense', parse('gift 500')?.type === 'expense');
+check('"i earned 5000 from freelance" → income', parse('i earned 5000 from freelance')?.type === 'income');
+check('"bonus 5000" → income', parse('bonus 5000')?.type === 'income');
+check('"salary 30000" → income', parse('salary 30000')?.type === 'income');
+
+// ── Abuse guard — offensive input is declined, never finance-answered ─────────
+check('"suck my dick" → abusive', isAbusive('suck my dick'));
+check('"FUCK YOU!!!" → abusive (case/punct)', isAbusive('FUCK YOU!!!'));
+check('"you suck" → abusive', isAbusive('you suck'));
+check('"tangina mo" → abusive (TL)', isAbusive('tangina mo'));
+// High-precision: innocent substrings must NOT trip the guard.
+check('"how much did i spend" → clean', !isAbusive('how much did i spend'));
+check('"assess my class budget" → clean', !isAbusive('assess my class budget'));
+check('"coffee at the cockpit cafe" → clean', !isAbusive('coffee at the cockpit cafe'));
+check('"how much on leche flan" → clean', !isAbusive('how much on leche flan'));
+
+// ── Back-dating only for unambiguous single past days (#9) ────────────────────
+const yest = parse('lunch 120 yesterday');
+check('"lunch 120 yesterday" back-dates', !!yest?.date && new Date(yest!.date!) < new Date());
+check('"lunch 120" stays undated (logs now)', parse('lunch 120')?.date === undefined);
+check('"groceries 1500 this month" not back-dated', parse('groceries 1500 this month')?.date === undefined);
 
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
