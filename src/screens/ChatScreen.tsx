@@ -31,6 +31,7 @@ import { useCategories } from '@/hooks/useCategories';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import type RecurringIncomeModel from '@/db/models/RecurringIncome';
+import type DebtModel from '@/db/models/Debt';
 import type ChatMessageModel from '@/db/models/ChatMessage';
 import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import {
@@ -559,6 +560,16 @@ export default function ChatScreen() {
   const [recurringIncome, setRecurringIncome] = useState<
     { label: string; amount: number; dayOfMonth?: number }[]
   >([]);
+  // Utang receivables (money owed TO the user) for debt questions.
+  const [debts, setDebts] = useState<
+    {
+      debtor: string;
+      total: number;
+      paid: number;
+      remaining: number;
+      dueDate?: string;
+    }[]
+  >([]);
   const [lastMsgId, setLastMsgId] = useState<string | null>(null);
 
   // Profile drawer (right) — same component HomeScreen uses.
@@ -584,6 +595,17 @@ export default function ChatScreen() {
   // Drops concurrent sends (e.g. a follow-up tap during the working beat) so a
   // reply is never produced twice in parallel.
   const isBusyRef = useRef(false);
+
+  // Flipped on unmount. handleSend awaits a "working beat" (a timer) before it
+  // appends the reply; if the user leaves the screen during that wait we skip
+  // the now-pointless UI setState (the reply is still persisted for next open).
+  const isMountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+    },
+    []
+  );
 
   // Transaction logging state
   const [pendingTx, setPendingTx] = useState<ChatTx | null>(null);
@@ -682,6 +704,28 @@ export default function ChatScreen() {
                 d && !Number.isNaN(d.getTime()) ? d.getDate() : undefined,
             };
           }),
+        );
+      });
+    return () => sub.unsubscribe();
+  }, [userId]);
+
+  // Utang receivables → "how much do I owe / who owes me" answers. Money owed
+  // TO the user; remaining = total_amount − amount_paid.
+  useEffect(() => {
+    if (!userId) { setDebts([]); return undefined; }
+    const sub = database
+      .get<DebtModel>('debts')
+      .query(Q.where('user_id', userId))
+      .observeWithColumns(['debtor_name', 'total_amount', 'amount_paid', 'due_date'])
+      .subscribe((records) => {
+        setDebts(
+          records.map((r) => ({
+            debtor: r.debtorName,
+            total: r.totalAmount,
+            paid: r.amountPaid,
+            remaining: Math.max(0, r.totalAmount - r.amountPaid),
+            dueDate: r.dueDate,
+          })),
         );
       });
     return () => sub.unsubscribe();
@@ -796,7 +840,12 @@ export default function ChatScreen() {
     let cancelled = false;
     loadChatHistory(userId)
       .then((rows) => {
-        if (!cancelled) setMessages(rows.map(rowToMessage));
+        if (cancelled) return;
+        const loaded = rows.map(rowToMessage);
+        // Don't clobber messages a send appended while the load was in flight:
+        // the live thread wins (persisted scrollback is intact on next open).
+        // On a fresh mount `prev` is empty, so this is a plain hydrate.
+        setMessages((prev) => (prev.length > 0 ? prev : loaded));
       })
       .catch(() => {});
     return () => {
@@ -863,7 +912,8 @@ export default function ChatScreen() {
         category: tx.category,
         displayName: tx.displayName,
         signalSource: 'description',
-        date: new Date().toISOString(),
+        // Honor an unambiguous back-date ("spent 50 yesterday"); else log now.
+        date: tx.date ?? new Date().toISOString(),
       });
 
       const confirmId = `tx-${Date.now()}`;
@@ -978,6 +1028,7 @@ export default function ChatScreen() {
           accounts: accountsForBrain,
           budgets: budgetsForBrain,
           recurringIncome,
+          debts,
         };
         reply = routeMessage(trimmed, brainCtx);
       } catch (err) {
@@ -995,22 +1046,11 @@ export default function ChatScreen() {
       // (AnimatedMessage) and any card assembles itself (ChatCardView reveal).
       // No typewriter: the text arrives instantly instead of crawling.
       const aiMsgId = `ai-${Date.now()}`;
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: aiMsgId,
-          type: 'ai',
-          text: reply.text,
-          card: reply.card,
-          actions: reply.actions,
-          followUps: reply.followUps,
-          timestamp: nowTime(),
-        },
-      ]);
-      setLastMsgId(aiMsgId);
       if (userId) {
         // Snapshot the card + actions + follow-ups into payload so the reply
         // renders identically on reopen — frozen as-of-asked (CARDS.md §6).
+        // Persist BEFORE the mount guard so a reply computed during the working
+        // beat survives a reopen even if the user already left the screen.
         const payload =
           reply.card || reply.actions || reply.followUps
             ? JSON.stringify({
@@ -1026,6 +1066,21 @@ export default function ChatScreen() {
           payload,
         }).catch(() => {});
       }
+      // Left the screen during the working beat → reply is saved; skip the UI.
+      if (!isMountedRef.current) return;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: aiMsgId,
+          type: 'ai',
+          text: reply.text,
+          card: reply.card,
+          actions: reply.actions,
+          followUps: reply.followUps,
+          timestamp: nowTime(),
+        },
+      ]);
+      setLastMsgId(aiMsgId);
       requestAnimationFrame(() =>
         scrollViewRef.current?.scrollToEnd({ animated: true })
       );
@@ -1082,6 +1137,9 @@ export default function ChatScreen() {
         break;
       case 'recurringIncome':
         navigation.navigate('RecurringIncome');
+        break;
+      case 'utangTracker':
+        navigation.navigate('UtangTracker');
         break;
       case 'categories':
         navigation.navigate('Categories', {
@@ -1428,7 +1486,7 @@ export default function ChatScreen() {
               placeholderTextColor={colors.textSecondary}
               editable
               multiline
-              maxLength={200}
+              maxLength={500}
             />
             <View style={styles.composerToolbar}>
               <TouchableOpacity
