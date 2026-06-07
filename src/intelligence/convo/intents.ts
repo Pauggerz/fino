@@ -48,7 +48,9 @@ export type IntentId =
   | 'improveSavings'
   | 'cutAmount'
   | 'ruleOfThumb'
-  | 'impulseTips';
+  | 'impulseTips'
+  | 'afford'
+  | 'debt';
 
 type Trigger = { term: string; weight: number };
 
@@ -114,6 +116,8 @@ const INTENT_DEFS: IntentDef[] = [
       t('how much do i have', 4),
       t('net worth', 3),
       t('total money', 2),
+      t('broke', 3),
+      t('rich', 3),
       t('laman ng wallet', 3),
     ],
   },
@@ -264,6 +268,9 @@ const INTENT_DEFS: IntentDef[] = [
       t('recent activity', 3),
       t('purchases', 2),
       t('my purchases', 3),
+      t('what i bought', 4),
+      t('what did i buy', 4),
+      t('things i bought', 4),
       t('charge', 1),
     ],
   },
@@ -484,6 +491,35 @@ const INTENT_DEFS: IntentDef[] = [
       t('impulse', 6),
       t('impulse buying', 6),
       t('impulse buy', 6),
+    ],
+  },
+  {
+    id: 'afford',
+    blurb: 'check if you can afford a purchase',
+    triggers: [
+      t('can i afford', 5),
+      t('can i buy', 4),
+      t('can i spend', 3),
+      t('able to afford', 4),
+      t('afford', 3),
+    ],
+  },
+  {
+    id: 'debt',
+    blurb: 'see who owes you money (utang owed to you)',
+    triggers: [
+      t('how much do i owe', 5),
+      t('who owes me', 5),
+      t('who do i owe', 4),
+      t('owes me', 4),
+      t('owe me', 4),
+      t('owed to me', 4),
+      t('my debts', 4),
+      t('debts', 3),
+      t('debt', 2),
+      t('utang', 4),
+      t('owe', 2),
+      t('paid me back', 4),
     ],
   },
 ];

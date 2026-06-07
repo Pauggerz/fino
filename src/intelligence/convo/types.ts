@@ -44,7 +44,8 @@ export type NavTarget =
   | 'addTransaction'
   | 'transactionDetail'
   | 'accounts'
-  | 'cashFlow';
+  | 'cashFlow'
+  | 'utangTracker';
 
 /**
  * A tappable button the brain emits (theme-free, navigator-free), dispatched by
@@ -320,6 +321,20 @@ export type RecurringIncomeLite = {
   dayOfMonth?: number;
 };
 
+/**
+ * One Utang-tracker row — money owed **to** the user (a receivable). `debtor` is
+ * the person who owes them; `remaining = total − paid`. The brain answers debt
+ * questions ("how much do I owe", "who owes me") from these, always worded as
+ * money owed *to* the user (the table never stores the user's own payables).
+ */
+export type DebtLite = {
+  debtor: string;
+  total: number;
+  paid: number;
+  remaining: number;
+  dueDate?: string;
+};
+
 // ─── Brain I/O ───────────────────────────────────────────────────────────────
 
 export type BrainResponse = {
@@ -379,4 +394,6 @@ export type BrainContext = {
   budgets?: BudgetLite[];
   /** Configured recurring income, for "did my salary hit yet?". */
   recurringIncome?: RecurringIncomeLite[];
+  /** Utang-tracker receivables (money owed TO the user), for debt questions. */
+  debts?: DebtLite[];
 };

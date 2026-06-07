@@ -55,6 +55,7 @@ import {
   answerCutAmount,
   answerRuleOfThumb,
   answerImpulseTips,
+  answerAfford,
 } from './advice';
 
 /** The single optional deep-link chip cards may carry (§10 Q4). */
@@ -62,6 +63,11 @@ const OPEN_INSIGHTS: CardAction = {
   kind: 'navigate',
   label: 'Open Insights',
   target: 'insights',
+};
+const OPEN_UTANG: CardAction = {
+  kind: 'navigate',
+  label: 'Open Utang Tracker',
+  target: 'utangTracker',
 };
 
 /** A clean example prompt per intent — used as clarify chips and help hints. */
@@ -549,14 +555,30 @@ function answerOverspend(ctx: BrainContext, slots: Slots): BrainResponse {
   const data = buildCoachCard(ins, { focusCategory: focusLabel });
   const worst =
     focused ?? [...ins.anomalies].sort((a, b) => b.pctOver - a.pctOver)[0];
-  const overPct = Math.round(worst.pctOver * 100);
   return {
-    text: `Yes — your ${worst.category} spending is about ${overPct}% over your usual (${peso(
-      worst.current
-    )} vs ${peso(worst.baseline)}). Worth easing off there.`,
+    text: `Yes — ${anomalyClause(worst)}. Worth easing off there.`,
     card: { kind: 'coach', data, action: OPEN_INSIGHTS },
     followUps,
   };
+}
+
+/**
+ * Narrate one anomaly. A "% over usual" only reads sensibly against a material
+ * baseline — against a near-zero usual (₱50) the percentage explodes into noise
+ * ("6283% over"). So below a baseline floor, or when the percentage is extreme,
+ * we lead with the absolute amount instead of the runaway ratio.
+ */
+function anomalyClause(a: {
+  category: string;
+  current: number;
+  baseline: number;
+  pctOver: number;
+}): string {
+  const overPct = Math.round(a.pctOver * 100);
+  if (a.baseline < 500 || overPct > 300) {
+    return `you've spent ${peso(a.current)} on ${a.category} this month — well above your usual ${peso(a.baseline)}`;
+  }
+  return `your ${a.category} spending is about ${overPct}% over your usual (${peso(a.current)} vs ${peso(a.baseline)})`;
 }
 
 // ─── Category 1: transaction info & mapping (V3) ─────────────────────────────
@@ -1496,6 +1518,62 @@ export function answerTimeClarify(): BrainResponse {
 }
 
 /**
+ * Debt answer. The Utang tracker stores money owed **to** the user
+ * (receivables), never their own payables — so every phrasing ("how much do I
+ * owe", "who owes me") is answered as money owed *to* them, and a payable-shaped
+ * question gets a one-line clarification first so the direction is unambiguous.
+ */
+function answerDebt(ctx: BrainContext, seed: string): BrainResponse {
+  const followUps = ["What's my balance?", 'Give me a spending breakdown'];
+  const debts = (ctx.debts ?? []).filter((d) => d.remaining > 0);
+  // "how much do I owe" / "do I owe" / "who do I owe" read as the user's own
+  // payables — clarify we track the other direction before answering.
+  const payablePhrasing = /\b(?:i owe|do i owe|how much do i owe)\b/.test(seed);
+  const note = payablePhrasing
+    ? 'Quick note — I track money owed *to* you (utang), not what you owe. '
+    : '';
+
+  if (!debts.length) {
+    return {
+      text: `${note}You're not tracking any utang right now — money people owe you shows up here once you add it.`,
+      actions: [OPEN_UTANG],
+      followUps,
+    };
+  }
+
+  const totalRemaining = debts.reduce((s, d) => s + d.remaining, 0);
+  const count = debts.length;
+  const ranked = [...debts]
+    .sort((a, b) => b.remaining - a.remaining)
+    .slice(0, 3);
+  const whoClause =
+    count === 1 ? ` by ${debts[0].debtor}` : ` across ${count} people`;
+
+  return {
+    text: `${note}You're owed ${peso(totalRemaining)}${whoClause}.`,
+    card: {
+      kind: 'coach',
+      data: {
+        status: 'watch',
+        title: 'Owed to you',
+        message: `${peso(totalRemaining)} still outstanding${
+          count > 1 ? ` across ${count} people` : ''
+        }.`,
+        reasons: ranked.map((d) => ({
+          label: d.debtor,
+          detail:
+            d.paid > 0
+              ? `${peso(d.remaining)} left of ${peso(d.total)}`
+              : peso(d.remaining),
+        })),
+      },
+      actions: [OPEN_UTANG],
+    },
+    followUps,
+  };
+}
+
+/**
  * Resolve a data intent against the context. Returns null when the intent
  * isn't a data intent handled here (caller deals with chit-chat / fallback).
  */
@@ -1564,6 +1642,10 @@ export function answerDataIntent(
       return answerRuleOfThumb(ctx);
     case 'impulseTips':
       return answerImpulseTips();
+    case 'afford':
+      return answerAfford(ctx, slots, seed);
+    case 'debt':
+      return answerDebt(ctx, seed);
     default:
       return null;
   }

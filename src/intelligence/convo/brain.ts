@@ -23,6 +23,7 @@
  */
 
 import { normalize } from '../core/normalize';
+import { isAbusive } from './safety';
 import { canonicalize } from './canonicalize';
 import { scoreIntents, type IntentId, type IntentScore } from './intents';
 import { extractSlots, type Slots } from './slots';
@@ -76,6 +77,7 @@ export type {
 export type { IntentId } from './intents';
 export { selectProactiveCoach } from './coach';
 export { looksLikeQuestion } from './route';
+export { isAbusive } from './safety';
 
 const MODEL = modelJson as unknown as NbModel;
 
@@ -110,6 +112,8 @@ const DATA_INTENTS = new Set<IntentId>([
   'cutAmount',
   'ruleOfThumb',
   'impulseTips',
+  'afford',
+  'debt',
 ]);
 
 /** Data intents that genuinely consume a parsed time range. For these, a
@@ -235,6 +239,10 @@ export function classifyMessage(
 export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   const norm = normalize(raw);
   if (!norm) return answerFallback();
+
+  // Clearly abusive/obscene input is declined outright — never run through the
+  // classifier (which could otherwise force a finance answer onto a slur).
+  if (isAbusive(norm)) return answerFallback();
 
   const c = classifyMessage(raw, {
     now: ctx?.now ? new Date(ctx.now) : undefined,
