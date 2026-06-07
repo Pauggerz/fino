@@ -36,8 +36,16 @@ export function matchIncomeKeyword(
 const INCOME_PHRASE_PATTERN =
   /\b(received|got\s+paid|earned|kumita|bayad\s+sa\s+akin|na-?credit|ipinasa)\b/i;
 
-/** Quick "does this look like income at all?" test. */
+// High-confidence income KEYWORDS for the TYPE decision. Deliberately stricter
+// than INCOME_KEYWORD_TO_CATEGORY (which is still used for category NAMING):
+// the ambiguous nouns 'pay' / 'store' / 'project' / 'gift' / 'regalo' are
+// dropped here because they routinely appear in EXPENSE logs ("pay 500 for the
+// bill", "gift 500", "project 1000") and were mis-typing those as income.
+const INCOME_TYPE_PATTERN =
+  /\b(salary|sweldo|sahod|paycheck|payroll|payday|wages?|allowance|baon|stipend|pocket\s*money|freelance|gig|client|commission|business|sales|revenue|sari[-\s]?sari|investment|dividend|interest|stocks?|crypto|yield|aguinaldo|bonus)\b/i;
+
+/** Quick "does this look like income at all?" test (TYPE decision only). */
 export function looksLikeIncome(text: string): boolean {
   if (INCOME_PHRASE_PATTERN.test(text)) return true;
-  return INCOME_KEYWORD_TO_CATEGORY.some(([re]) => re.test(text));
+  return INCOME_TYPE_PATTERN.test(text);
 }

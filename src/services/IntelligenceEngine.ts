@@ -1008,6 +1008,17 @@ function countPopulatedTodBuckets(txns: TransactionModel[]): number {
   return seen.size;
 }
 
+/**
+ * A "% above median" reading is only meaningful against a material baseline;
+ * against a near-zero median (e.g. ₱50) it explodes into noise ("6283% above").
+ * A tiny baseline or an extreme ratio is a "runaway" — narrate the absolute
+ * pesos instead of the percentage. (The anomaly itself is still real; only its
+ * framing changes.)
+ */
+function anomalyRunaway(a: Anomaly): boolean {
+  return a.baseline < 500 || a.pctOver > 3;
+}
+
 function composeHeadline(args: {
   totalIncome: number;
   totalExpense: number;
@@ -1026,6 +1037,9 @@ function composeHeadline(args: {
   // category is genuinely out of band, not just "above the mean".
   if (anomalies.length > 0) {
     const top = anomalies[0];
+    if (anomalyRunaway(top)) {
+      return `Heads up — you've spent ${fmtPeso(top.current)} on ${cap(top.category)} this month, well above your usual ${fmtPeso(top.baseline)}.`;
+    }
     return `Heads up — ${cap(top.category)} is ${(top.pctOver * 100).toFixed(0)}% above your 3-mo median (${fmtPeso(top.current)} vs ${fmtPeso(top.baseline)}).`;
   }
   // Negative-sentiment coach overrides everything else (overspend, etc.).
@@ -1081,6 +1095,9 @@ function composeWhereChip(args: {
   // Strongest signal: anomaly vs 3-mo baseline.
   if (anomalies[0]) {
     const a = anomalies[0];
+    if (anomalyRunaway(a)) {
+      return `${cap(a.category)} is ${fmtPeso(a.current)} this month vs your usual ${fmtPeso(a.baseline)}.`;
+    }
     return `${cap(a.category)} is up ${(a.pctOver * 100).toFixed(0)}% vs your 3-mo average — ${fmtPeso(a.current)} this month.`;
   }
   // Week-over-week delta is more conversational than a static category share.

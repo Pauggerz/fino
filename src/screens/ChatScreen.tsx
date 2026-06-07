@@ -31,12 +31,14 @@ import { useCategories } from '@/hooks/useCategories';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import type RecurringIncomeModel from '@/db/models/RecurringIncome';
+import type DebtModel from '@/db/models/Debt';
 import type ChatMessageModel from '@/db/models/ChatMessage';
 import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import {
   parseChatTransaction,
   routeMessage,
   selectProactiveCoach,
+  looksLikeQuestion,
   type ChatTx,
   type BrainContext,
   type ChatCard,
@@ -108,6 +110,29 @@ function nowTime() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Build a status-card ChatCard from legacy TxData so old persisted messages
+ *  render with the same design as every other card. */
+function txDataToCard(tx: TxData): ChatCard {
+  const isExpense = tx.txType === 'expense';
+  return {
+    kind: 'status',
+    data: {
+      yes: true,
+      status: 'good',
+      title: 'Transaction Logged',
+      message: `${isExpense ? '-' : '+'}₱${tx.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })} — ${tx.displayName}`,
+      tx: {
+        id: '',
+        name: tx.displayName,
+        category: tx.category,
+        amount: tx.amount,
+        type: tx.txType,
+        date: new Date().toISOString(),
+      },
+    },
+  };
+}
+
 /** Map a persisted chat_messages row back into a renderable Message. */
 function rowToMessage(row: ChatMessageModel): Message {
   const base: Message = {
@@ -122,7 +147,11 @@ function rowToMessage(row: ChatMessageModel): Message {
   if (row.payload) {
     try {
       const parsed = JSON.parse(row.payload) as Partial<Message>;
-      if (parsed.txData) base.txData = parsed.txData;
+      // Migrate legacy txData → status card so old confirmations use the
+      // unified card design instead of the removed TxConfirmCard.
+      if (parsed.txData && !parsed.card) {
+        base.card = txDataToCard(parsed.txData);
+      }
       if (parsed.card) base.card = parsed.card;
       if (parsed.actions) base.actions = parsed.actions;
       if (parsed.followUps) base.followUps = parsed.followUps;
@@ -277,126 +306,8 @@ function AnimatedMessage({ children, isNew }: { children: React.ReactNode; isNew
   );
 }
 
-// ─── TRANSACTION CONFIRM CARD ─────────────────────────────────────────────────
-
-function TxConfirmCard({
-  tx,
-  colors,
-  isDark,
-}: {
-  tx: TxData;
-  colors: any;
-  isDark: boolean;
-}) {
-  const scaleAnim = useRef(new Animated.Value(0.92)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: 1, friction: 6, useNativeDriver: true }),
-      Animated.timing(opacityAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
-    ]).start();
-  }, []);
-
-  const isExpense = tx.txType === 'expense';
-  const amountColor = isExpense ? '#EF4444' : '#22C55E';
-  const amountStr = `${isExpense ? '-' : '+'}₱${tx.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
-  const cardBg = isDark ? 'rgba(34,197,94,0.08)' : 'rgba(34,197,94,0.06)';
-  const borderCol = isDark ? 'rgba(34,197,94,0.3)' : 'rgba(34,197,94,0.25)';
-
-  return (
-    <Animated.View
-      style={{
-        opacity: opacityAnim,
-        transform: [{ scale: scaleAnim }],
-        marginTop: 10,
-        backgroundColor: cardBg,
-        borderWidth: 1,
-        borderColor: borderCol,
-        borderRadius: 14,
-        padding: 14,
-        gap: 10,
-      }}
-    >
-      {/* Header row */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 8,
-            backgroundColor: '#22C55E',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Ionicons name="checkmark" size={16} color="#fff" />
-        </View>
-        <Text
-          style={{
-            fontFamily: 'Inter_700Bold',
-            fontSize: 13,
-            color: '#22C55E',
-          }}
-        >
-          Transaction Logged
-        </Text>
-      </View>
-
-      {/* Amount + name */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <Text
-          style={{
-            fontFamily: 'Inter_600SemiBold',
-            fontSize: 14,
-            color: colors.textPrimary,
-            flex: 1,
-            marginRight: 8,
-          }}
-        >
-          {tx.displayName}
-        </Text>
-        <Text
-          style={{
-            fontFamily: 'DMMono_500Medium',
-            fontSize: 15,
-            color: amountColor,
-          }}
-        >
-          {amountStr}
-        </Text>
-      </View>
-
-      {/* Meta row */}
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <View
-          style={{
-            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-            borderRadius: 8,
-            paddingHorizontal: 8,
-            paddingVertical: 4,
-          }}
-        >
-          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 11, color: colors.textSecondary }}>
-            {tx.category}
-          </Text>
-        </View>
-        <View
-          style={{
-            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-            borderRadius: 8,
-            paddingHorizontal: 8,
-            paddingVertical: 4,
-          }}
-        >
-          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 11, color: colors.textSecondary }}>
-            {tx.accountName}
-          </Text>
-        </View>
-      </View>
-    </Animated.View>
-  );
-}
+// TxConfirmCard removed — transaction confirmations now use the unified
+// `status` card rendered by ChatCardView, matching all other card designs.
 
 // ─── ACCOUNT PICKER MODAL ────────────────────────────────────────────────────
 
@@ -649,6 +560,16 @@ export default function ChatScreen() {
   const [recurringIncome, setRecurringIncome] = useState<
     { label: string; amount: number; dayOfMonth?: number }[]
   >([]);
+  // Utang receivables (money owed TO the user) for debt questions.
+  const [debts, setDebts] = useState<
+    {
+      debtor: string;
+      total: number;
+      paid: number;
+      remaining: number;
+      dueDate?: string;
+    }[]
+  >([]);
   const [lastMsgId, setLastMsgId] = useState<string | null>(null);
 
   // Profile drawer (right) — same component HomeScreen uses.
@@ -674,6 +595,17 @@ export default function ChatScreen() {
   // Drops concurrent sends (e.g. a follow-up tap during the working beat) so a
   // reply is never produced twice in parallel.
   const isBusyRef = useRef(false);
+
+  // Flipped on unmount. handleSend awaits a "working beat" (a timer) before it
+  // appends the reply; if the user leaves the screen during that wait we skip
+  // the now-pointless UI setState (the reply is still persisted for next open).
+  const isMountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+    },
+    []
+  );
 
   // Transaction logging state
   const [pendingTx, setPendingTx] = useState<ChatTx | null>(null);
@@ -772,6 +704,28 @@ export default function ChatScreen() {
                 d && !Number.isNaN(d.getTime()) ? d.getDate() : undefined,
             };
           }),
+        );
+      });
+    return () => sub.unsubscribe();
+  }, [userId]);
+
+  // Utang receivables → "how much do I owe / who owes me" answers. Money owed
+  // TO the user; remaining = total_amount − amount_paid.
+  useEffect(() => {
+    if (!userId) { setDebts([]); return undefined; }
+    const sub = database
+      .get<DebtModel>('debts')
+      .query(Q.where('user_id', userId))
+      .observeWithColumns(['debtor_name', 'total_amount', 'amount_paid', 'due_date'])
+      .subscribe((records) => {
+        setDebts(
+          records.map((r) => ({
+            debtor: r.debtorName,
+            total: r.totalAmount,
+            paid: r.amountPaid,
+            remaining: Math.max(0, r.totalAmount - r.amountPaid),
+            dueDate: r.dueDate,
+          })),
         );
       });
     return () => sub.unsubscribe();
@@ -886,7 +840,12 @@ export default function ChatScreen() {
     let cancelled = false;
     loadChatHistory(userId)
       .then((rows) => {
-        if (!cancelled) setMessages(rows.map(rowToMessage));
+        if (cancelled) return;
+        const loaded = rows.map(rowToMessage);
+        // Don't clobber messages a send appended while the load was in flight:
+        // the live thread wins (persisted scrollback is intact on next open).
+        // On a fresh mount `prev` is empty, so this is a plain hydrate.
+        setMessages((prev) => (prev.length > 0 ? prev : loaded));
       })
       .catch(() => {});
     return () => {
@@ -953,20 +912,33 @@ export default function ChatScreen() {
         category: tx.category,
         displayName: tx.displayName,
         signalSource: 'description',
-        date: new Date().toISOString(),
+        // Honor an unambiguous back-date ("spent 50 yesterday"); else log now.
+        date: tx.date ?? new Date().toISOString(),
       });
 
       const confirmId = `tx-${Date.now()}`;
-      const txData: TxData = {
-        amount: tx.amount,
-        displayName: tx.displayName ?? 'Transaction',
-        category: tx.category ?? 'Other',
-        accountName: account?.name ?? 'Account',
-        txType: tx.type,
+      const isExpense = tx.type === 'expense';
+      const amtStr = `${isExpense ? '-' : '+'}₱${tx.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
+      const card: ChatCard = {
+        kind: 'status',
+        data: {
+          yes: true,
+          status: 'good',
+          title: 'Transaction Logged',
+          message: `${amtStr} — ${tx.displayName ?? 'Transaction'}`,
+          tx: {
+            id: confirmId,
+            name: tx.displayName ?? 'Transaction',
+            category: tx.category ?? 'Other',
+            amount: tx.amount,
+            type: tx.type,
+            date: new Date().toISOString(),
+          },
+        },
       };
       setMessages((prev) => [
         ...prev,
-        { id: confirmId, type: 'ai', text: '', txData, timestamp: nowTime() },
+        { id: confirmId, type: 'ai', text: '', card, timestamp: nowTime() },
       ]);
       setLastMsgId(confirmId);
       // Persist the confirmation card so it survives reopening the chat.
@@ -974,7 +946,7 @@ export default function ChatScreen() {
         userId,
         role: 'ai',
         text: '',
-        payload: JSON.stringify({ txData }),
+        payload: JSON.stringify({ card }),
       }).catch(() => {});
     } catch (err) {
       console.error('[Fino AI] createTransaction error:', err);
@@ -986,7 +958,9 @@ export default function ChatScreen() {
   const handleSend = async (textOverride?: string) => {
     const textToSend = textOverride ?? inputText;
     const trimmed = textToSend.trim();
-    if (!trimmed || isBusyRef.current) return;
+    // Drop sends while the account picker is resolving a pending log — a
+    // follow-up tap must not overwrite pendingTx or fire a parallel reply.
+    if (!trimmed || isBusyRef.current || showAccountPicker) return;
 
     isBusyRef.current = true;
     setInputText('');
@@ -1002,14 +976,20 @@ export default function ChatScreen() {
       // Offline transaction parse + log, using the same taxonomy the Add
       // Transaction sheet uses. Multi-amount inputs ("chicken 50 and rice 50")
       // sum into one transaction. This never touches the network.
-      const parsed = parseChatTransaction(
-        trimmed,
-        accounts.map((a) => ({ id: a.id, name: a.name })),
-        categoryNames,
-        incomeCategories
-      );
+      //
+      // A message that READS as a question ("where can I cut ₱2,000?",
+      // "transactions over ₱5,000") is routed to the brain, NOT logged — without
+      // this gate an amount-bearing query would silently create a transaction.
+      const parsed = looksLikeQuestion(trimmed)
+        ? null
+        : parseChatTransaction(
+            trimmed,
+            accounts.map((a) => ({ id: a.id, name: a.name })),
+            categoryNames,
+            incomeCategories
+          );
 
-      // A parsed transaction is acknowledged by the green TxConfirmCard — logged
+      // A parsed transaction is acknowledged by a status card — logged
       // inline when the account is known, or after the account picker resolves.
       // No chat reply is generated in that case.
       if (parsed) {
@@ -1029,23 +1009,32 @@ export default function ChatScreen() {
       setCurrentSteps(steps);
       setIsTyping(true);
 
-      const now = new Date();
-      const brainCtx: BrainContext = {
-        balance: totalBalance,
-        income: totalIncome,
-        spent: monthlySpent,
-        lastMonthSpent: insight.lastMonthSpent,
-        topCategories: insight.topCategories,
-        dayOfMonth: now.getDate(),
-        daysInMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
-        now: now.toISOString(),
-        insights: engineInsights ?? undefined,
-        transactions: txForBrain,
-        accounts: accountsForBrain,
-        budgets: budgetsForBrain,
-        recurringIncome,
-      };
-      const reply = routeMessage(trimmed, brainCtx);
+      // The brain is pure & synchronous, but a malformed snapshot row could
+      // still throw inside a builder — never let that strand the spinner.
+      let reply: ReturnType<typeof routeMessage>;
+      try {
+        const now = new Date();
+        const brainCtx: BrainContext = {
+          balance: totalBalance,
+          income: totalIncome,
+          spent: monthlySpent,
+          lastMonthSpent: insight.lastMonthSpent,
+          topCategories: insight.topCategories,
+          dayOfMonth: now.getDate(),
+          daysInMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
+          now: now.toISOString(),
+          insights: engineInsights ?? undefined,
+          transactions: txForBrain,
+          accounts: accountsForBrain,
+          budgets: budgetsForBrain,
+          recurringIncome,
+          debts,
+        };
+        reply = routeMessage(trimmed, brainCtx);
+      } catch (err) {
+        console.error('[Fino AI] routeMessage error:', err);
+        reply = { text: 'Sorry — I hit a snag answering that. Mind rephrasing?' };
+      }
 
       // Let the staged indicator work through to its final step, landing as the
       // reply swaps in (ThinkingSteps advances one step per WORK_STAGE_MS).
@@ -1053,28 +1042,15 @@ export default function ChatScreen() {
         setTimeout(r, steps.length * WORK_STAGE_MS)
       );
 
-      setIsTyping(false);
-
       // Render the full reply at once — the bubble fades in as a block
       // (AnimatedMessage) and any card assembles itself (ChatCardView reveal).
       // No typewriter: the text arrives instantly instead of crawling.
       const aiMsgId = `ai-${Date.now()}`;
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: aiMsgId,
-          type: 'ai',
-          text: reply.text,
-          card: reply.card,
-          actions: reply.actions,
-          followUps: reply.followUps,
-          timestamp: nowTime(),
-        },
-      ]);
-      setLastMsgId(aiMsgId);
       if (userId) {
         // Snapshot the card + actions + follow-ups into payload so the reply
         // renders identically on reopen — frozen as-of-asked (CARDS.md §6).
+        // Persist BEFORE the mount guard so a reply computed during the working
+        // beat survives a reopen even if the user already left the screen.
         const payload =
           reply.card || reply.actions || reply.followUps
             ? JSON.stringify({
@@ -1090,20 +1066,39 @@ export default function ChatScreen() {
           payload,
         }).catch(() => {});
       }
+      // Left the screen during the working beat → reply is saved; skip the UI.
+      if (!isMountedRef.current) return;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: aiMsgId,
+          type: 'ai',
+          text: reply.text,
+          card: reply.card,
+          actions: reply.actions,
+          followUps: reply.followUps,
+          timestamp: nowTime(),
+        },
+      ]);
+      setLastMsgId(aiMsgId);
       requestAnimationFrame(() =>
         scrollViewRef.current?.scrollToEnd({ animated: true })
       );
     } finally {
+      // Always clear the working state — even if the brain threw — so the
+      // ThinkingSteps indicator can never get stuck spinning.
+      setIsTyping(false);
       isBusyRef.current = false;
     }
   };
 
   const handleAccountSelected = async (accountId: string) => {
+    // Capture + clear synchronously so a double-tap (two account rows before
+    // the sheet unmounts) can't log the same transaction twice.
+    const tx = pendingTx;
     setShowAccountPicker(false);
-    if (pendingTx) {
-      await doLogTransaction(pendingTx, accountId);
-      setPendingTx(null);
-    }
+    setPendingTx(null);
+    if (tx) await doLogTransaction(tx, accountId);
   };
 
   // Dispatch a brain-emitted card/reply action (V3). `navigate` opens a screen
@@ -1143,6 +1138,9 @@ export default function ChatScreen() {
       case 'recurringIncome':
         navigation.navigate('RecurringIncome');
         break;
+      case 'utangTracker':
+        navigation.navigate('UtangTracker');
+        break;
       case 'categories':
         navigation.navigate('Categories', {
           focusCategory: p.focusCategory as string | undefined,
@@ -1165,6 +1163,19 @@ export default function ChatScreen() {
   const handlePickerDismiss = () => {
     setShowAccountPicker(false);
     setPendingTx(null);
+    // Acknowledge the cancelled log so the user's message isn't left dangling
+    // with no response (transient, session-only).
+    const noteId = `ai-note-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: noteId,
+        type: 'ai',
+        text: "Okay, I didn't log that. Tap an account next time to save it.",
+        timestamp: nowTime(),
+      },
+    ]);
+    setLastMsgId(noteId);
   };
 
   // ─── RENDER HELPERS ────────────────────────────────────────────────────────
@@ -1357,9 +1368,7 @@ export default function ChatScreen() {
                 />
               ) : null}
 
-              {msg.txData ? (
-                <TxConfirmCard tx={msg.txData} colors={colors} isDark={isDark} />
-              ) : null}
+
             </View>
 
             <Text style={styles.timestampAi}>{msg.timestamp}</Text>
@@ -1404,8 +1413,12 @@ export default function ChatScreen() {
   };
 
   const renderBody = () => {
-    if (!hasTransactions) return renderEmptyGuard();
-    if (messages.length === 0) return renderLanding();
+    // An existing thread always wins. Otherwise a brain reply (which works
+    // without any transaction data, e.g. budgeting tips) would stay hidden
+    // behind the empty guard for a user who hasn't logged anything yet.
+    if (messages.length === 0) {
+      return hasTransactions ? renderLanding() : renderEmptyGuard();
+    }
     return (
       <ScrollView
         ref={scrollViewRef}
@@ -1473,7 +1486,7 @@ export default function ChatScreen() {
               placeholderTextColor={colors.textSecondary}
               editable
               multiline
-              maxLength={200}
+              maxLength={500}
             />
             <View style={styles.composerToolbar}>
               <TouchableOpacity

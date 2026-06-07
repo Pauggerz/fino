@@ -5,6 +5,7 @@ import {
   type AccountLite,
 } from './categorize';
 import { matchIncomeKeyword, looksLikeIncome } from './income';
+import { parseTimeRange } from '../core/time';
 
 export type ChatTx = {
   amount: number;
@@ -13,6 +14,10 @@ export type ChatTx = {
   type: 'expense' | 'income';
   accountId: string | null;
   accountName: string | null;
+  /** ISO date for the transaction when the message names an unambiguous past
+   *  day ("yesterday", "3 days ago"); undefined → caller uses "now". Multi-day
+   *  or future references are intentionally ignored (never guess a window). */
+  date?: string;
 };
 
 /**
@@ -61,6 +66,14 @@ export function parseChatTransaction(
   const accountName =
     acctMatch?.accountName ?? (accounts.length === 1 ? accounts[0].name : null);
 
+  // Back-date the log only for an unambiguous single past day ("yesterday",
+  // "3 days ago"). Weeks/months/future or vague phrases stay undefined → "now".
+  const tr = parseTimeRange(trimmed);
+  const date =
+    tr && (tr.key === 'yesterday' || tr.key === 'daysAgo')
+      ? tr.start.toISOString()
+      : undefined;
+
   return {
     amount,
     displayName,
@@ -68,5 +81,6 @@ export function parseChatTransaction(
     type: isIncome ? 'income' : 'expense',
     accountId,
     accountName,
+    date,
   };
 }

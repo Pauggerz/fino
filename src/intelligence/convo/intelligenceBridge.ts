@@ -20,6 +20,7 @@ import type {
 import type { IntentId } from './intents';
 import { CAPABILITY_BLURBS } from './intents';
 import type { Slots } from './slots';
+import type { TimeRange } from '../core/time';
 import { peso, pctOf, pick } from './nlg';
 import {
   buildBreakdownCard,
@@ -54,6 +55,7 @@ import {
   answerCutAmount,
   answerRuleOfThumb,
   answerImpulseTips,
+  answerAfford,
 } from './advice';
 
 /** The single optional deep-link chip cards may carry (§10 Q4). */
@@ -61,6 +63,11 @@ const OPEN_INSIGHTS: CardAction = {
   kind: 'navigate',
   label: 'Open Insights',
   target: 'insights',
+};
+const OPEN_UTANG: CardAction = {
+  kind: 'navigate',
+  label: 'Open Utang Tracker',
+  target: 'utangTracker',
 };
 
 /** A clean example prompt per intent — used as clarify chips and help hints. */
@@ -197,13 +204,11 @@ function answerSpend(
   seed: string
 ): BrainResponse {
   const followUps = ['Give me a spending breakdown', 'Compare to last month'];
+  const tr = slots.timeRange;
+  const txns = ctx.transactions ?? [];
 
-  // Category-scoped: "how much on food" — answerable for THIS month only, from
-  // the by-category breakdown we hold.
-  if (
-    slots.category &&
-    (!slots.timeRange || slots.timeRange.key === 'thisMonth')
-  ) {
+  // Category-scoped, this-month: answer from the by-category aggregate we hold.
+  if (slots.category && (!tr || tr.key === 'thisMonth')) {
     const match = ctx.topCategories.find(
       (c) =>
         c.name.toLowerCase() === slots.category!.label.toLowerCase() ||
@@ -221,8 +226,8 @@ function answerSpend(
     };
   }
 
-  // Last month total.
-  if (slots.timeRange?.key === 'lastMonth') {
+  // Last-month total comes from the authoritative monthly aggregate.
+  if (tr?.key === 'lastMonth') {
     if (ctx.lastMonthSpent <= 0) {
       return {
         text: "I don't have any spending logged for last month.",
@@ -235,12 +240,36 @@ function answerSpend(
     };
   }
 
-  // Sub-month windows aren't in the chat context — be honest, don't guess.
-  if (slots.timeRange && slots.timeRange.key !== 'thisMonth') {
+  // Any other concrete range (today / a week / a quarter / "last 7 days" / a
+  // weekday …) is answered precisely from the transaction snapshot — no more
+  // silently collapsing sub-month windows to the month total.
+  if (tr && tr.key !== 'thisMonth') {
+    const when = whenPhrase(tr);
+    if (txns.length) {
+      const total = sumAmount(
+        selectTx(txns, {
+          range: { start: tr.start, end: tr.end },
+          type: 'expense',
+          categories: slotCats(slots),
+        })
+      );
+      const subj = slots.category ? ` on ${slots.category.label}` : '';
+      if (total <= 0) {
+        return {
+          text: `I don't see any${subj || ' spending'} ${when}.`,
+          followUps,
+        };
+      }
+      return {
+        text: `You spent ${peso(total)}${subj} ${when}.`,
+        followUps,
+      };
+    }
+    // No snapshot to slice — be honest rather than guess a number.
     return {
       text: `In chat I track spending by month — this month you're at ${peso(
         ctx.spent
-      )} so far. For a ${slots.timeRange.label} view, open the Insights tab.`,
+      )} so far. For a ${tr.label} view, open the Insights tab.`,
       followUps,
     };
   }
@@ -526,14 +555,30 @@ function answerOverspend(ctx: BrainContext, slots: Slots): BrainResponse {
   const data = buildCoachCard(ins, { focusCategory: focusLabel });
   const worst =
     focused ?? [...ins.anomalies].sort((a, b) => b.pctOver - a.pctOver)[0];
-  const overPct = Math.round(worst.pctOver * 100);
   return {
-    text: `Yes — your ${worst.category} spending is about ${overPct}% over your usual (${peso(
-      worst.current
-    )} vs ${peso(worst.baseline)}). Worth easing off there.`,
+    text: `Yes — ${anomalyClause(worst)}. Worth easing off there.`,
     card: { kind: 'coach', data, action: OPEN_INSIGHTS },
     followUps,
   };
+}
+
+/**
+ * Narrate one anomaly. A "% over usual" only reads sensibly against a material
+ * baseline — against a near-zero usual (₱50) the percentage explodes into noise
+ * ("6283% over"). So below a baseline floor, or when the percentage is extreme,
+ * we lead with the absolute amount instead of the runaway ratio.
+ */
+function anomalyClause(a: {
+  category: string;
+  current: number;
+  baseline: number;
+  pctOver: number;
+}): string {
+  const overPct = Math.round(a.pctOver * 100);
+  if (a.baseline < 500 || overPct > 300) {
+    return `you've spent ${peso(a.current)} on ${a.category} this month — well above your usual ${peso(a.baseline)}`;
+  }
+  return `your ${a.category} spending is about ${overPct}% over your usual (${peso(a.current)} vs ${peso(a.baseline)})`;
 }
 
 // ─── Category 1: transaction info & mapping (V3) ─────────────────────────────
@@ -605,6 +650,30 @@ function scopeLabel(slots: Slots): string {
   else if (slots.amountMax != null) bits.push(`under ${peso(slots.amountMax)}`);
   if (slots.timeRange) bits.push(slots.timeRange.label);
   return bits.length ? ` ${bits.join(' ')}` : '';
+}
+
+/** Narration suffix for a resolved range so totals read naturally: "today",
+ *  "in March", "on Tuesday", "over the weekend", "in the last 7 days". */
+function whenPhrase(tr: TimeRange): string {
+  switch (tr.key) {
+    case 'weekday':
+    case 'daysAgo':
+      return `on ${tr.label}`;
+    case 'weekend':
+      return 'over the weekend';
+    case 'today':
+    case 'yesterday':
+    case 'thisWeek':
+    case 'lastWeek':
+    case 'thisMonth':
+    case 'lastMonth':
+    case 'thisYear':
+    case 'lastYear':
+      return tr.label;
+    default:
+      // quarter / namedMonth / lastNDays / last30Days
+      return `in ${tr.label}`;
+  }
 }
 
 function answerTransactions(
@@ -1433,6 +1502,78 @@ export function answerClarify(a: IntentId, b: IntentId): BrainResponse {
 }
 
 /**
+ * Clarify when a clearly-temporal phrase ("lately", "the past few days") was
+ * used but didn't resolve to a concrete range — offer common windows as one-tap
+ * chips instead of silently assuming "this month" and answering the wrong span.
+ */
+export function answerTimeClarify(): BrainResponse {
+  return {
+    text: 'Over what time range? Tap one or tell me the exact dates:',
+    followUps: [
+      'How much did I spend this week?',
+      'How much did I spend in the last 7 days?',
+      'How much did I spend this month?',
+    ],
+  };
+}
+
+/**
+ * Debt answer. The Utang tracker stores money owed **to** the user
+ * (receivables), never their own payables — so every phrasing ("how much do I
+ * owe", "who owes me") is answered as money owed *to* them, and a payable-shaped
+ * question gets a one-line clarification first so the direction is unambiguous.
+ */
+function answerDebt(ctx: BrainContext, seed: string): BrainResponse {
+  const followUps = ["What's my balance?", 'Give me a spending breakdown'];
+  const debts = (ctx.debts ?? []).filter((d) => d.remaining > 0);
+  // "how much do I owe" / "do I owe" / "who do I owe" read as the user's own
+  // payables — clarify we track the other direction before answering.
+  const payablePhrasing = /\b(?:i owe|do i owe|how much do i owe)\b/.test(seed);
+  const note = payablePhrasing
+    ? 'Quick note — I track money owed *to* you (utang), not what you owe. '
+    : '';
+
+  if (!debts.length) {
+    return {
+      text: `${note}You're not tracking any utang right now — money people owe you shows up here once you add it.`,
+      actions: [OPEN_UTANG],
+      followUps,
+    };
+  }
+
+  const totalRemaining = debts.reduce((s, d) => s + d.remaining, 0);
+  const count = debts.length;
+  const ranked = [...debts]
+    .sort((a, b) => b.remaining - a.remaining)
+    .slice(0, 3);
+  const whoClause =
+    count === 1 ? ` by ${debts[0].debtor}` : ` across ${count} people`;
+
+  return {
+    text: `${note}You're owed ${peso(totalRemaining)}${whoClause}.`,
+    card: {
+      kind: 'coach',
+      data: {
+        status: 'watch',
+        title: 'Owed to you',
+        message: `${peso(totalRemaining)} still outstanding${
+          count > 1 ? ` across ${count} people` : ''
+        }.`,
+        reasons: ranked.map((d) => ({
+          label: d.debtor,
+          detail:
+            d.paid > 0
+              ? `${peso(d.remaining)} left of ${peso(d.total)}`
+              : peso(d.remaining),
+        })),
+      },
+      actions: [OPEN_UTANG],
+    },
+    followUps,
+  };
+}
+
+/**
  * Resolve a data intent against the context. Returns null when the intent
  * isn't a data intent handled here (caller deals with chit-chat / fallback).
  */
@@ -1501,6 +1642,10 @@ export function answerDataIntent(
       return answerRuleOfThumb(ctx);
     case 'impulseTips':
       return answerImpulseTips();
+    case 'afford':
+      return answerAfford(ctx, slots, seed);
+    case 'debt':
+      return answerDebt(ctx, seed);
     default:
       return null;
   }

@@ -255,6 +255,112 @@ export function answerGoalPlan(
   };
 }
 
+// ─── Affordability ("can I afford / can I buy X") ────────────────────────────
+
+/**
+ * Answer an affordability question. With a price it's a clear yes/no against the
+ * on-hand balance (flagged "tight" when it eats most of the buffer); without a
+ * price we report what's available and ask for the figure — never a fabricated
+ * verdict. A purchase beyond reach offers a pre-filled savings goal.
+ */
+export function answerAfford(
+  ctx: BrainContext,
+  slots: Slots,
+  norm: string
+): BrainResponse {
+  const followUps = ADVICE_FOLLOWUPS;
+  const price = slots.amounts.length ? Math.max(...slots.amounts) : undefined;
+  const item = parseGoalName(norm);
+  const { balance } = ctx;
+  const saveable = Math.max(0, ctx.income - ctx.spent);
+
+  // No price → can't give a verdict. Report what's on hand and ask for the tag.
+  if (!price) {
+    const savingLine =
+      saveable > 0
+        ? ` You've set aside about ${peso(saveable)} this month.`
+        : '';
+    return {
+      text: `You've got ${peso(balance)} on hand.${savingLine} Tell me the price${
+        item ? ` of the ${item}` : ''
+      } and I'll give you a clear yes or no — or I can help you start a savings goal for it.`,
+      card: adviceCard({
+        status: 'good',
+        title: item ? `Thinking about a ${item}?` : 'Can you afford it?',
+        message: `${peso(balance)} available right now — share the price for a yes/no.`,
+        actions: [
+          {
+            kind: 'navigate',
+            label: 'Start a savings goal',
+            target: 'savingsGoal',
+            params: item ? { name: cap(item) } : {},
+          },
+        ],
+      }),
+      followUps,
+    };
+  }
+
+  // Beyond the current balance → honest "not yet" + a pre-filled goal to get there.
+  if (price > balance) {
+    const monthly = Math.max(500, Math.round(price / 12));
+    const months = Math.max(1, Math.ceil(price / monthly));
+    return {
+      text: `Not just yet — ${item ? `a ${item} at ` : ''}${peso(
+        price
+      )} is more than your ${peso(balance)} balance. Setting aside ${peso(
+        monthly
+      )}/mo would get you there in about ${months} month${
+        months === 1 ? '' : 's'
+      }.`,
+      card: {
+        kind: 'status',
+        data: {
+          yes: false,
+          status: 'over',
+          title: 'Not right now',
+          message: `${peso(price)} vs your ${peso(balance)} balance.`,
+        },
+        actions: [
+          {
+            kind: 'navigate',
+            label: 'Plan it as a goal',
+            target: 'savingsGoal',
+            params: {
+              name: item ? cap(item) : 'Purchase',
+              target: price,
+              monthlyContribution: monthly,
+            },
+          },
+        ],
+      },
+      followUps,
+    };
+  }
+
+  // Affordable. Flag "tight" when it would eat more than half the balance.
+  const tight = price > balance * 0.5;
+  return {
+    text: tight
+      ? `You can, but it's a big chunk — ${peso(price)} out of your ${peso(
+          balance
+        )} balance. If it's not urgent, spacing it out keeps a buffer.`
+      : `Yes — ${peso(price)} fits comfortably within your ${peso(
+          balance
+        )} balance.`,
+    card: {
+      kind: 'status',
+      data: {
+        yes: true,
+        status: tight ? 'watch' : 'good',
+        title: tight ? 'Doable, but tight' : 'You can afford it',
+        message: `${peso(price)} of your ${peso(balance)} balance.`,
+      },
+    },
+    followUps,
+  };
+}
+
 // ─── Bonus advice ────────────────────────────────────────────────────────────
 
 export function answerBonusAdvice(ctx: BrainContext): BrainResponse {

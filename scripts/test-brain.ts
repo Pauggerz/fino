@@ -530,6 +530,25 @@ const cases: Case[] = [
     text: 'provide some tips to avoid impulse buying',
     intent: 'impulseTips',
   },
+
+  // ── afford + misroute regressions (English sweep, 2026-06-08) ────────────────
+  { desc: 'EN afford w/ price', text: 'can i afford a 2000 dinner', intent: 'afford' },
+  { desc: 'EN can i buy X', text: 'can i buy a phone', intent: 'afford' },
+  { desc: 'EN afford big', text: 'can i afford a 50000 laptop', intent: 'afford' },
+  { desc: 'EN broke → balance', text: 'am i broke', intent: 'balance' },
+  { desc: 'EN rich → balance', text: 'am i rich', intent: 'balance' },
+  {
+    desc: 'EN what i bought today → transactions',
+    text: 'show me what i bought today',
+    intent: 'transactions',
+    time: 'today',
+  },
+
+  // ── debt (receivables — money owed TO the user) ──────────────────────────────
+  { desc: 'EN how much do i owe', text: 'how much do i owe', intent: 'debt' },
+  { desc: 'EN who owes me', text: 'who owes me money', intent: 'debt' },
+  { desc: 'EN what are my debts', text: 'what are my debts', intent: 'debt' },
+  { desc: 'EN who do i owe', text: 'who do i owe money to', intent: 'debt' },
 ];
 
 // Out-of-scope utterances: the classifier's `unknown` class must reject them
@@ -540,6 +559,14 @@ const FALLBACK_CASES: { desc: string; text: string }[] = [
   { desc: 'OOS joke', text: 'tell me something funny' },
   { desc: 'OOS random', text: 'qwerty zxcvb asdf' },
   { desc: 'OOS sports', text: 'what was the score of the game' },
+  // Abuse / hostility / chit-chat must reject, never answer as a finance query.
+  { desc: 'OOS profanity', text: 'suck my dick' },
+  { desc: 'OOS insult', text: 'fuck you' },
+  { desc: 'OOS hostile', text: 'i hate this app' },
+  { desc: 'OOS identity', text: 'are you human' },
+  { desc: 'OOS offtopic', text: 'order me a pizza' },
+  { desc: 'OOS terminator', text: 'stop' },
+  { desc: 'OOS distrust', text: 'you lied' },
 ];
 
 // ─── Sample context for routeMessage smoke test ──────────────────────────────
@@ -787,6 +814,118 @@ for (const cc of cardCases) {
   );
 }
 
+// ─── Overspend narration: runaway % against a tiny baseline is reframed ──────
+// ₱50 usual vs ₱3,192 this month is a real anomaly, but "6283% over" is noise —
+// the reply must lead with absolute pesos and quote no percentage.
+{
+  const tiny = buildInsights({
+    anomalies: [
+      {
+        category: 'health',
+        current: 3192,
+        baseline: 50,
+        pctOver: (3192 - 50) / 50,
+      },
+    ],
+  });
+  const r = routeMessage('am i overspending', { ...CTX, insights: tiny });
+  check(
+    !/%/.test(r.text) && /3,192/.test(r.text) && /₱50\b/.test(r.text),
+    '[overspend] tiny baseline → absolute framing, no runaway %',
+    `text "${r.text}"`
+  );
+
+  // A material baseline keeps the readable percentage framing.
+  const material = buildInsights({
+    anomalies: [
+      {
+        category: 'food',
+        current: 8000,
+        baseline: 5000,
+        pctOver: (8000 - 5000) / 5000,
+      },
+    ],
+  });
+  const r2 = routeMessage('am i overspending', { ...CTX, insights: material });
+  check(
+    /60%/.test(r2.text),
+    '[overspend] material baseline → keeps % framing (60%)',
+    `text "${r2.text}"`
+  );
+}
+
+// ─── Debt = receivables (money owed TO the user), 2026-06-08 ─────────────────
+// The Utang table stores who owes the user; answers are always worded as money
+// owed *to* them, and a payable-shaped question gets a clarification first.
+{
+  const CTX_DEBT: BrainContext = {
+    ...CTX,
+    debts: [
+      { debtor: 'Ana', total: 5000, paid: 2000, remaining: 3000 },
+      { debtor: 'Ben', total: 2000, paid: 0, remaining: 2000 },
+    ],
+  };
+  // Payable phrasing → clarify direction, then answer with the total owed to you.
+  const owe = routeMessage('how much do i owe', CTX_DEBT);
+  check(
+    /track money owed/i.test(owe.text) &&
+      /5,000/.test(owe.text) &&
+      owe.card?.kind === 'coach',
+    '[debt] "how much do i owe" → clarifies direction + ₱5,000 owed to you',
+    `text "${owe.text}"`
+  );
+
+  // Receivable phrasing → no clarification needed, same total.
+  const who = routeMessage('who owes me money', CTX_DEBT);
+  check(
+    /5,000/.test(who.text) &&
+      (who.card?.actions ?? []).some(
+        (a) => a.kind === 'navigate' && a.target === 'utangTracker'
+      ),
+    '[debt] "who owes me" → ₱5,000 + Open Utang Tracker',
+    `text "${who.text}"`
+  );
+
+  // No debts tracked → honest empty state, never a fabricated number.
+  const none = routeMessage('how much do i owe', { ...CTX, debts: [] });
+  check(
+    /not tracking any utang/i.test(none.text) &&
+      (none.actions ?? []).some((a) => a.kind === 'navigate'),
+    '[debt] no debts → empty state + Utang action',
+    `text "${none.text}"`
+  );
+}
+
+// ─── Affordability cards (English sweep, 2026-06-08) ─────────────────────────
+// CTX balance = ₱12,000. Price-bearing asks get a yes/no status card; a too-big
+// purchase gets a "no" + a pre-filled savings-goal action; no price → ask first.
+{
+  const yes = routeMessage('can i afford a 2000 dinner', CTX);
+  check(
+    yes.card?.kind === 'status' && yes.card.data.yes === true,
+    '[afford] ₱2,000 vs ₱12,000 → status yes',
+    `got ${yes.card?.kind}`
+  );
+
+  const no = routeMessage('can i afford a 50000 laptop', CTX);
+  check(
+    no.card?.kind === 'status' &&
+      no.card.data.yes === false &&
+      (no.card.actions ?? []).some(
+        (a) => a.kind === 'navigate' && a.target === 'savingsGoal'
+      ),
+    '[afford] ₱50,000 → status no + Create-goal action',
+    `got ${no.card?.kind}`
+  );
+
+  const noPrice = routeMessage('can i buy a phone', CTX);
+  check(
+    noPrice.card?.kind === 'coach' && /price/i.test(noPrice.text),
+    '[afford] no price → asks for the price (coach card)',
+    `got ${noPrice.card?.kind}, text "${noPrice.text.slice(0, 60)}"`
+  );
+}
+
 // ─── Category 1: transaction-query cards + status (V3) ───────────────────────
 // A tx-bearing context so the record-level answers can be exercised offline.
 // June 9 2026 is a Tuesday; "now" is fixed to NOW (Mon 15 Jun 2026).
@@ -980,6 +1119,44 @@ const CTX_TX: BrainContext = {
       (noSal.actions ?? []).some((a) => a.kind === 'navigate'),
     '[card+]  no income → status no + add-income action',
     `got ${noSal.card?.kind}`
+  );
+}
+
+// ─── Phase 0: temporal spend (snapshot ranges) + time clarify ────────────────
+{
+  // "this week" → snapshot-sliced spend (only Jollibee ₱120 falls in this week,
+  // Mon 15–Sun 21), NOT the Insights punt.
+  const wk = routeMessage('how much did i spend this week', CTX_TX);
+  check(
+    /spent/i.test(wk.text) &&
+      /this week/.test(wk.text) &&
+      !/Insights/.test(wk.text),
+    '[phase0]  spend this week → snapshot total, not Insights punt',
+    `text "${wk.text}"`
+  );
+
+  // "last 7 days" → rolling window total from the snapshot (Jun 9–15).
+  const l7 = routeMessage('how much did i spend in the last 7 days', CTX_TX);
+  check(
+    /last 7 days/.test(l7.text) && /spent/i.test(l7.text),
+    '[phase0]  spend last 7 days → snapshot window total',
+    `text "${l7.text}"`
+  );
+
+  // Vague temporal ("lately") → a time clarify with chips, not a silent answer.
+  const vague = routeMessage('how much did i spend lately', CTX_TX);
+  check(
+    /time range/i.test(vague.text) && (vague.followUps?.length ?? 0) === 3,
+    '[phase0]  vague "lately" → time clarify with chips',
+    `text "${vague.text}"`
+  );
+
+  // Without a snapshot, a sub-month range degrades honestly (no invented number).
+  const noSnap = routeMessage('how much did i spend this week', { ...CTX });
+  check(
+    /Insights/.test(noSnap.text),
+    '[phase0]  spend this week, no snapshot → honest Insights punt',
+    `text "${noSnap.text}"`
   );
 }
 

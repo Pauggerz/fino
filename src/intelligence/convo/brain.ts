@@ -23,6 +23,7 @@
  */
 
 import { normalize } from '../core/normalize';
+import { isAbusive } from './safety';
 import { canonicalize } from './canonicalize';
 import { scoreIntents, type IntentId, type IntentScore } from './intents';
 import { extractSlots, type Slots } from './slots';
@@ -33,6 +34,7 @@ import {
   answerCount,
   answerFallback,
   answerClarify,
+  answerTimeClarify,
   answerDataIntent,
 } from './intelligenceBridge';
 import {
@@ -74,6 +76,8 @@ export type {
 } from './types';
 export type { IntentId } from './intents';
 export { selectProactiveCoach } from './coach';
+export { looksLikeQuestion } from './route';
+export { isAbusive } from './safety';
 
 const MODEL = modelJson as unknown as NbModel;
 
@@ -108,6 +112,19 @@ const DATA_INTENTS = new Set<IntentId>([
   'cutAmount',
   'ruleOfThumb',
   'impulseTips',
+  'afford',
+  'debt',
+]);
+
+/** Data intents that genuinely consume a parsed time range. For these, a
+ *  clearly-temporal-but-unresolved phrase ("lately") should clarify the window
+ *  rather than silently answer for "this month". */
+const TIME_SCOPED_INTENTS = new Set<IntentId>([
+  'spend',
+  'summary',
+  'transactions',
+  'needsVsWants',
+  'dowPattern',
 ]);
 
 // Open-set gate for the classifier. NB softmax saturates, so we reject on raw
@@ -223,7 +240,12 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   const norm = normalize(raw);
   if (!norm) return answerFallback();
 
+  // Clearly abusive/obscene input is declined outright — never run through the
+  // classifier (which could otherwise force a finance answer onto a slur).
+  if (isAbusive(norm)) return answerFallback();
+
   const c = classifyMessage(raw, {
+    now: ctx?.now ? new Date(ctx.now) : undefined,
     categoryNames: ctx?.topCategories.map((tc) => tc.name),
   });
 
@@ -232,6 +254,11 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
 
   // Genuine tie the classifier couldn't break → ask instead of guessing.
   if (c.needsClarify && c.runnerUp) return answerClarify(c.intent, c.runnerUp);
+
+  // A clearly-temporal phrase we couldn't pin to a range → clarify the window
+  // rather than silently answering for "this month".
+  if (TIME_SCOPED_INTENTS.has(c.intent) && c.slots.timeRangeUnresolved)
+    return answerTimeClarify();
 
   // Chit-chat / meta intents (answerable without context).
   if (c.intent === 'greeting') return answerGreeting(norm);
