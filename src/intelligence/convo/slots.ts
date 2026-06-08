@@ -43,6 +43,11 @@ export type Slots = {
   timeRange?: TimeRange;
   /** Category the question is scoped to ("how much on food"), if any. */
   category?: CategorySlot;
+  /** Destination category of a re-categorize command ("... as Coffee", "... to
+   *  Transport") — read off the text AFTER the connective so it never collides
+   *  with the source subject before it. Only the brain's `reCategorize` handler
+   *  consumes this. */
+  targetCategory?: CategorySlot;
   /** Any peso/number amounts in the message ("more than 1000"). */
   amounts: number[];
   /** Lower amount bound from "over / more than / at least ₱X". */
@@ -143,6 +148,78 @@ function extractMerchant(normalized: string): string | undefined {
   return term.length >= 3 ? term : undefined;
 }
 
+/** The connective + tail of a re-categorize command. We scan for the LAST
+ *  "as|to|into|under <word(s)>" so the destination is read off the end, after
+ *  the source subject. */
+const TARGET_CAT_RE = /\b(?:as|to|into|under)\s+([a-z][a-z0-9 &/'-]{1,30})/g;
+/** Trailing filler to drop from a captured destination ("...to Food please"). */
+const TARGET_TAIL_FILLER =
+  /\b(?:please|pls|thanks|thank you|instead|now|na|po|category|categorized|categorised)\b.*$/;
+
+/** Resolve a destination category word to a `CategorySlot`: prefer the user's
+ *  own category name, then a master-bucket label, then a taxonomy keyword. */
+function resolveCategoryWord(
+  tail: string,
+  opts: SlotOptions
+): CategorySlot | undefined {
+  const lc = tail.toLowerCase().trim();
+  if (lc.length < 2) return undefined;
+
+  // 1. A real user category name (exact or token match) — what we'd write.
+  const byName = opts.categoryNames?.find((n) => {
+    const nl = n.toLowerCase();
+    return lc === nl || lc.startsWith(`${nl} `) || lc.endsWith(` ${nl}`);
+  });
+
+  // 2. A master bucket label/key ("entertainment", "transport", "bills"…).
+  const masterKeys = Object.keys(MASTER_LABELS) as MasterCategory[];
+  const masterKey = masterKeys.find(
+    (m) => lc === m || lc.startsWith(MASTER_LABELS[m].toLowerCase())
+  );
+
+  // 3. Fall back to the taxonomy on the destination text.
+  const a = analyzeTransactionText(tail, opts.categoryNames);
+
+  if (byName) {
+    const master =
+      masterKey ?? (a.suggestedCategory as MasterCategory | null) ?? 'other';
+    return { master, keyword: byName.toLowerCase(), label: byName };
+  }
+  if (masterKey) {
+    return {
+      master: masterKey,
+      keyword: masterKey,
+      label: MASTER_LABELS[masterKey],
+    };
+  }
+  if (a.matchedKeyword && a.suggestedCategory && a.confidence !== 'low') {
+    return {
+      master: a.suggestedCategory,
+      keyword: a.matchedKeyword,
+      label: a.resolvedCategory ?? MASTER_LABELS[a.suggestedCategory],
+    };
+  }
+  return undefined;
+}
+
+function extractTargetCategory(
+  normalized: string,
+  opts: SlotOptions
+): CategorySlot | undefined {
+  let last: RegExpExecArray | null = null;
+  TARGET_CAT_RE.lastIndex = 0;
+  for (
+    let m = TARGET_CAT_RE.exec(normalized);
+    m;
+    m = TARGET_CAT_RE.exec(normalized)
+  ) {
+    last = m;
+  }
+  if (!last) return undefined;
+  const tail = last[1].replace(TARGET_TAIL_FILLER, '').trim();
+  return resolveCategoryWord(tail, opts);
+}
+
 /**
  * Extract structured slots from a normalized question. Pure and synchronous.
  *
@@ -186,6 +263,9 @@ export function extractSlots(
 
   const merchant = extractMerchant(normalized);
   if (merchant) slots.merchant = merchant;
+
+  const targetCategory = extractTargetCategory(normalized, opts);
+  if (targetCategory) slots.targetCategory = targetCategory;
 
   const analysis = analyzeTransactionText(normalized, opts.categoryNames);
   if (
