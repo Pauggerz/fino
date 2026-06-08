@@ -12,7 +12,10 @@
  * transaction). No Jest, no Expo runtime; exit code 1 on any failure.
  */
 
-import { looksLikeQuestion } from '../src/intelligence/convo/route';
+import {
+  looksLikeQuestion,
+  looksLikeCommand,
+} from '../src/intelligence/convo/route';
 import { isAbusive } from '../src/intelligence/convo/safety';
 import { parseChatTransaction } from '../src/intelligence/categorize/parseTransaction';
 
@@ -26,9 +29,10 @@ type Outcome = 'brain' | 'log';
 
 /** The exact decision ChatScreen's handleSend makes. */
 function decide(text: string): Outcome {
-  const parsed = looksLikeQuestion(text)
-    ? null
-    : parseChatTransaction(text, ACCOUNTS, EXPENSE_CATS, INCOME_CATS);
+  const parsed =
+    looksLikeQuestion(text) || looksLikeCommand(text)
+      ? null
+      : parseChatTransaction(text, ACCOUNTS, EXPENSE_CATS, INCOME_CATS);
   return parsed ? 'log' : 'brain';
 }
 
@@ -47,6 +51,14 @@ const cases: Case[] = [
   { text: 'where can i free up 3000', want: 'brain' },
   { text: 'help me save 50000 for a trip', want: 'brain' },
   { text: 'which expense was the 1200 payment', want: 'brain' },
+
+  // ── Mutation COMMANDS (amount-bearing) — must reach the brain, not logged ───
+  { text: 'recategorize the 1500 charge as coffee', want: 'brain' },
+  { text: 'move my grab ride to transport', want: 'brain' },
+  { text: 'change the 1500 charge to bills', want: 'brain' },
+  { text: 'mark netflix as entertainment', want: 'brain' },
+  { text: 'split my 100 bill', want: 'brain' },
+  { text: 'split the 500 dinner with john', want: 'brain' },
 
   // ── Genuine TRANSACTIONS — must still be logged ────────────────────────────
   { text: 'lunch 120', want: 'log' },

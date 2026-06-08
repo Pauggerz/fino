@@ -45,7 +45,8 @@ export type NavTarget =
   | 'transactionDetail'
   | 'accounts'
   | 'cashFlow'
-  | 'utangTracker';
+  | 'utangTracker'
+  | 'billSplitter';
 
 /**
  * A tappable button the brain emits (theme-free, navigator-free), dispatched by
@@ -335,6 +336,31 @@ export type DebtLite = {
   dueDate?: string;
 };
 
+// ─── Mutation proposals (in-chat confirm; brain proposes, ChatScreen executes) ─
+
+/**
+ * A change to the user's data that the brain *proposes* but never performs. The
+ * brain stays pure, synchronous, and DB-free: it emits this as plain data and
+ * ChatScreen renders a Confirm/Cancel card, running the matching mutation
+ * service ONLY after the user confirms — the repo's "no silent writes" rule.
+ *
+ * Split is intentionally NOT a mutation here: it's handled by navigating to a
+ * pre-filled BillSplitter (where the user confirms on the real screen), not an
+ * in-chat write — see `answerSplitBill`. A true in-chat split service is
+ * deferred (chat-mutations plan, Phase 4).
+ */
+export type BrainMutation = {
+  kind: 'recategorize';
+  /** Transaction to move (the snapshot row id === the Watermelon/Supabase id). */
+  txId: string;
+  /** Best human label for the tx (name → merchant), for the confirm copy. */
+  txLabel: string;
+  /** Current category for the "from X" copy (null/Other when uncategorized). */
+  fromCategory: string | null;
+  /** Destination category name to write. */
+  toCategory: string;
+};
+
 // ─── Brain I/O ───────────────────────────────────────────────────────────────
 
 export type BrainResponse = {
@@ -346,6 +372,11 @@ export type BrainResponse = {
   actions?: CardAction[];
   /** Optional tappable suggested prompts rendered under the reply. */
   followUps?: string[];
+  /** Optional proposed data change. When present, ChatScreen renders a
+   *  Confirm/Cancel card and runs the mutation only on confirm (no silent
+   *  writes). Never persisted in chat history, so a stale proposal can't be
+   *  re-confirmed after reopen. */
+  mutation?: BrainMutation;
 };
 
 /**

@@ -43,3 +43,33 @@ export function looksLikeQuestion(raw: string): boolean {
   if (!t) return false;
   return QUERY_CUE_RE.test(t);
 }
+
+// Imperative phrasings that aren't questions but still must NOT be logged: an
+// amount-bearing re-categorize ("recategorize the ₱1,500 charge as Coffee") or
+// split ("split my ₱100 bill") would otherwise be silently turned into a new
+// transaction. Tuned to "command" — plain logs ("lunch 120", "save 500 to
+// gcash") never match (no re-tag verb, no "split … bill/with").
+const COMMAND_CUE_RE = new RegExp(
+  [
+    // Re-tag verbs are near-unambiguous on their own.
+    String.raw`\b(re-?categori[sz]e|reclassify|re-?tag)\b`,
+    // move/change/switch/mark/put/file <subject> as|to|into|under <category>.
+    String.raw`\b(move|change|switch|mark|put|file)\b.+\b(as|to|into|under)\b`,
+    // Splitting a shared bill (needs a bill/people cue so item logs don't match).
+    String.raw`\bsplit\b[^.]{0,16}\b(bill|tab|check|receipt|cost|expense|dinner|lunch|meal|payment|with|between|among)\b`,
+    String.raw`\bgo dutch\b`,
+  ].join('|'),
+  'i'
+);
+
+/**
+ * True when a message reads as a mutation COMMAND (re-categorize / split) rather
+ * than a transaction to log. ChatScreen consults this alongside
+ * `looksLikeQuestion` so an amount-bearing command reaches the brain (which
+ * proposes a confirm) instead of creating a bogus transaction.
+ */
+export function looksLikeCommand(raw: string): boolean {
+  const t = normalize(raw);
+  if (!t) return false;
+  return COMMAND_CUE_RE.test(t);
+}

@@ -13,6 +13,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/RootNavigator';
 import { useAuth } from '../contexts/AuthContext';
 import { createCategory } from '../services/localMutations';
+import { supabase } from '../services/supabase';
 import { STARTER_EXPENSE_CATEGORIES } from '../constants/categoryMappings';
 
 import SplashSlide from './onboarding/SplashSlide';
@@ -141,6 +142,28 @@ export default function OnboardingScreen({ onComplete }: Props) {
     (async () => {
       try {
         const userId = user.id;
+
+        // Idempotency guard. `hasOnboarded` lives in per-install AsyncStorage,
+        // so reinstalling / clearing data / signing in on a new device re-runs
+        // this flow against an existing account. Categories have no server-side
+        // uniqueness constraint, so blindly re-seeding the starters would append
+        // a duplicate set every time. A brand-new account has only the
+        // auto-seeded "Others" (is_default=TRUE); any non-default expense
+        // category means the account was already provisioned — so skip seeding.
+        const { data: existing, error: existErr } = await supabase
+          .from('categories')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('category_type', 'expense')
+          .eq('is_default', false)
+          .is('deleted_at', null)
+          .limit(1);
+        if (existErr) throw existErr;
+        if (existing && existing.length > 0) {
+          // Already set up — `finally` still flips hasOnboarded + onComplete().
+          return;
+        }
+
         const inserts: Promise<string>[] = [];
 
         for (const def of STARTER_EXPENSE_CATEGORIES) {

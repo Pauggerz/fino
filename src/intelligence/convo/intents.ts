@@ -50,7 +50,10 @@ export type IntentId =
   | 'ruleOfThumb'
   | 'impulseTips'
   | 'afford'
-  | 'debt';
+  | 'debt'
+  | 'safeToSpend'
+  | 'reCategorize'
+  | 'splitBill';
 
 type Trigger = { term: string; weight: number };
 
@@ -520,6 +523,51 @@ const INTENT_DEFS: IntentDef[] = [
       t('utang', 4),
       t('owe', 2),
       t('paid me back', 4),
+    ],
+  },
+  {
+    id: 'safeToSpend',
+    blurb: 'tell you how much is safe to spend for the rest of the month',
+    triggers: [
+      t('safe to spend', 6), // canonicalize anchor
+      t('safely spend', 5),
+      t('spend safely', 5),
+      t('how much can i safely spend', 6),
+      t('left to spend', 5),
+      t('available to spend', 5),
+      t('how much can i spend', 4),
+      t('how much can i still spend', 5),
+    ],
+  },
+  {
+    id: 'reCategorize',
+    blurb: 'recategorize a transaction (e.g. "move my Grab ride to Transport")',
+    // The destination ("as|to <category>") is the discriminator vs `categoryOf`
+    // (a question). Unambiguous re-tag verbs trigger directly; the softer
+    // move/change/mark/put phrasings come in via the `recategorize` canon anchor.
+    triggers: [
+      t('recategorize', 6), // also the canonicalize anchor token
+      t('re-categorize', 6),
+      t('recategorise', 6),
+      t('reclassify', 6),
+      t('retag', 5),
+      t('re-tag', 5),
+      t('recategorize as', 6),
+    ],
+  },
+  {
+    id: 'splitBill',
+    blurb: 'split a bill with other people',
+    triggers: [
+      t('split bill', 6), // canonicalize anchor
+      t('split the bill', 6),
+      t('split this bill', 6),
+      t('split my bill', 5),
+      t('split the check', 5),
+      t('split the tab', 5),
+      t('divide the bill', 5),
+      t('go dutch', 4),
+      t('split it with', 4),
     ],
   },
 ];

@@ -73,10 +73,11 @@ export type {
   AccountSummary,
   BudgetLite,
   RecurringIncomeLite,
+  BrainMutation,
 } from './types';
 export type { IntentId } from './intents';
 export { selectProactiveCoach } from './coach';
-export { looksLikeQuestion } from './route';
+export { looksLikeQuestion, looksLikeCommand } from './route';
 export { isAbusive } from './safety';
 
 const MODEL = modelJson as unknown as NbModel;
@@ -114,6 +115,9 @@ const DATA_INTENTS = new Set<IntentId>([
   'impulseTips',
   'afford',
   'debt',
+  'safeToSpend',
+  'reCategorize',
+  'splitBill',
 ]);
 
 /** Data intents that genuinely consume a parsed time range. For these, a
@@ -128,11 +132,14 @@ const TIME_SCOPED_INTENTS = new Set<IntentId>([
 ]);
 
 // Open-set gate for the classifier. NB softmax saturates, so we reject on raw
-// separation instead: gibberish that shares a stray char-gram lands at
-// matched≈1 / margin≈0.4, whereas a real rule-silent query sits at matched≥20 /
-// margin≥35 (measured on the eval set). Trusting the prediction only above this
-// floor keeps "qwerty asdf" out without touching genuine paraphrases.
-const ML_MIN_MATCHED = 3;
+// separation instead: gibberish that shares a few stray char-grams lands at
+// matched≈3 / tiny signal, whereas a real rule-silent query sits at matched≥27
+// (measured on the eval set). Trusting the prediction only above this floor
+// keeps "qwerty asdf" out without touching genuine paraphrases. The floor was
+// raised 3→6 as the corpus grew (more classes ⇒ more incidental char-grams in
+// vocab, so gibberish's matched count crept up) — there's still a wide gap to
+// the ~27 floor of real paraphrases.
+const ML_MIN_MATCHED = 6;
 const ML_MIN_MARGIN = 1;
 
 /** How the winning intent was decided. */

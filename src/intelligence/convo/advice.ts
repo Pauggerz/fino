@@ -361,6 +361,102 @@ export function answerAfford(
   };
 }
 
+// ─── Safe to spend ───────────────────────────────────────────────────────────
+
+/**
+ * "How much is safe to spend (for the rest of the month)?" Budget-first: when
+ * the user has category budgets, it's what's left of their limits, paced over
+ * the days remaining. Otherwise it falls back to income − spend this month, and
+ * finally to the on-hand balance. Pure narration over the live context — never
+ * invents a number, and clamps to the on-hand balance so it can't promise money
+ * the user doesn't have.
+ */
+export function answerSafeToSpend(ctx: BrainContext): BrainResponse {
+  const followUps = ['Where can I cut back?', 'Am I on track to save?'];
+  const remainingDays = Math.max(1, ctx.daysInMonth - ctx.dayOfMonth + 1);
+  const budgets = ctx.budgets ?? [];
+
+  let safe: number;
+  let basis: 'budget' | 'income' | 'balance';
+  if (budgets.length) {
+    const spentFor = (cat: string): number =>
+      ctx.topCategories.find((c) => c.name.toLowerCase() === cat.toLowerCase())
+        ?.amount ?? 0;
+    const totalLimit = budgets.reduce((s, b) => s + b.limit, 0);
+    const spentBudgeted = budgets.reduce((s, b) => s + spentFor(b.category), 0);
+    safe = totalLimit - spentBudgeted;
+    basis = 'budget';
+  } else if (ctx.income > 0) {
+    safe = ctx.income - ctx.spent;
+    basis = 'income';
+  } else {
+    safe = ctx.balance;
+    basis = 'balance';
+  }
+
+  // Never promise more than is actually on hand.
+  safe = Math.min(safe, ctx.balance);
+
+  // Already over the line → honest caution, point at where to trim.
+  if (safe <= 0) {
+    const over = peso(Math.abs(safe));
+    const why =
+      basis === 'budget'
+        ? `you're about ${over} past your budgets for the month`
+        : basis === 'income'
+          ? `you've spent ${over} more than you've earned this month`
+          : 'your balance is tapped out';
+    return {
+      text: `Best to pause non-essentials — ${why}. Want to see where to cut back?`,
+      card: adviceCard({
+        status: 'over',
+        title: 'Nothing safe to spend',
+        message: `Hold off on extras for the next ${remainingDays} day${
+          remainingDays === 1 ? '' : 's'
+        }.`,
+        actions: [
+          {
+            kind: 'prompt',
+            label: 'Where can I cut back?',
+            send: 'Where can I cut back?',
+          },
+        ],
+      }),
+      followUps,
+    };
+  }
+
+  const perDay = safe / remainingDays;
+  const basisLine =
+    basis === 'budget'
+      ? `That's what's left across your budgets`
+      : basis === 'income'
+        ? `That's what's left of this month's income after spending`
+        : `That's your on-hand balance`;
+  const actions: CardAction[] =
+    basis === 'balance'
+      ? [SET_BUDGETS]
+      : [{ kind: 'navigate', label: 'Open Insights', target: 'insights' }];
+  return {
+    text: `You've got about ${peso(safe)} safe to spend over the next ${remainingDays} day${
+      remainingDays === 1 ? '' : 's'
+    } — roughly ${peso(perDay)}/day. ${basisLine}.`,
+    card: adviceCard({
+      status: 'good',
+      title: 'Safe to spend',
+      message: `${peso(safe)} left · ~${peso(perDay)}/day for ${remainingDays} day${
+        remainingDays === 1 ? '' : 's'
+      }.`,
+      reasons: [
+        { label: 'Left this month', detail: peso(safe) },
+        { label: 'Per day', detail: `${peso(perDay)} · ${remainingDays}d` },
+      ],
+      actions,
+    }),
+    followUps,
+  };
+}
+
 // ─── Bonus advice ────────────────────────────────────────────────────────────
 
 export function answerBonusAdvice(ctx: BrainContext): BrainResponse {

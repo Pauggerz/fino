@@ -228,6 +228,44 @@ const RULES: Rule[] = [
   // impulseTips.
   { re: /\bimpulse\b/, canon: 'impulse tips' },
 
+  // ── safeToSpend ───────────────────────────────────────────────────────────
+  { re: /\bsafe(?:ly)? to spend\b/, canon: 'safe to spend' },
+  // "how much can/should I (safely) spend" — but NOT "...spend on coffee", which
+  // is a category-scoped spend question, so we exclude a trailing "on/for".
+  {
+    re: /\bhow much (?:can|should|may) i (?:safely )?spend(?!\s+(?:on|for)\b)/,
+    canon: 'safe to spend',
+  },
+  {
+    re: /\b(?:left|available|remaining|ok(?:ay)?) to spend\b/,
+    canon: 'safe to spend',
+  },
+  { re: /\bspend safely\b/, canon: 'safe to spend' },
+
+  // ── reCategorize (a command, not a question — gated on a destination) ──────
+  {
+    re: /\bre-?categori[sz]e\b|\breclassif(?:y|ies)\b|\bre-?tag(?:ged)?\b/,
+    canon: 'recategorize',
+  },
+  // move/change/switch/mark/put/file <subject> as|to|into|under <category>. The
+  // negative lookahead keeps time words ("...to last month") and transfers
+  // ("...to gcash/savings") from masquerading as a re-categorize.
+  {
+    re: /\b(?:move|change|switch|mark|put|file|categori[sz]e)\b[^.]{0,30}\b(?:as|to|into|under)\s+(?!last\b|this\b|next\b|yesterday\b|today\b|tomorrow\b|gcash\b|maya\b|savings\b|my account\b|the account\b)/,
+    canon: 'recategorize',
+  },
+
+  // ── splitBill ─────────────────────────────────────────────────────────────
+  {
+    re: /\bsplit\b[^.]{0,16}\b(?:bill|tab|check|receipt|cost|expense|dinner|lunch|meal|payment)\b/,
+    canon: 'split bill',
+  },
+  {
+    re: /\bsplit (?:it|this|that)\b[^.]{0,16}\b(?:with|between|among)\b/,
+    canon: 'split bill',
+  },
+  { re: /\bgo dutch\b/, canon: 'split bill' },
+
   // ── thanks ───────────────────────────────────────────────────────────────
   {
     re: /\b(thanks?|thank you|thank u|ty|salamat|daghang salamat)\b/,

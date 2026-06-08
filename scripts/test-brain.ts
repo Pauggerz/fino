@@ -549,6 +549,48 @@ const cases: Case[] = [
   { desc: 'EN who owes me', text: 'who owes me money', intent: 'debt' },
   { desc: 'EN what are my debts', text: 'what are my debts', intent: 'debt' },
   { desc: 'EN who do i owe', text: 'who do i owe money to', intent: 'debt' },
+
+  // ── safeToSpend (chat-mutations plan, Phase 1) ───────────────────────────────
+  {
+    desc: 'EN safe to spend',
+    text: 'how much is safe to spend',
+    intent: 'safeToSpend',
+  },
+  {
+    desc: 'EN how much can i safely spend',
+    text: 'how much can i safely spend this month',
+    intent: 'safeToSpend',
+  },
+  {
+    desc: 'EN left to spend',
+    text: 'how much do i have left to spend',
+    intent: 'safeToSpend',
+  },
+
+  // ── reCategorize command (Phase 3) ───────────────────────────────────────────
+  {
+    desc: 'EN recategorize as',
+    text: 'recategorize my spotify charge as food',
+    intent: 'reCategorize',
+  },
+  {
+    desc: 'EN move to',
+    text: 'move my grab ride to transport',
+    intent: 'reCategorize',
+  },
+  {
+    desc: 'EN reclassify',
+    text: 'reclassify my last transaction as bills',
+    intent: 'reCategorize',
+  },
+
+  // ── splitBill (Phase 4) ──────────────────────────────────────────────────────
+  { desc: 'EN split the bill', text: 'split the bill', intent: 'splitBill' },
+  {
+    desc: 'EN split dinner with',
+    text: 'split the dinner bill with my friends',
+    intent: 'splitBill',
+  },
 ];
 
 // Out-of-scope utterances: the classifier's `unknown` class must reject them
@@ -1385,6 +1427,60 @@ function actionTargets(r: ReturnType<typeof routeMessage>): string[] {
     imp.card?.kind === 'coach' && (imp.card.data.reasons?.length ?? 0) >= 1,
     '[card+]  impulseTips → static coach card',
     `got ${imp.card?.kind}`
+  );
+}
+
+// ─── Chat-mutations plan: safe-to-spend, re-categorize, split ────────────────
+// Safe-to-spend narrates; re-categorize PROPOSES a mutation (no silent writes —
+// only emits `mutation` when both the row and destination resolve); split
+// navigates to the BillSplitter (no in-chat write).
+{
+  // safe to spend → coach card. CTX: income 30k − spend 18k, clamped to balance.
+  const sts = routeMessage('how much is safe to spend', CTX);
+  check(
+    sts.card?.kind === 'coach' && /safe to spend/i.test(sts.text),
+    '[mutate]  safe to spend → coach card',
+    `got ${sts.card?.kind}, text "${sts.text.slice(0, 60)}"`
+  );
+
+  // re-categorize → a recategorize mutation proposal (Spotify t4 Ent → Food).
+  const rc = routeMessage('recategorize my spotify charge as food', CTX_TX);
+  check(
+    rc.mutation?.kind === 'recategorize' &&
+      rc.mutation.txId === 't4' &&
+      rc.mutation.fromCategory === 'Entertainment' &&
+      rc.mutation.toCategory === 'Food' &&
+      rc.card?.kind === 'coach',
+    '[mutate]  recategorize spotify → Food mutation proposal',
+    `mutation ${JSON.stringify(rc.mutation)}`
+  );
+
+  // missing destination → asks, never a mutation (no wrong/silent write).
+  const rcNo = routeMessage('recategorize my spotify charge', CTX_TX);
+  check(
+    rcNo.mutation === undefined && /category/i.test(rcNo.text),
+    '[mutate]  recategorize w/o destination → asks, no mutation',
+    `mutation ${JSON.stringify(rcNo.mutation)}`
+  );
+
+  // destination === current category → no-op, no mutation (Grab is Transport).
+  const rcSame = routeMessage('move my grab ride to transport', CTX_TX);
+  check(
+    rcSame.mutation === undefined && /already tagged/i.test(rcSame.text),
+    '[mutate]  recategorize to same category → no-op, no mutation',
+    `text "${rcSame.text}"`
+  );
+
+  // split bill → coach card + Open Bill Splitter navigate action (no mutation).
+  const sp = routeMessage('split the bill', CTX);
+  check(
+    sp.card?.kind === 'coach' &&
+      sp.mutation === undefined &&
+      (sp.card.actions ?? []).some(
+        (a) => a.kind === 'navigate' && a.target === 'billSplitter'
+      ),
+    '[mutate]  split bill → coach card + billSplitter action',
+    `got ${sp.card?.kind}`
   );
 }
 
