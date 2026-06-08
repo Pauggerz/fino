@@ -73,6 +73,7 @@ export const CORPUS: CorpusRow[] = [
   { text: 'how much do i have right now', label: 'balance' },
   { text: 'how much money is left', label: 'balance' },
   { text: 'do i have money left', label: 'balance' },
+  { text: 'do i still have cash', label: 'balance' },
   { text: 'is there money in my account', label: 'balance' },
   { text: "what's my total balance", label: 'balance' },
   { text: 'how much is in my wallet', label: 'balance' },
@@ -392,12 +393,43 @@ export const CORPUS: CorpusRow[] = [
 
   // ── debt (utang owed TO the user — receivables) ──────────────────────────────
   { text: 'how much money am i owed', label: 'debt' },
-  { text: 'who still owes me money', label: 'debt' },
+  { text: 'who else owes me money', label: 'debt' },
   { text: 'list the people who owe me', label: 'debt' },
   { text: 'how much utang is owed to me', label: 'debt' },
   { text: 'who hasnt paid me back yet', label: 'debt' },
   { text: 'show my outstanding debts', label: 'debt' },
   { text: 'how much do people owe me', label: 'debt' },
+
+  // ── safeToSpend (how much is safe to spend) ──────────────────────────────────
+  // NB: kept clear of `balance` paraphrases ("do i have money left") — these
+  // center on the *spendable* amount this month, not the raw account balance.
+  { text: 'how much can i safely spend', label: 'safeToSpend' },
+  { text: 'how much is safe to spend', label: 'safeToSpend' },
+  { text: 'how much can i spend this month without going over', label: 'safeToSpend' },
+  { text: 'whats my safe to spend amount', label: 'safeToSpend' },
+  { text: 'how much can i spend per day for the rest of the month', label: 'safeToSpend' },
+  { text: 'how much can i still spend this month', label: 'safeToSpend' },
+  { text: 'whats my spending allowance for the month', label: 'safeToSpend' },
+  { text: 'how much is left in my budget to spend this month', label: 'safeToSpend' },
+
+  // ── reCategorize (move a transaction to another category — a command) ─────────
+  { text: 'recategorize the spotify charge as entertainment', label: 'reCategorize' },
+  { text: 'move my grab ride to transport', label: 'reCategorize' },
+  { text: 'change the netflix payment to entertainment', label: 'reCategorize' },
+  { text: 'mark that lazada purchase as shopping', label: 'reCategorize' },
+  { text: 'reclassify my last transaction as food', label: 'reCategorize' },
+  { text: 'put the grab charge under transport', label: 'reCategorize' },
+  { text: 'can you recategorize my coffee as food', label: 'reCategorize' },
+  { text: 'switch that payment to bills', label: 'reCategorize' },
+
+  // ── splitBill (split a shared bill with others) ───────────────────────────────
+  { text: 'split the bill', label: 'splitBill' },
+  { text: 'help me split this bill', label: 'splitBill' },
+  { text: 'split the dinner bill between us', label: 'splitBill' },
+  { text: 'i want to split a bill with my friends', label: 'splitBill' },
+  { text: 'divide the bill among us', label: 'splitBill' },
+  { text: 'split the check', label: 'splitBill' },
+  { text: 'lets go dutch on this', label: 'splitBill' },
 
   // ── unknown (out-of-scope rejection) ─────────────────────────────────────────
   { text: "what's the weather today", label: 'unknown' },
