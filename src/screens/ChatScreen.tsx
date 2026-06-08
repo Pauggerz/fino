@@ -24,7 +24,7 @@ import { Q } from '@nozbe/watermelondb';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { createTransaction } from '@/services/localMutations';
+import { createTransaction, updateTransaction } from '@/services/localMutations';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { useCategories } from '@/hooks/useCategories';
@@ -39,10 +39,12 @@ import {
   routeMessage,
   selectProactiveCoach,
   looksLikeQuestion,
+  looksLikeCommand,
   type ChatTx,
   type BrainContext,
   type ChatCard,
   type CardAction,
+  type BrainMutation,
   type TxLite,
 } from '@/intelligence';
 import { getInsights, type Insights } from '@/services/IntelligenceEngine';
@@ -93,6 +95,9 @@ type Message = {
   card?: ChatCard;
   /** Reply-level action buttons under the bubble (V3 advice cards). */
   actions?: CardAction[];
+  /** A proposed data change awaiting Confirm/Cancel. Deliberately NOT persisted
+   *  (see handleSend), so a stale proposal can't be re-confirmed after reopen. */
+  mutation?: BrainMutation;
   followUps?: string[];
   timestamp: string;
   txData?: TxData;
@@ -610,6 +615,11 @@ export default function ChatScreen() {
   // Transaction logging state
   const [pendingTx, setPendingTx] = useState<ChatTx | null>(null);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
+  // Message ids whose proposed mutation has been confirmed or cancelled — their
+  // Confirm/Cancel row is then hidden so a change can't be applied twice.
+  const [resolvedMutations, setResolvedMutations] = useState<Set<string>>(
+    () => new Set()
+  );
 
   // Keyboard state
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
@@ -978,11 +988,14 @@ export default function ChatScreen() {
       // sum into one transaction. This never touches the network.
       //
       // A message that READS as a question ("where can I cut ₱2,000?",
-      // "transactions over ₱5,000") is routed to the brain, NOT logged — without
-      // this gate an amount-bearing query would silently create a transaction.
-      const parsed = looksLikeQuestion(trimmed)
-        ? null
-        : parseChatTransaction(
+      // "transactions over ₱5,000") or a mutation COMMAND ("recategorize the
+      // ₱1,500 charge as Coffee", "split my ₱100 bill") is routed to the brain,
+      // NOT logged — without this gate an amount-bearing query/command would
+      // silently create a transaction.
+      const parsed =
+        looksLikeQuestion(trimmed) || looksLikeCommand(trimmed)
+          ? null
+          : parseChatTransaction(
             trimmed,
             accounts.map((a) => ({ id: a.id, name: a.name })),
             categoryNames,
@@ -1076,6 +1089,9 @@ export default function ChatScreen() {
           text: reply.text,
           card: reply.card,
           actions: reply.actions,
+          // Mutation lives only in live state (never persisted), so its
+          // Confirm/Cancel row is gone on reopen — a stale change can't re-run.
+          mutation: reply.mutation,
           followUps: reply.followUps,
           timestamp: nowTime(),
         },
@@ -1141,6 +1157,9 @@ export default function ChatScreen() {
       case 'utangTracker':
         navigation.navigate('UtangTracker');
         break;
+      case 'billSplitter':
+        navigation.navigate('BillSplitter');
+        break;
       case 'categories':
         navigation.navigate('Categories', {
           focusCategory: p.focusCategory as string | undefined,
@@ -1176,6 +1195,61 @@ export default function ChatScreen() {
       },
     ]);
     setLastMsgId(noteId);
+  };
+
+  // Execute (or decline) a brain-proposed mutation after the user taps
+  // Confirm/Cancel. The brain only proposes (no silent writes) — this is the one
+  // place the change actually hits the DB, via the existing mutation service.
+  const appendAiNote = (text: string, card?: ChatCard) => {
+    const noteId = `ai-mut-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: noteId, type: 'ai', text, card, timestamp: nowTime() },
+    ]);
+    setLastMsgId(noteId);
+    if (userId) {
+      saveChatMessage({
+        userId,
+        role: 'ai',
+        text,
+        payload: card ? JSON.stringify({ card }) : null,
+      }).catch(() => {});
+    }
+  };
+
+  const handleMutation = async (msg: Message, confirm: boolean) => {
+    const mut = msg.mutation;
+    if (!mut || resolvedMutations.has(msg.id)) return;
+    // Mark resolved first so a double-tap can't run the write twice.
+    setResolvedMutations((prev) => new Set(prev).add(msg.id));
+
+    if (!confirm) {
+      appendAiNote('No changes made.');
+      return;
+    }
+
+    try {
+      switch (mut.kind) {
+        case 'recategorize': {
+          await updateTransaction(mut.txId, { category: mut.toCategory });
+          appendAiNote('', {
+            kind: 'status',
+            data: {
+              yes: true,
+              status: 'good',
+              title: 'Re-categorized',
+              message: `${mut.txLabel} → ${mut.toCategory}`,
+            },
+          });
+          break;
+        }
+        default:
+          break;
+      }
+    } catch (err) {
+      console.error('[Fino AI] mutation error:', err);
+      appendAiNote("Sorry — I couldn't apply that change. Mind trying again?");
+    }
   };
 
   // ─── RENDER HELPERS ────────────────────────────────────────────────────────
@@ -1372,6 +1446,30 @@ export default function ChatScreen() {
             </View>
 
             <Text style={styles.timestampAi}>{msg.timestamp}</Text>
+
+            {msg.mutation && !resolvedMutations.has(msg.id) ? (
+              <Reveal
+                animate={isNew}
+                delay={REVEAL_STAGGER_MS * 2}
+                style={styles.mutationWrapper}
+              >
+                <TouchableOpacity
+                  style={styles.mutationConfirmBtn}
+                  activeOpacity={0.85}
+                  onPress={() => handleMutation(msg, true)}
+                >
+                  <Ionicons name="checkmark" size={15} color="#fff" />
+                  <Text style={styles.mutationConfirmText}>Confirm</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.mutationCancelBtn}
+                  activeOpacity={0.8}
+                  onPress={() => handleMutation(msg, false)}
+                >
+                  <Text style={styles.mutationCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </Reveal>
+            ) : null}
 
             {msg.actions && msg.actions.length > 0 ? (
               <Reveal
@@ -1743,6 +1841,27 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingVertical: 8,
     },
     replyActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.primary },
+    // Confirm/Cancel row for a brain-proposed mutation (recategorize). Confirm is
+    // filled (it commits a write); Cancel is a quiet text button.
+    mutationWrapper: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+    mutationConfirmBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      backgroundColor: colors.primary,
+      borderRadius: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 9,
+    },
+    mutationConfirmText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: '#FFF' },
+    mutationCancelBtn: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 9,
+    },
+    mutationCancelText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.textSecondary },
     inputContainer: {
       backgroundColor: colors.background,
       paddingHorizontal: spacing.screenPadding,
