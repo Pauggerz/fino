@@ -56,7 +56,9 @@ import {
   answerRuleOfThumb,
   answerImpulseTips,
   answerAfford,
+  answerSafeToSpend,
 } from './advice';
+import { answerReCategorize, answerSplitBill } from './mutate';
 
 /** The single optional deep-link chip cards may carry (§10 Q4). */
 const OPEN_INSIGHTS: CardAction = {
@@ -101,6 +103,11 @@ export const EXAMPLE_PROMPTS: Partial<Record<IntentId, string>> = {
   cutAmount: 'Where can I cut ₱2,000 this month?',
   ruleOfThumb: 'A good rule of thumb for budgeting?',
   impulseTips: 'Tips to avoid impulse buying',
+  afford: 'Can I afford a ₱2,000 dinner?',
+  debt: 'How much am I owed?',
+  safeToSpend: 'How much is safe to spend?',
+  reCategorize: 'Move my Grab ride to Transport',
+  splitBill: 'Split the bill with friends',
 };
 
 const FALLBACK_FOLLOWUPS = [
@@ -1646,6 +1653,12 @@ export function answerDataIntent(
       return answerAfford(ctx, slots, seed);
     case 'debt':
       return answerDebt(ctx, seed);
+    case 'safeToSpend':
+      return answerSafeToSpend(ctx);
+    case 'reCategorize':
+      return answerReCategorize(ctx, slots, seed);
+    case 'splitBill':
+      return answerSplitBill(slots);
     default:
       return null;
   }
