@@ -379,11 +379,14 @@ export async function scheduleOneOff(
 }
 
 /**
- * Present a notification immediately if permission is granted (used by the
+ * Present a notification immediately if permitted (used by the
  * IntelligenceEngine to raise an OS notification alongside an in-app warning,
- * §6.22). Respects quiet hours and push_enabled. Caller gates on category prefs.
+ * §6.22). Honours OS permission, `push_enabled`, and quiet hours — the inbox row
+ * the engine already wrote is untouched, so suppressing the OS ping here only
+ * silences the lockscreen, never loses the alert. Caller gates on category prefs.
  */
 export async function fireImmediateIfPermitted(seed: {
+  userId: string;
   kind: string;
   title: string;
   body: string;
@@ -394,6 +397,22 @@ export async function fireImmediateIfPermitted(seed: {
   if (Platform.OS === 'web') return;
   const { status } = await Notifications.getPermissionsAsync();
   if (status !== 'granted') return;
+
+  // Respect the same prefs the scheduled path does: a disabled push master
+  // switch or an active quiet window suppresses the immediate ping.
+  const prefs = await readNotificationPrefs(seed.userId);
+  if (!prefs.pushEnabled) return;
+  if (
+    prefs.quietHoursEnabled &&
+    isHourInQuietWindow(
+      new Date().getHours(),
+      prefs.quietHoursStart,
+      prefs.quietHoursEnd
+    )
+  ) {
+    return;
+  }
+
   await Notifications.scheduleNotificationAsync({
     content: {
       title: seed.title,
