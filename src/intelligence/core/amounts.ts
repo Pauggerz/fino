@@ -7,20 +7,30 @@
  * share this one extractor.
  */
 
+// Capture group 1: the numeric part. Group 2: an optional magnitude suffix
+// ("k"/"m") that immediately follows the digits — "5k" → 5,000, "2.5m" →
+// 2,500,000. The suffix is part of the token (no boundary forbids it), but
+// the closing `(?![A-Za-z\d])` still rejects longer words like "5kg" / "5km"
+// so units of measure aren't mistaken for money.
 const AMOUNT_REGEX =
-  /(?<![A-Za-z\d])(?:₱|php|p)?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:pesos?|piso|php)?(?![A-Za-z\d])/gi;
+  /(?<![A-Za-z\d])(?:₱|php|p)?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*([km])?\s*(?:pesos?|piso|php)?(?![A-Za-z\d])/gi;
+
+const MAGNITUDE: Record<string, number> = { k: 1_000, m: 1_000_000 };
 
 /**
  * Extract numeric amounts from free-form text.
  *
  * The pattern is anchored on both sides so multi-digit numbers are kept
- * whole — e.g. "1234" extracts as [1234], not [123, 4].
+ * whole — e.g. "1234" extracts as [1234], not [123, 4]. A trailing "k"/"m"
+ * scales the number ("5k" → 5000, "2.5m" → 2,500,000).
  *
  * Examples:
  *   "I eat at Jollibee and spent 100 pesos" → [100]
  *   "apple 10 mango 20"                     → [10, 20]
  *   "₱1,250.50 for groceries"               → [1250.5]
  *   "rent 12500"                            → [12500]
+ *   "received 5k salary"                    → [5000]
+ *   "2.5m investment"                       → [2500000]
  */
 export function extractAmounts(text: string): number[] {
   if (!text) return [];
@@ -32,7 +42,9 @@ export function extractAmounts(text: string): number[] {
     m = AMOUNT_REGEX.exec(text)
   ) {
     const raw = m[1].replace(/,/g, '');
-    const n = parseFloat(raw);
+    let n = parseFloat(raw);
+    const suffix = m[2]?.toLowerCase();
+    if (suffix && MAGNITUDE[suffix]) n *= MAGNITUDE[suffix];
     if (Number.isFinite(n) && n > 0) out.push(n);
   }
   return out;
