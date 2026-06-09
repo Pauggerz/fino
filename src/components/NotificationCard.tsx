@@ -11,6 +11,7 @@ interface Props {
   onPress?: () => void;
   onAction?: () => void;
   onDismiss?: () => void;
+  onSnooze?: () => void;
 }
 
 type Visual = {
@@ -85,12 +86,19 @@ export default function NotificationCard({
   onPress,
   onAction,
   onDismiss,
+  onSnooze,
 }: Props) {
   const { colors, isDark } = useTheme();
   const visual = getVisual(item.type, colors, isDark);
   const styles = createStyles(colors, isDark);
 
   const isInsight = item.type === 'insight';
+  // Snooze only makes sense for time-bound nudges; offer it on unread
+  // reminders / warnings (bills, payday, budget) where deferring is meaningful.
+  const canSnooze =
+    !!onSnooze &&
+    !item.isRead &&
+    (item.type === 'reminder' || item.type === 'warning');
 
   return (
     <TouchableOpacity
@@ -127,7 +135,7 @@ export default function NotificationCard({
         </View>
       </View>
 
-      {(item.actionLabel || onDismiss) && (
+      {(item.actionLabel || onDismiss || canSnooze) && (
         <View style={styles.actions}>
           {item.actionLabel && onAction && (
             <TouchableOpacity
@@ -151,6 +159,16 @@ export default function NotificationCard({
               >
                 {item.actionLabel}
               </Text>
+            </TouchableOpacity>
+          )}
+          {canSnooze && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={onSnooze}
+              style={styles.dismissBtn}
+              accessibilityLabel="Snooze for 1 hour"
+            >
+              <Text style={styles.dismissText}>Snooze 1h</Text>
             </TouchableOpacity>
           )}
           {onDismiss && (
