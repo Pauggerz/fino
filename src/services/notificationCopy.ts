@@ -3,8 +3,9 @@
  *
  * Every user-facing notification string lives here so phrasing can be iterated
  * without touching business logic. The Deno-side dispatchers keep an equivalent
- * file at supabase/functions/_shared/copy.ts — keep the two in sync (a CI hash
- * check guards against drift; see plan §6.31).
+ * file at supabase/functions/_shared/copy.ts — keep the two in sync. The
+ * `npm run check:copy-sync` guard (scripts/check-copy-sync.ts, run in the Husky
+ * pre-commit) fails the commit on drift.
  *
  * Strings are written for VoiceOver clarity: no leading decorative emoji,
  * amounts spelled with the ₱ symbol (Fino's primary market is the Philippines).

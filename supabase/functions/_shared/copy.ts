@@ -1,9 +1,10 @@
 /**
  * Deno-compatible mirror of src/services/notificationCopy.ts.
  *
- * Keep in sync with the client copy file — a CI hash check should fail the build
- * on drift (plan §6.31). Strings are written for VoiceOver clarity (no leading
- * decorative emoji); amounts use the ₱ symbol (primary market: Philippines).
+ * Keep in sync with the client copy file — `npm run check:copy-sync`
+ * (scripts/check-copy-sync.ts, run in the Husky pre-commit) fails the commit on
+ * drift. Strings are written for VoiceOver clarity (no leading decorative
+ * emoji); amounts use the ₱ symbol (primary market: Philippines).
  */
 
 export interface NotificationContent {
