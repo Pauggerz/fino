@@ -51,7 +51,15 @@ const endOfDay = (d: Date): Date =>
 const addDays = (d: Date, n: number): Date => {
   const out = new Date(d);
   out.setDate(out.getDate() + n);
+
+const addHours = (d: Date, n: number): Date => {
+  const out = new Date(d);
+  out.setHours(out.getHours() + n);
   return out;
+
+}
+  return out;
+
 };
 
 /** Monday-start week index: 0 = Mon … 6 = Sun. */
