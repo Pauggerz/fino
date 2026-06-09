@@ -205,5 +205,17 @@ export default schemaMigrations({
         }),
       ],
     },
+    {
+      // v10 — notifications.action_params: JSON-encoded deep-link params so an
+      // inbox-card tap routes identically to a push tap (e.g. SavingsGoal needs
+      // { id }). Local-only table — no server column to round-trip.
+      toVersion: 10,
+      steps: [
+        addColumns({
+          table: 'notifications',
+          columns: [{ name: 'action_params', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
   ],
 });
