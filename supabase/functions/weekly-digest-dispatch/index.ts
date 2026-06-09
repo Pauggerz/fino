@@ -57,7 +57,9 @@ Deno.serve(async (req: Request) => {
   let sent = 0;
   for (const p of prefs) {
     if (weekdayInTimezone(now, p.timezone) !== p.weekly_digest_day) continue;
-    if (hourInTimezone(now, p.timezone) !== p.weekly_digest_hour) continue;
+    // >= (not ==) so a skipped/delayed hourly tick still catches up later the
+    // same day. The per-week idempotency kind below guarantees at-most-once.
+    if (hourInTimezone(now, p.timezone) < p.weekly_digest_hour) continue;
 
     const { data: txs } = await supabase
       .from('transactions')

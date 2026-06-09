@@ -397,7 +397,18 @@ export async function activeTokensFor(
 
 // ── Advisory lock (§6.11) ──────────────────────────────────────────────────────
 
-/** Try to acquire a session advisory lock named after the dispatcher. */
+/**
+ * Best-effort, OPTIONAL concurrency guard — NOT the idempotency mechanism.
+ *
+ * The hard guard against double-sends is the unique index
+ * notification_deliveries(user_id, kind) enforced by claimDelivery(). This lock
+ * only avoids two overlapping cron ticks doing redundant work. Per cron.sql, the
+ * backing RPC (`try_dispatch_lock`) is intentionally NOT installed under
+ * Supabase's pooled connections (a session advisory lock can leak and wedge
+ * future runs), so in production this call returns `true` (no lock) and the
+ * unique index does the real work. Left wired so a future dedicated-connection
+ * deploy can opt in by simply creating the RPC.
+ */
 export async function tryAdvisoryLock(
   supabase: SupabaseClient,
   name: string
@@ -405,8 +416,8 @@ export async function tryAdvisoryLock(
   // hashtext(name) → bigint key; pg_try_advisory_lock returns bool.
   const { data, error } = await supabase.rpc('try_dispatch_lock', { lock_name: name });
   if (error) {
-    // RPC not present (optional) — fall back to "no lock", relying on the
-    // (user_id, kind) unique index as the hard idempotency guard.
+    // RPC absent (the documented default) — fall back to "no lock", relying on
+    // the (user_id, kind) unique index as the hard idempotency guard.
     return true;
   }
   return data === true;
