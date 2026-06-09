@@ -233,8 +233,11 @@ function answerSpend(
     };
   }
 
-  // Last-month total comes from the authoritative monthly aggregate.
-  if (tr?.key === 'lastMonth') {
+  // Last-month TOTAL (no category scope) comes from the authoritative monthly
+  // aggregate. A category-scoped "food last month" — including the multi-turn
+  // "how much on food?" → "what about last month?" follow-up — must NOT land
+  // here; it falls through to the snapshot slice below so the category is honored.
+  if (tr?.key === 'lastMonth' && !slots.category) {
     if (ctx.lastMonthSpent <= 0) {
       return {
         text: "I don't have any spending logged for last month.",
@@ -247,9 +250,10 @@ function answerSpend(
     };
   }
 
-  // Any other concrete range (today / a week / a quarter / "last 7 days" / a
-  // weekday …) is answered precisely from the transaction snapshot — no more
-  // silently collapsing sub-month windows to the month total.
+  // Any other concrete range (last month with a category, today / a week / a
+  // quarter / "last 7 days" / a weekday …) is answered precisely from the
+  // transaction snapshot — no more silently collapsing sub-month windows or
+  // category-scoped ranges to the month total.
   if (tr && tr.key !== 'thisMonth') {
     const when = whenPhrase(tr);
     if (txns.length) {
@@ -294,39 +298,59 @@ function answerSpend(
   };
 }
 
-function answerBreakdown(ctx: BrainContext): BrainResponse {
+function answerBreakdown(ctx: BrainContext, slots: Slots): BrainResponse {
   const followUps = ['Compare to last month', 'Where can I cut back?'];
-  if (!ctx.topCategories.length) {
+  const agg = expenseAggForSlots(ctx, slots);
+  // Narration scope: the asked-for window when we sliced one, else "this month".
+  const when = agg.range ? whenPhrase(agg.range) : 'this month';
+
+  if (!agg.categories.length) {
     return {
-      text: "You haven't logged any spending this month yet. Once you do, I'll break it down by category for you.",
+      text: agg.windowed
+        ? `I don't see any spending ${when}.`
+        : "You haven't logged any spending this month yet. Once you do, I'll break it down by category for you.",
       followUps,
     };
   }
-  const lines = ctx.topCategories
+  const lines = agg.categories
     .slice(0, 4)
     .map((c) => `• ${c.name} — ${peso(c.amount)}`)
     .join('\n');
-  const data = buildBreakdownCard(ctx);
+  // The vs-last-month delta card only makes sense for the month view; a windowed
+  // breakdown ships a card built from its own segments (no cross-period delta).
+  const data = agg.windowed
+    ? {
+        total: agg.total,
+        segments: agg.categories
+          .slice(0, 4)
+          .map((c, i) => ({ label: c.name, amount: c.amount, role: `cat-${i}` })),
+      }
+    : buildBreakdownCard(ctx);
   return {
-    text: `You've spent ${peso(ctx.spent)} this month. Here's where it went:\n${lines}`,
+    text: `You spent ${peso(agg.total)} ${when}. Here's where it went:\n${lines}`,
     card: data ? { kind: 'breakdown', data } : undefined,
     followUps,
   };
 }
 
-function answerTopCategory(ctx: BrainContext): BrainResponse {
+function answerTopCategory(ctx: BrainContext, slots: Slots): BrainResponse {
   const followUps = ['Where can I cut back?', 'Give me a spending breakdown'];
-  if (!ctx.topCategories.length) {
+  const agg = expenseAggForSlots(ctx, slots);
+  const when = agg.range ? whenPhrase(agg.range) : 'this month';
+
+  if (!agg.categories.length) {
     return {
-      text: "You haven't logged any spending this month yet, so I can't name a biggest category.",
+      text: agg.windowed
+        ? `I don't see any spending ${when}, so there's no biggest category to name.`
+        : "You haven't logged any spending this month yet, so I can't name a biggest category.",
       followUps,
     };
   }
-  const top = ctx.topCategories[0];
+  const top = agg.categories[0];
   return {
-    text: `Your biggest spending this month is ${top.name} at ${peso(
+    text: `Your biggest spending ${when} is ${top.name} at ${peso(
       top.amount
-    )} — ${pctOf(top.amount, ctx.spent)}% of everything you've spent.`,
+    )} — ${pctOf(top.amount, agg.total)}% of everything you spent.`,
     followUps,
   };
 }
@@ -681,6 +705,57 @@ function whenPhrase(tr: TimeRange): string {
       // quarter / namedMonth / lastNDays / last30Days
       return `in ${tr.label}`;
   }
+}
+
+/**
+ * Expense aggregation for the window the user actually asked about.
+ *
+ * The pre-computed `ctx.topCategories` / `ctx.spent` are **this-month only**, so
+ * a "this week" / "March" / "this year" follow-up can't be answered from them.
+ * When the slots carry a concrete non-this-month range, re-aggregate the
+ * injected snapshot (`ctx.transactions`) for that window instead; otherwise fall
+ * through to the authoritative month aggregate (cheaper, and covers the whole
+ * year even when the snapshot is row-capped).
+ *
+ * `windowed` is true when we sliced the snapshot for a specific range — callers
+ * use it to switch narration from "this month" to the range phrase and to be
+ * honest ("nothing logged <range>") rather than borrowing the month total.
+ */
+type ExpenseAgg = {
+  categories: { name: string; amount: number }[];
+  total: number;
+  /** True when we sliced the snapshot for a concrete non-this-month range. */
+  windowed: boolean;
+  /** The range we scoped to (only when `windowed`). */
+  range?: TimeRange;
+};
+
+function expenseAggForSlots(ctx: BrainContext, slots: Slots): ExpenseAgg {
+  const tr = slots.timeRange;
+  const txns = ctx.transactions ?? [];
+
+  // No range, or plain this-month → the month aggregate is authoritative.
+  if (!tr || tr.key === 'thisMonth' || !txns.length) {
+    return {
+      categories: ctx.topCategories,
+      total: ctx.spent,
+      windowed: false,
+    };
+  }
+
+  // Concrete other window → re-aggregate the snapshot for it.
+  const scoped = selectTx(txns, {
+    range: { start: tr.start, end: tr.end },
+    type: 'expense',
+    categories: slotCats(slots),
+  });
+  const buckets = groupByCategory(scoped);
+  return {
+    categories: buckets.map((b) => ({ name: b.name, amount: b.amount })),
+    total: sumAmount(scoped),
+    windowed: true,
+    range: tr,
+  };
 }
 
 function answerTransactions(
@@ -1598,9 +1673,9 @@ export function answerDataIntent(
     case 'spend':
       return answerSpend(ctx, slots, seed);
     case 'breakdown':
-      return answerBreakdown(ctx);
+      return answerBreakdown(ctx, slots);
     case 'topCategory':
-      return answerTopCategory(ctx);
+      return answerTopCategory(ctx, slots);
     case 'compare':
       return answerCompare(ctx, slots);
     case 'cut':
