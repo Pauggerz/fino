@@ -14,8 +14,22 @@ import {
   SettingsHeader,
   ThemedSwitch,
 } from '../components/settings/SettingsPrimitives';
+import {
+  OptionSheet,
+  type SheetOption,
+} from '../components/settings/OptionSheet';
 
 type PermissionState = 'granted' | 'denied' | 'undetermined' | 'unknown';
+
+// Which value-picker sheet is open (null = none).
+type SheetKey =
+  | 'billDays'
+  | 'billHour'
+  | 'budgetThreshold'
+  | 'digestDay'
+  | 'digestHour'
+  | 'quietStart'
+  | 'quietEnd';
 
 function formatHour(h: number): string {
   const period = h >= 12 ? 'PM' : 'AM';
@@ -24,11 +38,54 @@ function formatHour(h: number): string {
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const FULL_DAYS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
 
 function daysBeforeLabel(d: number): string {
   if (d === 0) return 'On the day';
   if (d === 1) return '1 day before';
   return `${d} days before`;
+}
+
+// ── Option lists for the value pickers ───────────────────────────────────────
+const HOUR_OPTIONS: SheetOption<number>[] = Array.from(
+  { length: 24 },
+  (_, h) => ({ label: formatHour(h), value: h })
+);
+const DAYS_BEFORE_OPTIONS: SheetOption<number>[] = [0, 1, 2, 3].map((d) => ({
+  label: daysBeforeLabel(d),
+  value: d,
+}));
+const THRESHOLD_OPTIONS: SheetOption<number>[] = [50, 80, 100].map((t) => ({
+  label: `${t}% of budget`,
+  value: t,
+}));
+const WEEKDAY_OPTIONS: SheetOption<number>[] = FULL_DAYS.map((name, i) => ({
+  label: name,
+  value: i,
+}));
+
+/** Right-aligned current-value label for a tappable picker row. */
+function ValueText({ text }: { text: string }) {
+  const { colors } = useTheme();
+  return (
+    <Text
+      style={{
+        fontFamily: 'Inter_600SemiBold',
+        fontSize: 14,
+        color: colors.textSecondary,
+      }}
+    >
+      {text}
+    </Text>
+  );
 }
 
 export default function NotificationSettingsScreen() {
@@ -40,6 +97,13 @@ export default function NotificationSettingsScreen() {
 
   const enabled = prefs.pushEnabled;
   const dim = (on: boolean) => ({ opacity: enabled ? 1 : on ? 0.5 : 0.45 });
+
+  // Value-picker sheet state. Tapping a configurable row opens its sheet; only
+  // tappable while the push master switch is on.
+  const [activeSheet, setActiveSheet] = useState<SheetKey | null>(null);
+  const openSheet = (key: SheetKey) => () => {
+    if (enabled) setActiveSheet(key);
+  };
 
   // OS-level permission state. Refresh on focus so returning from the system
   // settings screen or the priming flow shows the up-to-date status.
@@ -166,7 +230,32 @@ export default function NotificationSettingsScreen() {
                   onValueChange={(v) => updatePref('billReminders', v)}
                 />
               }
+              isLast={!prefs.billReminders}
             />
+            {prefs.billReminders && (
+              <>
+                <Row
+                  icon="time-outline"
+                  title="Remind me"
+                  trailing={
+                    <ValueText
+                      text={daysBeforeLabel(prefs.billReminderDaysBefore)}
+                    />
+                  }
+                  showChevron
+                  onPress={openSheet('billDays')}
+                />
+                <Row
+                  icon="alarm-outline"
+                  title="At"
+                  trailing={
+                    <ValueText text={formatHour(prefs.billReminderHour)} />
+                  }
+                  showChevron
+                  onPress={openSheet('billHour')}
+                />
+              </>
+            )}
             <Row
               icon="trending-up-outline"
               title={t('settings.notifications.budget')}
@@ -180,6 +269,15 @@ export default function NotificationSettingsScreen() {
                 />
               }
             />
+            {prefs.budgetAlerts && (
+              <Row
+                icon="speedometer-outline"
+                title="Alert me at"
+                trailing={<ValueText text={`${prefs.budgetThreshold}%`} />}
+                showChevron
+                onPress={openSheet('budgetThreshold')}
+              />
+            )}
             <Row
               icon="cash-outline"
               title="Payday reminders"
@@ -221,6 +319,28 @@ export default function NotificationSettingsScreen() {
                 />
               }
             />
+            {prefs.weeklyDigest && (
+              <>
+                <Row
+                  icon="today-outline"
+                  title="Day"
+                  trailing={
+                    <ValueText text={FULL_DAYS[prefs.weeklyDigestDay]} />
+                  }
+                  showChevron
+                  onPress={openSheet('digestDay')}
+                />
+                <Row
+                  icon="alarm-outline"
+                  title="Time"
+                  trailing={
+                    <ValueText text={formatHour(prefs.weeklyDigestHour)} />
+                  }
+                  showChevron
+                  onPress={openSheet('digestHour')}
+                />
+              </>
+            )}
             <Row
               icon="flag-outline"
               title={t('settings.notifications.goals')}
@@ -259,7 +379,7 @@ export default function NotificationSettingsScreen() {
               title={t('settings.notifications.quiet')}
               subtitle={
                 prefs.quietHoursEnabled
-                  ? `${formatHour(prefs.quietHoursStart)} — ${formatHour(prefs.quietHoursEnd)}`
+                  ? 'No notifications during this window.'
                   : 'Off'
               }
               trailing={
@@ -268,10 +388,95 @@ export default function NotificationSettingsScreen() {
                   onValueChange={(v) => updatePref('quietHoursEnabled', v)}
                 />
               }
-              isLast
+              isLast={!prefs.quietHoursEnabled}
             />
+            {prefs.quietHoursEnabled && (
+              <>
+                <Row
+                  icon="cloudy-night-outline"
+                  title="From"
+                  trailing={
+                    <ValueText text={formatHour(prefs.quietHoursStart)} />
+                  }
+                  showChevron
+                  onPress={openSheet('quietStart')}
+                />
+                <Row
+                  icon="sunny-outline"
+                  title="To"
+                  trailing={
+                    <ValueText text={formatHour(prefs.quietHoursEnd)} />
+                  }
+                  showChevron
+                  onPress={openSheet('quietEnd')}
+                  isLast
+                />
+              </>
+            )}
           </Group>
         </View>
+
+        {/* Value pickers — one OptionSheet, parameterised by the open key. */}
+        <OptionSheet
+          visible={activeSheet === 'billDays'}
+          title="Remind me"
+          options={DAYS_BEFORE_OPTIONS}
+          selected={prefs.billReminderDaysBefore}
+          onSelect={(v) =>
+            updatePref('billReminderDaysBefore', v as 0 | 1 | 2 | 3)
+          }
+          onClose={() => setActiveSheet(null)}
+        />
+        <OptionSheet
+          visible={activeSheet === 'billHour'}
+          title="Reminder time"
+          options={HOUR_OPTIONS}
+          selected={prefs.billReminderHour}
+          onSelect={(v) => updatePref('billReminderHour', v)}
+          onClose={() => setActiveSheet(null)}
+        />
+        <OptionSheet
+          visible={activeSheet === 'budgetThreshold'}
+          title="Budget alert threshold"
+          options={THRESHOLD_OPTIONS}
+          selected={prefs.budgetThreshold}
+          onSelect={(v) => updatePref('budgetThreshold', v as 50 | 80 | 100)}
+          onClose={() => setActiveSheet(null)}
+        />
+        <OptionSheet
+          visible={activeSheet === 'digestDay'}
+          title="Weekly digest day"
+          options={WEEKDAY_OPTIONS}
+          selected={prefs.weeklyDigestDay}
+          onSelect={(v) =>
+            updatePref('weeklyDigestDay', v as 0 | 1 | 2 | 3 | 4 | 5 | 6)
+          }
+          onClose={() => setActiveSheet(null)}
+        />
+        <OptionSheet
+          visible={activeSheet === 'digestHour'}
+          title="Weekly digest time"
+          options={HOUR_OPTIONS}
+          selected={prefs.weeklyDigestHour}
+          onSelect={(v) => updatePref('weeklyDigestHour', v)}
+          onClose={() => setActiveSheet(null)}
+        />
+        <OptionSheet
+          visible={activeSheet === 'quietStart'}
+          title="Quiet hours start"
+          options={HOUR_OPTIONS}
+          selected={prefs.quietHoursStart}
+          onSelect={(v) => updatePref('quietHoursStart', v)}
+          onClose={() => setActiveSheet(null)}
+        />
+        <OptionSheet
+          visible={activeSheet === 'quietEnd'}
+          title="Quiet hours end"
+          options={HOUR_OPTIONS}
+          selected={prefs.quietHoursEnd}
+          onSelect={(v) => updatePref('quietHoursEnd', v)}
+          onClose={() => setActiveSheet(null)}
+        />
 
         <Text
           style={{
