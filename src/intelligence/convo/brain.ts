@@ -27,6 +27,7 @@ import { isAbusive } from './safety';
 import { canonicalize } from './canonicalize';
 import { scoreIntents, type IntentId, type IntentScore } from './intents';
 import { extractSlots, type Slots } from './slots';
+import { mergeWithMemory, rememberTurn, turnFromResolved } from './memory';
 import {
   answerGreeting,
   answerThanks,
@@ -74,11 +75,14 @@ export type {
   BudgetLite,
   RecurringIncomeLite,
   BrainMutation,
+  ConversationMemory,
+  ConversationTurn,
 } from './types';
 export type { IntentId } from './intents';
 export { selectProactiveCoach } from './coach';
 export { looksLikeQuestion, looksLikeCommand } from './route';
 export { isAbusive } from './safety';
+export { CONVERSATION_MEMORY_MAX } from './memory';
 
 const MODEL = modelJson as unknown as NbModel;
 
@@ -120,11 +124,16 @@ const DATA_INTENTS = new Set<IntentId>([
   'splitBill',
 ]);
 
-/** Data intents that genuinely consume a parsed time range. For these, a
- *  clearly-temporal-but-unresolved phrase ("lately") should clarify the window
- *  rather than silently answer for "this month". */
+/** Data intents that genuinely consume a parsed time range. Used for two
+ *  things: (1) a clearly-temporal-but-unresolved phrase ("lately") should
+ *  clarify the window rather than silently answer for "this month"; (2) they
+ *  inherit a "sticky" session window from the previous turn (convo/memory.ts) so
+ *  "…this week" then "give me a breakdown" stays on this week. Keep this in sync
+ *  with the handlers that actually slice by `slots.timeRange`. */
 const TIME_SCOPED_INTENTS = new Set<IntentId>([
   'spend',
+  'breakdown',
+  'topCategory',
   'summary',
   'transactions',
   'needsVsWants',
@@ -248,33 +257,69 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   if (!norm) return answerFallback();
 
   // Clearly abusive/obscene input is declined outright — never run through the
-  // classifier (which could otherwise force a finance answer onto a slur).
+  // classifier (which could otherwise force a finance answer onto a slur). An
+  // abusive turn also resets nothing and is never remembered.
   if (isAbusive(norm)) return answerFallback();
 
+  const nowMs = ctx?.now ? Date.parse(ctx.now) : Date.now();
   const c = classifyMessage(raw, {
     now: ctx?.now ? new Date(ctx.now) : undefined,
     categoryNames: ctx?.topCategories.map((tc) => tc.name),
   });
 
-  // Nothing matched (rules silent + classifier abstained) → gentle fallback.
-  if (c.intent === null) return answerFallback();
+  // Short-term memory: a follow-up ("what about last month?", "and transport?")
+  // inherits the previous turn's intent/category/time window before we narrate.
+  // The brain stays pure — memory comes in via ctx and the updated window goes
+  // out on the response; ChatScreen owns the storage. A confident rule win on
+  // the follow-up's own intent (margin ≥ 1) is kept; a weak/classifier guess on
+  // a pure slot-refinement defers to the prior intent.
+  const selfIntentConfident = c.source === 'rules' && c.ruleMargin >= 1;
+  const intentIsTimeScoped =
+    c.intent !== null && TIME_SCOPED_INTENTS.has(c.intent);
+  const merged = mergeWithMemory(
+    norm,
+    { intent: c.intent, slots: c.slots, selfIntentConfident, intentIsTimeScoped },
+    ctx?.memory,
+    nowMs
+  );
+  const { intent, slots } = merged;
 
-  // Genuine tie the classifier couldn't break → ask instead of guessing.
-  if (c.needsClarify && c.runnerUp) return answerClarify(c.intent, c.runnerUp);
+  // Stamp the updated memory window onto whatever response we return, so even a
+  // clarify/fallback turn advances the conversation state. `at` is the resolve
+  // time so ChatScreen / the continuation TTL can age turns out.
+  const atIso = ctx?.now ?? new Date(nowMs).toISOString();
+  const withMemory = (res: BrainResponse): BrainResponse => {
+    const memory = rememberTurn(
+      ctx?.memory,
+      turnFromResolved(intent, slots, atIso)
+    );
+    return { ...res, memory };
+  };
+
+  // Nothing matched (rules silent + classifier abstained, nothing inherited) →
+  // gentle fallback. A bare continuation that inherited an intent skips this.
+  if (intent === null) return withMemory(answerFallback());
+
+  // Genuine tie the classifier couldn't break → ask instead of guessing. (Only
+  // possible from a self-resolved turn; an inherited intent is unambiguous.)
+  if (c.needsClarify && c.runnerUp && intent === c.intent)
+    return withMemory(answerClarify(intent, c.runnerUp));
 
   // A clearly-temporal phrase we couldn't pin to a range → clarify the window
   // rather than silently answering for "this month".
-  if (TIME_SCOPED_INTENTS.has(c.intent) && c.slots.timeRangeUnresolved)
-    return answerTimeClarify();
+  if (TIME_SCOPED_INTENTS.has(intent) && slots.timeRangeUnresolved)
+    return withMemory(answerTimeClarify());
 
   // Chit-chat / meta intents (answerable without context).
-  if (c.intent === 'greeting') return answerGreeting(norm);
-  if (c.intent === 'thanks') return answerThanks(norm);
-  if (c.intent === 'help') return answerHelp();
-  if (c.intent === 'count') return answerCount();
+  if (intent === 'greeting') return withMemory(answerGreeting(norm));
+  if (intent === 'thanks') return withMemory(answerThanks(norm));
+  if (intent === 'help') return withMemory(answerHelp());
+  if (intent === 'count') return withMemory(answerCount());
 
   // Data answers need the live context.
-  if (!ctx) return answerFallback();
+  if (!ctx) return withMemory(answerFallback());
 
-  return answerDataIntent(c.intent, c.slots, ctx, norm) ?? answerFallback();
+  return withMemory(
+    answerDataIntent(intent, slots, ctx, norm) ?? answerFallback()
+  );
 }

@@ -37,18 +37,29 @@ export default function NotificationsScreen() {
     markAsRead,
     markAllAsRead,
     dismiss,
+    snooze,
     clearAll,
   } = useNotifications();
 
   // Shared with the push-tap handler so an inbox tap and a notification tap
-  // land on exactly the same screen (§5.4).
+  // land on exactly the same screen — params included (§5.4).
   const handleAction = useCallback(
     (item: NotificationItem) => {
       markAsRead(item.id).then(syncBadgeCount);
       if (!item.actionRoute) return;
-      routeFromNotification({ route: item.actionRoute });
+      routeFromNotification({
+        route: item.actionRoute,
+        params: item.actionParams,
+      });
     },
     [markAsRead]
+  );
+
+  const handleSnooze = useCallback(
+    (item: NotificationItem) => {
+      snooze(item).then(syncBadgeCount);
+    },
+    [snooze]
   );
 
   const handleMarkAllRead = useCallback(() => {
@@ -159,6 +170,7 @@ export default function NotificationsScreen() {
                   onPress={() => markAsRead(item.id)}
                   onAction={() => handleAction(item)}
                   onDismiss={() => dismiss(item.id)}
+                  onSnooze={() => handleSnooze(item)}
                 />
               ))}
             </>

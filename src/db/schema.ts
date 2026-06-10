@@ -12,7 +12,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
  * WatermelonDB can compare it cheaply during pullChanges.
  */
 export default appSchema({
-  version: 9,
+  version: 10,
   tables: [
     // Local-only chat history for the Fino chatbot. Deliberately NOT in
     // SYNCED_TABLES (src/services/watermelonSync.ts) — conversations stay on
@@ -39,6 +39,9 @@ export default appSchema({
         { name: 'title', type: 'string' },
         { name: 'message', type: 'string' },
         { name: 'action_route', type: 'string', isOptional: true },
+        // JSON-encoded deep-link params (e.g. {"id":"…"} for SavingsGoal) so an
+        // inbox-card tap routes identically to the push tap. Local-only.
+        { name: 'action_params', type: 'string', isOptional: true },
         { name: 'action_label', type: 'string', isOptional: true },
         { name: 'is_read', type: 'boolean', isIndexed: true },
         { name: 'is_dismissed', type: 'boolean' },

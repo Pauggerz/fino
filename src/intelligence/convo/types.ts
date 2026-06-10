@@ -16,6 +16,8 @@
  */
 
 import type { Insights } from '../../services/IntelligenceEngine';
+import type { TimeRange } from '../core/time';
+import type { CategorySlot } from './slots';
 
 // ─── Card contract (FINO_CHATBOT_CARDS.md §3) ────────────────────────────────
 
@@ -361,6 +363,44 @@ export type BrainMutation = {
   toCategory: string;
 };
 
+// ─── Conversational memory (short-term, multi-turn) ──────────────────────────
+
+/**
+ * One resolved turn the brain remembers so a follow-up can lean on it
+ * ("how much on food?" → "what about last month?"). Holds only the small,
+ * already-resolved facts a continuation might inherit — never the raw text or
+ * the rendered card. ChatScreen owns the rolling window; the brain reads it
+ * from `BrainContext.memory` and returns an updated window on `BrainResponse`,
+ * so the engine itself stays pure & synchronous (no module state).
+ */
+export type ConversationTurn = {
+  /** The intent the brain settled on for this turn (null when it fell back). */
+  intent: string | null;
+  /** The category slot the turn was scoped to ("food"), if any — kept whole so
+   *  a continuation can inherit it directly into its own slots. */
+  category?: CategorySlot;
+  /** The turn's resolved time window, if any — kept whole (with its `start`/
+   *  `end` Dates) so a same-session follow-up ("and transport?") inherits the
+   *  exact window without re-parsing. `start`/`end` are resolved against the
+   *  turn's `now`; the short continuation TTL keeps them from going stale. */
+  timeRange?: TimeRange;
+  /** Amounts present in the turn, for "make it ₱500 instead" style follow-ups. */
+  amounts?: number[];
+  /** Free-text merchant the turn referenced ("Spotify"), if any. */
+  merchant?: string;
+  /** ISO timestamp the turn was resolved — lets ChatScreen expire stale memory. */
+  at: string;
+};
+
+/**
+ * The short-term memory window: the most-recent resolved turns, newest last.
+ * Bounded by ChatScreen (see CONVERSATION_MEMORY_MAX). Passed into every
+ * `routeMessage` call and replaced wholesale by the value the brain returns.
+ */
+export type ConversationMemory = {
+  turns: ConversationTurn[];
+};
+
 // ─── Brain I/O ───────────────────────────────────────────────────────────────
 
 export type BrainResponse = {
@@ -377,6 +417,10 @@ export type BrainResponse = {
    *  writes). Never persisted in chat history, so a stale proposal can't be
    *  re-confirmed after reopen. */
   mutation?: BrainMutation;
+  /** Updated short-term memory after this turn (the window with the new turn
+   *  appended, oldest trimmed). ChatScreen stores it and threads it back in on
+   *  the next call. Absent when the turn carried nothing worth remembering. */
+  memory?: ConversationMemory;
 };
 
 /**
@@ -427,4 +471,14 @@ export type BrainContext = {
   recurringIncome?: RecurringIncomeLite[];
   /** Utang-tracker receivables (money owed TO the user), for debt questions. */
   debts?: DebtLite[];
+
+  /**
+   * Short-term conversational memory — the recent resolved turns ChatScreen
+   * carries forward. The brain reads it to fill gaps in a follow-up (inherit the
+   * last intent/category/time window when the new message only supplies a
+   * fragment) and returns an updated window on `BrainResponse.memory`. Optional
+   * & back-compatible: without it the brain behaves exactly as the stateless
+   * single-turn engine.
+   */
+  memory?: ConversationMemory;
 };

@@ -26,6 +26,10 @@ export default class Notification extends Model {
 
   @text('action_route') actionRoute?: string;
 
+  // JSON-encoded deep-link params (e.g. '{"id":"…"}'). Decoded by the inbox
+  // before routing so a card tap matches the push tap. Local-only.
+  @text('action_params') actionParams?: string;
+
   @text('action_label') actionLabel?: string;
 
   @field('is_read') isRead!: boolean;

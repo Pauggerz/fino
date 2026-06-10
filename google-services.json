@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "562332360998",
+    "project_id": "fino-aad58",
+    "storage_bucket": "fino-aad58.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:562332360998:android:6f43155192faaf306ce1e7",
+        "android_client_info": {
+          "package_name": "com.fino.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCt5cYTcs0ryzQnbTmfYSdO2gdTWQ_6oIg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

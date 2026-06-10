@@ -8,6 +8,10 @@ import type TransactionModel from '@/db/models/Transaction';
 import { useAuth } from '@/contexts/AuthContext';
 import { readNotificationPrefs } from '@/services/notificationPrefs';
 import { fireImmediateIfPermitted } from '@/services/localPushScheduler';
+import {
+  snoozeInbox,
+  SNOOZE_DURATION_MS,
+} from '@/services/notificationHandlers';
 
 export interface NotificationItem {
   id: string;
@@ -16,9 +20,21 @@ export interface NotificationItem {
   title: string;
   message: string;
   actionRoute?: string;
+  /** Decoded deep-link params (e.g. { id } for SavingsGoal). */
+  actionParams?: Record<string, unknown>;
   actionLabel?: string;
   isRead: boolean;
   createdAt: number;
+}
+
+function parseParams(raw?: string): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function toPlain(record: NotificationModel): NotificationItem {
@@ -29,6 +45,7 @@ function toPlain(record: NotificationModel): NotificationItem {
     title: record.title,
     message: record.message,
     actionRoute: record.actionRoute,
+    actionParams: parseParams(record.actionParams),
     actionLabel: record.actionLabel,
     isRead: record.isRead,
     createdAt: record.createdAt,
@@ -213,6 +230,7 @@ export async function generatePeriodicInsights(userId: string): Promise<void> {
       (isInactivity && prefs.inactivityReminder);
     if (!allowed) continue;
     await fireImmediateIfPermitted({
+      userId,
       kind: seed.kind,
       title: seed.title,
       body: seed.message,
@@ -240,12 +258,18 @@ export const useNotifications = () => {
     const sub = database
       .get<NotificationModel>('notifications')
       .query(Q.where('user_id', userId), Q.where('is_dismissed', false))
-      .observeWithColumns(['is_read', 'created_at'])
+      .observeWithColumns(['is_read', 'created_at', 'snoozed_until'])
       .subscribe((records) => {
-        const list = records.map(toPlain).sort((a, b) => {
-          if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
-          return b.createdAt - a.createdAt;
-        });
+        // Hide rows snoozed into the future — they re-surface (and the badge
+        // counts them again) once their snoozed_until passes (§6.25).
+        const now = Date.now();
+        const list = records
+          .filter((r) => !r.snoozedUntil || r.snoozedUntil <= now)
+          .map(toPlain)
+          .sort((a, b) => {
+            if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
+            return b.createdAt - a.createdAt;
+          });
         setNotifications(list);
         setLoading(false);
       });
@@ -311,6 +335,19 @@ export const useNotifications = () => {
     });
   }, [userId]);
 
+  // Hide a row for an hour and schedule a local re-surface. Shares the
+  // notificationHandlers helper so it behaves exactly like the iOS SNOOZE_1H
+  // action (§6.25).
+  const snooze = useCallback(
+    (item: NotificationItem) =>
+      snoozeInbox(item.kind, Date.now() + SNOOZE_DURATION_MS, {
+        title: item.title,
+        body: item.message,
+        route: item.actionRoute,
+      }),
+    []
+  );
+
   return {
     notifications,
     unreadCount,
@@ -318,6 +355,7 @@ export const useNotifications = () => {
     markAsRead,
     markAllAsRead,
     dismiss,
+    snooze,
     clearAll,
   };
 };

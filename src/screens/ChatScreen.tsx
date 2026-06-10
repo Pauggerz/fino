@@ -46,6 +46,7 @@ import {
   type CardAction,
   type BrainMutation,
   type TxLite,
+  type ConversationMemory,
 } from '@/intelligence';
 import { getInsights, type Insights } from '@/services/IntelligenceEngine';
 import { ChatCardView, Reveal, REVEAL_STAGGER_MS } from '@/components/chat';
@@ -612,6 +613,18 @@ export default function ChatScreen() {
     []
   );
 
+  // Short-term conversational memory — the rolling window of recently-resolved
+  // turns the brain leans on for follow-ups ("what about last month?"). Held in
+  // a ref (not state): it's read+written synchronously inside handleSend and
+  // never needs to drive a re-render, and a ref avoids a stale read between two
+  // rapid sends. Threaded into BrainContext.memory and replaced from
+  // reply.memory after each brain answer. Naturally resets on remount (the chat
+  // modal cold-mounts each open), and the short continuation TTL in the brain
+  // ages stale turns out within a session.
+  const conversationMemoryRef = useRef<ConversationMemory | undefined>(
+    undefined
+  );
+
   // Transaction logging state
   const [pendingTx, setPendingTx] = useState<ChatTx | null>(null);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
@@ -1042,8 +1055,13 @@ export default function ChatScreen() {
           budgets: budgetsForBrain,
           recurringIncome,
           debts,
+          memory: conversationMemoryRef.current,
         };
         reply = routeMessage(trimmed, brainCtx);
+        // Advance the short-term memory window for the next follow-up. The brain
+        // returns the updated window (with this turn folded in); a turn that
+        // carried no signal passes the window through unchanged.
+        if (reply.memory) conversationMemoryRef.current = reply.memory;
       } catch (err) {
         console.error('[Fino AI] routeMessage error:', err);
         reply = { text: 'Sorry — I hit a snag answering that. Mind rephrasing?' };

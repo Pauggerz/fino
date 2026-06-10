@@ -109,6 +109,9 @@ export async function materialiseInbox(
       n.title = data.title ?? fallback.title ?? 'Notification';
       n.message = data.body ?? fallback.body ?? '';
       n.actionRoute = data.route;
+      // Persist deep-link params so an inbox-card tap routes identically to the
+      // push tap (e.g. SavingsGoal needs { id }). JSON-encoded; absent → omit.
+      n.actionParams = data.params ? JSON.stringify(data.params) : undefined;
       n.actionLabel = data.actionLabel;
       n.isRead = false;
       n.isDismissed = false;
@@ -133,6 +136,50 @@ async function markInboxRead(kind?: string): Promise<void> {
       });
     }
   });
+}
+
+/** Default snooze window (§6.25). One hour from the snooze tap. */
+export const SNOOZE_DURATION_MS = 60 * 60 * 1000;
+
+/**
+ * Hide an inbox row until `untilMs` and schedule a one-off local notification to
+ * re-surface it. Drives both the iOS SNOOZE_1H action and the in-app snooze
+ * button so the two behave identically (§6.25). Marks the row read so the badge
+ * (which already discounts snoozed rows) and list stay consistent.
+ */
+export async function snoozeInbox(
+  kind: string,
+  untilMs: number,
+  reSurface?: { title: string; body: string; route?: string; entityId?: string }
+): Promise<void> {
+  const userId = await currentUserId();
+  if (!userId) return;
+  const rows = await notificationsCollection()
+    .query(Q.where('user_id', userId), Q.where('kind', kind))
+    .fetch();
+  if (rows.length === 0) return;
+  await database.write(async () => {
+    for (const r of rows) {
+      await r.update((n) => {
+        n.snoozedUntil = untilMs;
+      });
+    }
+  });
+
+  if (reSurface) {
+    const { scheduleOneOff } = await import('./localPushScheduler');
+    await scheduleOneOff(`${kind}:snooze`, untilMs, {
+      title: reSurface.title,
+      body: reSurface.body,
+      route: reSurface.route,
+      entityId: reSurface.entityId,
+      // The inbox row already exists (just un-hidden when this fires) — don't
+      // double-insert; the receive handler dedupes by kind anyway.
+      inboxInsert: false,
+      channelId: 'bill-reminders',
+    });
+  }
+  await syncBadgeCount();
 }
 
 /** Set the OS badge to the current unread (non-dismissed, non-snoozed) count. */
@@ -171,15 +218,11 @@ async function handleAction(
   if (!data?.kind) return false;
 
   if (actionId === 'SNOOZE_1H') {
-    const { scheduleOneOff } = await import('./localPushScheduler');
-    await scheduleOneOff(`${data.kind}:snooze`, Date.now() + 60 * 60 * 1000, {
+    await snoozeInbox(data.kind, Date.now() + SNOOZE_DURATION_MS, {
       title: data.title ?? 'Reminder',
       body: data.body ?? '',
       route: data.route,
-      notification_type: data.notification_type,
       entityId: data.entityId,
-      inboxInsert: false,
-      channelId: 'bill-reminders',
     });
     return true;
   }
@@ -233,19 +276,6 @@ async function processResponse(
   // launch (§6.14).
   const dedupeKey = responseDedupeKey(response);
   const handled = await AsyncStorage.getItem(HANDLED_RESPONSE_KEY);
-  if (__DEV__) {
-    // TEMP diagnostic — remove once the auto-open is confirmed fixed.
-    console.warn('[notif/processResponse]', {
-      dedupeKey,
-      handled,
-      willSkip: handled === dedupeKey,
-      route: (
-        response.notification.request.content.data as
-          | Partial<NotificationData>
-          | undefined
-      )?.route,
-    });
-  }
   if (handled === dedupeKey) return;
   await AsyncStorage.setItem(HANDLED_RESPONSE_KEY, dedupeKey);
 
@@ -316,13 +346,6 @@ export function attachNotificationListeners(): () => void {
 export async function handleColdStartNotification(): Promise<void> {
   if (Platform.OS === 'web') return;
   const response = await Notifications.getLastNotificationResponseAsync();
-  if (__DEV__) {
-    // TEMP diagnostic — remove once the auto-open is confirmed fixed.
-    console.warn(
-      '[notif/coldStart] getLastResponse =',
-      response ? 'present' : 'null'
-    );
-  }
   if (!response) return;
   await processResponse(response);
 }
