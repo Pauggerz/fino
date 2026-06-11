@@ -109,7 +109,7 @@ export default function LanguageSettingsScreen() {
             lineHeight: 18,
           }}
         >
-          Translations are community-maintained. Missing strings fall back to English.
+          {t('language.footer')}
         </Text>
       </ScrollView>
     </View>

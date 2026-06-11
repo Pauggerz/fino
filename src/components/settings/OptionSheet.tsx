@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 import { useTheme } from '@/contexts/ThemeContext';
+import { useTranslation } from '@/contexts/I18nContext';
 
 /**
  * A bottom-sheet list of discrete options — the picker used by
@@ -44,6 +45,7 @@ export function OptionSheet<T extends string | number>({
   onClose,
 }: Props<T>) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
   const handlePick = (value: T) => {
@@ -81,7 +83,7 @@ export function OptionSheet<T extends string | number>({
               accessibilityLabel="Close"
             >
               <Text style={[styles.cancel, { color: colors.textSecondary }]}>
-                Cancel
+                {t('common.cancel')}
               </Text>
             </TouchableOpacity>
           </View>

@@ -165,15 +165,18 @@ export function Row({
 export function ThemedSwitch({
   value,
   onValueChange,
+  disabled = false,
 }: {
   value: boolean;
   onValueChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   const { colors } = useTheme();
   return (
     <Switch
       value={value}
       onValueChange={onValueChange}
+      disabled={disabled}
       trackColor={{
         false: Platform.OS === 'android' ? colors.border : undefined,
         true: colors.primary,
