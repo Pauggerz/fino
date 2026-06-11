@@ -33,6 +33,8 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { CurrencyProvider } from './src/contexts/CurrencyContext';
 import { I18nProvider } from './src/contexts/I18nContext';
 import { NotificationPrefsProvider } from './src/contexts/NotificationPrefsContext';
+import { AppLockProvider } from './src/contexts/AppLockContext';
+import { AppLockGate } from './src/components/AppLockGate';
 import { supabase } from './src/services/supabase';
 import { ACCOUNT_LOGOS } from './src/constants/accountLogos';
 import { ThemeProvider } from './src/contexts/ThemeContext';
@@ -217,11 +219,15 @@ export default function App() {
                   <AuthProvider>
                     <CurrencyProvider>
                       <NotificationPrefsProvider>
-                        <SyncProvider>
-                          <PushBootstrap />
-                          <RootNavigator />
-                          <StatusBar style="auto" />
-                        </SyncProvider>
+                        <AppLockProvider>
+                          <SyncProvider>
+                            <PushBootstrap />
+                            <AppLockGate>
+                              <RootNavigator />
+                            </AppLockGate>
+                            <StatusBar style="auto" />
+                          </SyncProvider>
+                        </AppLockProvider>
                       </NotificationPrefsProvider>
                     </CurrencyProvider>
                   </AuthProvider>

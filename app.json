@@ -68,6 +68,12 @@
       "expo-web-browser",
       "expo-apple-authentication",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Fino to use Face ID to unlock the app."
+        }
+      ],
+      [
         "expo-share-intent",
         {
           "iosShareExtensionName": "FinoShareExtension",
