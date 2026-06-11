@@ -62,7 +62,7 @@ const en = {
   'settings.notifications.weeklySub': '{day} · {time}',
   'settings.notifications.quiet': 'Quiet hours',
   'settings.notifications.inactivity': 'Inactivity reminder',
-  'settings.notifications.inactivitySub': "Nudge me if I forget to log spends",
+  'settings.notifications.inactivitySub': 'Nudge me if I forget to log spends',
   'settings.notifications.goals': 'Goal milestones',
 
   // Currency
@@ -98,7 +98,98 @@ const en = {
   'alert.signOut.title': 'Sign out',
   'alert.signOut.body': 'You can sign back in anytime.',
   'alert.delete.title': 'Delete your account?',
-  'alert.delete.body': 'This permanently erases all your data. This cannot be undone.',
+  'alert.delete.body':
+    'This permanently erases all your data. This cannot be undone.',
+
+  // Account screen (detail)
+  'account.profile': 'Profile',
+  'account.displayName': 'Display name',
+  'account.namePlaceholder': 'Your name',
+  'account.saveName': 'Save name',
+  'account.emailSection': 'Email',
+  'account.emailLabel': 'Email address',
+  'account.emailHelper':
+    'You will receive a confirmation link at the new address.',
+  'account.updateEmail': 'Update email',
+  'account.passwordSection': 'Password',
+  'account.newPassword': 'New password',
+  'account.passwordPlaceholder': 'At least 8 characters',
+  'account.changePassword': 'Change password',
+  'account.dangerZone': 'Danger zone',
+  'account.alert.nameRequired.title': 'Name required',
+  'account.alert.nameRequired.body': 'Please enter a display name.',
+  'account.alert.saveFailed': 'Save failed',
+  'account.alert.saved.title': 'Saved',
+  'account.alert.saved.body': 'Your display name has been updated.',
+  'account.alert.invalidEmail.title': 'Invalid email',
+  'account.alert.invalidEmail.body': 'Please enter a valid email address.',
+  'account.alert.updateFailed': 'Update failed',
+  'account.alert.confirmEmail.title': 'Confirm your new email',
+  'account.alert.confirmEmail.body':
+    'We sent a confirmation link to your new address. Your email will update after you confirm.',
+  'account.alert.weakPassword.title': 'Weak password',
+  'account.alert.weakPassword.body': 'Use at least 8 characters.',
+  'account.alert.passwordChanged.title': 'Password changed',
+  'account.alert.passwordChanged.body':
+    'Use your new password next time you sign in.',
+  'account.alert.deleteFailed.title': 'Delete failed',
+  'account.alert.deleteFailed.body':
+    "We couldn't delete your account. Please try again, or email support@fino.app.",
+  'account.alert.biometric.title': 'Biometric lock',
+  'account.alert.biometric.noHardware':
+    "This device doesn't support biometric unlock.",
+  'account.alert.biometric.notEnrolled':
+    'Set up Face ID, fingerprint, or a device passcode first, then try again.',
+  'account.alert.biometric.authFailed':
+    'Authentication failed. App lock was not enabled.',
+
+  // Notification screen (detail)
+  'notif.section.reminders': 'Reminders',
+  'notif.section.insights': 'Insights & goals',
+  'notif.privacyHeader': 'Privacy',
+  'notif.remindMe': 'Remind me',
+  'notif.at': 'At',
+  'notif.alertMeAt': 'Alert me at',
+  'notif.payday': 'Payday reminders',
+  'notif.paydaySub': 'A nudge on payday to log income when it lands.',
+  'notif.day': 'Day',
+  'notif.time': 'Time',
+  'notif.hideLockscreen': 'Hide amounts on lockscreen',
+  'notif.hideLockscreenSub':
+    'Redact peso amounts in notifications until you unlock.',
+  'notif.from': 'From',
+  'notif.to': 'To',
+  'notif.quietOn': 'No notifications during this window.',
+  'notif.quietOff': 'Off',
+  'notif.onTheDay': 'On the day',
+  'notif.oneDayBefore': '1 day before',
+  'notif.nDaysBefore': '{n} days before',
+  'notif.thresholdOption': '{pct}% of budget',
+  'notif.perm.granted.title': 'Notifications allowed',
+  'notif.perm.granted.sub': 'Fino can send notifications to this device.',
+  'notif.perm.denied.title': 'Notifications are off',
+  'notif.perm.denied.sub': 'Blocked in system settings. Tap to open Settings.',
+  'notif.perm.undetermined.title': 'Turn on notifications',
+  'notif.perm.undetermined.sub':
+    'Get bill reminders, budget alerts, and goal nudges.',
+  'notif.perm.default.title': 'Notifications',
+  'notif.perm.default.sub': 'Manage how Fino reaches you.',
+  'notif.footer':
+    "Notifications respect your device-level permissions for Fino. If push isn't working, check Settings → Notifications → Fino on your device.",
+  'notif.sheet.reminderTime': 'Reminder time',
+  'notif.sheet.threshold': 'Budget alert threshold',
+  'notif.sheet.digestDay': 'Weekly digest day',
+  'notif.sheet.digestTime': 'Weekly digest time',
+  'notif.sheet.quietStart': 'Quiet hours start',
+  'notif.sheet.quietEnd': 'Quiet hours end',
+
+  // Currency screen (detail)
+  'currency.searchPlaceholder': 'Search currencies',
+  'currency.noMatch': 'No currencies match "{query}"',
+
+  // Language screen (detail)
+  'language.footer':
+    'Translations are community-maintained. Missing strings fall back to English.',
 };
 
 const fil: Partial<typeof en> = {
@@ -126,10 +217,110 @@ const fil: Partial<typeof en> = {
   'settings.notifications.budget': 'Mga abiso ng badyet',
   'settings.currency.primary': 'Pangunahing pera',
   'settings.language.app': 'Wika ng app',
+  'settings.account.biometric': 'Biometric lock',
+  'settings.account.biometricSub':
+    'Kailanganin ang Face ID para buksan ang Fino',
+  'settings.currency.privacyMode': 'Itago ang halaga',
+  'settings.currency.privacyModeSub':
+    'Pinapalitan ng privacy mode ang mga halaga ng ●●●',
   'common.save': 'I-save',
   'common.cancel': 'Kanselahin',
   'common.done': 'Tapos',
   'common.back': 'Bumalik',
+  'common.delete': 'Tanggalin',
+
+  // Account screen (detail)
+  'account.profile': 'Profile',
+  'account.displayName': 'Pangalang ipapakita',
+  'account.namePlaceholder': 'Pangalan mo',
+  'account.saveName': 'I-save ang pangalan',
+  'account.emailSection': 'Email',
+  'account.emailLabel': 'Email address',
+  'account.emailHelper':
+    'Makakatanggap ka ng confirmation link sa bagong address.',
+  'account.updateEmail': 'I-update ang email',
+  'account.passwordSection': 'Password',
+  'account.newPassword': 'Bagong password',
+  'account.passwordPlaceholder': 'Hindi bababa sa 8 karakter',
+  'account.changePassword': 'Palitan ang password',
+  'account.dangerZone': 'Mapanganib na bahagi',
+  'account.alert.nameRequired.title': 'Kailangan ng pangalan',
+  'account.alert.nameRequired.body': 'Maglagay ng pangalang ipapakita.',
+  'account.alert.saveFailed': 'Hindi na-save',
+  'account.alert.saved.title': 'Na-save',
+  'account.alert.saved.body': 'Na-update na ang pangalang ipinapakita mo.',
+  'account.alert.invalidEmail.title': 'Hindi wastong email',
+  'account.alert.invalidEmail.body': 'Maglagay ng wastong email address.',
+  'account.alert.updateFailed': 'Hindi na-update',
+  'account.alert.confirmEmail.title': 'Kumpirmahin ang bagong email',
+  'account.alert.confirmEmail.body':
+    'Nagpadala kami ng confirmation link sa bagong address mo. Mag-uupdate ang email pagkatapos mong kumpirmahin.',
+  'account.alert.weakPassword.title': 'Mahinang password',
+  'account.alert.weakPassword.body': 'Gumamit ng hindi bababa sa 8 karakter.',
+  'account.alert.passwordChanged.title': 'Napalitan ang password',
+  'account.alert.passwordChanged.body':
+    'Gamitin ang bagong password sa susunod mong pag-sign in.',
+  'account.alert.deleteFailed.title': 'Hindi natanggal',
+  'account.alert.deleteFailed.body':
+    'Hindi namin natanggal ang account mo. Subukan ulit, o mag-email sa support@fino.app.',
+  'account.alert.biometric.title': 'Biometric lock',
+  'account.alert.biometric.noHardware':
+    'Hindi sinusuportahan ng device na ito ang biometric unlock.',
+  'account.alert.biometric.notEnrolled':
+    'Mag-set up muna ng Face ID, fingerprint, o device passcode, tapos subukan ulit.',
+  'account.alert.biometric.authFailed':
+    'Nabigo ang authentication. Hindi na-enable ang app lock.',
+
+  // Notification screen (detail)
+  'notif.section.reminders': 'Mga paalala',
+  'notif.section.insights': 'Mga insight at layunin',
+  'notif.privacyHeader': 'Privacy',
+  'notif.remindMe': 'Paalalahanan ako',
+  'notif.at': 'Sa oras na',
+  'notif.alertMeAt': 'Abisuhan ako sa',
+  'notif.payday': 'Paalala sa sahod',
+  'notif.paydaySub':
+    'Isang paalala sa araw ng sahod para itala ang kita pagdating nito.',
+  'notif.day': 'Araw',
+  'notif.time': 'Oras',
+  'notif.hideLockscreen': 'Itago ang halaga sa lockscreen',
+  'notif.hideLockscreenSub':
+    'Itago ang mga halaga sa peso sa mga abiso hanggang i-unlock mo.',
+  'notif.from': 'Mula',
+  'notif.to': 'Hanggang',
+  'notif.quietOn': 'Walang abiso sa loob ng window na ito.',
+  'notif.quietOff': 'Naka-off',
+  'notif.onTheDay': 'Sa mismong araw',
+  'notif.oneDayBefore': '1 araw bago',
+  'notif.nDaysBefore': '{n} araw bago',
+  'notif.thresholdOption': '{pct}% ng badyet',
+  'notif.perm.granted.title': 'Pinapayagan ang mga abiso',
+  'notif.perm.granted.sub':
+    'Maaaring magpadala ang Fino ng abiso sa device na ito.',
+  'notif.perm.denied.title': 'Naka-off ang mga abiso',
+  'notif.perm.denied.sub':
+    'Naka-block sa system settings. I-tap para buksan ang Settings.',
+  'notif.perm.undetermined.title': 'I-on ang mga abiso',
+  'notif.perm.undetermined.sub':
+    'Makatanggap ng paalala sa bayarin, abiso sa badyet, at paalala sa layunin.',
+  'notif.perm.default.title': 'Mga abiso',
+  'notif.perm.default.sub': 'Pamahalaan kung paano ka aabutin ng Fino.',
+  'notif.footer':
+    'Sumusunod ang mga abiso sa device-level na pahintulot para sa Fino. Kung hindi gumagana ang push, tingnan ang Settings → Notifications → Fino sa device mo.',
+  'notif.sheet.reminderTime': 'Oras ng paalala',
+  'notif.sheet.threshold': 'Threshold ng abiso sa badyet',
+  'notif.sheet.digestDay': 'Araw ng lingguhang digest',
+  'notif.sheet.digestTime': 'Oras ng lingguhang digest',
+  'notif.sheet.quietStart': 'Simula ng quiet hours',
+  'notif.sheet.quietEnd': 'Katapusan ng quiet hours',
+
+  // Currency screen (detail)
+  'currency.searchPlaceholder': 'Maghanap ng pera',
+  'currency.noMatch': 'Walang pera na tumugma sa "{query}"',
+
+  // Language screen (detail)
+  'language.footer':
+    'Ang mga pagsasalin ay pinapanatili ng komunidad. Ang mga kulang na string ay babalik sa Ingles.',
 };
 
 const es: Partial<typeof en> = {
@@ -155,10 +346,109 @@ const es: Partial<typeof en> = {
   'settings.notifications.push': 'Notificaciones push',
   'settings.currency.primary': 'Moneda principal',
   'settings.language.app': 'Idioma de la app',
+  'settings.account.biometric': 'Bloqueo biométrico',
+  'settings.account.biometricSub': 'Requerir Face ID para abrir Fino',
+  'settings.currency.privacyMode': 'Ocultar importes',
+  'settings.currency.privacyModeSub':
+    'El modo privado reemplaza los valores con ●●●',
   'common.save': 'Guardar',
   'common.cancel': 'Cancelar',
   'common.done': 'Listo',
   'common.back': 'Atrás',
+  'common.delete': 'Eliminar',
+
+  // Account screen (detail)
+  'account.profile': 'Perfil',
+  'account.displayName': 'Nombre visible',
+  'account.namePlaceholder': 'Tu nombre',
+  'account.saveName': 'Guardar nombre',
+  'account.emailSection': 'Correo',
+  'account.emailLabel': 'Dirección de correo',
+  'account.emailHelper':
+    'Recibirás un enlace de confirmación en la nueva dirección.',
+  'account.updateEmail': 'Actualizar correo',
+  'account.passwordSection': 'Contraseña',
+  'account.newPassword': 'Nueva contraseña',
+  'account.passwordPlaceholder': 'Al menos 8 caracteres',
+  'account.changePassword': 'Cambiar contraseña',
+  'account.dangerZone': 'Zona de peligro',
+  'account.alert.nameRequired.title': 'Nombre requerido',
+  'account.alert.nameRequired.body': 'Ingresa un nombre visible.',
+  'account.alert.saveFailed': 'Error al guardar',
+  'account.alert.saved.title': 'Guardado',
+  'account.alert.saved.body': 'Tu nombre visible se ha actualizado.',
+  'account.alert.invalidEmail.title': 'Correo inválido',
+  'account.alert.invalidEmail.body': 'Ingresa una dirección de correo válida.',
+  'account.alert.updateFailed': 'Error al actualizar',
+  'account.alert.confirmEmail.title': 'Confirma tu nuevo correo',
+  'account.alert.confirmEmail.body':
+    'Enviamos un enlace de confirmación a tu nueva dirección. Tu correo se actualizará después de confirmar.',
+  'account.alert.weakPassword.title': 'Contraseña débil',
+  'account.alert.weakPassword.body': 'Usa al menos 8 caracteres.',
+  'account.alert.passwordChanged.title': 'Contraseña cambiada',
+  'account.alert.passwordChanged.body':
+    'Usa tu nueva contraseña la próxima vez que inicies sesión.',
+  'account.alert.deleteFailed.title': 'Error al eliminar',
+  'account.alert.deleteFailed.body':
+    'No pudimos eliminar tu cuenta. Inténtalo de nuevo o escribe a support@fino.app.',
+  'account.alert.biometric.title': 'Bloqueo biométrico',
+  'account.alert.biometric.noHardware':
+    'Este dispositivo no admite desbloqueo biométrico.',
+  'account.alert.biometric.notEnrolled':
+    'Configura primero Face ID, huella o un código de dispositivo, luego inténtalo de nuevo.',
+  'account.alert.biometric.authFailed':
+    'La autenticación falló. No se activó el bloqueo de la app.',
+
+  // Notification screen (detail)
+  'notif.section.reminders': 'Recordatorios',
+  'notif.section.insights': 'Análisis y metas',
+  'notif.privacyHeader': 'Privacidad',
+  'notif.remindMe': 'Recordarme',
+  'notif.at': 'A las',
+  'notif.alertMeAt': 'Avisarme al',
+  'notif.payday': 'Recordatorios de pago',
+  'notif.paydaySub':
+    'Un aviso el día de pago para registrar tus ingresos cuando lleguen.',
+  'notif.day': 'Día',
+  'notif.time': 'Hora',
+  'notif.hideLockscreen': 'Ocultar importes en la pantalla de bloqueo',
+  'notif.hideLockscreenSub':
+    'Oculta los importes en las notificaciones hasta que desbloquees.',
+  'notif.from': 'Desde',
+  'notif.to': 'Hasta',
+  'notif.quietOn': 'Sin notificaciones durante este periodo.',
+  'notif.quietOff': 'Desactivado',
+  'notif.onTheDay': 'El mismo día',
+  'notif.oneDayBefore': '1 día antes',
+  'notif.nDaysBefore': '{n} días antes',
+  'notif.thresholdOption': '{pct}% del presupuesto',
+  'notif.perm.granted.title': 'Notificaciones permitidas',
+  'notif.perm.granted.sub':
+    'Fino puede enviar notificaciones a este dispositivo.',
+  'notif.perm.denied.title': 'Notificaciones desactivadas',
+  'notif.perm.denied.sub':
+    'Bloqueadas en los ajustes del sistema. Toca para abrir Ajustes.',
+  'notif.perm.undetermined.title': 'Activar notificaciones',
+  'notif.perm.undetermined.sub':
+    'Recibe recordatorios de facturas, alertas de presupuesto y avisos de metas.',
+  'notif.perm.default.title': 'Notificaciones',
+  'notif.perm.default.sub': 'Gestiona cómo Fino se comunica contigo.',
+  'notif.footer':
+    'Las notificaciones respetan los permisos a nivel de dispositivo para Fino. Si el push no funciona, revisa Ajustes → Notificaciones → Fino en tu dispositivo.',
+  'notif.sheet.reminderTime': 'Hora del recordatorio',
+  'notif.sheet.threshold': 'Umbral de alerta de presupuesto',
+  'notif.sheet.digestDay': 'Día del resumen semanal',
+  'notif.sheet.digestTime': 'Hora del resumen semanal',
+  'notif.sheet.quietStart': 'Inicio de horas de silencio',
+  'notif.sheet.quietEnd': 'Fin de horas de silencio',
+
+  // Currency screen (detail)
+  'currency.searchPlaceholder': 'Buscar monedas',
+  'currency.noMatch': 'Ninguna moneda coincide con "{query}"',
+
+  // Language screen (detail)
+  'language.footer':
+    'Las traducciones son mantenidas por la comunidad. Las cadenas faltantes vuelven al inglés.',
 };
 
 export type TKey = keyof typeof en;
