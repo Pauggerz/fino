@@ -9,7 +9,7 @@ import React, {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
 import { supabase } from '../services/supabase';
-import { _setActiveCurrencyCode } from '../utils/format';
+import { _setActiveCurrencyCode, _setPrivacyMode } from '../utils/format';
 import {
   CurrencyMeta,
   SUPPORTED_CURRENCIES,
@@ -20,6 +20,8 @@ export type { CurrencyMeta } from '../utils/currency';
 export { SUPPORTED_CURRENCIES, getCurrencyMeta } from '../utils/currency';
 
 const STORAGE_KEY = '@fino_currency';
+// Privacy mode is a per-device display preference (not synced) — like the theme.
+const PRIVACY_KEY = '@fino_privacy_mode';
 const DEFAULT_CODE = 'PHP';
 
 interface CurrencyContextType {
@@ -27,6 +29,9 @@ interface CurrencyContextType {
   meta: CurrencyMeta;
   setCurrency: (code: string) => Promise<void>;
   format: (n: number, opts?: { withDecimals?: boolean; privacy?: boolean }) => string;
+  /** When true, every amount is masked (₱***) until the user turns it off. */
+  privacyMode: boolean;
+  setPrivacyMode: (on: boolean) => Promise<void>;
 }
 
 const CurrencyContext = createContext<CurrencyContextType>({
@@ -34,10 +39,13 @@ const CurrencyContext = createContext<CurrencyContextType>({
   meta: getCurrencyMeta(DEFAULT_CODE),
   setCurrency: async () => {},
   format: (n) => `₱${Math.abs(n)}`,
+  privacyMode: false,
+  setPrivacyMode: async () => {},
 });
 
 export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   const [code, setCode] = useState<string>(DEFAULT_CODE);
+  const [privacyMode, setPrivacyModeState] = useState(false);
   const { user, profile, refreshProfile } = useAuth();
 
   // Local cache first (instant), then reconcile with server profile.
@@ -47,12 +55,21 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
         setCode(stored);
       }
     });
+    AsyncStorage.getItem(PRIVACY_KEY).then((stored) => {
+      if (stored === 'true') setPrivacyModeState(true);
+    });
   }, []);
 
   // Keep the non-React fmtPeso() shim in sync with the active code.
   useEffect(() => {
     _setActiveCurrencyCode(code);
   }, [code]);
+
+  // Mirror privacy mode into the non-React fmtPeso() shim so the ~94 call sites
+  // that use it mask without per-call changes.
+  useEffect(() => {
+    _setPrivacyMode(privacyMode);
+  }, [privacyMode]);
 
   useEffect(() => {
     if (profile?.currency && profile.currency !== code) {
@@ -73,11 +90,19 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     [user, refreshProfile]
   );
 
+  const setPrivacyMode = useCallback(async (on: boolean) => {
+    setPrivacyModeState(on);
+    await AsyncStorage.setItem(PRIVACY_KEY, on ? 'true' : 'false');
+  }, []);
+
   const meta = useMemo(() => getCurrencyMeta(code), [code]);
 
   const format = useCallback(
     (n: number, opts?: { withDecimals?: boolean; privacy?: boolean }) => {
-      if (opts?.privacy) return `${meta.symbol}***`;
+      // An explicit privacy:false overrides the global toggle (rare call sites
+      // that must always show the value, e.g. an amount the user is editing).
+      const mask = opts?.privacy ?? privacyMode;
+      if (mask) return `${meta.symbol}***`;
       const decimals = opts?.withDecimals ? meta.decimals : 0;
       const formatted = Math.abs(n).toLocaleString(meta.locale, {
         minimumFractionDigits: decimals,
@@ -85,12 +110,12 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
       });
       return `${meta.symbol}${formatted}`;
     },
-    [meta]
+    [meta, privacyMode]
   );
 
   const value = useMemo(
-    () => ({ code, meta, setCurrency, format }),
-    [code, meta, setCurrency, format]
+    () => ({ code, meta, setCurrency, format, privacyMode, setPrivacyMode }),
+    [code, meta, setCurrency, format, privacyMode, setPrivacyMode]
   );
 
   return (
