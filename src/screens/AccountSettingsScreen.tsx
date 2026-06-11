@@ -80,7 +80,10 @@ export default function AccountSettingsScreen() {
     if (!user) return;
     const trimmed = name.trim();
     if (!trimmed) {
-      Alert.alert('Name required', 'Please enter a display name.');
+      Alert.alert(
+        t('account.alert.nameRequired.title'),
+        t('account.alert.nameRequired.body')
+      );
       return;
     }
     setSaving(true);
@@ -90,49 +93,55 @@ export default function AccountSettingsScreen() {
       .eq('id', user.id);
     setSaving(false);
     if (error) {
-      Alert.alert('Save failed', error.message);
+      Alert.alert(t('account.alert.saveFailed'), error.message);
       return;
     }
     await refreshProfile();
-    Alert.alert('Saved', 'Your display name has been updated.');
+    Alert.alert(t('account.alert.saved.title'), t('account.alert.saved.body'));
   };
 
   const changeEmail = async () => {
     const trimmed = email.trim();
     if (!trimmed.includes('@')) {
-      Alert.alert('Invalid email', 'Please enter a valid email address.');
+      Alert.alert(
+        t('account.alert.invalidEmail.title'),
+        t('account.alert.invalidEmail.body')
+      );
       return;
     }
     setSaving(true);
     const { error } = await supabase.auth.updateUser({ email: trimmed });
     setSaving(false);
     if (error) {
-      Alert.alert('Update failed', error.message);
+      Alert.alert(t('account.alert.updateFailed'), error.message);
       return;
     }
     Alert.alert(
-      'Confirm your new email',
-      'We sent a confirmation link to your new address. Your email will update after you confirm.'
+      t('account.alert.confirmEmail.title'),
+      t('account.alert.confirmEmail.body')
     );
   };
 
   const changePassword = async () => {
     if (newPassword.length < 8) {
-      Alert.alert('Weak password', 'Use at least 8 characters.');
+      Alert.alert(
+        t('account.alert.weakPassword.title'),
+        t('account.alert.weakPassword.body')
+      );
       return;
     }
     setSaving(true);
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     setSaving(false);
     if (error) {
-      Alert.alert('Update failed', error.message);
+      Alert.alert(t('account.alert.updateFailed'), error.message);
       return;
     }
     setCurrentPassword('');
     setNewPassword('');
     Alert.alert(
-      'Password changed',
-      'Use your new password next time you sign in.'
+      t('account.alert.passwordChanged.title'),
+      t('account.alert.passwordChanged.body')
     );
   };
 
@@ -156,12 +165,22 @@ export default function AccountSettingsScreen() {
         text: t('common.delete'),
         style: 'destructive',
         onPress: async () => {
-          // Account deletion requires a server-side RPC (auth.admin endpoint
-          // can't be called from the client). Surface a contact link for now.
-          Alert.alert(
-            'Contact support',
-            'Send a deletion request to support@fino.app and we will erase your account within 7 days.'
-          );
+          setSaving(true);
+          // The delete-account Edge Function validates our session JWT, deletes
+          // the auth user, and cascades all app data. supabase-js attaches the
+          // current access token to the invocation automatically.
+          const { error } = await supabase.functions.invoke('delete-account');
+          setSaving(false);
+          if (error) {
+            Alert.alert(
+              t('account.alert.deleteFailed.title'),
+              t('account.alert.deleteFailed.body')
+            );
+            return;
+          }
+          // Account is gone server-side — clear the local session + device
+          // state, which routes back to Login.
+          await signOutWithCleanup();
         },
       },
     ]);
@@ -212,21 +231,21 @@ export default function AccountSettingsScreen() {
             sectionYs.current.name = e.nativeEvent.layout.y;
           }}
         >
-          <SectionTitle>Profile</SectionTitle>
+          <SectionTitle>{t('account.profile')}</SectionTitle>
           <Group>
             <View style={{ padding: 16 }}>
-              <Text style={labelStyle}>Display name</Text>
+              <Text style={labelStyle}>{t('account.displayName')}</Text>
               <TextInput
                 value={name}
                 onChangeText={setName}
-                placeholder="Your name"
+                placeholder={t('account.namePlaceholder')}
                 placeholderTextColor={colors.textSecondary}
                 style={inputStyle}
                 autoCapitalize="words"
                 returnKeyType="done"
               />
               <PrimaryButton
-                title="Save name"
+                title={t('account.saveName')}
                 onPress={saveName}
                 disabled={saving || name.trim() === (profile?.name ?? '')}
               />
@@ -240,10 +259,10 @@ export default function AccountSettingsScreen() {
             sectionYs.current.email = e.nativeEvent.layout.y;
           }}
         >
-          <SectionTitle>Email</SectionTitle>
+          <SectionTitle>{t('account.emailSection')}</SectionTitle>
           <Group>
             <View style={{ padding: 16 }}>
-              <Text style={labelStyle}>Email address</Text>
+              <Text style={labelStyle}>{t('account.emailLabel')}</Text>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
@@ -263,10 +282,10 @@ export default function AccountSettingsScreen() {
                   marginLeft: 4,
                 }}
               >
-                You will receive a confirmation link at the new address.
+                {t('account.emailHelper')}
               </Text>
               <PrimaryButton
-                title="Update email"
+                title={t('account.updateEmail')}
                 onPress={changeEmail}
                 disabled={saving || email.trim() === (user?.email ?? '')}
               />
@@ -280,21 +299,21 @@ export default function AccountSettingsScreen() {
             sectionYs.current.password = e.nativeEvent.layout.y;
           }}
         >
-          <SectionTitle>Password</SectionTitle>
+          <SectionTitle>{t('account.passwordSection')}</SectionTitle>
           <Group>
             <View style={{ padding: 16 }}>
-              <Text style={labelStyle}>New password</Text>
+              <Text style={labelStyle}>{t('account.newPassword')}</Text>
               <TextInput
                 value={newPassword}
                 onChangeText={setNewPassword}
-                placeholder="At least 8 characters"
+                placeholder={t('account.passwordPlaceholder')}
                 placeholderTextColor={colors.textSecondary}
                 style={inputStyle}
                 secureTextEntry
                 autoCapitalize="none"
               />
               <PrimaryButton
-                title="Change password"
+                title={t('account.changePassword')}
                 onPress={changePassword}
                 disabled={saving || newPassword.length < 8}
               />
@@ -313,7 +332,7 @@ export default function AccountSettingsScreen() {
         </Group>
 
         {/* ── Danger zone ── */}
-        <SectionTitle>Danger zone</SectionTitle>
+        <SectionTitle>{t('account.dangerZone')}</SectionTitle>
         <Group>
           <Row
             icon="trash-outline"
