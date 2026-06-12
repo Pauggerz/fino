@@ -16,8 +16,13 @@ import {
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import type { RootStackParamList } from '@/navigation/RootNavigator';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -407,6 +412,25 @@ export default function UtangTrackerScreen() {
     due_date: '',
   });
   const [showCalendar, setShowCalendar] = useState(false);
+
+  // Prefill + open the add form when the chatbot's "Add to Utang Tracker"
+  // action routes here with a staged receivable ("Paul owed me 5k") — the user
+  // reviews and saves, no silent write. Fires once per param payload.
+  const route = useRoute<RouteProp<RootStackParamList, 'UtangTracker'>>();
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    const p = route.params;
+    if (!p || prefilledRef.current) return;
+    if (!p.debtorName && p.amount == null) return;
+    prefilledRef.current = true;
+    setAddForm({
+      debtor_name: p.debtorName ?? '',
+      description: '',
+      total_amount: p.amount != null ? String(Math.round(p.amount)) : '',
+      due_date: '',
+    });
+    setShowAdd(true);
+  }, [route.params]);
 
   // ── Payment modal state
   const [payTarget, setPayTarget] = useState<Debt | null>(null);
