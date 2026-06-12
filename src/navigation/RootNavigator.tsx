@@ -135,7 +135,9 @@ export type RootStackParamList = {
     | undefined;
   ChatScreen: undefined;
   BillSplitter: undefined;
-  UtangTracker: undefined;
+  // Optional prefill so the chatbot's "Add to Utang Tracker" action can stage
+  // a receivable for the user to confirm (no silent write).
+  UtangTracker: { debtorName?: string; amount?: number } | undefined;
   // Optional prefill so the chatbot's "Create goal" action can stage a goal
   // for the user to confirm (FINO_CHATBOT V3 — prefill + confirm).
   SavingsGoal:
