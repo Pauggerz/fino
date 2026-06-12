@@ -324,6 +324,16 @@ export type RecurringIncomeLite = {
   dayOfMonth?: number;
 };
 
+/** A configured recurring bill (for "when is my next bill due?" /
+ *  "what bills are coming up?"). Mirrors the `recurring_bills` model fields the
+ *  brain narrates; `nextDueAt` is the ISO date of the next expected charge. */
+export type RecurringBillLite = {
+  label: string;
+  amount: number;
+  cadence?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  nextDueAt?: string;
+};
+
 /**
  * One Utang-tracker row — money owed **to** the user (a receivable). `debtor` is
  * the person who owes them; `remaining = total − paid`. The brain answers debt
@@ -351,17 +361,44 @@ export type DebtLite = {
  * in-chat write — see `answerSplitBill`. A true in-chat split service is
  * deferred (chat-mutations plan, Phase 4).
  */
-export type BrainMutation = {
-  kind: 'recategorize';
-  /** Transaction to move (the snapshot row id === the Watermelon/Supabase id). */
-  txId: string;
-  /** Best human label for the tx (name → merchant), for the confirm copy. */
-  txLabel: string;
-  /** Current category for the "from X" copy (null/Other when uncategorized). */
-  fromCategory: string | null;
-  /** Destination category name to write. */
-  toCategory: string;
-};
+export type BrainMutation =
+  | {
+      kind: 'recategorize';
+      /** Transaction to move (the snapshot row id === the Watermelon/Supabase id). */
+      txId: string;
+      /** Best human label for the tx (name → merchant), for the confirm copy. */
+      txLabel: string;
+      /** Current category for the "from X" copy (null/Other when uncategorized). */
+      fromCategory: string | null;
+      /** Destination category name to write. */
+      toCategory: string;
+    }
+  | {
+      kind: 'setBudget';
+      /** Category NAME to budget (ChatScreen resolves name → row id at execute;
+       *  an unknown name degrades to a navigate-prefill, never a silent write). */
+      category: string;
+      /** Monthly limit in pesos. */
+      limit: number;
+    }
+  | {
+      kind: 'delete';
+      /** Transaction to delete (snapshot row id === Watermelon/Supabase id). */
+      txId: string;
+      /** Human label + amount for the destructive confirm copy. */
+      txLabel: string;
+      amount: number;
+    }
+  | {
+      kind: 'transfer';
+      amount: number;
+      /** Both sides resolved against `BrainContext.accounts` before proposing —
+       *  an unresolved side yields a clarify reply, never a guessed transfer. */
+      fromAccountId: string;
+      fromLabel: string;
+      toAccountId: string;
+      toLabel: string;
+    };
 
 // ─── Conversational memory (short-term, multi-turn) ──────────────────────────
 
@@ -463,12 +500,21 @@ export type BrainContext = {
    * transaction-query intents degrade to a "open Insights" text reply.
    */
   transactions?: TxLite[];
+  /**
+   * ISO date of the oldest moment the snapshot fully covers (the query window
+   * start, or the oldest loaded row when the row cap truncated the window).
+   * Lets range answers be honest — a request reaching further back than this
+   * gets a "data only goes back to …" caveat instead of a silent undercount.
+   */
+  snapshotStart?: string;
   /** Per-account balances, for "balance across all accounts". */
   accounts?: AccountSummary[];
   /** Per-category budget limits, for budget-status / "set a budget" answers. */
   budgets?: BudgetLite[];
   /** Configured recurring income, for "did my salary hit yet?". */
   recurringIncome?: RecurringIncomeLite[];
+  /** Configured recurring bills, for "when is my next bill due?". */
+  recurringBills?: RecurringBillLite[];
   /** Utang-tracker receivables (money owed TO the user), for debt questions. */
   debts?: DebtLite[];
 
