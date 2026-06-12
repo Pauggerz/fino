@@ -24,13 +24,20 @@ import { Q } from '@nozbe/watermelondb';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { createTransaction, updateTransaction } from '@/services/localMutations';
+import {
+  createTransaction,
+  updateTransaction,
+  updateCategory,
+  deleteTransaction,
+  saveTransfer,
+} from '@/services/localMutations';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { useCategories } from '@/hooks/useCategories';
 import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import type RecurringIncomeModel from '@/db/models/RecurringIncome';
+import type RecurringBillModel from '@/db/models/RecurringBill';
 import type DebtModel from '@/db/models/Debt';
 import type ChatMessageModel from '@/db/models/ChatMessage';
 import { useIncomeCategories } from '@/hooks/useIncomeCategories';
@@ -46,6 +53,7 @@ import {
   type CardAction,
   type BrainMutation,
   type TxLite,
+  type RecurringBillLite,
   type ConversationMemory,
 } from '@/intelligence';
 import { getInsights, type Insights } from '@/services/IntelligenceEngine';
@@ -256,7 +264,9 @@ function ThinkingSteps({
             next.push('active');
             return next;
           });
-        }, (i + 1) * stageMs)
+          },
+          (i + 1) * stageMs
+        )
       );
     });
 
@@ -562,10 +572,15 @@ export default function ChatScreen() {
   // trailing analytical window and injected into BrainContext.transactions so the
   // brain stays pure & synchronous (FINO_CHATBOT V3 §"core lever").
   const [txSnapshot, setTxSnapshot] = useState<TxLite[]>([]);
+  // Oldest moment the snapshot fully covers — lets the brain caveat range
+  // answers that reach further back instead of silently undercounting.
+  const [txSnapshotStart, setTxSnapshotStart] = useState<string | null>(null);
   // Configured recurring income (for "did my salary hit yet?").
   const [recurringIncome, setRecurringIncome] = useState<
     { label: string; amount: number; dayOfMonth?: number }[]
   >([]);
+  // Configured recurring bills (for "when is my next bill due?").
+  const [recurringBills, setRecurringBills] = useState<RecurringBillLite[]>([]);
   // Utang receivables (money owed TO the user) for debt questions.
   const [debts, setDebts] = useState<
     {
@@ -672,7 +687,11 @@ export default function ChatScreen() {
   // "this year" and "vs last 3 months" both resolve, capped to the most recent
   // ~2,000 rows to keep it light. Re-emits as transactions change.
   useEffect(() => {
-    if (!userId) { setTxSnapshot([]); return undefined; }
+    if (!userId) {
+      setTxSnapshot([]);
+      setTxSnapshotStart(null);
+      return undefined;
+    }
     const now = new Date();
     const startOfYear = new Date(now.getFullYear(), 0, 1);
     const thirteenMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 13, 1);
@@ -704,6 +723,13 @@ export default function ChatScreen() {
             accountId: r.accountId,
           })),
         );
+        // When the row cap truncated the window, coverage only reaches the
+        // oldest row actually loaded (records are date-desc, so that's last).
+        setTxSnapshotStart(
+          records.length >= 2000
+            ? records[records.length - 1].date
+            : windowStart,
+        );
       });
     return () => sub.unsubscribe();
   }, [userId]);
@@ -727,6 +753,29 @@ export default function ChatScreen() {
                 d && !Number.isNaN(d.getTime()) ? d.getDate() : undefined,
             };
           }),
+        );
+      });
+    return () => sub.unsubscribe();
+  }, [userId]);
+
+  // Active recurring bills → "when is my next bill due?" answers.
+  useEffect(() => {
+    if (!userId) {
+      setRecurringBills([]);
+      return undefined;
+    }
+    const sub = database
+      .get<RecurringBillModel>('recurring_bills')
+      .query(Q.where('user_id', userId), Q.where('is_active', true))
+      .observeWithColumns(['title', 'amount', 'cadence', 'next_due_at'])
+      .subscribe((records) => {
+        setRecurringBills(
+          records.map((r) => ({
+            label: r.title,
+            amount: r.amount,
+            cadence: r.cadence,
+            nextDueAt: r.nextDueAt || undefined,
+          })),
         );
       });
     return () => sub.unsubscribe();
@@ -1051,9 +1100,11 @@ export default function ChatScreen() {
           now: now.toISOString(),
           insights: engineInsights ?? undefined,
           transactions: txForBrain,
+          snapshotStart: txSnapshotStart ?? undefined,
           accounts: accountsForBrain,
           budgets: budgetsForBrain,
           recurringIncome,
+          recurringBills,
           debts,
           memory: conversationMemoryRef.current,
         };
@@ -1064,7 +1115,9 @@ export default function ChatScreen() {
         if (reply.memory) conversationMemoryRef.current = reply.memory;
       } catch (err) {
         console.error('[Fino AI] routeMessage error:', err);
-        reply = { text: 'Sorry — I hit a snag answering that. Mind rephrasing?' };
+        reply = {
+          text: 'Sorry — I hit a snag answering that. Mind rephrasing?',
+        };
       }
 
       // Let the staged indicator work through to its final step, landing as the
@@ -1173,7 +1226,10 @@ export default function ChatScreen() {
         navigation.navigate('RecurringIncome');
         break;
       case 'utangTracker':
-        navigation.navigate('UtangTracker');
+        navigation.navigate('UtangTracker', {
+          debtorName: p.debtorName as string | undefined,
+          amount: p.amount as number | undefined,
+        });
         break;
       case 'billSplitter':
         navigation.navigate('BillSplitter');
@@ -1246,6 +1302,9 @@ export default function ChatScreen() {
       return;
     }
 
+    const pesoNote = (n: number) =>
+      `₱${n.toLocaleString('en-PH', { maximumFractionDigits: 2 })}`;
+
     try {
       switch (mut.kind) {
         case 'recategorize': {
@@ -1257,6 +1316,62 @@ export default function ChatScreen() {
               status: 'good',
               title: 'Re-categorized',
               message: `${mut.txLabel} → ${mut.toCategory}`,
+            },
+          });
+          break;
+        }
+        case 'setBudget': {
+          const target = categories.find(
+            (c) => c.name.toLowerCase() === mut.category.toLowerCase(),
+          );
+          if (!target) {
+            appendAiNote(
+              `I couldn't find a category named ${mut.category} — set it up in Categories and I'll budget it from there.`,
+            );
+            break;
+          }
+          await updateCategory(target.id, { budgetLimit: mut.limit });
+          appendAiNote('', {
+            kind: 'status',
+            data: {
+              yes: true,
+              status: 'good',
+              title: 'Budget set',
+              message: `${target.name} — ${pesoNote(mut.limit)}/month`,
+            },
+          });
+          break;
+        }
+        case 'delete': {
+          await deleteTransaction(mut.txId);
+          appendAiNote('', {
+            kind: 'status',
+            data: {
+              yes: true,
+              status: 'good',
+              title: 'Deleted',
+              message: `${mut.txLabel} (${pesoNote(mut.amount)}) removed.`,
+            },
+          });
+          break;
+        }
+        case 'transfer': {
+          if (!userId) break;
+          await saveTransfer({
+            userId,
+            sourceAccountId: mut.fromAccountId,
+            sourceAccountName: mut.fromLabel,
+            destAccountId: mut.toAccountId,
+            destAccountName: mut.toLabel,
+            amount: mut.amount,
+          });
+          appendAiNote('', {
+            kind: 'status',
+            data: {
+              yes: true,
+              status: 'good',
+              title: 'Transferred',
+              message: `${pesoNote(mut.amount)}: ${mut.fromLabel} → ${mut.toLabel}`,
             },
           });
           break;
