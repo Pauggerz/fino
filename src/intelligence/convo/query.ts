@@ -136,10 +136,76 @@ export function groupByDayOfWeek(txns: TxLite[]): DowBucket[] {
   }));
   for (const t of txns) {
     const d = new Date(t.date);
-    if (Number.isNaN(d.getTime())) continue; // skip malformed dates (NaN → no bucket)
-    const dow = (d.getDay() + 6) % 7; // 0 = Mon
-    buckets[dow].amount += t.amount;
-    buckets[dow].count += 1;
+    // Skip malformed dates (NaN → no bucket).
+    if (!Number.isNaN(d.getTime())) {
+      const dow = (d.getDay() + 6) % 7; // 0 = Mon
+      buckets[dow].amount += t.amount;
+      buckets[dow].count += 1;
+    }
+  }
+  return buckets;
+}
+
+export type MonthBucket = {
+  year: number;
+  /** 0-based month index. */
+  month: number;
+  /** Short label, e.g. "Jan" / "Jan '25" when the set spans years. */
+  label: string;
+  amount: number;
+  count: number;
+};
+
+const MONTH_LABELS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/** Group by calendar month, sorted chronologically. Only months that actually
+ *  have rows appear (no zero-fill — a missing month usually means no data, and
+ *  calling it the "cheapest" would be wrong). Labels carry the year ("Jan '25")
+ *  when the buckets span more than one. */
+export function groupByMonth(txns: TxLite[]): MonthBucket[] {
+  const map = new Map<string, MonthBucket>();
+  for (const t of txns) {
+    const d = new Date(t.date);
+    if (!Number.isNaN(d.getTime())) {
+      const year = d.getFullYear();
+      const month = d.getMonth();
+      const key = `${year}-${month}`;
+      const cur = map.get(key);
+      if (cur) {
+        cur.amount += t.amount;
+        cur.count += 1;
+      } else {
+        map.set(key, {
+          year,
+          month,
+          label: MONTH_LABELS[month],
+          amount: t.amount,
+          count: 1,
+        });
+      }
+    }
+  }
+  const buckets = [...map.values()].sort(
+    (a, b) => a.year - b.year || a.month - b.month
+  );
+  const years = new Set(buckets.map((b) => b.year));
+  if (years.size > 1) {
+    for (const b of buckets) {
+      b.label = `${MONTH_LABELS[b.month]} '${String(b.year % 100).padStart(2, '0')}`;
+    }
   }
   return buckets;
 }
