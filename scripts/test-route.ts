@@ -60,6 +60,37 @@ const cases: Case[] = [
   { text: 'split my 100 bill', want: 'brain' },
   { text: 'split the 500 dinner with john', want: 'brain' },
 
+  // ── B1 gate holes (meerkat plan) — command-shaped, must NEVER be logged ────
+  { text: 'set a budget of 5000 for food', want: 'brain' },
+  { text: 'budget 3000 for transport', want: 'brain' },
+  { text: 'make my food budget 4000', want: 'brain' },
+  { text: 'cap my eating out at 1500', want: 'brain' },
+  { text: 'remind me to pay my electric bill 2000', want: 'brain' },
+  { text: 'set a reminder for my internet bill', want: 'brain' },
+  { text: 'i want to buy a phone for 25000', want: 'brain' },
+  { text: 'i plan to buy a laptop for 50000', want: 'brain' },
+  { text: 'delete my last transaction', want: 'brain' },
+  { text: 'remove the 500 charge', want: 'brain' },
+  { text: 'delete the grab expense from yesterday', want: 'brain' },
+  { text: 'i logged that twice remove one', want: 'brain' },
+  { text: 'transfer 500 from gcash to bpi', want: 'brain' },
+  { text: 'move 500 to savings', want: 'brain' },
+
+  // ── Debt/receivable statements — Utang Tracker material, never logged ──────
+  { text: 'paul owed me 5k', want: 'brain' },
+  { text: 'paul owes me 500', want: 'brain' },
+  { text: 'paul borrowed 5k', want: 'brain' },
+  { text: 'i lent paul 2000', want: 'brain' },
+  { text: 'lent 500 to maria', want: 'brain' },
+  { text: 'i owe paul 300', want: 'brain' },
+  { text: 'paul paid me back 500', want: 'brain' },
+  { text: 'utang ni paul 500', want: 'brain' },
+
+  // ── Goal statements — SavingsGoal material, never logged ───────────────────
+  { text: 'goal this month to buy iphone 17', want: 'brain' },
+  { text: 'my goal is to save 50000', want: 'brain' },
+  { text: 'new goal save up for a car', want: 'brain' },
+
   // ── Genuine TRANSACTIONS — must still be logged ────────────────────────────
   { text: 'lunch 120', want: 'log' },
   { text: 'spent 50 on grab via gcash', want: 'log' },
@@ -73,6 +104,15 @@ const cases: Case[] = [
   { text: 'chicken 50 and rice 50', want: 'log' },
   { text: 'paid 1200 for electricity', want: 'log' },
   { text: 'grab 80 gcash', want: 'log' },
+  // Controls for the new command cues: a past purchase / paid bill is a log,
+  // not a wish ("want to buy") or a reminder.
+  { text: 'bought a phone for 25000', want: 'log' },
+  { text: 'electric bill 2000', want: 'log' },
+  { text: 'paid 2000 for my electric bill', want: 'log' },
+  // Controls for the debt/goal cues: "rent" must not trip \blent\b, a plain
+  // payment to a person is still a log, and "goal" alone needs a save/buy verb.
+  { text: 'rent 5000', want: 'log' },
+  { text: 'paid 500 to paul', want: 'log' },
 
   // ── No amount at all — already routed to the brain today (control) ─────────
   { text: 'how much did i spend', want: 'brain' },
@@ -118,6 +158,19 @@ check('"how much did i spend" → clean', !isAbusive('how much did i spend'));
 check('"assess my class budget" → clean', !isAbusive('assess my class budget'));
 check('"coffee at the cockpit cafe" → clean', !isAbusive('coffee at the cockpit cafe'));
 check('"how much on leche flan" → clean', !isAbusive('how much on leche flan'));
+
+// ── "5k" shorthand must not leak a bogus "K" item into the display name ──────
+const shorthand = parse('bought shoes 5k');
+check(
+  '"bought shoes 5k" → amount 5000',
+  shorthand?.amount === 5000,
+  `got ${shorthand?.amount}`
+);
+check(
+  '"bought shoes 5k" display name has no stray K',
+  !!shorthand && !/\bK\b/i.test(shorthand.displayName.replace(/^[^-]*-/, '')),
+  `got "${shorthand?.displayName}"`
+);
 
 // ── Back-dating only for unambiguous single past days (#9) ────────────────────
 const yest = parse('lunch 120 yesterday');
