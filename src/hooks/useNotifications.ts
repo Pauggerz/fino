@@ -78,9 +78,19 @@ type SeedRow = {
 export async function generatePeriodicInsights(userId: string): Promise<void> {
   if (!userId) return;
 
+  // Read prefs once up front: the budget threshold gates which warnings are
+  // generated below, and the same prefs object decides which seeds raise an OS
+  // ping at the end of this function.
+  const prefs = await readNotificationPrefs(userId);
+
   const collection = database.get<NotificationModel>('notifications');
+  // Dedupe against ALL rows for this user — dismissed ones included. A dismissed
+  // insight must NOT be regenerated on the next HomeScreen focus; otherwise the
+  // row re-appears the moment the user reopens the inbox and the dismiss looks
+  // like it never stuck. Mirrors materialiseInbox's by-kind dedupe, which also
+  // never resurrects a dismissed row (§3.3).
   const existing = await collection
-    .query(Q.where('user_id', userId), Q.where('is_dismissed', false))
+    .query(Q.where('user_id', userId))
     .fetch();
   const existingKinds = new Set(existing.map((n) => n.kind));
 
@@ -88,7 +98,7 @@ export async function generatePeriodicInsights(userId: string): Promise<void> {
   const month = monthKey();
   const today = dayKey();
 
-  // ── Overspend warnings (budget ≥ 80% used) ───────────────────────────────
+  // ── Overspend warnings (budget ≥ user's chosen threshold) ────────────────
   const categories = await database
     .get<CategoryModel>('categories')
     .query(Q.where('user_id', userId), Q.where('is_active', true))
@@ -130,7 +140,8 @@ export async function generatePeriodicInsights(userId: string): Promise<void> {
     if (cat.categoryType === 'income') continue;
     const spent = spendByCat[cat.name.toLowerCase()] ?? 0;
     const pct = spent / cat.budgetLimit;
-    if (pct < 0.8) continue;
+    // Honour the user's configured budget-alert threshold (50/80/100%).
+    if (pct < prefs.budgetThreshold / 100) continue;
 
     const kind = `${pct >= 1 ? 'over-budget' : 'budget-warn'}:${cat.name}:${month}`;
     if (existingKinds.has(kind)) continue;
@@ -219,7 +230,7 @@ export async function generatePeriodicInsights(userId: string): Promise<void> {
   // §6.22: raise an OS notification alongside the new in-app warning, gated by
   // the matching category pref + system permission. The inbox row already
   // exists (just written above), so these fire with inboxInsert disabled.
-  const prefs = await readNotificationPrefs(userId);
+  // `prefs` was read at the top of this function.
   for (const seed of seeds) {
     const isBudget =
       seed.kind.startsWith('budget-warn:') ||

@@ -504,6 +504,17 @@ const cases: Case[] = [
     text: 'i want to save for a new laptop how should i adjust my spending',
     intent: 'goalPlan',
   },
+  // Goal statements (gated out of the logger by route.ts).
+  {
+    desc: 'EN goal buy iphone 17',
+    text: 'goal this month to buy iphone 17',
+    intent: 'goalPlan',
+  },
+  {
+    desc: 'EN my goal is to save 50k',
+    text: 'my goal is to save 50k',
+    intent: 'goalPlan',
+  },
   {
     desc: 'EN rule of thumb',
     text: 'what is a good rule of thumb for budgeting my salary',
@@ -549,6 +560,13 @@ const cases: Case[] = [
   { desc: 'EN who owes me', text: 'who owes me money', intent: 'debt' },
   { desc: 'EN what are my debts', text: 'what are my debts', intent: 'debt' },
   { desc: 'EN who do i owe', text: 'who do i owe money to', intent: 'debt' },
+  // Statement forms (gated out of the logger by route.ts) — must land on debt
+  // so the brain can propose tracking in the Utang Tracker.
+  { desc: 'EN owed me stmt', text: 'paul owed me 5k', intent: 'debt' },
+  { desc: 'EN owes me stmt', text: 'paul owes me 500', intent: 'debt' },
+  { desc: 'EN borrowed stmt', text: 'paul borrowed 5k', intent: 'debt' },
+  { desc: 'EN lent stmt', text: 'i lent paul 2000', intent: 'debt' },
+  { desc: 'EN loaned-to stmt', text: 'loaned 500 to maria', intent: 'debt' },
 
   // ── safeToSpend (chat-mutations plan, Phase 1) ───────────────────────────────
   {
@@ -590,6 +608,121 @@ const cases: Case[] = [
     desc: 'EN split dinner with',
     text: 'split the dinner bill with my friends',
     intent: 'splitBill',
+  },
+
+  // ── Meerkat plan, pack A: data questions ─────────────────────────────────────
+  { desc: 'EN runway', text: 'how long will my money last', intent: 'runway' },
+  { desc: 'EN burn rate', text: 'whats my burn rate', intent: 'runway' },
+  {
+    desc: 'EN why so high',
+    text: 'why is my spending so high this month',
+    intent: 'explainSpend',
+    time: 'thisMonth',
+  },
+  {
+    desc: 'EN what changed',
+    text: 'what changed since last month',
+    intent: 'explainSpend',
+    time: 'lastMonth',
+  },
+  {
+    desc: 'EN cheapest month',
+    text: 'whats the cheapest month i had this year',
+    intent: 'monthPattern',
+    time: 'thisYear',
+  },
+  {
+    desc: 'EN priciest month',
+    text: 'which month did i spend the most',
+    intent: 'monthPattern',
+  },
+  {
+    desc: 'EN cat vs cat compare',
+    text: 'compare my food spending to my transport spending',
+    intent: 'compare',
+    category: 'food',
+  },
+  {
+    desc: 'EN food or transport',
+    text: 'did i spend more on food or transport',
+    intent: 'spend',
+    category: 'food',
+  },
+  {
+    desc: 'EN weekend vs weekday',
+    text: 'did i spend more on weekends or weekdays',
+    intent: 'dowPattern',
+  },
+  {
+    desc: 'EN saved so far this year',
+    text: 'how much have i saved so far this year',
+    intent: 'savings',
+    time: 'thisYear',
+  },
+  {
+    desc: 'EN average daily spend',
+    text: 'whats my average daily spend',
+    intent: 'typicalSpend',
+  },
+
+  // ── Meerkat plan, pack B: bills + commands ───────────────────────────────────
+  {
+    desc: 'EN next bill due',
+    text: 'when is my next bill due',
+    intent: 'upcomingBills',
+  },
+  {
+    desc: 'EN bills this week',
+    text: 'what bills are coming up this week',
+    intent: 'upcomingBills',
+    time: 'thisWeek',
+  },
+  {
+    desc: 'EN set budget',
+    text: 'set a budget of 5000 for food',
+    intent: 'setBudget',
+    category: 'food',
+  },
+  {
+    desc: 'EN bare budget command',
+    text: 'budget 3000 for transport',
+    intent: 'setBudget',
+    category: 'transport',
+  },
+  {
+    desc: 'EN delete last tx',
+    text: 'delete my last transaction',
+    intent: 'deleteTransaction',
+  },
+  {
+    desc: 'EN remove 500 charge',
+    text: 'remove the 500 charge',
+    intent: 'deleteTransaction',
+  },
+  {
+    desc: 'EN transfer between accounts',
+    text: 'transfer 500 from gcash to bpi',
+    intent: 'transfer',
+  },
+  {
+    desc: 'EN move to savings (B5)',
+    text: 'move 500 to savings',
+    intent: 'transfer',
+  },
+  {
+    desc: 'EN remind electric bill',
+    text: 'remind me to pay my electric bill 2000',
+    intent: 'reminder',
+  },
+  {
+    desc: 'EN set a reminder',
+    text: 'set a reminder for my internet bill',
+    intent: 'reminder',
+  },
+  {
+    desc: 'EN want to buy (B1)',
+    text: 'i want to buy a phone for 25000',
+    intent: 'afford',
   },
 ];
 
@@ -935,6 +1068,66 @@ for (const cc of cardCases) {
       (none.actions ?? []).some((a) => a.kind === 'navigate'),
     '[debt] no debts → empty state + Utang action',
     `text "${none.text}"`
+  );
+
+  // NEW-receivable statements ("Paul owed me 5k") propose tracking it —
+  // prefilled Utang Tracker action with debtor + amount, never an expense log
+  // and never just the existing-debts listing.
+  const stmt = routeMessage('paul owed me 5k', CTX_DEBT);
+  const stmtAction = (stmt.card?.actions ?? []).find(
+    (a) => a.kind === 'navigate' && a.target === 'utangTracker'
+  );
+  check(
+    /paul/i.test(stmt.text) &&
+      /5,000/.test(stmt.text) &&
+      stmtAction?.kind === 'navigate' &&
+      stmtAction.params?.debtorName === 'Paul' &&
+      stmtAction.params?.amount === 5000,
+    '[debt] "paul owed me 5k" → track-it card prefilled (Paul, ₱5,000)',
+    `text "${stmt.text}"`
+  );
+
+  const borrowed = routeMessage('paul borrowed 5k', CTX_DEBT);
+  check(
+    /paul/i.test(borrowed.text) &&
+      /5,000/.test(borrowed.text) &&
+      (borrowed.card?.actions ?? []).some(
+        (a) => a.kind === 'navigate' && a.target === 'utangTracker'
+      ),
+    '[debt] "paul borrowed 5k" → track-it card, not a log/listing',
+    `text "${borrowed.text}"`
+  );
+
+  const lent = routeMessage('i lent maria 2000', CTX_DEBT);
+  const lentAction = (lent.card?.actions ?? []).find(
+    (a) => a.kind === 'navigate' && a.target === 'utangTracker'
+  );
+  check(
+    lentAction?.kind === 'navigate' &&
+      lentAction.params?.debtorName === 'Maria' &&
+      lentAction.params?.amount === 2000,
+    '[debt] "i lent maria 2000" → track-it prefilled (Maria, ₱2,000)',
+    `text "${lent.text}"`
+  );
+
+  // Question forms must NOT be mistaken for statements ("who owes me" has no
+  // debtor to stage) — they keep the listing answer.
+  const q = routeMessage('who owes me money', CTX_DEBT);
+  check(
+    q.card?.kind === 'coach' &&
+      q.card.data.title !== 'Track this utang?' &&
+      /5,000/.test(q.text),
+    '[debt] "who owes me money" still lists, never stages "Who"',
+    `text "${q.text}"`
+  );
+
+  // "i borrowed…" is the user's own payable — direction clarified, not staged.
+  const payable = routeMessage('i borrowed 5000 from paul', CTX_DEBT);
+  check(
+    /owed \*to\* you/i.test(payable.text) ||
+      /track money owed/i.test(payable.text),
+    '[debt] "i borrowed 5000 from paul" → direction clarified, not staged',
+    `text "${payable.text}"`
   );
 }
 
@@ -1397,6 +1590,35 @@ function actionTargets(r: ReturnType<typeof routeMessage>): string[] {
     `goal ${JSON.stringify(gpGoal)}`
   );
 
+  // Goal statement with a model number ("iPhone 17") — the 17 is part of the
+  // name, NEVER a ₱17 target; with no real price the brain asks for one and
+  // still stages the prefilled goal.
+  const gm = routeMessage('goal this month to buy iphone 17', CTX_INS);
+  const gmGoal = gm.card?.actions?.find(
+    (a) => a.kind === 'navigate' && a.target === 'savingsGoal'
+  );
+  check(
+    gm.card?.kind === 'coach' &&
+      gmGoal?.kind === 'navigate' &&
+      /iphone 17/i.test((gmGoal.params?.name as string) ?? '') &&
+      gmGoal.params?.target === undefined &&
+      /price/i.test(gm.text),
+    '[card+]  goal stmt "buy iphone 17" → named goal, no ₱17 target',
+    `goal ${JSON.stringify(gmGoal)} text "${gm.text}"`
+  );
+
+  // Goal statement with a real price → target picked up, model-number rule
+  // doesn't eat legitimate amounts.
+  const gs = routeMessage('my goal is to save 50000 for a car', CTX_INS);
+  const gsGoal = gs.card?.actions?.find(
+    (a) => a.kind === 'navigate' && a.target === 'savingsGoal'
+  );
+  check(
+    gsGoal?.kind === 'navigate' && gsGoal.params?.target === 50000,
+    '[card+]  goal stmt "save 50000 for a car" → target ₱50,000',
+    `goal ${JSON.stringify(gsGoal)}`
+  );
+
   // cutAmount with a target → coach card naming categories to trim.
   const ca = routeMessage(
     'where can i cut 2000 from my budget this month',
@@ -1481,6 +1703,343 @@ function actionTargets(r: ReturnType<typeof routeMessage>): string[] {
       ),
     '[mutate]  split bill → coach card + billSplitter action',
     `got ${sp.card?.kind}`
+  );
+}
+
+// ─── Meerkat plan: bug fixes + capability pack (Phases 1–3) ──────────────────
+// A richer fixture: multi-month history, named accounts, budgets, recurring
+// bills, and an explicit snapshotStart so the honest-coverage caveat (B2) and
+// the new handlers can all be exercised offline.
+
+const PLAN_TX: TxLite[] = [
+  ...TX,
+  {
+    id: 't9',
+    amount: 2000,
+    type: 'expense',
+    category: 'Food',
+    merchant: 'Grocery',
+    name: 'Groceries',
+    date: '2026-04-10',
+    accountId: 'a1',
+  },
+  {
+    id: 't10',
+    amount: 900,
+    type: 'expense',
+    category: 'Food',
+    merchant: 'SM',
+    name: 'Weekend market',
+    date: '2026-06-13', // Saturday
+    accountId: 'a1',
+  },
+];
+
+const CTX_PLAN: BrainContext = {
+  ...CTX_INS,
+  now: NOW.toISOString(),
+  transactions: PLAN_TX,
+  snapshotStart: '2025-05-01',
+  accounts: [
+    { id: 'a1', name: 'GCash', balance: 8000 },
+    { id: 'a2', name: 'BPI', balance: 4000 },
+  ],
+  budgets: [{ category: 'Food', limit: 10000 }],
+  recurringIncome: [{ label: 'Salary', amount: 30000, dayOfMonth: 1 }],
+  recurringBills: [
+    { label: 'internet', amount: 1500, cadence: 'monthly', nextDueAt: '2026-06-18' },
+    { label: 'rent', amount: 8000, cadence: 'monthly', nextDueAt: '2026-07-01' },
+    { label: 'netflix', amount: 549, cadence: 'monthly', nextDueAt: '2026-06-20' },
+  ],
+};
+
+// Runway: no insights → baseline is last month's ₱20,000 → ₱12,000 lasts ~18 days.
+{
+  const rw = routeMessage('how long will my money last', CTX);
+  check(
+    rw.card?.kind === 'coach' &&
+      /18 days/.test(rw.text) &&
+      /no new income/.test(rw.text),
+    '[plan]   runway → ~18 days + assumes-no-income caveat',
+    `text "${rw.text}"`
+  );
+
+  // Zero balance → honest no-runway answer, never a division artifact.
+  const broke = routeMessage('whats my burn rate', { ...CTX, balance: 0 });
+  check(
+    /no runway/i.test(broke.text),
+    '[plan]   runway at ₱0 balance → honest empty state',
+    `text "${broke.text}"`
+  );
+}
+
+// explainSpend: month-over-month delta + the top category drivers.
+{
+  const better = routeMessage('why is my spending so high this month', CTX_PLAN);
+  check(
+    /trending better/i.test(better.text) &&
+      better.card?.kind === 'coach' &&
+      (better.card.data.reasons?.length ?? 0) === 3,
+    '[plan]   explainSpend (down month) → honest "trending better" + 3 drivers',
+    `text "${better.text.slice(0, 90)}"`
+  );
+
+  const worse = routeMessage('what changed since last month', {
+    ...CTX_PLAN,
+    spent: 25000,
+  });
+  check(
+    /more than last month/i.test(worse.text) && /25%/.test(worse.text),
+    '[plan]   explainSpend (up month) → +₱5,000 (25%) vs last month',
+    `text "${worse.text.slice(0, 90)}"`
+  );
+}
+
+// monthPattern: Feb ₱12,000 vs Apr ₱2,000; current month never crowned.
+{
+  const cheap = routeMessage('whats the cheapest month i had this year', CTX_PLAN);
+  check(
+    /cheapest month was Apr at ₱2,000/.test(cheap.text) &&
+      /Feb at ₱12,000/.test(cheap.text) &&
+      cheap.card?.kind === 'pattern',
+    '[plan]   cheapest month → Apr ₱2,000 (priciest Feb ₱12,000) + pattern card',
+    `text "${cheap.text}"`
+  );
+
+  const pricey = routeMessage('which month did i spend the most', CTX_PLAN);
+  check(
+    /most expensive month was Feb/.test(pricey.text) &&
+      /counting since May 1, 2025/.test(pricey.text),
+    '[plan]   priciest month → Feb + names the data span',
+    `text "${pricey.text}"`
+  );
+
+  // Too little history → asks for time, never a misleading crown.
+  const thin = routeMessage('whats my most expensive month', {
+    ...CTX_PLAN,
+    transactions: TX.filter((t) => t.date.startsWith('2026-06')),
+  });
+  check(
+    /enough full months/i.test(thin.text),
+    '[plan]   monthPattern w/ 1 full month → honest insufficiency',
+    `text "${thin.text}"`
+  );
+}
+
+// Snapshot-coverage caveat (B2): a range older than the snapshot says so.
+{
+  const ly = routeMessage('how much did i spend last year', CTX_PLAN);
+  check(
+    /only see back to May 1, 2025/.test(ly.text),
+    '[plan]   spend last year → honest coverage caveat (B2)',
+    `text "${ly.text}"`
+  );
+
+  // A fully-covered range carries no caveat noise.
+  const tm = routeMessage('how much did i spend this month', CTX_PLAN);
+  check(
+    !/only see back/.test(tm.text),
+    '[plan]   spend this month → no caveat when fully covered',
+    `text "${tm.text}"`
+  );
+}
+
+// Category-vs-category compare: both categories over the same window.
+{
+  const cvc = routeMessage(
+    'compare my food spending to my transport spending',
+    CTX_PLAN
+  );
+  check(
+    cvc.card?.kind === 'compare' &&
+      cvc.card.data.current === 1320 &&
+      cvc.card.data.previous === 60 &&
+      /Food wins/.test(cvc.text),
+    '[plan]   food vs transport → compare card ₱1,320 vs ₱60',
+    `text "${cvc.text}", card ${JSON.stringify(cvc.card?.kind === 'compare' ? cvc.card.data : null)}`
+  );
+}
+
+// Weekend-vs-weekday: per-day averages decide, not raw totals.
+{
+  const wknd = routeMessage('did i spend more on weekends or weekdays', CTX_PLAN);
+  check(
+    /more on weekdays/.test(wknd.text) &&
+      wknd.card?.kind === 'pattern' &&
+      wknd.card.data.bars.length === 2,
+    '[plan]   weekends vs weekdays → per-day verdict + 2-bar pattern card',
+    `text "${wknd.text}"`
+  );
+}
+
+// Saved-so-far honors the range: income − expense over this year.
+{
+  const saved = routeMessage('how much have i saved so far this year', CTX_PLAN);
+  check(
+    /7,971/.test(saved.text) &&
+      /30,000/.test(saved.text) &&
+      /22,029/.test(saved.text),
+    '[plan]   saved this year → ₱7,971 (₱30,000 in − ₱22,029 out)',
+    `text "${saved.text}"`
+  );
+}
+
+// Average-daily mode: month-to-date total ÷ days elapsed.
+{
+  const avg = routeMessage('whats my average daily spend', CTX_PLAN);
+  check(
+    /1,200\/day/.test(avg.text) && /18,000 over 15 days/.test(avg.text),
+    '[plan]   average daily spend → ₱1,200/day (₱18,000 ÷ 15)',
+    `text "${avg.text}"`
+  );
+}
+
+// upcomingBills: next 3 by due date, windowed by an explicit range.
+{
+  const next = routeMessage('when is my next bill due', CTX_PLAN);
+  check(
+    /Internet — ₱1,500/.test(next.text) &&
+      /Jun 18/.test(next.text) &&
+      /10,049/.test(next.text) &&
+      next.card?.kind === 'coach' &&
+      (next.card.data.reasons?.length ?? 0) === 3,
+    '[plan]   next bill due → Internet ₱1,500 Jun 18, 3 bills ₱10,049',
+    `text "${next.text}"`
+  );
+
+  const week = routeMessage('what bills are coming up this week', CTX_PLAN);
+  check(
+    /2 bills/.test(week.text) && /2,049/.test(week.text),
+    '[plan]   bills this week → 2 bills ₱2,049 (rent excluded)',
+    `text "${week.text}"`
+  );
+
+  const none = routeMessage('when is my next bill due', {
+    ...CTX_PLAN,
+    recurringBills: [],
+  });
+  check(
+    /haven't set up any recurring bills/i.test(none.text) &&
+      (none.actions ?? []).some(
+        (a) => a.kind === 'navigate' && a.target === 'recurringBills'
+      ),
+    '[plan]   no recurring bills → setup nudge + navigate action',
+    `text "${none.text}"`
+  );
+}
+
+// setBudget: proposes a mutation; the write happens only after ChatScreen confirm.
+{
+  const upd = routeMessage('set a budget of 5000 for food', CTX_PLAN);
+  check(
+    upd.mutation?.kind === 'setBudget' &&
+      upd.mutation.category === 'Food' &&
+      upd.mutation.limit === 5000 &&
+      /from ₱10,000 to ₱5,000/.test(upd.text),
+    '[plan]   set budget (existing) → setBudget mutation + old-limit copy',
+    `mutation ${JSON.stringify(upd.mutation)}, text "${upd.text}"`
+  );
+
+  const fresh = routeMessage('budget 3000 for transport', CTX_PLAN);
+  check(
+    fresh.mutation?.kind === 'setBudget' &&
+      fresh.mutation.category === 'Transport' &&
+      fresh.mutation.limit === 3000,
+    '[plan]   bare budget command → setBudget mutation (Transport ₱3,000)',
+    `mutation ${JSON.stringify(fresh.mutation)}`
+  );
+
+  const noAmt = routeMessage('set a budget for food', CTX_PLAN);
+  check(
+    noAmt.mutation === undefined && /monthly cap/i.test(noAmt.text),
+    '[plan]   budget w/o amount → asks for the cap, no mutation',
+    `text "${noAmt.text}"`
+  );
+}
+
+// deleteTransaction: explicit row resolution; an unmatched amount asks, never
+// proposes a different row (destructive precision over recall).
+{
+  const last = routeMessage('delete my last transaction', CTX_PLAN);
+  check(
+    last.mutation?.kind === 'delete' &&
+      last.mutation.txId === 't1' &&
+      /Delete Jollibee/.test(last.text) &&
+      /sure/.test(last.text),
+    '[plan]   delete last tx → delete mutation for the newest row',
+    `mutation ${JSON.stringify(last.mutation)}`
+  );
+
+  const byAmt = routeMessage('delete the 1500 charge', CTX_PLAN);
+  check(
+    byAmt.mutation?.kind === 'delete' && byAmt.mutation.txId === 't5',
+    '[plan]   delete the ₱1,500 charge → PLDT row',
+    `mutation ${JSON.stringify(byAmt.mutation)}`
+  );
+
+  const miss = routeMessage('remove the 500 charge', CTX_PLAN);
+  check(
+    miss.mutation === undefined && /which transaction/i.test(miss.text),
+    '[plan]   delete w/ unmatched amount → asks, never a wrong-row proposal',
+    `mutation ${JSON.stringify(miss.mutation)}, text "${miss.text}"`
+  );
+}
+
+// transfer: both accounts must resolve; partial resolution clarifies (B5).
+{
+  const full = routeMessage('transfer 500 from gcash to bpi', CTX_PLAN);
+  check(
+    full.mutation?.kind === 'transfer' &&
+      full.mutation.amount === 500 &&
+      full.mutation.fromLabel === 'GCash' &&
+      full.mutation.toLabel === 'BPI' &&
+      full.mutation.fromAccountId !== full.mutation.toAccountId,
+    '[plan]   transfer gcash → bpi → transfer mutation proposal',
+    `mutation ${JSON.stringify(full.mutation)}`
+  );
+
+  // Source omitted with exactly one other account → it's unambiguous.
+  const implied = routeMessage('transfer 500 to bpi', CTX_PLAN);
+  check(
+    implied.mutation?.kind === 'transfer' &&
+      implied.mutation.fromLabel === 'GCash',
+    '[plan]   transfer w/o source, 2 accounts → source implied (GCash)',
+    `mutation ${JSON.stringify(implied.mutation)}`
+  );
+
+  // B5: "move 500 to savings" — no savings account → sane clarify, no hijack,
+  // no log, no write.
+  const hijack = routeMessage('move 500 to savings', CTX_PLAN);
+  check(
+    hijack.mutation === undefined && hijack.text.length > 0,
+    '[plan]   move 500 to savings → clarify, never a hijack or write (B5)',
+    `mutation ${JSON.stringify(hijack.mutation)}, text "${hijack.text}"`
+  );
+
+  const oneAcct = routeMessage('transfer 500 from gcash to bpi', {
+    ...CTX_PLAN,
+    accounts: [{ id: 'a1', name: 'GCash', balance: 8000 }],
+  });
+  check(
+    oneAcct.mutation === undefined && /at least two accounts/i.test(oneAcct.text),
+    '[plan]   transfer w/ one account → explains, no mutation',
+    `text "${oneAcct.text}"`
+  );
+}
+
+// reminder: navigate-prefill to Recurring Bills — no write, ever.
+{
+  const rem = routeMessage('remind me to pay my electric bill 2000', CTX_PLAN);
+  const nav = rem.card?.actions?.find(
+    (a) => a.kind === 'navigate' && a.target === 'recurringBills'
+  );
+  check(
+    rem.mutation === undefined &&
+      nav?.kind === 'navigate' &&
+      nav.params?.title === 'Electric' &&
+      nav.params?.amount === 2000,
+    '[plan]   remind electric 2000 → recurringBills prefill (Electric, ₱2,000), no write',
+    `nav ${JSON.stringify(nav)}`
   );
 }
 

@@ -43,6 +43,7 @@ import {
   matchMerchant,
   groupByCategory,
   groupByDayOfWeek,
+  groupByMonth,
   type DateRange,
 } from './query';
 import { summarizeNeedsWants } from './needsWants';
@@ -57,8 +58,16 @@ import {
   answerImpulseTips,
   answerAfford,
   answerSafeToSpend,
+  answerRunway,
 } from './advice';
-import { answerReCategorize, answerSplitBill } from './mutate';
+import {
+  answerReCategorize,
+  answerSplitBill,
+  answerSetBudget,
+  answerDeleteTransaction,
+  answerTransfer,
+  answerReminder,
+} from './mutate';
 
 /** The single optional deep-link chip cards may carry (§10 Q4). */
 const OPEN_INSIGHTS: CardAction = {
@@ -108,6 +117,14 @@ export const EXAMPLE_PROMPTS: Partial<Record<IntentId, string>> = {
   safeToSpend: 'How much is safe to spend?',
   reCategorize: 'Move my Grab ride to Transport',
   splitBill: 'Split the bill with friends',
+  runway: 'How long will my money last?',
+  explainSpend: 'Why is my spending so high this month?',
+  monthPattern: 'What was my most expensive month?',
+  upcomingBills: 'What bills are coming up?',
+  setBudget: 'Set a ₱5,000 budget for food',
+  deleteTransaction: 'Delete my last transaction',
+  transfer: 'Transfer ₱500 from GCash to BPI',
+  reminder: 'Remind me to pay my electric bill',
 };
 
 const FALLBACK_FOLLOWUPS = [
@@ -214,6 +231,10 @@ function answerSpend(
   const tr = slots.timeRange;
   const txns = ctx.transactions ?? [];
 
+  // "did I spend more on food or transport" — an explicit category pair is a
+  // comparison, not a single total; both numbers answer either reading.
+  if (slots.category && slots.categoryB) return answerCompare(ctx, slots);
+
   // Category-scoped, this-month: answer from the by-category aggregate we hold.
   if (slots.category && (!tr || tr.key === 'thisMonth')) {
     const match = ctx.topCategories.find(
@@ -264,15 +285,16 @@ function answerSpend(
           categories: slotCats(slots),
         })
       );
+      const note = coverageNote(ctx, tr);
       const subj = slots.category ? ` on ${slots.category.label}` : '';
       if (total <= 0) {
         return {
-          text: `I don't see any${subj || ' spending'} ${when}.`,
+          text: `I don't see any${subj || ' spending'} ${when}.${note}`,
           followUps,
         };
       }
       return {
-        text: `You spent ${peso(total)}${subj} ${when}.`,
+        text: `You spent ${peso(total)}${subj} ${when}.${note}`,
         followUps,
       };
     }
@@ -321,13 +343,17 @@ function answerBreakdown(ctx: BrainContext, slots: Slots): BrainResponse {
   const data = agg.windowed
     ? {
         total: agg.total,
-        segments: agg.categories
-          .slice(0, 4)
-          .map((c, i) => ({ label: c.name, amount: c.amount, role: `cat-${i}` })),
+        segments: agg.categories.slice(0, 4).map((c, i) => ({
+          label: c.name,
+          amount: c.amount,
+          role: `cat-${i}`,
+        })),
       }
     : buildBreakdownCard(ctx);
   return {
-    text: `You spent ${peso(agg.total)} ${when}. Here's where it went:\n${lines}`,
+    text: `You spent ${peso(agg.total)} ${when}. Here's where it went:\n${lines}${
+      agg.windowed ? coverageNote(ctx, agg.range) : ''
+    }`,
     card: data ? { kind: 'breakdown', data } : undefined,
     followUps,
   };
@@ -350,17 +376,82 @@ function answerTopCategory(ctx: BrainContext, slots: Slots): BrainResponse {
   return {
     text: `Your biggest spending ${when} is ${top.name} at ${peso(
       top.amount
-    )} — ${pctOf(top.amount, agg.total)}% of everything you spent.`,
+    )} — ${pctOf(top.amount, agg.total)}% of everything you spent.${
+      agg.windowed ? coverageNote(ctx, agg.range) : ''
+    }`,
     followUps,
   };
 }
 
 function answerCompare(ctx: BrainContext, slots: Slots): BrainResponse {
   const followUps = ['Where can I cut back?', 'Give me a spending breakdown'];
+  const txns = ctx.transactions ?? [];
+
+  // Category-VS-category ("food vs transport") — compare the two categories
+  // over the asked-for window (default this month), not this-vs-last month.
+  if (slots.category && slots.categoryB) {
+    const a = slots.category;
+    const b = slots.categoryB;
+    const range = slotRange(slots) ?? thisMonthRange(ctx);
+    const when = slots.timeRange ? whenPhrase(slots.timeRange) : 'this month';
+    const sumFor = (cat: typeof a): number => {
+      if (txns.length) {
+        return sumAmount(
+          selectTx(txns, {
+            range,
+            type: 'expense',
+            categories: Array.from(new Set([cat.label, cat.keyword])),
+          })
+        );
+      }
+      // No snapshot → fall back to the this-month aggregate.
+      return (
+        ctx.topCategories.find(
+          (c) => c.name.toLowerCase() === cat.label.toLowerCase()
+        )?.amount ?? 0
+      );
+    };
+    const amtA = sumFor(a);
+    const amtB = sumFor(b);
+    if (amtA <= 0 && amtB <= 0) {
+      return {
+        text: `I don't see any ${a.label} or ${b.label} spending ${when} to compare.`,
+        followUps,
+      };
+    }
+    const note = slots.timeRange ? coverageNote(ctx, slots.timeRange) : '';
+    const diff = amtA - amtB;
+    const dir: DeltaDirection = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
+    const card = {
+      kind: 'compare' as const,
+      data: {
+        currentLabel: a.label,
+        previousLabel: b.label,
+        current: amtA,
+        previous: amtB,
+        pct: pctOf(
+          Math.abs(diff),
+          Math.min(amtA, amtB) || Math.max(amtA, amtB)
+        ),
+        direction: dir,
+      },
+    };
+    let text: string;
+    if (diff === 0) {
+      text = `Dead even — ${peso(amtA)} on ${a.label} and on ${b.label} ${when}.${note}`;
+    } else {
+      const hi = diff > 0 ? a.label : b.label;
+      text = `${hi} wins ${when} — ${peso(amtA)} on ${a.label} vs ${peso(
+        amtB
+      )} on ${b.label} (${peso(Math.abs(diff))} apart, ${peso(
+        amtA + amtB
+      )} together).${note}`;
+    }
+    return { text, card, followUps };
+  }
 
   // Category-scoped compare ("dining vs last month") when we have a snapshot to
   // pull both months from. Falls back to the total comparison below otherwise.
-  const txns = ctx.transactions ?? [];
   if (slots.category && txns.length) {
     const cats = slotCats(slots);
     const { label } = slots.category;
@@ -470,8 +561,46 @@ function answerCut(ctx: BrainContext): BrainResponse {
   };
 }
 
-function answerSavings(ctx: BrainContext): BrainResponse {
+function answerSavings(ctx: BrainContext, slots: Slots): BrainResponse {
   const followUps = ['Where can I cut back?', 'Give me a spending breakdown'];
+
+  // Range-scoped savings ("how much have I saved this year / in Q1") — net
+  // income − expense over the asked-for window, sliced from the snapshot.
+  const tr = slots.timeRange;
+  const txns = ctx.transactions ?? [];
+  if (tr && tr.key !== 'thisMonth' && txns.length) {
+    const range = { start: tr.start, end: tr.end };
+    const income = sumAmount(selectTx(txns, { range, type: 'income' }));
+    const expense = sumAmount(selectTx(txns, { range, type: 'expense' }));
+    const when = whenPhrase(tr);
+    if (income <= 0 && expense <= 0) {
+      return {
+        text: `I don't see any activity ${when} to work out savings from.`,
+        followUps,
+      };
+    }
+    const note = coverageNote(ctx, tr);
+    const saved = income - expense;
+    if (saved >= 0) {
+      const rateBit =
+        income > 0
+          ? ` — about ${pctOf(saved, income)}% of what you earned`
+          : '';
+      return {
+        text: `You've saved ${peso(saved)} ${when} (${peso(income)} in, ${peso(
+          expense
+        )} out)${rateBit}.${note}`,
+        followUps,
+      };
+    }
+    return {
+      text: `You're ${peso(-saved)} in the red ${when} — ${peso(
+        expense
+      )} out against ${peso(income)} in.${note}`,
+      followUps,
+    };
+  }
+
   if (ctx.income <= 0) {
     return {
       text: "You haven't logged any income this month yet, so I can't forecast your savings. Add your income and I'll project where you'll land.",
@@ -681,6 +810,31 @@ function scopeLabel(slots: Slots): string {
   else if (slots.amountMax != null) bits.push(`under ${peso(slots.amountMax)}`);
   if (slots.timeRange) bits.push(slots.timeRange.label);
   return bits.length ? ` ${bits.join(' ')}` : '';
+}
+
+function fmtDateYear(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${MONTHS_ABBR[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+/**
+ * Honest-coverage caveat (B2). The snapshot is a bounded trailing window — when
+ * an answer was sliced from it but the asked-for range starts BEFORE what the
+ * snapshot covers, say so instead of silently undercounting ("last year" over a
+ * 13-month snapshot would otherwise quietly miss months).
+ */
+function coverageNote(
+  ctx: BrainContext,
+  range: { start: Date } | undefined
+): string {
+  if (!range || !ctx.snapshotStart) return '';
+  const cov = Date.parse(ctx.snapshotStart);
+  if (!Number.isFinite(cov)) return '';
+  if (range.start.getTime() >= cov) return '';
+  return ` Heads up: in chat I can only see back to ${fmtDateYear(
+    ctx.snapshotStart
+  )}, so this misses anything earlier — open Insights for the full picture.`;
 }
 
 /** Narration suffix for a resolved range so totals read naturally: "today",
@@ -1346,7 +1500,31 @@ function answerNeedsVsWants(ctx: BrainContext, slots: Slots): BrainResponse {
   };
 }
 
-function answerDowPattern(ctx: BrainContext, slots: Slots): BrainResponse {
+/** "weekends vs weekdays" framing — answered as a two-bucket split, not 7 bars. */
+const WKND_VS_RE =
+  /\bweek ?ends?\b[^.]{0,16}\b(?:vs\.?|versus|or|and|compared to)\b[^.]{0,16}\bweek ?days?\b|\bweek ?days?\b[^.]{0,16}\b(?:vs\.?|versus|or|and|compared to)\b[^.]{0,16}\bweek ?ends?\b/;
+
+/** Count weekend (Sat/Sun) and weekday days in [start, end] — bounded loop, the
+ *  snapshot window is at most ~18 months. */
+function countDayTypes(
+  start: Date,
+  end: Date
+): { weekend: number; weekday: number } {
+  const out = { weekend: 0, weekday: 0 };
+  const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  for (let i = 0; i < 740 && d.getTime() <= end.getTime(); i += 1) {
+    if (d.getDay() === 0 || d.getDay() === 6) out.weekend += 1;
+    else out.weekday += 1;
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+
+function answerDowPattern(
+  ctx: BrainContext,
+  slots: Slots,
+  norm: string
+): BrainResponse {
   const followUps = [
     'Give me a spending breakdown',
     'Am I overspending anywhere?',
@@ -1361,6 +1539,43 @@ function answerDowPattern(ctx: BrainContext, slots: Slots): BrainResponse {
   // A long window gives a stable weekday signal, unless the user scoped a range.
   const scoped = selectTx(txns, { range: slotRange(slots), type: 'expense' });
   const dow = groupByDayOfWeek(scoped);
+
+  // Weekend-vs-weekday split. Totals alone mislead (5 weekdays vs 2 weekend
+  // days), so the verdict is per-day averages over the observed span.
+  if (WKND_VS_RE.test(norm) && scoped.length) {
+    const weekendTotal = dow[5].amount + dow[6].amount; // Mon-start: 5=Sat 6=Sun
+    const weekdayTotal = dow.slice(0, 5).reduce((s, d) => s + d.amount, 0);
+    const dates = scoped
+      .map((t) => new Date(t.date).getTime())
+      .filter((t) => !Number.isNaN(t));
+    const spanStart = slots.timeRange?.start ?? new Date(Math.min(...dates));
+    const spanEnd = slots.timeRange?.end ?? ctxNow(ctx);
+    const days = countDayTypes(spanStart, spanEnd);
+    const perWeekend = weekendTotal / Math.max(1, days.weekend);
+    const perWeekday = weekdayTotal / Math.max(1, days.weekday);
+    const weekendWins = perWeekend > perWeekday;
+    const when = slots.timeRange ? ` ${slots.timeRange.label}` : '';
+    const note = slots.timeRange ? coverageNote(ctx, slots.timeRange) : '';
+    return {
+      text: `Per day, you spend more on ${
+        weekendWins ? 'weekends' : 'weekdays'
+      }${when} — about ${peso(perWeekend)}/weekend day vs ${peso(
+        perWeekday
+      )}/weekday (${peso(weekendTotal)} vs ${peso(weekdayTotal)} in total).${note}`,
+      card: {
+        kind: 'pattern',
+        data: buildPatternCard({
+          title: 'WEEKENDS VS WEEKDAYS',
+          caption: `${weekendWins ? 'Weekends' : 'Weekdays'} run hotter per day`,
+          bars: [
+            { label: 'Weekend', amount: weekendTotal, highlight: weekendWins },
+            { label: 'Weekday', amount: weekdayTotal, highlight: !weekendWins },
+          ],
+        }),
+      },
+      followUps,
+    };
+  }
   const peak = maxBy(dow, (d) => d.amount);
   if (!peak || peak.amount <= 0) {
     return {
@@ -1503,10 +1718,61 @@ function answerTrend(ctx: BrainContext, slots: Slots): BrainResponse {
   };
 }
 
-function answerTypicalSpend(ctx: BrainContext, slots: Slots): BrainResponse {
+const DAILY_AVG_RE = /\b(?:daily|per[- ]day|a day|each day)\b/;
+
+function answerTypicalSpend(
+  ctx: BrainContext,
+  slots: Slots,
+  norm: string
+): BrainResponse {
   const followUps = ['Give me a spending breakdown', 'Where can I cut back?'];
   const term = slots.merchant;
   const cat = slots.category?.label;
+
+  // "average daily spend" — a per-day average, not the merchant-habit answer.
+  if (DAILY_AVG_RE.test(norm)) {
+    const txns = ctx.transactions ?? [];
+    const tr = slots.timeRange;
+    let total: number;
+    let days: number;
+    let label: string;
+    if (tr && txns.length) {
+      const end = Math.min(tr.end.getTime(), ctxNow(ctx).getTime());
+      total = sumAmount(
+        selectTx(txns, {
+          range: { start: tr.start, end: new Date(end) },
+          type: 'expense',
+          categories: cat ? slotCats(slots) : undefined,
+        })
+      );
+      days = Math.max(
+        1,
+        Math.floor((end - tr.start.getTime()) / 86_400_000) + 1
+      );
+      label = whenPhrase(tr);
+    } else {
+      total = cat
+        ? (ctx.topCategories.find(
+            (c) => c.name.toLowerCase() === cat.toLowerCase()
+          )?.amount ?? 0)
+        : ctx.spent;
+      days = Math.max(1, ctx.dayOfMonth);
+      label = 'this month';
+    }
+    if (total <= 0) {
+      return {
+        text: `I don't see any${cat ? ` ${cat}` : ''} spending ${label} to average out yet.`,
+        followUps,
+      };
+    }
+    const note = tr ? coverageNote(ctx, tr) : '';
+    return {
+      text: `You're averaging about ${peso(total / days)}/day${
+        cat ? ` on ${cat}` : ''
+      } ${label} — ${peso(total)} over ${days} day${days === 1 ? '' : 's'}.${note}`,
+      followUps,
+    };
+  }
 
   // Prefer a detected habit (merchant-level repeat) when it matches the subject.
   const habit = (ctx.insights?.habits ?? []).find((h) => {
@@ -1561,6 +1827,269 @@ function answerTypicalSpend(ctx: BrainContext, slots: Slots): BrainResponse {
   };
 }
 
+/**
+ * "Why is my spending so high?" / "what changed since last month?" — a
+ * diagnostic answer: the month-over-month delta plus the categories driving it,
+ * with an anomaly callout when the engine flagged one.
+ */
+function answerExplainSpend(ctx: BrainContext): BrainResponse {
+  const followUps = ['Where can I cut back?', 'Give me a spending breakdown'];
+  const txns = ctx.transactions ?? [];
+  const { spent, lastMonthSpent } = ctx;
+
+  if (spent <= 0) {
+    return {
+      text: "You haven't logged any spending this month, so there's nothing driving it up — once you log a few expenses I can break down what's behind them.",
+      followUps,
+    };
+  }
+
+  // Per-category this-vs-last-month deltas — the actual drivers.
+  let drivers: { name: string; now: number; delta: number }[] = [];
+  if (txns.length) {
+    const thisB = groupByCategory(
+      selectTx(txns, { range: thisMonthRange(ctx), type: 'expense' })
+    );
+    const lastB = groupByCategory(
+      selectTx(txns, { range: lastMonthRange(ctx), type: 'expense' })
+    );
+    const lastByName = new Map(
+      lastB.map((b) => [b.name.toLowerCase(), b.amount])
+    );
+    drivers = thisB
+      .map((b) => ({
+        name: b.name,
+        now: b.amount,
+        delta: b.amount - (lastByName.get(b.name.toLowerCase()) ?? 0),
+      }))
+      .filter((d) => d.delta > 0)
+      .sort((a, b) => b.delta - a.delta)
+      .slice(0, 3);
+  }
+
+  const diff = spent - lastMonthSpent;
+  let head: string;
+  if (lastMonthSpent <= 0) {
+    head = `You've spent ${peso(spent)} this month (no last-month baseline to compare against yet).`;
+  } else if (diff > 0) {
+    head = `You've spent ${peso(spent)} this month — ${peso(diff)} (${pctOf(
+      diff,
+      lastMonthSpent
+    )}%) more than last month's ${peso(lastMonthSpent)}.`;
+  } else if (diff < 0) {
+    head = `Actually trending better — ${peso(spent)} this month vs ${peso(
+      lastMonthSpent
+    )} last month, down ${pctOf(-diff, lastMonthSpent)}%.`;
+  } else {
+    head = `You're exactly level with last month at ${peso(spent)}.`;
+  }
+
+  const driverLine = drivers.length
+    ? ` The biggest movers: ${drivers
+        .map((d) => `${d.name} (+${peso(d.delta)})`)
+        .join(', ')}.`
+    : '';
+  const worst = ctx.insights?.anomalies?.length
+    ? [...ctx.insights.anomalies].sort((a, b) => b.pctOver - a.pctOver)[0]
+    : undefined;
+  const anomalyLine = worst ? ` Also, ${anomalyClause(worst)}.` : '';
+
+  const status = diff > 0 ? ('watch' as const) : ('good' as const);
+  const card =
+    drivers.length > 0
+      ? {
+          kind: 'coach' as const,
+          data: {
+            status,
+            title: diff > 0 ? "What's driving it" : 'Holding steady',
+            message: head,
+            reasons: drivers.map((d) => ({
+              label: d.name,
+              detail: `+${peso(d.delta)} vs last month · ${peso(d.now)} total`,
+            })),
+          },
+          action: OPEN_INSIGHTS,
+        }
+      : undefined;
+
+  return { text: `${head}${driverLine}${anomalyLine}`, card, followUps };
+}
+
+/**
+ * "Cheapest / most expensive month" — month-over-month totals from the
+ * snapshot. The current (incomplete) month is shown but never crowned, and the
+ * answer names the data span so a bounded snapshot can't mislead.
+ */
+function answerMonthPattern(
+  ctx: BrainContext,
+  slots: Slots,
+  norm: string
+): BrainResponse {
+  const followUps = ['Compare to last month', 'Give me a spending breakdown'];
+  const txns = ctx.transactions ?? [];
+  if (!txns.length) {
+    return {
+      text: 'I need some transaction history to compare your months — log a few expenses and ask again.',
+      followUps,
+    };
+  }
+  const range = slotRange(slots);
+  const buckets = groupByMonth(selectTx(txns, { range, type: 'expense' }));
+  const nowD = ctxNow(ctx);
+  const complete = buckets.filter(
+    (b) => !(b.year === nowD.getFullYear() && b.month === nowD.getMonth())
+  );
+  if (complete.length < 2) {
+    return {
+      text: "I don't have enough full months of data to call a cheapest or priciest month yet — give it another month or two.",
+      actions: [OPEN_INSIGHTS],
+      followUps,
+    };
+  }
+  const wantsMin = /\b(?:cheapest|least|lowest)\b/.test(norm);
+  const minB = complete.reduce((a, b) => (b.amount < a.amount ? b : a));
+  const maxB = complete.reduce((a, b) => (b.amount > a.amount ? b : a));
+  if (minB === maxB || maxB.amount - minB.amount < 1) {
+    return {
+      text: `Your months are remarkably even — every full month I can see lands around ${peso(
+        maxB.amount
+      )}.`,
+      followUps,
+    };
+  }
+  const feature = wantsMin ? minB : maxB;
+  const bars = buckets.slice(-8).map((b) => ({
+    label: b.label,
+    amount: b.amount,
+    highlight: b.year === feature.year && b.month === feature.month,
+  }));
+  const note = slots.timeRange
+    ? coverageNote(ctx, slots.timeRange)
+    : ctx.snapshotStart
+      ? ` (counting since ${fmtDateYear(ctx.snapshotStart)})`
+      : '';
+  const text = wantsMin
+    ? `Your cheapest month was ${minB.label} at ${peso(
+        minB.amount
+      )}; the priciest was ${maxB.label} at ${peso(maxB.amount)}.${note}`
+    : `Your most expensive month was ${maxB.label} at ${peso(
+        maxB.amount
+      )}; the cheapest was ${minB.label} at ${peso(minB.amount)}.${note}`;
+  return {
+    text,
+    card: {
+      kind: 'pattern',
+      data: buildPatternCard({
+        title: 'SPENDING BY MONTH',
+        caption: `${wantsMin ? 'Cheapest' : 'Priciest'}: ${feature.label}`,
+        bars,
+      }),
+    },
+    followUps,
+  };
+}
+
+/**
+ * "When is my next bill due?" / "what bills are coming up this week?" — from
+ * the configured recurring bills (`ctx.recurringBills`). An explicit window
+ * filters to it; otherwise the horizon is the next 31 days.
+ */
+function answerUpcomingBills(ctx: BrainContext, slots: Slots): BrainResponse {
+  const followUps = ['Did I pay my internet bill?', 'Where can I cut back?'];
+  const setUp: CardAction = {
+    kind: 'navigate',
+    label: 'Set up bills',
+    target: 'recurringBills',
+  };
+  const all = (ctx.recurringBills ?? []).filter(
+    (b) => b.nextDueAt && Number.isFinite(Date.parse(b.nextDueAt))
+  );
+  if (!all.length) {
+    return {
+      text: "You haven't set up any recurring bills yet — add them and I'll tell you what's due next (and nag you before it is).",
+      actions: [setUp],
+      followUps,
+    };
+  }
+
+  const nowD = ctxNow(ctx);
+  const todayStart = new Date(
+    nowD.getFullYear(),
+    nowD.getMonth(),
+    nowD.getDate()
+  );
+  const horizonEnd = slots.timeRange
+    ? slots.timeRange.end
+    : new Date(todayStart.getTime() + 31 * 86_400_000);
+  const windowStart = slots.timeRange
+    ? new Date(Math.max(slots.timeRange.start.getTime(), todayStart.getTime()))
+    : todayStart;
+
+  const upcoming = all
+    .map((b) => ({ ...b, due: new Date(b.nextDueAt as string) }))
+    .filter((b) => b.due >= windowStart && b.due <= horizonEnd)
+    .sort((a, b) => a.due.getTime() - b.due.getTime());
+
+  const when = slots.timeRange ? whenPhrase(slots.timeRange) : 'soon';
+  if (!upcoming.length) {
+    const nextAny = all
+      .map((b) => ({ ...b, due: new Date(b.nextDueAt as string) }))
+      .filter((b) => b.due >= todayStart)
+      .sort((a, b) => a.due.getTime() - b.due.getTime())[0];
+    const nextBit = nextAny
+      ? ` Next up is ${capWord(nextAny.label)} — ${peso(
+          nextAny.amount
+        )} on ${fmtDate(nextAny.nextDueAt as string)}.`
+      : '';
+    return {
+      text: `Nothing due ${when}.${nextBit}`,
+      actions: [
+        { kind: 'navigate', label: 'Review bills', target: 'recurringBills' },
+      ],
+      followUps,
+    };
+  }
+
+  const next = upcoming[0];
+  const total = upcoming.reduce((s, b) => s + b.amount, 0);
+  const daysToNext = Math.ceil(
+    (next.due.getTime() - nowD.getTime()) / 86_400_000
+  );
+  const dueWord =
+    daysToNext <= 0
+      ? 'due today'
+      : daysToNext === 1
+        ? 'due tomorrow'
+        : `due ${fmtDate(next.nextDueAt as string)}`;
+  const more =
+    upcoming.length > 1
+      ? ` Altogether ${upcoming.length} bills (${peso(total)}) are coming up${
+          slots.timeRange ? ` ${whenPhrase(slots.timeRange)}` : ''
+        }.`
+      : '';
+  return {
+    text: `Your next bill is ${capWord(next.label)} — ${peso(
+      next.amount
+    )} ${dueWord}.${more}`,
+    card: {
+      kind: 'coach',
+      data: {
+        status: daysToNext <= 3 ? 'watch' : 'good',
+        title: 'Upcoming bills',
+        message: `${peso(total)} due ${when}`,
+        reasons: upcoming.slice(0, 3).map((b) => ({
+          label: capWord(b.label),
+          detail: `${peso(b.amount)} · ${fmtDate(b.nextDueAt as string)}`,
+        })),
+      },
+      actions: [
+        { kind: 'navigate', label: 'Review bills', target: 'recurringBills' },
+      ],
+    },
+    followUps,
+  };
+}
+
 /** Generic "I didn't catch that" reply with example prompts. */
 export function answerFallback(): BrainResponse {
   return {
@@ -1599,18 +2128,113 @@ export function answerTimeClarify(): BrainResponse {
   };
 }
 
+// Words that can sit where a debtor's name would ("who owes me", "they
+// borrowed…") — never a person to stage in the Utang Tracker.
+const NOT_A_DEBTOR = new Set([
+  'i',
+  'you',
+  'he',
+  'she',
+  'it',
+  'we',
+  'they',
+  'who',
+  'whoever',
+  'what',
+  'that',
+  'this',
+  'everyone',
+  'everybody',
+  'someone',
+  'somebody',
+  'anyone',
+  'anybody',
+  'nobody',
+  'people',
+  'money',
+  'cash',
+  'much',
+]);
+
+/**
+ * Detect a NEW-receivable statement ("paul owed me 5k", "paul borrowed 5k",
+ * "lent paul 500", "loaned 500 to paul") and pull out the debtor + amount.
+ * Returns null for question forms ("who owes me?") so they fall through to the
+ * normal list answer.
+ */
+function parseReceivableStatement(
+  seed: string,
+  slots: Slots
+): { debtor: string; amount?: number } | null {
+  // "i borrowed…" is the user's own payable — handled by the clarify note.
+  if (/\bi\s+(?:borrowed|owe)\b/.test(seed)) return null;
+  const m =
+    /\b([a-z]+)\s+(?:owes?|owed)\s+me\b/.exec(seed) ??
+    /\b([a-z]+)\s+borrowed\b/.exec(seed) ??
+    /\b(?:lent|loaned)\s+([a-z]+)\b/.exec(seed) ??
+    /\b(?:lent|loaned)\s+(?:₱|php)?\s?[\d,.]+k?\s+to\s+([a-z]+)/.exec(seed);
+  if (!m || NOT_A_DEBTOR.has(m[1])) return null;
+  const amount = slots.amounts.length ? Math.max(...slots.amounts) : undefined;
+  return { debtor: m[1], amount };
+}
+
 /**
  * Debt answer. The Utang tracker stores money owed **to** the user
  * (receivables), never their own payables — so every phrasing ("how much do I
  * owe", "who owes me") is answered as money owed *to* them, and a payable-shaped
  * question gets a one-line clarification first so the direction is unambiguous.
+ *
+ * A statement of a NEW receivable ("Paul owed me 5k") is different: the user is
+ * telling us a fact to record, not asking. We never log it as an expense —
+ * instead we stage it in the Utang Tracker (prefilled, user confirms there; no
+ * silent write).
  */
-function answerDebt(ctx: BrainContext, seed: string): BrainResponse {
+function answerDebt(
+  ctx: BrainContext,
+  slots: Slots,
+  seed: string
+): BrainResponse {
   const followUps = ["What's my balance?", 'Give me a spending breakdown'];
   const debts = (ctx.debts ?? []).filter((d) => d.remaining > 0);
+
+  const stmt = parseReceivableStatement(seed, slots);
+  if (stmt) {
+    const debtor = stmt.debtor.charAt(0).toUpperCase() + stmt.debtor.slice(1);
+    const amountTxt = stmt.amount ? ` ${peso(stmt.amount)}` : ' money';
+    const trackAction: CardAction = {
+      kind: 'navigate',
+      label: 'Add to Utang Tracker',
+      target: 'utangTracker',
+      params: {
+        debtorName: debtor,
+        ...(stmt.amount ? { amount: stmt.amount } : {}),
+      },
+    };
+    return {
+      text: `Sounds like ${debtor} owes you${amountTxt} — that's not an expense, so I won't log it. Track it as utang instead and tick off repayments as they come in.`,
+      card: {
+        kind: 'coach',
+        data: {
+          status: 'watch',
+          title: 'Track this utang?',
+          message: `${debtor} owes you${amountTxt}. I've prefilled it — just confirm.`,
+          reasons: [
+            {
+              label: debtor,
+              detail: stmt.amount ? peso(stmt.amount) : 'amount not given',
+            },
+          ],
+        },
+        actions: [trackAction],
+      },
+      followUps: ['Who owes me?', "What's my balance?"],
+    };
+  }
+
   // "how much do I owe" / "do I owe" / "who do I owe" read as the user's own
   // payables — clarify we track the other direction before answering.
-  const payablePhrasing = /\b(?:i owe|do i owe|how much do i owe)\b/.test(seed);
+  const payablePhrasing =
+    /\b(?:i owe|do i owe|how much do i owe|i borrowed)\b/.test(seed);
   const note = payablePhrasing
     ? 'Quick note — I track money owed *to* you (utang), not what you owe. '
     : '';
@@ -1681,7 +2305,7 @@ export function answerDataIntent(
     case 'cut':
       return answerCut(ctx);
     case 'savings':
-      return answerSavings(ctx);
+      return answerSavings(ctx, slots);
     case 'coach':
       return answerCoach(ctx);
     case 'overspend':
@@ -1701,13 +2325,13 @@ export function answerDataIntent(
     case 'needsVsWants':
       return answerNeedsVsWants(ctx, slots);
     case 'dowPattern':
-      return answerDowPattern(ctx, slots);
+      return answerDowPattern(ctx, slots, seed);
     case 'incomeShare':
       return answerIncomeShare(ctx, slots);
     case 'trend':
       return answerTrend(ctx, slots);
     case 'typicalSpend':
-      return answerTypicalSpend(ctx, slots);
+      return answerTypicalSpend(ctx, slots, seed);
     case 'subscriptionCut':
       return answerSubscriptionCut(ctx);
     case 'emergencyFund':
@@ -1727,13 +2351,29 @@ export function answerDataIntent(
     case 'afford':
       return answerAfford(ctx, slots, seed);
     case 'debt':
-      return answerDebt(ctx, seed);
+      return answerDebt(ctx, slots, seed);
     case 'safeToSpend':
       return answerSafeToSpend(ctx);
     case 'reCategorize':
       return answerReCategorize(ctx, slots, seed);
     case 'splitBill':
       return answerSplitBill(slots);
+    case 'runway':
+      return answerRunway(ctx);
+    case 'explainSpend':
+      return answerExplainSpend(ctx);
+    case 'monthPattern':
+      return answerMonthPattern(ctx, slots, seed);
+    case 'upcomingBills':
+      return answerUpcomingBills(ctx, slots);
+    case 'setBudget':
+      return answerSetBudget(ctx, slots);
+    case 'deleteTransaction':
+      return answerDeleteTransaction(ctx, slots, seed);
+    case 'transfer':
+      return answerTransfer(ctx, slots, seed);
+    case 'reminder':
+      return answerReminder(slots, seed);
     default:
       return null;
   }

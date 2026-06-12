@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Platform, Linking } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -48,25 +48,14 @@ const FULL_DAYS = [
   'Saturday',
 ];
 
-function daysBeforeLabel(d: number): string {
-  if (d === 0) return 'On the day';
-  if (d === 1) return '1 day before';
-  return `${d} days before`;
-}
-
 // ── Option lists for the value pickers ───────────────────────────────────────
+// HOUR + WEEKDAY labels are numeric time / weekday names (locale-formatting, not
+// UI copy) and stay as-is; the day-before and threshold labels are translated
+// inside the component where the `t()` translator is available.
 const HOUR_OPTIONS: SheetOption<number>[] = Array.from(
   { length: 24 },
   (_, h) => ({ label: formatHour(h), value: h })
 );
-const DAYS_BEFORE_OPTIONS: SheetOption<number>[] = [0, 1, 2, 3].map((d) => ({
-  label: daysBeforeLabel(d),
-  value: d,
-}));
-const THRESHOLD_OPTIONS: SheetOption<number>[] = [50, 80, 100].map((t) => ({
-  label: `${t}% of budget`,
-  value: t,
-}));
 const WEEKDAY_OPTIONS: SheetOption<number>[] = FULL_DAYS.map((name, i) => ({
   label: name,
   value: i,
@@ -105,6 +94,28 @@ export default function NotificationSettingsScreen() {
     if (enabled) setActiveSheet(key);
   };
 
+  // Localized labels for the picker that can't live at module scope (need `t`).
+  const dayLabel = useCallback(
+    (d: number) => {
+      if (d === 0) return t('notif.onTheDay');
+      if (d === 1) return t('notif.oneDayBefore');
+      return t('notif.nDaysBefore', { n: d });
+    },
+    [t]
+  );
+  const daysBeforeOptions: SheetOption<number>[] = useMemo(
+    () => [0, 1, 2, 3].map((d) => ({ label: dayLabel(d), value: d })),
+    [dayLabel]
+  );
+  const thresholdOptions: SheetOption<number>[] = useMemo(
+    () =>
+      [50, 80, 100].map((pct) => ({
+        label: t('notif.thresholdOption', { pct }),
+        value: pct,
+      })),
+    [t]
+  );
+
   // OS-level permission state. Refresh on focus so returning from the system
   // settings screen or the priming flow shows the up-to-date status.
   const [permission, setPermission] = useState<PermissionState>('unknown');
@@ -136,31 +147,31 @@ export default function NotificationSettingsScreen() {
     switch (permission) {
       case 'granted':
         return {
-          label: 'Notifications allowed',
-          subtitle: 'Fino can send notifications to this device.',
+          label: t('notif.perm.granted.title'),
+          subtitle: t('notif.perm.granted.sub'),
           icon: 'checkmark-circle-outline',
           showChevron: false,
         };
       case 'denied':
         return {
-          label: 'Notifications are off',
-          subtitle: 'Blocked in system settings. Tap to open Settings.',
+          label: t('notif.perm.denied.title'),
+          subtitle: t('notif.perm.denied.sub'),
           icon: 'alert-circle-outline',
           onPress: () => Linking.openSettings(),
           showChevron: true,
         };
       case 'undetermined':
         return {
-          label: 'Turn on notifications',
-          subtitle: 'Get bill reminders, budget alerts, and goal nudges.',
+          label: t('notif.perm.undetermined.title'),
+          subtitle: t('notif.perm.undetermined.sub'),
           icon: 'notifications-outline',
           onPress: () => navigation.navigate('NotificationPriming'),
           showChevron: true,
         };
       default:
         return {
-          label: 'Notifications',
-          subtitle: 'Manage how Fino reaches you.',
+          label: t('notif.perm.default.title'),
+          subtitle: t('notif.perm.default.sub'),
           icon: 'notifications-outline',
           showChevron: false,
         };
@@ -215,19 +226,20 @@ export default function NotificationSettingsScreen() {
         </Group>
 
         <View style={dim(true)}>
-          <SectionTitle>Reminders</SectionTitle>
+          <SectionTitle>{t('notif.section.reminders')}</SectionTitle>
           <Group>
             <Row
               icon="calendar-outline"
               title={t('settings.notifications.bills')}
               subtitle={t('settings.notifications.billsSub', {
-                when: daysBeforeLabel(prefs.billReminderDaysBefore),
+                when: dayLabel(prefs.billReminderDaysBefore),
                 time: formatHour(prefs.billReminderHour),
               })}
               trailing={
                 <ThemedSwitch
                   value={prefs.billReminders}
                   onValueChange={(v) => updatePref('billReminders', v)}
+                  disabled={!enabled}
                 />
               }
               isLast={!prefs.billReminders}
@@ -236,18 +248,16 @@ export default function NotificationSettingsScreen() {
               <>
                 <Row
                   icon="time-outline"
-                  title="Remind me"
+                  title={t('notif.remindMe')}
                   trailing={
-                    <ValueText
-                      text={daysBeforeLabel(prefs.billReminderDaysBefore)}
-                    />
+                    <ValueText text={dayLabel(prefs.billReminderDaysBefore)} />
                   }
                   showChevron
                   onPress={openSheet('billDays')}
                 />
                 <Row
                   icon="alarm-outline"
-                  title="At"
+                  title={t('notif.at')}
                   trailing={
                     <ValueText text={formatHour(prefs.billReminderHour)} />
                   }
@@ -266,13 +276,14 @@ export default function NotificationSettingsScreen() {
                 <ThemedSwitch
                   value={prefs.budgetAlerts}
                   onValueChange={(v) => updatePref('budgetAlerts', v)}
+                  disabled={!enabled}
                 />
               }
             />
             {prefs.budgetAlerts && (
               <Row
                 icon="speedometer-outline"
-                title="Alert me at"
+                title={t('notif.alertMeAt')}
                 trailing={<ValueText text={`${prefs.budgetThreshold}%`} />}
                 showChevron
                 onPress={openSheet('budgetThreshold')}
@@ -280,12 +291,13 @@ export default function NotificationSettingsScreen() {
             )}
             <Row
               icon="cash-outline"
-              title="Payday reminders"
-              subtitle="A nudge on payday to log income when it lands."
+              title={t('notif.payday')}
+              subtitle={t('notif.paydaySub')}
               trailing={
                 <ThemedSwitch
                   value={prefs.paydayReminders}
                   onValueChange={(v) => updatePref('paydayReminders', v)}
+                  disabled={!enabled}
                 />
               }
             />
@@ -297,13 +309,14 @@ export default function NotificationSettingsScreen() {
                 <ThemedSwitch
                   value={prefs.inactivityReminder}
                   onValueChange={(v) => updatePref('inactivityReminder', v)}
+                  disabled={!enabled}
                 />
               }
               isLast
             />
           </Group>
 
-          <SectionTitle>Insights & goals</SectionTitle>
+          <SectionTitle>{t('notif.section.insights')}</SectionTitle>
           <Group>
             <Row
               icon="analytics-outline"
@@ -316,6 +329,7 @@ export default function NotificationSettingsScreen() {
                 <ThemedSwitch
                   value={prefs.weeklyDigest}
                   onValueChange={(v) => updatePref('weeklyDigest', v)}
+                  disabled={!enabled}
                 />
               }
             />
@@ -323,7 +337,7 @@ export default function NotificationSettingsScreen() {
               <>
                 <Row
                   icon="today-outline"
-                  title="Day"
+                  title={t('notif.day')}
                   trailing={
                     <ValueText text={FULL_DAYS[prefs.weeklyDigestDay]} />
                   }
@@ -332,7 +346,7 @@ export default function NotificationSettingsScreen() {
                 />
                 <Row
                   icon="alarm-outline"
-                  title="Time"
+                  title={t('notif.time')}
                   trailing={
                     <ValueText text={formatHour(prefs.weeklyDigestHour)} />
                   }
@@ -348,44 +362,47 @@ export default function NotificationSettingsScreen() {
                 <ThemedSwitch
                   value={prefs.goalMilestones}
                   onValueChange={(v) => updatePref('goalMilestones', v)}
+                  disabled={!enabled}
                 />
               }
               isLast
             />
           </Group>
 
-          <SectionTitle>Privacy</SectionTitle>
+          <SectionTitle>{t('notif.privacyHeader')}</SectionTitle>
           <Group>
             <Row
               icon="lock-closed-outline"
-              title="Hide amounts on lockscreen"
-              subtitle="Redact peso amounts in notifications until you unlock."
+              title={t('notif.hideLockscreen')}
+              subtitle={t('notif.hideLockscreenSub')}
               trailing={
                 <ThemedSwitch
                   value={prefs.hideAmountsOnLockscreen}
                   onValueChange={(v) =>
                     updatePref('hideAmountsOnLockscreen', v)
                   }
+                  disabled={!enabled}
                 />
               }
               isLast
             />
           </Group>
 
-          <SectionTitle>Quiet hours</SectionTitle>
+          <SectionTitle>{t('settings.notifications.quiet')}</SectionTitle>
           <Group>
             <Row
               icon="moon-outline"
               title={t('settings.notifications.quiet')}
               subtitle={
                 prefs.quietHoursEnabled
-                  ? 'No notifications during this window.'
-                  : 'Off'
+                  ? t('notif.quietOn')
+                  : t('notif.quietOff')
               }
               trailing={
                 <ThemedSwitch
                   value={prefs.quietHoursEnabled}
                   onValueChange={(v) => updatePref('quietHoursEnabled', v)}
+                  disabled={!enabled}
                 />
               }
               isLast={!prefs.quietHoursEnabled}
@@ -394,7 +411,7 @@ export default function NotificationSettingsScreen() {
               <>
                 <Row
                   icon="cloudy-night-outline"
-                  title="From"
+                  title={t('notif.from')}
                   trailing={
                     <ValueText text={formatHour(prefs.quietHoursStart)} />
                   }
@@ -403,7 +420,7 @@ export default function NotificationSettingsScreen() {
                 />
                 <Row
                   icon="sunny-outline"
-                  title="To"
+                  title={t('notif.to')}
                   trailing={
                     <ValueText text={formatHour(prefs.quietHoursEnd)} />
                   }
@@ -419,8 +436,8 @@ export default function NotificationSettingsScreen() {
         {/* Value pickers — one OptionSheet, parameterised by the open key. */}
         <OptionSheet
           visible={activeSheet === 'billDays'}
-          title="Remind me"
-          options={DAYS_BEFORE_OPTIONS}
+          title={t('notif.remindMe')}
+          options={daysBeforeOptions}
           selected={prefs.billReminderDaysBefore}
           onSelect={(v) =>
             updatePref('billReminderDaysBefore', v as 0 | 1 | 2 | 3)
@@ -429,7 +446,7 @@ export default function NotificationSettingsScreen() {
         />
         <OptionSheet
           visible={activeSheet === 'billHour'}
-          title="Reminder time"
+          title={t('notif.sheet.reminderTime')}
           options={HOUR_OPTIONS}
           selected={prefs.billReminderHour}
           onSelect={(v) => updatePref('billReminderHour', v)}
@@ -437,15 +454,15 @@ export default function NotificationSettingsScreen() {
         />
         <OptionSheet
           visible={activeSheet === 'budgetThreshold'}
-          title="Budget alert threshold"
-          options={THRESHOLD_OPTIONS}
+          title={t('notif.sheet.threshold')}
+          options={thresholdOptions}
           selected={prefs.budgetThreshold}
           onSelect={(v) => updatePref('budgetThreshold', v as 50 | 80 | 100)}
           onClose={() => setActiveSheet(null)}
         />
         <OptionSheet
           visible={activeSheet === 'digestDay'}
-          title="Weekly digest day"
+          title={t('notif.sheet.digestDay')}
           options={WEEKDAY_OPTIONS}
           selected={prefs.weeklyDigestDay}
           onSelect={(v) =>
@@ -455,7 +472,7 @@ export default function NotificationSettingsScreen() {
         />
         <OptionSheet
           visible={activeSheet === 'digestHour'}
-          title="Weekly digest time"
+          title={t('notif.sheet.digestTime')}
           options={HOUR_OPTIONS}
           selected={prefs.weeklyDigestHour}
           onSelect={(v) => updatePref('weeklyDigestHour', v)}
@@ -463,7 +480,7 @@ export default function NotificationSettingsScreen() {
         />
         <OptionSheet
           visible={activeSheet === 'quietStart'}
-          title="Quiet hours start"
+          title={t('notif.sheet.quietStart')}
           options={HOUR_OPTIONS}
           selected={prefs.quietHoursStart}
           onSelect={(v) => updatePref('quietHoursStart', v)}
@@ -471,7 +488,7 @@ export default function NotificationSettingsScreen() {
         />
         <OptionSheet
           visible={activeSheet === 'quietEnd'}
-          title="Quiet hours end"
+          title={t('notif.sheet.quietEnd')}
           options={HOUR_OPTIONS}
           selected={prefs.quietHoursEnd}
           onSelect={(v) => updatePref('quietHoursEnd', v)}
@@ -488,9 +505,7 @@ export default function NotificationSettingsScreen() {
             lineHeight: 18,
           }}
         >
-          Notifications respect your device-level permissions for Fino. If push
-          isn&apos;t working, check Settings → Notifications → Fino on your
-          device.
+          {t('notif.footer')}
         </Text>
       </ScrollView>
     </View>

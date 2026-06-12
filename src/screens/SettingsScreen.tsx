@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -13,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useCurrency } from '../contexts/CurrencyContext';
+import { useAppLock } from '../contexts/AppLockContext';
 import { useTranslation } from '../contexts/I18nContext';
 import { ACCENT_THEMES, AccentKey } from '../constants/theme';
 import {
@@ -20,6 +22,7 @@ import {
   Row,
   SectionTitle,
   SettingsHeader,
+  ThemedSwitch,
 } from '../components/settings/SettingsPrimitives';
 import { SUPPORTED_LANGUAGES } from '../i18n/strings';
 
@@ -30,8 +33,23 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { colors, mode, setMode, accent, setAccent, isDark } = useTheme();
   const { user, profile } = useAuth();
-  const { meta: currencyMeta } = useCurrency();
+  const { meta: currencyMeta, privacyMode, setPrivacyMode } = useCurrency();
+  const { enabled: appLockEnabled, setEnabled: setAppLockEnabled } =
+    useAppLock();
   const { lang, t } = useTranslation();
+
+  const toggleAppLock = async (on: boolean) => {
+    const res = await setAppLockEnabled(on);
+    if (!res.ok) {
+      const msg =
+        res.reason === 'no-hardware'
+          ? "This device doesn't support biometric unlock."
+          : res.reason === 'not-enrolled'
+            ? 'Set up Face ID, fingerprint, or a device passcode first, then try again.'
+            : 'Authentication failed. App lock was not enabled.';
+      Alert.alert('Biometric lock', msg);
+    }
+  };
 
   const langMeta = useMemo(
     () => SUPPORTED_LANGUAGES.find((l) => l.code === lang) || SUPPORTED_LANGUAGES[0],
@@ -262,6 +280,31 @@ export default function SettingsScreen() {
             subtitle={t('settings.notifications.pushSub')}
             showChevron
             onPress={() => navigation.navigate('NotificationSettings')}
+            isLast
+          />
+        </Group>
+
+        {/* ── Privacy & Security ── */}
+        <SectionTitle>{t('settings.section.privacy')}</SectionTitle>
+        <Group>
+          <Row
+            icon="finger-print-outline"
+            title={t('settings.account.biometric')}
+            subtitle={t('settings.account.biometricSub')}
+            trailing={
+              <ThemedSwitch value={appLockEnabled} onValueChange={toggleAppLock} />
+            }
+          />
+          <Row
+            icon="eye-off-outline"
+            title={t('settings.currency.privacyMode')}
+            subtitle={t('settings.currency.privacyModeSub')}
+            trailing={
+              <ThemedSwitch
+                value={privacyMode}
+                onValueChange={(v) => setPrivacyMode(v)}
+              />
+            }
             isLast
           />
         </Group>

@@ -51,15 +51,7 @@ const endOfDay = (d: Date): Date =>
 const addDays = (d: Date, n: number): Date => {
   const out = new Date(d);
   out.setDate(out.getDate() + n);
-
-const addHours = (d: Date, n: number): Date => {
-  const out = new Date(d);
-  out.setHours(out.getHours() + n);
   return out;
-
-}
-  return out;
-
 };
 
 /** Monday-start week index: 0 = Mon … 6 = Sun. */
@@ -160,10 +152,13 @@ function buildYear(now: Date, offset: number): TimeRange {
   };
 }
 
-/** q ∈ 1..4, current calendar year. */
+/** q ∈ 1..4 → its most recent occurrence (this year if it has already begun,
+ *  otherwise last year's) — mirrors `buildNamedMonth`, so "Q4" asked in June
+ *  never resolves to an empty future range. */
 function buildQuarter(now: Date, q: number): TimeRange {
-  const y = now.getFullYear();
   const startMonth = (q - 1) * 3;
+  const y =
+    startMonth > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
   return {
     key: 'quarter',
     label: `Q${q}`,

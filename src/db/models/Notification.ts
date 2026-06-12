@@ -15,7 +15,8 @@ export default class Notification extends Model {
 
   // Stable dedupe key — e.g. "overspend:Shopping:2026-05", "no-tx-2d:2026-05-15".
   // Insight generator skips inserting if a row with the same kind already exists
-  // (and is still unread/undismissed) so we don't repeat the same warning hourly.
+  // for this user — dismissed rows count too, so dismissing one doesn't make it
+  // regenerate on the next focus. New warnings get a fresh period-stamped kind.
   @text('kind') kind!: string;
 
   @text('type') type!: NotificationType;

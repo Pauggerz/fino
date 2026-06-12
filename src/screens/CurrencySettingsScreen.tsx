@@ -63,7 +63,7 @@ export default function CurrencySettingsScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search currencies"
+            placeholder={t('currency.searchPlaceholder')}
             placeholderTextColor={colors.textSecondary}
             style={{
               flex: 1,
@@ -167,7 +167,7 @@ export default function CurrencySettingsScreen() {
                   color: colors.textSecondary,
                 }}
               >
-                No currencies match "{query}"
+                {t('currency.noMatch', { query })}
               </Text>
             </View>
           )}

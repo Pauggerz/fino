@@ -207,6 +207,13 @@ const RULES: Rule[] = [
   // goalPlan — "save (up) for <thing>".
   { re: /\bsav(?:e|ing)(?: up)? for\b/, canon: 'goal plan' },
   { re: /\bput away for\b/, canon: 'goal plan' },
+  // goalPlan — goal statements: "goal this month to buy iPhone 17",
+  // "my goal is to save 50k", "new goal: emergency fund".
+  {
+    re: /\bgoals?\b[^.]{0,40}\b(?:buy|get|purchase|save|saving|afford)\b/,
+    canon: 'goal plan',
+  },
+  { re: /\b(?:my|new) goal\b/, canon: 'goal plan' },
   // bonusAdvice.
   {
     re: /\b(bonus|13th month|windfall|year[- ]end (?:pay|money))\b/,
@@ -265,6 +272,111 @@ const RULES: Rule[] = [
     canon: 'split bill',
   },
   { re: /\bgo dutch\b/, canon: 'split bill' },
+
+  // ── runway ("how long will my money last") ───────────────────────────────
+  {
+    re: /\bhow long (?:will|can|would|does) (?:my )?(?:money|cash|balance|funds?|savings?) (?:last|stretch|hold|carry)\b/,
+    canon: 'runway',
+  },
+  { re: /\bburn ?rate\b/, canon: 'runway' },
+  { re: /\brun(?:ning)? out of (?:money|cash|funds?)\b/, canon: 'runway' },
+  { re: /\bwhen (?:will|would|do) i (?:run out|go broke)\b/, canon: 'runway' },
+
+  // ── explainSpend ("why is my spending so high", "what changed") ──────────
+  {
+    re: /\bwhy (?:is|are|was|am i|do i)\b[^.]*\b(?:spend(?:ing)?|expenses?|gastos)\b/,
+    canon: 'explain spending',
+  },
+  {
+    re: /\bwhy\b[^.]*\b(?:so (?:high|much|big)|too (?:high|much))\b/,
+    canon: 'explain spending',
+  },
+  {
+    re: /\bwhy (?:did|has|is) my (?:balance|money|cash|savings?) (?:go(?:ne)? down|dropp?(?:ed)?|f[ae]ll(?:en)?|decreas(?:e|ed)|shr[au]nk)\b/,
+    canon: 'explain spending',
+  },
+  { re: /\bwhat(?: has| s|s)? changed\b/, canon: 'explain spending' },
+
+  // ── monthPattern ("cheapest / most expensive month") ─────────────────────
+  {
+    re: /\b(?:cheapest|least expensive|lowest|priciest|most expensive|highest|biggest|costliest) month\b/,
+    canon: 'month pattern',
+  },
+  {
+    re: /\b(?:which|what) month (?:did|do|have|was|were) i (?:spend|spent|spending)\b/,
+    canon: 'month pattern',
+  },
+  {
+    re: /\b(?:spending|spend|expenses?) (?:by|per|each|every) month\b/,
+    canon: 'month pattern',
+  },
+  { re: /\bmonth (?:over|by|to) month\b/, canon: 'month pattern' },
+
+  // ── weekend vs weekday → reuse the dowPattern anchor ─────────────────────
+  {
+    re: /\bweek ?ends?\b[^.]{0,16}\b(?:vs\.?|versus|or|and|compared to)\b[^.]{0,16}\bweek ?days?\b/,
+    canon: 'day of week',
+  },
+  {
+    re: /\bweek ?days?\b[^.]{0,16}\b(?:vs\.?|versus|or|and|compared to)\b[^.]{0,16}\bweek ?ends?\b/,
+    canon: 'day of week',
+  },
+
+  // ── saved-so-far → savings (range-aware in the bridge) ───────────────────
+  { re: /\b(?:have|did) i sav(?:e|ed)\b/, canon: 'savings' },
+  { re: /\bsaved? so far\b/, canon: 'savings' },
+
+  // ── average daily spend → typicalSpend (daily mode in the bridge) ────────
+  {
+    re: /\b(?:average|avg|typical) (?:daily|per[- ]day)\b/,
+    canon: 'typical spend',
+  },
+  { re: /\bdaily (?:spend(?:ing)?|average|burn)\b/, canon: 'typical spend' },
+  { re: /\b(?:spend|spending) (?:per|a|each) day\b/, canon: 'typical spend' },
+
+  // ── upcomingBills ─────────────────────────────────────────────────────────
+  { re: /\bnext bill\b/, canon: 'upcoming bills' },
+  {
+    re: /\b(?:bills?|payments?|dues)\b[^.]{0,20}\b(?:due|coming up|upcoming)\b/,
+    canon: 'upcoming bills',
+  },
+  {
+    re: /\b(?:due|coming up|upcoming)\b[^.]{0,20}\b(?:bills?|payments?)\b/,
+    canon: 'upcoming bills',
+  },
+  { re: /\bupcoming (?:bills?|payments?|charges?)\b/, canon: 'upcoming bills' },
+  { re: /\bwhen is\b[^.]{0,28}\bdue\b/, canon: 'upcoming bills' },
+  { re: /\bwhat(?: is|s)? due\b/, canon: 'upcoming bills' },
+
+  // ── setBudget (a command, diverted from the logger by route.ts) ──────────
+  {
+    re: /\b(?:set|create|make|add|update|put|give me)\b[^.]{0,16}\bbudgets?\b/,
+    canon: 'set budget',
+  },
+  { re: /\bbudgets?\b\s*(?:of\s*)?(?:₱|php)?\s?\d/, canon: 'set budget' },
+  {
+    re: /\bcap (?:my |the )?\w[\w ]{0,16} at (?:₱|php)?\s?\d/,
+    canon: 'set budget',
+  },
+
+  // ── deleteTransaction ─────────────────────────────────────────────────────
+  {
+    re: /\b(?:delete|remove|erase|scrap|undo)\b[^.]{0,24}\b(?:transactions?|charges?|expenses?|purchases?|payments?|entry|entries|one)\b/,
+    canon: 'delete transaction',
+  },
+
+  // ── transfer (money between accounts; needs an amount so "move my grab
+  //     ride to transport" stays a recategorize) ──────────────────────────────
+  {
+    re: /\b(?:move|transfer)\b[^.]{0,12}(?:₱|php)?\s?\d[\d,]*(?:\.\d+)?\b[^.]{0,28}\b(?:to|into)\b/,
+    canon: 'transfer funds',
+  },
+  { re: /\btransfer\b[^.]{0,20}\b(?:from|to|into)\b/, canon: 'transfer funds' },
+
+  // ── reminder ──────────────────────────────────────────────────────────────
+  { re: /\bremind me\b/, canon: 'set reminder' },
+  { re: /\bset (?:a |an )?reminder\b/, canon: 'set reminder' },
+  { re: /\bdon ?t let me forget\b/, canon: 'set reminder' },
 
   // ── thanks ───────────────────────────────────────────────────────────────
   {

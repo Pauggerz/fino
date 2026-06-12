@@ -43,6 +43,10 @@ export type Slots = {
   timeRange?: TimeRange;
   /** Category the question is scoped to ("how much on food"), if any. */
   category?: CategorySlot;
+  /** Second category of an explicit A-vs-B comparison ("food vs transport").
+   *  Only set when BOTH sides resolve to different categories; `category` then
+   *  holds the LEFT side. `answerCompare` consumes the pair. */
+  categoryB?: CategorySlot;
   /** Destination category of a re-categorize command ("... as Coffee", "... to
    *  Transport") — read off the text AFTER the connective so it never collides
    *  with the source subject before it. Only the brain's `reCategorize` handler
@@ -202,6 +206,59 @@ function resolveCategoryWord(
   return undefined;
 }
 
+/** Hard comparison connectives — safe to split on anywhere in the message. */
+const PAIR_SPLIT_RE = /\s+(?:vs\.?|versus|compared\s+(?:to|with))\s+/;
+/** Softer connectives — only trusted when the message carries an explicit
+ *  compare verb ("compare my food spending to my transport spending") or a
+ *  which-is-more framing ("did I spend more on food or transport"). */
+const PAIR_SPLIT_SOFT_RE = /\s+(?:to|with|against|and|or)\s+/;
+const PAIR_CONTEXT_RE = /\b(?:compare|more|less|bigger|higher|lower|which)\b/;
+
+/** Resolve one side of an A-vs-B phrase to a category via the taxonomy. High
+ *  confidence only — a fuzzy side means no pair at all. */
+function resolveSideCategory(
+  text: string,
+  opts: SlotOptions
+): CategorySlot | undefined {
+  const a = analyzeTransactionText(text, opts.categoryNames);
+  if (
+    a.matchedKeyword &&
+    a.suggestedCategory &&
+    a.confidence === 'high' &&
+    a.matchedKeyword.length >= 3 &&
+    !COMMAND_STOPWORDS.has(a.matchedKeyword.toLowerCase())
+  ) {
+    return {
+      master: a.suggestedCategory,
+      keyword: a.matchedKeyword,
+      label: a.resolvedCategory ?? MASTER_LABELS[a.suggestedCategory],
+    };
+  }
+  return undefined;
+}
+
+/** "food vs transport", "compare my food spending to my transport spending" →
+ *  both categories, or undefined when either side doesn't clearly resolve (or
+ *  both resolve to the same category — "groceries vs eating out" is one bucket
+ *  here, not a pair). */
+function extractCategoryPair(
+  normalized: string,
+  opts: SlotOptions
+): { a: CategorySlot; b: CategorySlot } | undefined {
+  let parts = normalized.split(PAIR_SPLIT_RE);
+  if (parts.length < 2 && PAIR_CONTEXT_RE.test(normalized)) {
+    parts = normalized.split(PAIR_SPLIT_SOFT_RE);
+  }
+  if (parts.length < 2) return undefined;
+  // With >2 fragments ("compare a to b and c") keep the first two — clarity
+  // over cleverness; three-way compares aren't supported.
+  const left = resolveSideCategory(parts[0], opts);
+  const right = resolveSideCategory(parts[1], opts);
+  if (!left || !right) return undefined;
+  if (left.label.toLowerCase() === right.label.toLowerCase()) return undefined;
+  return { a: left, b: right };
+}
+
 function extractTargetCategory(
   normalized: string,
   opts: SlotOptions
@@ -285,6 +342,14 @@ export function extractSlots(
       label:
         analysis.resolvedCategory ?? MASTER_LABELS[analysis.suggestedCategory],
     };
+  }
+
+  // An explicit A-vs-B category pair overrides the whole-text guess so the two
+  // sides land deterministically (category = left, categoryB = right).
+  const pair = extractCategoryPair(normalized, opts);
+  if (pair) {
+    slots.category = pair.a;
+    slots.categoryB = pair.b;
   }
 
   return slots;

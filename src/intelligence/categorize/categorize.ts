@@ -675,8 +675,9 @@ export function extractItems(
 ): string[] {
   if (!text || !text.trim()) return [];
   let cleaned = scrubAuxText(text, options.accountSurface ?? null);
-  // Replace numeric runs with separator.
-  cleaned = cleaned.replace(/\d+(?:[.,]\d+)*/g, '|');
+  // Replace numeric runs with separator — including a shorthand multiplier
+  // suffix ("5k", "2.5m"), or the bare "k"/"m" survives as a bogus item.
+  cleaned = cleaned.replace(/\d+(?:[.,]\d+)*\s*[km]?\b/gi, '|');
   // Replace connectors with separator (covers "+", ",", "and", "plus", "ug").
   cleaned = cleaned.replace(/[+,]/g, '|');
   cleaned = cleaned.replace(ITEM_CONNECTOR_PATTERN, '|');
@@ -751,7 +752,7 @@ export function buildDisplayName(
     // Split the text into segments first so "Ticket to Manila + tricycle"
     // becomes two separate trips rather than collapsing to a single one.
     const cleaned = scrubAuxText(text, options.accountSurface ?? null)
-      .replace(/\d+(?:[.,]\d+)*/g, '|')
+      .replace(/\d+(?:[.,]\d+)*\s*[km]?\b/gi, '|')
       .replace(/[+,]/g, '|')
       .replace(ITEM_CONNECTOR_PATTERN, '|');
 

@@ -53,7 +53,15 @@ export type IntentId =
   | 'debt'
   | 'safeToSpend'
   | 'reCategorize'
-  | 'splitBill';
+  | 'splitBill'
+  | 'runway'
+  | 'explainSpend'
+  | 'monthPattern'
+  | 'upcomingBills'
+  | 'setBudget'
+  | 'deleteTransaction'
+  | 'transfer'
+  | 'reminder';
 
 type Trigger = { term: string; weight: number };
 
@@ -445,6 +453,9 @@ const INTENT_DEFS: IntentDef[] = [
       t('saving for', 4),
       t('save up for', 5),
       t('put away for', 4),
+      // Tie-breaker: "my goal is to save 50k" also fires the cutAmount canon
+      // ("save … 50k"); the literal word keeps goalPlan ahead.
+      t('goal', 2),
     ],
   },
   {
@@ -517,12 +528,18 @@ const INTENT_DEFS: IntentDef[] = [
       t('owes me', 4),
       t('owe me', 4),
       t('owed to me', 4),
+      t('owed me', 4),
       t('my debts', 4),
       t('debts', 3),
       t('debt', 2),
       t('utang', 4),
       t('owe', 2),
       t('paid me back', 4),
+      // Statement forms ("Paul borrowed 5k", "lent Paul 500") — gated out of
+      // the logger by route.ts, answered as a track-it proposal.
+      t('borrowed', 4),
+      t('lent', 4),
+      t('loaned', 4),
     ],
   },
   {
@@ -568,6 +585,77 @@ const INTENT_DEFS: IntentDef[] = [
       t('divide the bill', 5),
       t('go dutch', 4),
       t('split it with', 4),
+    ],
+  },
+  {
+    id: 'runway',
+    blurb: 'estimate how long your money will last (burn rate)',
+    triggers: [
+      t('runway', 6), // canonicalize anchor
+      t('burn rate', 6),
+      t('money last', 4),
+      t('how long will my money', 5),
+    ],
+  },
+  {
+    id: 'explainSpend',
+    blurb: 'explain why your spending is high and what changed',
+    triggers: [
+      t('explain spending', 6), // canonicalize anchor
+      t('what changed', 4),
+    ],
+  },
+  {
+    id: 'monthPattern',
+    blurb: 'find your cheapest or most expensive month',
+    triggers: [
+      t('month pattern', 6), // canonicalize anchor
+      t('cheapest month', 5),
+      t('most expensive month', 5),
+      t('month over month', 4),
+    ],
+  },
+  {
+    id: 'upcomingBills',
+    blurb: 'see which bills are coming up and when the next is due',
+    triggers: [
+      t('upcoming bills', 6), // canonicalize anchor
+      t('next bill', 5),
+      t('bills due', 4),
+      t('due soon', 4),
+    ],
+  },
+  {
+    id: 'setBudget',
+    blurb: 'set a category budget ("set a budget of 5000 for food")',
+    triggers: [
+      t('set budget', 6), // canonicalize anchor
+      t('new budget', 4),
+    ],
+  },
+  {
+    id: 'deleteTransaction',
+    blurb: 'delete a transaction ("delete my last transaction")',
+    triggers: [
+      t('delete transaction', 6), // canonicalize anchor
+      t('delete', 2),
+    ],
+  },
+  {
+    id: 'transfer',
+    blurb: 'move money between your accounts',
+    triggers: [
+      t('transfer funds', 7), // canonicalize anchor — outweighs `recategorize`
+      t('transfer', 3),
+    ],
+  },
+  {
+    id: 'reminder',
+    blurb: 'set a bill reminder ("remind me to pay my electric bill")',
+    triggers: [
+      t('set reminder', 6), // canonicalize anchor
+      t('reminder', 4),
+      t('remind', 4),
     ],
   },
 ];

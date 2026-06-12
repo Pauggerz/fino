@@ -193,8 +193,22 @@ export function answerGoalPlan(
   norm: string
 ): BrainResponse {
   const followUps = ADVICE_FOLLOWUPS;
-  const target = slots.amounts.length ? Math.max(...slots.amounts) : undefined;
-  const name = parseGoalName(norm);
+  let name = parseGoalName(norm);
+  let amounts = slots.amounts;
+  // A small number right after the goal name ("iphone 17", "switch 2") is a
+  // model number, not a price — fold it into the name and never use it as the
+  // target, or "buy iPhone 17" becomes a ₱17 goal.
+  if (name) {
+    // `name` is parseGoalName output — guaranteed [a-z ]+, no regex escaping
+    // needed.
+    const modelMatch = new RegExp(`\\b${name}\\s+(\\d{1,2})\\b`).exec(norm);
+    if (modelMatch) {
+      name = `${name} ${modelMatch[1]}`;
+      const modelNo = Number(modelMatch[1]);
+      amounts = amounts.filter((a) => a !== modelNo);
+    }
+  }
+  const target = amounts.length ? Math.max(...amounts) : undefined;
   const goalLabel = name ? cap(name) : 'Savings goal';
 
   if (!target) {
@@ -452,6 +466,78 @@ export function answerSafeToSpend(ctx: BrainContext): BrainResponse {
         { label: 'Per day', detail: `${peso(perDay)} · ${remainingDays}d` },
       ],
       actions,
+    }),
+    followUps,
+  };
+}
+
+// ─── Runway ("how long will my money last?", "burn rate") ───────────────────
+
+/**
+ * Balance ÷ burn rate, narrated honestly: uses the best monthly-expense
+ * baseline available (3-month rolling avg → last month → this month) and
+ * always says the estimate assumes no new income.
+ */
+export function answerRunway(ctx: BrainContext): BrainResponse {
+  const followUps = ['How much is safe to spend?', 'Where can I cut back?'];
+  const m = monthlyExpense(ctx);
+  const { balance } = ctx;
+
+  if (balance <= 0) {
+    return {
+      text: "Your balance is at zero or below, so there's no runway to measure — let's find something to free up.",
+      card: adviceCard({
+        status: 'over',
+        title: 'No runway',
+        message: 'Balance is tapped out — time to trim or top up.',
+        actions: [
+          {
+            kind: 'prompt',
+            label: 'Where can I cut back?',
+            send: 'Where can I cut back?',
+          },
+        ],
+      }),
+      followUps,
+    };
+  }
+  if (m <= 0) {
+    return {
+      text: `You've got ${peso(balance)} on hand, but I need a month or so of spending history to estimate how long it would last. Log your expenses and ask me again.`,
+      followUps,
+    };
+  }
+
+  const daily = m / 30;
+  const days = Math.floor(balance / daily);
+  const months = balance / m;
+  const monthsR = Math.round(months * 10) / 10;
+  const status: CardStatus =
+    months < 1 ? 'over' : months < 3 ? 'watch' : 'good';
+  const monthsPhrase =
+    months >= 1
+      ? `roughly ${monthsR} month${monthsR === 1 ? '' : 's'} (about ${days} days)`
+      : `only about ${days} day${days === 1 ? '' : 's'}`;
+  return {
+    text: `At your usual burn of about ${peso(m)}/month (≈${peso(
+      daily
+    )}/day), your ${peso(balance)} would last ${monthsPhrase} — assuming no new income comes in.`,
+    card: adviceCard({
+      status,
+      title: 'Your runway',
+      message: `≈${monthsR} month${monthsR === 1 ? '' : 's'} at the current pace.`,
+      reasons: [
+        { label: 'On hand', detail: peso(balance) },
+        { label: 'Monthly burn', detail: `${peso(m)}/mo` },
+        { label: 'Daily burn', detail: `${peso(daily)}/day` },
+      ],
+      actions: [
+        {
+          kind: 'prompt',
+          label: 'How much is safe to spend?',
+          send: 'How much is safe to spend?',
+        },
+      ],
     }),
     followUps,
   };

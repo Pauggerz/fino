@@ -18,6 +18,7 @@ import {
   sumAmount,
   groupByCategory,
   groupByDayOfWeek,
+  groupByMonth,
   maxBy,
   matchMerchant,
   inRange,
@@ -317,6 +318,78 @@ console.log('Relative windows + vague time (Phase 0)');
   check(
     'recent transactions → not vague',
     s('show me my recent transactions').timeRangeUnresolved === undefined
+  );
+}
+
+// ─── groupByMonth + quarter fix + category pair (meerkat plan) ───────────────
+
+console.log('groupByMonth (monthPattern capability)');
+{
+  const buckets = groupByMonth(selectTx(TXNS, { type: 'expense' }));
+  // Expenses span Nov 2024 (x), Dec 2025 (h), Mar 2026 (g), May 2026 (d), Jun 2026 (a,b,c).
+  eq('bucket count', buckets.length, 5);
+  eq('chronological first', buckets[0].label, "Nov '24");
+  eq('chronological last', buckets[4].label, "Jun '26");
+  eq('cross-year labels carry the year', buckets[1].label, "Dec '25");
+  eq('June total', buckets[4].amount, 6600); // 100 + 5000 + 1500
+  eq('June count', buckets[4].count, 3);
+  eq('March total', buckets[2].amount, 8000);
+
+  // Single-year input keeps the short label.
+  const oneYear = groupByMonth(
+    selectTx(TXNS, { type: 'expense', range: parseTimeRange('this year', NOW)! })
+  );
+  eq('single-year label is short', oneYear[0].label, 'Mar');
+
+  // A malformed date is skipped, never a NaN bucket.
+  const bad = { ...TXNS[0], id: 'bad', date: 'not-a-date' };
+  eq(
+    'bad date skipped',
+    groupByMonth([...selectTx(TXNS, { type: 'expense' }), bad]).length,
+    5
+  );
+}
+
+console.log('Quarter resolves to most recent occurrence (B3)');
+{
+  const t = (s: string) => parseTimeRange(s, NOW); // NOW = 15 Jun 2026
+  eq('q1 (already begun) → this year', t('q1')?.start.getFullYear(), 2026);
+  eq('q2 (already begun) → this year', t('q2')?.start.getFullYear(), 2026);
+  eq('q3 (future) → last year', t('q3')?.start.getFullYear(), 2025);
+  eq('q4 (future) → last year', t('q4')?.start.getFullYear(), 2025);
+  eq('q4 still Oct–Dec', t('q4')?.start.getMonth(), 9);
+  eq('q4 end month', t('q4')?.end.getMonth(), 11);
+}
+
+console.log('Category pair slot (A vs B compare)');
+{
+  const s = (raw: string) => extractSlots(normalize(raw), { now: NOW });
+
+  const vs = s('food vs transport');
+  eq('vs → left master', vs.category?.master, 'food');
+  eq('vs → right master', vs.categoryB?.master, 'transport');
+
+  const cmp = s('compare my food spending to my transport spending');
+  eq('compare…to → left', cmp.category?.master, 'food');
+  eq('compare…to → right', cmp.categoryB?.master, 'transport');
+
+  const or = s('did i spend more on food or transport');
+  eq('more…or → left', or.category?.master, 'food');
+  eq('more…or → right', or.categoryB?.master, 'transport');
+
+  // Both sides one bucket → no pair (it's a single-category question).
+  check(
+    'same-bucket pair rejected',
+    s('groceries vs food').categoryB === undefined
+  );
+  // No comparison framing → soft connectives are not split on.
+  check(
+    'plain compare keeps no pair',
+    s('compare to last month').categoryB === undefined
+  );
+  check(
+    'plain spend keeps no pair',
+    s('how much did i spend on food').categoryB === undefined
   );
 }
 

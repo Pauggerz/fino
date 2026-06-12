@@ -96,12 +96,18 @@ async function computeDesired(
     const fireAdj = applyQuietHours(fire, prefs);
     const fireAt = fireAdj.getTime();
     if (fireAt <= now) return; // never schedule in the past
+    // Lockscreen privacy: when enabled, present a redacted title/body to the OS
+    // so peso amounts don't show on the lockscreen. The real title/body still
+    // ride in `data` (callers pass them in `base`), so the in-app inbox row —
+    // materialised from data.title/body once unlocked — stays rich. Mirrors the
+    // server rail's redactedContent split in _shared/expoPush.ts.
+    const display = prefs.hideAmountsOnLockscreen ? copy.redacted() : content;
     desired.push({
       kind,
       fireAt,
       channelId,
-      title: content.title,
-      body: content.body,
+      title: display.title,
+      body: display.body,
       data: {
         v: PAYLOAD_VERSION,
         kind,
