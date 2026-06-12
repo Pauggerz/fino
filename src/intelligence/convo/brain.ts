@@ -74,6 +74,7 @@ export type {
   AccountSummary,
   BudgetLite,
   RecurringIncomeLite,
+  RecurringBillLite,
   BrainMutation,
   ConversationMemory,
   ConversationTurn,
@@ -122,6 +123,14 @@ const DATA_INTENTS = new Set<IntentId>([
   'safeToSpend',
   'reCategorize',
   'splitBill',
+  'runway',
+  'explainSpend',
+  'monthPattern',
+  'upcomingBills',
+  'setBudget',
+  'deleteTransaction',
+  'transfer',
+  'reminder',
 ]);
 
 /** Data intents that genuinely consume a parsed time range. Used for two
@@ -138,6 +147,7 @@ const TIME_SCOPED_INTENTS = new Set<IntentId>([
   'transactions',
   'needsVsWants',
   'dowPattern',
+  'upcomingBills',
 ]);
 
 // Open-set gate for the classifier. NB softmax saturates, so we reject on raw
@@ -278,7 +288,12 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
     c.intent !== null && TIME_SCOPED_INTENTS.has(c.intent);
   const merged = mergeWithMemory(
     norm,
-    { intent: c.intent, slots: c.slots, selfIntentConfident, intentIsTimeScoped },
+    {
+      intent: c.intent,
+      slots: c.slots,
+      selfIntentConfident,
+      intentIsTimeScoped,
+    },
     ctx?.memory,
     nowMs
   );
