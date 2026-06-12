@@ -44,20 +44,46 @@ export function looksLikeQuestion(raw: string): boolean {
   return QUERY_CUE_RE.test(t);
 }
 
-// Imperative phrasings that aren't questions but still must NOT be logged: an
-// amount-bearing re-categorize ("recategorize the ₱1,500 charge as Coffee") or
-// split ("split my ₱100 bill") would otherwise be silently turned into a new
-// transaction. Tuned to "command" — plain logs ("lunch 120", "save 500 to
-// gcash") never match (no re-tag verb, no "split … bill/with").
+// Imperative/statement phrasings that aren't questions but still must NOT be
+// logged: an amount-bearing re-categorize ("recategorize the ₱1,500 charge as
+// Coffee"), split ("split my ₱100 bill"), debt statement ("Paul owed me 5k"),
+// or goal statement ("goal this month to buy iPhone 17") would otherwise be
+// silently turned into a bogus transaction. Tuned to "command" — plain logs
+// ("lunch 120", "save 500 to gcash") never match (no re-tag verb, no
+// "split … bill/with", no owe/borrow/lent, no "goal").
 const COMMAND_CUE_RE = new RegExp(
   [
     // Re-tag verbs are near-unambiguous on their own.
     String.raw`\b(re-?categori[sz]e|reclassify|re-?tag)\b`,
-    // move/change/switch/mark/put/file <subject> as|to|into|under <category>.
-    String.raw`\b(move|change|switch|mark|put|file)\b.+\b(as|to|into|under)\b`,
+    // move/transfer/change/switch/mark/put/file <subject> as|to|into|under <dest>.
+    String.raw`\b(move|transfer|change|switch|mark|put|file)\b.+\b(as|to|into|under)\b`,
     // Splitting a shared bill (needs a bill/people cue so item logs don't match).
     String.raw`\bsplit\b[^.]{0,16}\b(bill|tab|check|receipt|cost|expense|dinner|lunch|meal|payment|with|between|among)\b`,
     String.raw`\bgo dutch\b`,
+    // Budget commands: "set a budget of 5000 for food", "budget 3000 for
+    // transport", "cap my food at 4000" — a target/limit, never a purchase log.
+    String.raw`\b(set|create|make|add|update|change|give me)\b[^.]{0,16}\bbudgets?\b`,
+    String.raw`\bbudgets?\b\s*(?:of\s*)?(?:₱|php)?\s?\d`,
+    String.raw`\bcap\b[^.]{0,20}\bat\s*(?:₱|php)?\s?\d`,
+    // Reminders: "remind me to pay my electric bill 2000".
+    String.raw`\bremind me\b`,
+    String.raw`\bset (?:a |an )?reminder\b`,
+    // Purchase intent, not a purchase: "i want to buy a phone for 25000".
+    String.raw`\b(?:want|wanna|plan|planning|would like|d like)\s+to\s+(?:buy|get|purchase)\b`,
+    // Deleting an existing row: "delete the ₱500 charge", "remove my last expense".
+    String.raw`\b(delete|remove|erase|scrap|undo)\b[^.]{0,24}\b(transactions?|charges?|expenses?|purchases?|payments?|entry|entries|one)\b`,
+    // Debt/receivable statements ("Paul owed me 5k", "Paul borrowed 5k",
+    // "lent Paul 500", "I owe Marie 200", "Paul paid me back") — these belong
+    // in the Utang Tracker, never the expense log; the brain proposes tracking.
+    String.raw`\b(owes?|owed)\s+me\b`,
+    String.raw`\bi\s+owe\b`,
+    String.raw`\b(borrowed|lent|loaned)\b`,
+    String.raw`\butang\b`,
+    String.raw`\bpaid me back\b`,
+    // Goal statements ("goal this month to buy iPhone 17", "my goal is to
+    // save 50k") — a savings goal to stage, never a purchase to log.
+    String.raw`\bgoals?\b[^.]{0,40}\b(buy|get|purchase|save|saving|afford)\b`,
+    String.raw`\b(my|new)\s+goal\b`,
   ].join('|'),
   'i'
 );
