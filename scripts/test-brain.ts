@@ -1393,6 +1393,27 @@ const CTX_TX: BrainContext = {
     '[phase0]  spend this week, no snapshot → honest Insights punt',
     `text "${noSnap.text}"`
   );
+
+  // Explicit calendar date → snapshot-sliced spend for that single day (only the
+  // ₱5,000 Lazada order lands on Jun 10), narrated "on Jun 10" — not a clarify.
+  const day = routeMessage('how much did i spend on june 10', CTX_TX);
+  check(
+    /spent/i.test(day.text) &&
+      /Jun 10/.test(day.text) &&
+      /5,000/.test(day.text) &&
+      !/Insights/.test(day.text),
+    '[grammar] spend on june 10 → ₱5,000 on Jun 10',
+    `text "${day.text}"`
+  );
+
+  // "N weeks ago" → the Mon–Sun week (Jun 1–7); only Starbucks ₱300 + Spotify
+  // ₱149 = ₱449 fall in it, narrated "the week of Jun 1".
+  const wa = routeMessage('how much did i spend 2 weeks ago', CTX_TX);
+  check(
+    /spent/i.test(wa.text) && /week of Jun 1/.test(wa.text) && /449/.test(wa.text),
+    '[grammar] spend 2 weeks ago → ₱449 the week of Jun 1',
+    `text "${wa.text}"`
+  );
 }
 
 // ─── Categories 2 & 3: pattern / summary / budget / needs-wants cards (V3) ────
