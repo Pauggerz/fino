@@ -154,12 +154,14 @@ const TIME_SCOPED_INTENTS = new Set<IntentId>([
 // separation instead: gibberish that shares a few stray char-grams lands at
 // matched≈3 / tiny signal, whereas a real rule-silent query sits at matched≥27
 // (measured on the eval set). Trusting the prediction only above this floor
-// keeps "qwerty asdf" out without touching genuine paraphrases. The floor was
-// raised 3→6 as the corpus grew (more classes ⇒ more incidental char-grams in
-// vocab, so gibberish's matched count crept up) — there's still a wide gap to
-// the ~27 floor of real paraphrases.
-const ML_MIN_MATCHED = 6;
-const ML_MIN_MARGIN = 1;
+// keeps "qwerty asdf" out without touching genuine paraphrases.
+//
+// The floor is now CALIBRATED at train time (train-brain.ts measures a gibberish
+// panel against the freshly-built vocab and emits `model.gate`) instead of being
+// a hand-bumped constant — it used to creep 3→6 by hand as the corpus grew. The
+// constants below are only the fallback for an older model.json with no `gate`.
+const ML_MIN_MATCHED = MODEL.gate?.minMatched ?? 6;
+const ML_MIN_MARGIN = MODEL.gate?.minMargin ?? 1;
 
 /** How the winning intent was decided. */
 export type ClassificationSource = 'rules' | 'classifier' | 'none';

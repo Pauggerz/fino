@@ -19,9 +19,10 @@
 import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { featurize } from '../src/intelligence/convo/classifier/vectorize';
-import type {
-  NbLabel,
-  NbModel,
+import {
+  predict,
+  type NbLabel,
+  type NbModel,
 } from '../src/intelligence/convo/classifier/naiveBayes';
 import { CORPUS } from './brain-corpus';
 
@@ -100,7 +101,7 @@ for (const term of vocab) {
   if (Object.keys(perLabel).length > 0) logLik[term] = perLabel;
 }
 
-// ── 5. Emit model.json ───────────────────────────────────────────────────────
+// ── 5. Assemble the model ────────────────────────────────────────────────────
 const model: NbModel = {
   labels,
   docs: N,
@@ -110,14 +111,51 @@ const model: NbModel = {
   missingLogLik,
 };
 
+// ── 6. Calibrate the open-set gate from a fixed gibberish panel ───────────────
+// The brain trusts an NB label only above a `matched` floor (otherwise gibberish
+// that shares a few stray char-grams gets a finance label). That floor used to
+// be a hand-bumped constant (3→6 as the vocab grew). Here we MEASURE it: how
+// many features does no-signal gibberish actually hit against THIS vocab? Set the
+// floor just above that, clamped to a band proven safe (real paraphrases sit at
+// matched≈27, far above the ceiling). As vocab grows and gibberish's incidental
+// overlap creeps up, the floor auto-rises with it — no more manual tuning.
+const GIBBERISH = [
+  'qwerty zxcvb asdf',
+  'asdfgh jkl qwerty',
+  'zxcvbnm mnbvcxz',
+  'lkjhgf poiuyt',
+  'qqqq wwww eeee rrrr',
+  'xyzzy plugh fnord',
+  'blargh snarf wibble',
+  'flim flam zorp',
+  'aaaa bbbb cccc',
+  'jjjj kkkk llll',
+];
+const GATE_FLOOR = 6; // never drop below the last proven-good hand value
+const GATE_CEIL = 12; // stay well under the ~27 of real paraphrases
+const maxGibberishMatched = Math.max(
+  0,
+  ...GIBBERISH.map((g) => predict(model, g).matched)
+);
+const minMatched = Math.min(
+  GATE_CEIL,
+  Math.max(GATE_FLOOR, maxGibberishMatched + 2)
+);
+model.gate = { minMatched, minMargin: 1 };
+
+// ── 7. Emit model.json ───────────────────────────────────────────────────────
 writeFileSync(OUT, JSON.stringify(model));
 
-// ── 6. Summary ───────────────────────────────────────────────────────────────
+// ── 8. Summary ───────────────────────────────────────────────────────────────
 /* eslint-disable no-console */
 console.log('Trained Convo Naive-Bayes model:');
 console.log(`  docs:    ${N}`);
 console.log(`  classes: ${labels.length} (${labels.join(', ')})`);
 console.log(`  vocab:   ${V} terms (after pruning singleton char-grams)`);
+console.log(
+  `  gate:    minMatched=${minMatched} minMargin=1 ` +
+    `(gibberish panel maxed at matched=${maxGibberishMatched})`
+);
 console.log('  per-class docs:');
 for (const l of labels) console.log(`    ${l.padEnd(12)} ${classDocCount[l]}`);
 console.log(`\nWrote ${OUT}`);

@@ -34,6 +34,16 @@ export type NbModel = {
   logLik: Record<string, Partial<Record<string, number>>>;
   /** ln P(term | class) for an in-vocab term unseen in that class (Laplace floor). */
   missingLogLik: Record<string, number>;
+  /** Open-set acceptance gate, calibrated at train time (train-brain.ts) from a
+   *  fixed gibberish panel rather than hand-tuned. The brain trusts an NB label
+   *  only when `matched >= minMatched && margin >= minMargin`. Optional so older
+   *  models still load (the brain falls back to its built-in constants). */
+  gate?: {
+    /** Minimum in-vocab feature count to trust the prediction at all. */
+    minMatched: number;
+    /** Minimum top-1 − top-2 log-score separation. */
+    minMargin: number;
+  };
 };
 
 export type Prediction = {
