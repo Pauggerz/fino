@@ -2209,6 +2209,7 @@ function answerDebt(
       target: 'utangTracker',
       params: {
         debtorName: debtor,
+        direction: 'owed_to_me',
         ...(stmt.amount ? { amount: stmt.amount } : {}),
       },
     };
