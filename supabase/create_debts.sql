@@ -5,6 +5,10 @@ create table if not exists debts (
   description text,
   total_amount numeric(12,2) not null,
   amount_paid numeric(12,2) not null default 0,
+  -- 'owed_to_me' = a receivable (someone owes the user); 'i_owe' = a payable
+  -- (the user owes someone). Nullable so older sync clients pushing no value
+  -- round-trip cleanly; readers treat anything that isn't 'i_owe' as a receivable.
+  direction text default 'owed_to_me',
   due_date date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
