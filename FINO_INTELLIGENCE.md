@@ -330,15 +330,22 @@ normalize → log-or-ask? → canonicalize → intent → slots → frame → na
   weights`, argmax, confidence = top-1 − top-2 margin. When the margin is low,
   it falls back to a **Multinomial Naive-Bayes classifier**
   ([convo/classifier/](src/intelligence/convo/classifier/)) over TF-IDF of word +
-  char n-grams, trained offline and shipped as `model.json`. A true tie between
-  two data intents yields a **clarify** ("did you mean A or B?") instead of a guess.
+  char n-grams, trained offline and shipped as `model.json`. The NB output is
+  trusted only above an **open-set acceptance gate** (`matched`/`margin` floors)
+  that is now **calibrated at train time** — `train:brain` measures a gibberish
+  panel against the freshly-built vocab and emits `model.gate`, so the floor
+  self-adjusts as the corpus grows instead of being a hand-bumped constant. A true
+  tie between two data intents yields a **clarify** ("did you mean A or B?")
+  instead of a guess.
 - **slots** — entities are extracted by *reusing the categorization engine* as
   the recognizer (the taxonomy that tags "kape → Coffee" when logging detects it
   as a category slot when asking), plus a PH-aware time grammar
   ([core/time.ts](src/intelligence/core/time.ts)) — extended in V3 to
-  year/quarter/named-month/weekday/weekend/last-30-days — and V3 amount-bound
-  (`over/under/between ₱X`), result-limit ("last 5"), and free-text merchant
-  ("Spotify") slots ([convo/slots.ts](src/intelligence/convo/slots.ts)).
+  year/quarter/named-month/weekday/weekend/last-30-days, and in V3.1 to **explicit
+  calendar dates** ("June 3", "the 15th") and relative **N-weeks/N-months-ago**
+  windows — and V3 amount-bound (`over/under/between ₱X`), result-limit
+  ("last 5"), and free-text merchant ("Spotify") slots
+  ([convo/slots.ts](src/intelligence/convo/slots.ts)).
 
 ### 6.2 It narrates local math, never invents numbers
 
