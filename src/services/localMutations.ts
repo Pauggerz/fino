@@ -460,12 +460,18 @@ export async function deleteCategory(categoryId: string): Promise<void> {
   syncInBackground();
 }
 
+// Whether a debt is money owed TO the user (a receivable) or money the user
+// owes someone else (a payable). Defaults to 'owed_to_me' to preserve the
+// pre-direction meaning of every existing row.
+export type DebtDirection = 'owed_to_me' | 'i_owe';
+
 export async function createDebt(input: {
   userId: string;
   debtorName: string;
   description?: string;
   totalAmount: number;
   amountPaid?: number;
+  direction?: DebtDirection;
   dueDate?: string;
 }): Promise<string> {
   const id = uuidv4();
@@ -477,6 +483,7 @@ export async function createDebt(input: {
       d.description = input.description;
       d.totalAmount = toCents(input.totalAmount);
       d.amountPaid = toCents(input.amountPaid ?? 0);
+      d.direction = input.direction ?? 'owed_to_me';
       d.dueDate = input.dueDate;
     });
   });
@@ -489,7 +496,12 @@ export async function updateDebt(
   patch: Partial<
     Pick<
       DebtModel,
-      'debtorName' | 'description' | 'totalAmount' | 'amountPaid' | 'dueDate'
+      | 'debtorName'
+      | 'description'
+      | 'totalAmount'
+      | 'amountPaid'
+      | 'direction'
+      | 'dueDate'
     >
   >
 ): Promise<void> {
@@ -502,6 +514,7 @@ export async function updateDebt(
         rec.totalAmount = toCents(patch.totalAmount);
       if (patch.amountPaid !== undefined)
         rec.amountPaid = toCents(patch.amountPaid);
+      if (patch.direction !== undefined) rec.direction = patch.direction;
       if (patch.dueDate !== undefined) rec.dueDate = patch.dueDate;
     });
   });
