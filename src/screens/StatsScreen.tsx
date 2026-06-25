@@ -192,8 +192,8 @@ const EMPTY_BUNDLE: StatsBundle = {
 function InsightsScreen() {
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { currentUserId } = useAuth();
+  const userId = currentUserId;
   const insets = useSafeAreaInsets();
   const styles = useMemo(
     () => createStyles(colors, insets.top),

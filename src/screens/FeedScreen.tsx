@@ -1253,8 +1253,8 @@ function FeedScreen() {
   // Sums the full period via DB query rather than the paginated `sections`,
   // so the headline figure is accurate even when only the first 20 rows are
   // loaded. Mirrors the prevIncome/prevExpense pattern in CashFlowScreen.
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { currentUserId } = useAuth();
+  const userId = currentUserId;
   const [periodTotal, setPeriodTotal] = useState(0);
   const [prevPeriodTotal, setPrevPeriodTotal] = useState(0);
 

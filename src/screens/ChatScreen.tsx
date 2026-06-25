@@ -685,8 +685,8 @@ export default function ChatScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
 
   const { colors, isDark } = useTheme();
-  const { user, profile } = useAuth();
-  const userId = user?.id;
+  const { currentUserId, profile } = useAuth();
+  const userId = currentUserId;
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   const { totalBalance, accounts } = useAccounts();

@@ -24,7 +24,6 @@ import {
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { RootStackParamList } from '@/navigation/RootNavigator';
-import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { database } from '@/db';
@@ -542,8 +541,8 @@ function CalendarModal({
 
 export default function UtangTrackerScreen() {
   const { colors, isDark } = useTheme();
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { currentUserId } = useAuth();
+  const userId = currentUserId;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
@@ -706,12 +705,9 @@ export default function UtangTrackerScreen() {
     setFilter('all');
 
     try {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
-      if (!authUser) throw new Error('Not signed in');
+      if (!userId) throw new Error('Could not determine your account.');
       await createDebt({
-        userId: authUser.id,
+        userId,
         debtorName: name,
         description: addForm.description.trim() || undefined,
         totalAmount: amount,

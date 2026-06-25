@@ -239,9 +239,9 @@ function onTrackLabel(pct: number): string {
 function HomeScreen() {
   const navigation = useNavigation<any>();
   const { status: syncStatus } = useSync();
-  const { profile, user } = useAuth();
+  const { profile, currentUserId } = useAuth();
   const userName = profile?.name || 'User';
-  const userId = user?.id;
+  const userId = currentUserId;
 
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -343,6 +343,8 @@ function HomeScreen() {
         return colors.syncSyncing;
       case 'offline':
       case 'error':
+      case 'local':
+        // Local-only (no cloud account) reads as "not syncing" — neutral, not green.
         return colors.syncOffline;
       default:
         return colors.syncSynced;

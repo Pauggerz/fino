@@ -123,8 +123,8 @@ export default function CategoryScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'Categories'>>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { currentUserId } = useAuth();
+  const userId = currentUserId;
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   const [rows, setRows] = useState<CategoryRow[]>([]);

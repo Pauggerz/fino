@@ -179,8 +179,8 @@ const INCOME = '#3f6b52';
 
 export default function RecurringIncomeScreen() {
   const { colors, isDark } = useTheme();
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { currentUserId } = useAuth();
+  const userId = currentUserId;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);

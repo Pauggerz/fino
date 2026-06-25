@@ -172,8 +172,8 @@ const BILLS = '#7A4AB8';
 
 export default function RecurringBillsScreen() {
   const { colors, isDark } = useTheme();
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { currentUserId } = useAuth();
+  const userId = currentUserId;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
