@@ -28,7 +28,10 @@ interface CurrencyContextType {
   code: string;
   meta: CurrencyMeta;
   setCurrency: (code: string) => Promise<void>;
-  format: (n: number, opts?: { withDecimals?: boolean; privacy?: boolean }) => string;
+  format: (
+    n: number,
+    opts?: { withDecimals?: boolean; privacy?: boolean }
+  ) => string;
   /** When true, every amount is masked (₱***) until the user turns it off. */
   privacyMode: boolean;
   setPrivacyMode: (on: boolean) => Promise<void>;
@@ -46,7 +49,7 @@ const CurrencyContext = createContext<CurrencyContextType>({
 export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   const [code, setCode] = useState<string>(DEFAULT_CODE);
   const [privacyMode, setPrivacyModeState] = useState(false);
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, isLocal } = useAuth();
 
   // Local cache first (instant), then reconcile with server profile.
   useEffect(() => {
@@ -72,18 +75,25 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   }, [privacyMode]);
 
   useEffect(() => {
+    // Local mode: AsyncStorage is the single source of truth — the synthesized
+    // local profile mirrors it, so don't let it drive `code` (the value can lag
+    // a `setCurrency` and would revert the user's choice).
+    if (isLocal) return;
     if (profile?.currency && profile.currency !== code) {
       setCode(profile.currency);
       AsyncStorage.setItem(STORAGE_KEY, profile.currency);
     }
-  }, [profile?.currency]);
+  }, [profile?.currency, isLocal]);
 
   const setCurrency = useCallback(
     async (next: string) => {
       setCode(next);
       await AsyncStorage.setItem(STORAGE_KEY, next);
       if (user) {
-        await supabase.from('users').update({ currency: next }).eq('id', user.id);
+        await supabase
+          .from('users')
+          .update({ currency: next })
+          .eq('id', user.id);
         await refreshProfile();
       }
     },
@@ -119,7 +129,9 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <CurrencyContext.Provider value={value}>{children}</CurrencyContext.Provider>
+    <CurrencyContext.Provider value={value}>
+      {children}
+    </CurrencyContext.Provider>
   );
 }
 
