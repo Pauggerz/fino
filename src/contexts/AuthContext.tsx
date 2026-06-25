@@ -8,19 +8,44 @@ import React, {
   useState,
 } from 'react';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
 import { deregisterPushToken } from '../services/pushTokens';
+import { claimLocalData } from '../services/claimLocalData';
 import { User } from '../types';
+
+// Device-local identity (offline-first). Before the user creates a cloud
+// account, every local row is stamped with this UUID and the app runs with no
+// session. `@fino_currency` mirrors CurrencyContext's own key so the synthesized
+// local profile doesn't fight it.
+const LOCAL_USER_ID_KEY = '@fino_local_user_id';
+const LOCAL_PROFILE_KEY = '@fino_local_profile';
+const CURRENCY_KEY = '@fino_currency';
+
+interface LocalProfile {
+  name: string | null;
+}
 
 interface AuthContextData {
   session: Session | null;
   user: SupabaseUser | null;
   profile: User | null;
+  /**
+   * The active user id for *data* operations — the Supabase auth uid when
+   * signed in, otherwise the device-local UUID. All local mutations stamp
+   * `user_id` with this. Always populated once `isLoading` is false.
+   */
+  currentUserId: string;
+  /** True while running on the device-local identity (no cloud session). */
+  isLocal: boolean;
   isLoading: boolean;
   profileError: boolean;
   refreshProfile: () => Promise<void>;
+  /** Persist the user's name into the device-local profile (offline). */
+  setLocalName: (name: string) => Promise<void>;
   /**
    * Sign out with push cleanup: deactivates this device's push token (while the
    * session is still valid for RLS) and clears scheduled OS notifications +
@@ -35,8 +60,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [profile, setProfile] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [sessionLoading, setSessionLoading] = useState(true);
   const [profileError, setProfileError] = useState(false);
+
+  // ─── Device-local identity ───────────────────────────────────────────────
+  const [localUserId, setLocalUserId] = useState<string | null>(null);
+  const [localName, setLocalNameState] = useState<string | null>(null);
+  const [localCurrency, setLocalCurrency] = useState<string>('PHP');
+
+  // Bootstrap the local identity once on mount: read (or mint) the local UUID
+  // and load the cached name + currency. `localUserId === null` keeps the app
+  // in its loading state so `currentUserId` is never empty when consumed.
+  useEffect(() => {
+    (async () => {
+      try {
+        let id = await AsyncStorage.getItem(LOCAL_USER_ID_KEY);
+        if (!id) {
+          id = Crypto.randomUUID();
+          await AsyncStorage.setItem(LOCAL_USER_ID_KEY, id);
+        }
+        const [rawProfile, currency] = await Promise.all([
+          AsyncStorage.getItem(LOCAL_PROFILE_KEY),
+          AsyncStorage.getItem(CURRENCY_KEY),
+        ]);
+        if (rawProfile) {
+          try {
+            const parsed = JSON.parse(rawProfile) as LocalProfile;
+            setLocalNameState(parsed.name ?? null);
+          } catch {
+            /* ignore corrupt cache */
+          }
+        }
+        if (currency) setLocalCurrency(currency);
+        setLocalUserId(id);
+      } catch (err) {
+        if (__DEV__)
+          console.warn('[Auth] local identity bootstrap failed', err);
+        // Last-resort in-memory id so the app still runs this session.
+        setLocalUserId((prev) => prev ?? Crypto.randomUUID());
+      }
+    })();
+  }, []);
+
+  // Claim device-local data into the cloud account the first time a session
+  // appears. Runs once per app launch; a no-op when there's no local data or
+  // the account already has data (see claimLocalData for the fresh-account
+  // guard).
+  const claimedRef = React.useRef(false);
+  useEffect(() => {
+    const authUid = session?.user?.id;
+    if (!authUid || !localUserId || claimedRef.current) return;
+    claimedRef.current = true;
+    claimLocalData(authUid, localUserId).catch((err) => {
+      if (__DEV__) console.warn('[Auth] claim local data failed', err);
+    });
+  }, [session, localUserId]);
+
+  const setLocalName = useCallback(async (name: string) => {
+    const trimmed = name.trim();
+    setLocalNameState(trimmed || null);
+    await AsyncStorage.setItem(
+      LOCAL_PROFILE_KEY,
+      JSON.stringify({ name: trimmed || null } satisfies LocalProfile)
+    );
+  }, []);
 
   const fetchProfile = async (
     userId: string,
@@ -127,7 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setProfileError(false);
       }
-      setIsLoading(false);
+      setSessionLoading(false);
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -152,6 +239,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const isLocal = !session;
+  const currentUserId = user?.id ?? localUserId ?? '';
+  // Hold the app in its loading state until BOTH the session check and the
+  // local-identity bootstrap resolve, so `currentUserId` is never empty when
+  // a consumer reads it.
+  const isLoading = sessionLoading || localUserId === null;
+
+  // When signed in, `profile` is the server row. When local, synthesize one
+  // from the cached name + currency so existing `profile?.name`/`?.currency`
+  // consumers keep working unchanged.
+  const effectiveProfile = useMemo<User | null>(() => {
+    if (session) return profile;
+    if (!localUserId) return null;
+    return {
+      id: localUserId,
+      name: localName,
+      currency: localCurrency,
+      auth_mode: 'local',
+      total_budget: null,
+      created_at: new Date().toISOString(),
+    };
+  }, [session, profile, localUserId, localName, localCurrency]);
+
   // Memoized so every sync / unrelated re-render in the tree above us doesn't
   // recreate the value object and cascade re-renders through every useAuth()
   // consumer (and their children).
@@ -159,13 +269,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       session,
       user,
-      profile,
+      profile: effectiveProfile,
+      currentUserId,
+      isLocal,
       isLoading,
       profileError,
       refreshProfile,
+      setLocalName,
       signOut,
     }),
-    [session, user, profile, isLoading, profileError, refreshProfile, signOut]
+    [
+      session,
+      user,
+      effectiveProfile,
+      currentUserId,
+      isLocal,
+      isLoading,
+      profileError,
+      refreshProfile,
+      setLocalName,
+      signOut,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
