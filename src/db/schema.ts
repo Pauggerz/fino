@@ -12,7 +12,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
  * WatermelonDB can compare it cheaply during pullChanges.
  */
 export default appSchema({
-  version: 10,
+  version: 11,
   tables: [
     // Local-only chat history for the Fino chatbot. Deliberately NOT in
     // SYNCED_TABLES (src/services/watermelonSync.ts) — conversations stay on
@@ -145,6 +145,10 @@ export default appSchema({
         { name: 'description', type: 'string', isOptional: true },
         { name: 'total_amount', type: 'number' },
         { name: 'amount_paid', type: 'number' },
+        // 'owed_to_me' (receivable) | 'i_owe' (payable). Optional so existing
+        // rows (null) and older sync payloads round-trip; readers treat
+        // anything that isn't 'i_owe' as a receivable.
+        { name: 'direction', type: 'string', isOptional: true },
         { name: 'due_date', type: 'string', isOptional: true },
         { name: 'server_created_at', type: 'string', isOptional: true },
         { name: 'updated_at', type: 'number' },

@@ -70,8 +70,8 @@ setForegroundNotificationHandler();
  * Renders nothing.
  */
 function PushBootstrap() {
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { user, currentUserId } = useAuth();
+  const userId = user?.id; // cloud session uid — push-token registration only
   const syncVersion = useSyncVersion();
   const lastReconciledVersion = useRef(-1);
 
@@ -82,26 +82,34 @@ function PushBootstrap() {
     return detach;
   }, []);
 
-  // Per-user: ensure channels, capture token (if already permitted), watch for
-  // token rotation, flush any queued upsert, and seed schedule + badge.
+  // Push-token registration requires a cloud session (server push rail).
   useEffect(() => {
     if (!userId) return undefined;
     let removeRotation = () => {};
     let cancelled = false;
     (async () => {
-      await ensureAndroidChannels();
       await registerForPushNotificationsAsync(userId);
       if (cancelled) return;
       removeRotation = addTokenRotationListener(userId);
       await flushPendingTokenUpsert();
-      syncScheduledNotifications(userId);
-      syncBadgeCount();
     })();
     return () => {
       cancelled = true;
       removeRotation();
     };
   }, [userId]);
+
+  // Local OS schedule + badge work offline under the device-local identity, so
+  // they key off `currentUserId` (local bill reminders still fire without an
+  // account). New bills reschedule via scheduleReconcile in localMutations.
+  useEffect(() => {
+    if (!currentUserId) return;
+    (async () => {
+      await ensureAndroidChannels();
+      syncScheduledNotifications(currentUserId);
+      syncBadgeCount();
+    })();
+  }, [currentUserId]);
 
   // Reconcile local schedules after each successful pull — newly-synced bills
   // and recurring rows get their reminders scheduled.

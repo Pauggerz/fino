@@ -120,8 +120,8 @@ export default function AccountDetailScreen() {
   } = useAccounts();
   const { categories } = useCategories();
   const { categories: incomeCategories } = useIncomeCategories();
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { currentUserId } = useAuth();
+  const userId = currentUserId;
   const cachedTxs = userId
     ? accountTxCache.get(accountTxKey(userId, id))
     : undefined;

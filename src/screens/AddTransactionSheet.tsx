@@ -146,7 +146,7 @@ export default function AddTransactionSheet({ route }: Props) {
   }));
 
   // Data Hooks
-  const { user } = useAuth();
+  const { currentUserId } = useAuth();
   const { accounts, loading: accountsLoading } = useAccounts();
   const { categories, loading: categoriesLoading } = useCategories();
   const { categories: incomeCategories } = useIncomeCategories();
@@ -680,11 +680,11 @@ export default function AddTransactionSheet({ route }: Props) {
     //    captures merchants/payers the user has actually transacted with.
     //    Scope to the active type so an income tx matches against past income
     //    history (and against the income category list), never against expense.
-    if (user?.id) {
+    if (currentUserId) {
       const activeList = isIncome ? incomeCategories : categories;
       const catNames = activeList.map((c) => c.name);
       suggestCategory(
-        user.id,
+        currentUserId,
         tokenText,
         catNames,
         isIncome ? 'income' : 'expense'

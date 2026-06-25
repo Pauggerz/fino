@@ -106,8 +106,8 @@ export default function CashFlowScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<RootStackParamList, 'CashFlow'>>();
   const { colors } = useTheme();
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { currentUserId } = useAuth();
+  const userId = currentUserId;
   const insets = useSafeAreaInsets();
   const { accounts } = useAccounts();
 

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Dimensions,
   StyleSheet,
@@ -12,8 +13,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../navigation/RootNavigator';
 import { useAuth } from '../contexts/AuthContext';
-import { createCategory } from '../services/localMutations';
-import { supabase } from '../services/supabase';
+import { seedOnboardingDefaults } from '../services/localMutations';
 import { STARTER_EXPENSE_CATEGORIES } from '../constants/categoryMappings';
 
 import SplashSlide from './onboarding/SplashSlide';
@@ -21,8 +21,9 @@ import WelcomeSlide from './onboarding/WelcomeSlide';
 import AccountsSlide from './onboarding/AccountsSlide';
 import PaymentSlide from './onboarding/PaymentSlide';
 import AskFinoSlide from './onboarding/AskFinoSlide';
+import NameSlide from './onboarding/NameSlide';
+import CategoryQuizSlide from './onboarding/CategoryQuizSlide';
 import CategoriesSlide from './onboarding/CategoriesSlide';
-import AuthSlide from './onboarding/AuthSlide';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'> & {
   onComplete: () => void;
@@ -30,35 +31,28 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'> & {
 
 const { width: W } = Dimensions.get('window');
 
-// 0 Splash → 1 Welcome → 2 Accounts → 3 Payment → 4 AskFino → 5 Categories → 6 Auth
-const SLIDE_COUNT = 7;
-const DOT_SLIDES = [0, 1, 2, 3, 4, 5]; // nav dots shown on tour slides
-const SKIP_SLIDES = [1, 2, 3, 4, 5]; // skip + next shown on tour slides
-const AUTH_INDEX = 6;
-
-// Default fallback colours for custom-named categories created during
-// onboarding. Mirrors the "Others" tile so they look neutral until the user
-// styles them in CategoryScreen.
-const CUSTOM_DEFAULT_TILE = '#F2EFEC';
-const CUSTOM_DEFAULT_TEXT = '#5C5550';
+// 0 Splash → 1 Welcome → 2 Accounts → 3 Payment → 4 AskFino  (intro / tour)
+// → 5 Name → 6 CategoryQuiz → 7 Categories                  (offline setup)
+const SLIDE_COUNT = 8;
+const TOUR_SLIDES = [0, 1, 2, 3, 4]; // dots + skip + next live here
+const SETUP_START = 5; // first setup slide (Name)
+const LAST_INDEX = 7; // Categories — carries the finish CTA
 
 export default function OnboardingScreen({ onComplete }: Props) {
   const [current, setCurrent] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [completing, setCompleting] = useState(false);
 
-  // ─── Category picker state ─────────────────────────────────────────────
-  // All 5 starters toggled ON by default — single tap "Next" through the
-  // slide gets you the friendly preset.
+  const { currentUserId, setLocalName } = useAuth();
+
+  // ─── Setup state ───────────────────────────────────────────────────────
+  const [name, setName] = useState('');
+  // Default all 5 starters ON so skipping the quiz still yields a friendly
+  // preset; the quiz narrows this via onRecommend.
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
     () => new Set(STARTER_EXPENSE_CATEGORIES.map((s) => s.key))
   );
   const [customs, setCustoms] = useState<string[]>([]);
-  // Flips true when AuthSlide reports a successful sign-in/up. The actual
-  // category insert + completion happens in a useEffect that waits for
-  // AuthContext to populate `user`.
-  const [pendingComplete, setPendingComplete] = useState(false);
-
-  const { user } = useAuth();
 
   const toggleStarter = useCallback((key: string) => {
     setSelectedKeys((prev) => {
@@ -75,6 +69,10 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
   const removeCustom = useCallback((name: string) => {
     setCustoms((prev) => prev.filter((n) => n !== name));
+  }, []);
+
+  const applyRecommendation = useCallback((keys: string[]) => {
+    setSelectedKeys(new Set(keys));
   }, []);
 
   // ─── Slide transitions ────────────────────────────────────────────────
@@ -126,99 +124,41 @@ export default function OnboardingScreen({ onComplete }: Props) {
   }, [current]);
 
   // ─── Completion ───────────────────────────────────────────────────────
-  // AuthSlide calls this the moment auth succeeds. We don't run the
-  // category inserts here directly because AuthContext.user might still be
-  // catching up to the new session — instead we flip `pendingComplete` and
-  // let the effect below fire once `user.id` is available.
-  const completeOnboarding = useCallback(() => {
-    setPendingComplete(true);
-  }, []);
+  // Offline-first: no account is required. Persist the name locally and seed
+  // the default Cash account + "Others" + chosen categories under the
+  // device-local identity, then enter the app.
+  const completeOnboarding = useCallback(async () => {
+    if (completing) return;
+    setCompleting(true);
+    try {
+      if (name.trim()) await setLocalName(name);
+      await seedOnboardingDefaults({
+        userId: currentUserId,
+        selectedStarterKeys: [...selectedKeys],
+        customCategoryNames: customs,
+      });
+    } catch (err) {
+      // Soft-fail — proceed to the app anyway. "Others" can be re-created and
+      // categories added manually in CategoryScreen.
+      if (__DEV__)
+        // eslint-disable-next-line no-console
+        console.warn('[Onboarding] local seed failed:', err);
+    } finally {
+      await AsyncStorage.setItem('hasOnboarded', 'true');
+      onComplete();
+    }
+  }, [
+    completing,
+    name,
+    setLocalName,
+    currentUserId,
+    selectedKeys,
+    customs,
+    onComplete,
+  ]);
 
-  useEffect(() => {
-    if (!pendingComplete) return;
-    if (!user?.id) return;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const userId = user.id;
-
-        // Idempotency guard. `hasOnboarded` lives in per-install AsyncStorage,
-        // so reinstalling / clearing data / signing in on a new device re-runs
-        // this flow against an existing account. Categories have no server-side
-        // uniqueness constraint, so blindly re-seeding the starters would append
-        // a duplicate set every time. A brand-new account has only the
-        // auto-seeded "Others" (is_default=TRUE); any non-default expense
-        // category means the account was already provisioned — so skip seeding.
-        const { data: existing, error: existErr } = await supabase
-          .from('categories')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('category_type', 'expense')
-          .eq('is_default', false)
-          .is('deleted_at', null)
-          .limit(1);
-        if (existErr) throw existErr;
-        if (existing && existing.length > 0) {
-          // Already set up — `finally` still flips hasOnboarded + onComplete().
-          return;
-        }
-
-        const inserts: Promise<string>[] = [];
-
-        for (const def of STARTER_EXPENSE_CATEGORIES) {
-          if (!selectedKeys.has(def.key)) continue;
-          inserts.push(
-            createCategory({
-              userId,
-              name: def.name,
-              categoryType: 'expense',
-              emoji: def.key,
-              tileBgColour: def.tileBg,
-              textColour: def.textColor,
-              sortOrder: def.sortOrder,
-            })
-          );
-        }
-
-        const customStartSort = STARTER_EXPENSE_CATEGORIES.length;
-        for (let i = 0; i < customs.length; i++) {
-          inserts.push(
-            createCategory({
-              userId,
-              name: customs[i],
-              categoryType: 'expense',
-              emoji: 'others',
-              tileBgColour: CUSTOM_DEFAULT_TILE,
-              textColour: CUSTOM_DEFAULT_TEXT,
-              sortOrder: customStartSort + i,
-            })
-          );
-        }
-
-        await Promise.all(inserts);
-      } catch (err) {
-        // Soft-fail — proceed to the app anyway. The user always has
-        // "Others" (auto-seeded by the Supabase trigger) and can add the
-        // rest manually in CategoryScreen.
-        if (__DEV__)
-          // eslint-disable-next-line no-console
-          console.warn('[Onboarding] Category insert failed:', err);
-      } finally {
-        if (cancelled) return;
-        await AsyncStorage.setItem('hasOnboarded', 'true');
-        onComplete();
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pendingComplete, user, selectedKeys, customs, onComplete]);
-
-  const showDots = DOT_SLIDES.includes(current);
-  const showSkip = SKIP_SLIDES.includes(current);
-  const showNext = SKIP_SLIDES.includes(current);
+  const isTour = TOUR_SLIDES.includes(current);
+  const isLast = current === LAST_INDEX;
 
   return (
     <View style={s.root}>
@@ -234,8 +174,21 @@ export default function OnboardingScreen({ onComplete }: Props) {
           {i === 3 && <PaymentSlide isActive={current === 3} />}
           {i === 4 && <AskFinoSlide isActive={current === 4} />}
           {i === 5 && (
-            <CategoriesSlide
+            <NameSlide
               isActive={current === 5}
+              name={name}
+              onChangeName={setName}
+            />
+          )}
+          {i === 6 && (
+            <CategoryQuizSlide
+              isActive={current === 6}
+              onRecommend={applyRecommendation}
+            />
+          )}
+          {i === 7 && (
+            <CategoriesSlide
+              isActive={current === 7}
               selectedKeys={selectedKeys}
               customs={customs}
               onToggleStarter={toggleStarter}
@@ -243,30 +196,22 @@ export default function OnboardingScreen({ onComplete }: Props) {
               onRemoveCustom={removeCustom}
             />
           )}
-          {i === 6 && (
-            <AuthSlide
-              isActive={current === 6}
-              onComplete={completeOnboarding}
-            />
-          )}
         </Animated.View>
       ))}
 
-      {/* Nav overlay (dots / skip / next) */}
-      {showDots && (
+      {/* ── Tour nav (dots / skip / next) ── */}
+      {isTour && (
         <View style={s.navOverlay} pointerEvents="box-none">
-          {showSkip && (
-            <TouchableOpacity
-              onPress={() => goTo(AUTH_INDEX)}
-              style={s.skipBtn}
-              activeOpacity={0.7}
-            >
-              <Text style={s.skipText}>Skip</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            onPress={() => goTo(SETUP_START)}
+            style={s.skipBtn}
+            activeOpacity={0.7}
+          >
+            <Text style={s.skipText}>Skip</Text>
+          </TouchableOpacity>
 
           <View style={s.dotsRow}>
-            {DOT_SLIDES.map((i) => (
+            {TOUR_SLIDES.map((i) => (
               <TouchableOpacity
                 key={i}
                 onPress={() => goTo(i)}
@@ -278,15 +223,42 @@ export default function OnboardingScreen({ onComplete }: Props) {
             ))}
           </View>
 
-          {showNext && (
-            <TouchableOpacity
-              onPress={() => goTo(Math.min(current + 1, AUTH_INDEX))}
-              style={s.nextBtn}
-              activeOpacity={0.8}
-            >
-              <Text style={s.nextText}>Next →</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            onPress={() => goTo(Math.min(current + 1, SETUP_START))}
+            style={s.nextBtn}
+            activeOpacity={0.8}
+          >
+            <Text style={s.nextText}>Next →</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Setup nav (back / next / start) ── */}
+      {!isTour && (
+        <View style={s.setupNav} pointerEvents="box-none">
+          <TouchableOpacity
+            onPress={() => goTo(current - 1)}
+            style={s.backBtn}
+            activeOpacity={0.7}
+            disabled={completing}
+          >
+            <Text style={s.backText}>← Back</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => (isLast ? completeOnboarding() : goTo(current + 1))}
+            style={[s.primaryBtn, completing && { opacity: 0.7 }]}
+            activeOpacity={0.85}
+            disabled={completing}
+          >
+            {completing ? (
+              <ActivityIndicator color="#0e0b18" size="small" />
+            ) : (
+              <Text style={s.primaryBtnText}>
+                {isLast ? 'Start using Fino' : 'Next →'}
+              </Text>
+            )}
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -327,4 +299,36 @@ const s = StyleSheet.create({
   dotActive: { width: 18, backgroundColor: '#5B8C6E', borderRadius: 3 },
   nextBtn: { paddingVertical: 8 },
   nextText: { fontSize: 13, color: 'rgba(168,213,181,0.7)', fontWeight: '600' },
+
+  // ── Setup nav ──
+  setupNav: {
+    position: 'absolute',
+    bottom: 40,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 28,
+  },
+  backBtn: { paddingVertical: 12, paddingRight: 12 },
+  backText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.45)',
+    fontFamily: 'Inter_500Medium',
+  },
+  primaryBtn: {
+    backgroundColor: '#A8D5B5',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 150,
+  },
+  primaryBtnText: {
+    fontSize: 15,
+    color: '#0e0b18',
+    fontFamily: 'Nunito_800ExtraBold',
+  },
 });

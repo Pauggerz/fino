@@ -204,6 +204,63 @@ console.log('Time grammar (V3 additions)');
   eq('this week still works', t('this week')?.key, 'thisWeek');
 }
 
+// ─── Time grammar: explicit calendar dates + N-weeks/months ago ───────────────
+
+console.log('Time grammar (calendar dates + relative ago)');
+{
+  const t = (s: string) => parseTimeRange(s, NOW);
+
+  // Month + day, both orders → a single calendar day.
+  eq('june 3 key', t('what did i spend on june 3')?.key, 'calendarDate');
+  eq('june 3 label', t('june 3')?.label, 'Jun 3');
+  eq('june 3 day', t('june 3')?.start.getDate(), 3);
+  eq('june 3 month', t('june 3')?.start.getMonth(), 5);
+  eq('june 3 year (this year)', t('june 3')?.start.getFullYear(), 2026);
+  eq('3 june (day-first) label', t('3 june')?.label, 'Jun 3');
+  eq('jun 3rd (abbrev+ordinal) label', t('jun 3rd')?.label, 'Jun 3');
+  eq('15 march label', t('15 march')?.label, 'Mar 15');
+
+  // A future-in-this-year date rolls back to last year's occurrence.
+  eq('june 20 rolls to last year', t('june 20')?.start.getFullYear(), 2025);
+  eq('june 20 label', t('june 20')?.label, 'Jun 20');
+  // A month already past this year stays this year; a later month is last year.
+  eq('march 15 this year', t('march 15')?.start.getFullYear(), 2026);
+  eq('december 25 last year', t('december 25')?.start.getFullYear(), 2025);
+
+  // Out-of-range day → falls through to the bare month, never a bogus range.
+  eq('june 45 falls through to month', t('june 45')?.key, 'namedMonth');
+  eq('june 45 → June', t('june 45')?.label, 'June');
+
+  // Bare day-of-month ("the 15th") → most recent occurrence on/before today.
+  eq('the 15th key', t('the 15th')?.key, 'calendarDate');
+  eq('the 15th is today', t('the 15th')?.label, 'Jun 15');
+  eq('the 20th rolls to last month', t('the 20th')?.label, 'May 20');
+  eq('on the 1st label', t('on the 1st')?.label, 'Jun 1');
+
+  // "N weeks ago" → the Mon–Sun week N weeks back.
+  eq('2 weeks ago key', t('2 weeks ago')?.key, 'weeksAgo');
+  eq('2 weeks ago label', t('2 weeks ago')?.label, 'the week of Jun 1');
+  eq('2 weeks ago starts Monday', t('2 weeks ago')?.start.getDay(), 1);
+  eq('3 weeks ago label', t('3 weeks ago')?.label, 'the week of May 25');
+
+  // "N months ago" → that calendar month (reuses namedMonth).
+  eq('2 months ago key', t('2 months ago')?.key, 'namedMonth');
+  eq('2 months ago label', t('2 months ago')?.label, 'April');
+  eq('2 months ago year', t('2 months ago')?.start.getFullYear(), 2026);
+  eq('13 months ago crosses year', t('13 months ago')?.start.getFullYear(), 2025);
+  eq('13 months ago label', t('13 months ago')?.label, 'May');
+
+  // Regression: bare month / N-days-ago grammar unchanged by the new rules.
+  eq('bare june still namedMonth', t('june')?.key, 'namedMonth');
+  eq('3 days ago still daysAgo', t('3 days ago')?.key, 'daysAgo');
+  eq('last 2 weeks still rolling window', t('last 2 weeks')?.key, 'lastNDays');
+
+  // A calendar date resolves as a slot (not flagged unresolved).
+  const sd = extractSlots(normalize('what did i spend on june 3'), { now: NOW });
+  eq('calendar date populates slot', sd.timeRange?.key, 'calendarDate');
+  check('calendar date is not unresolved', !sd.timeRangeUnresolved);
+}
+
 // ─── Slots (amount / limit / merchant) ───────────────────────────────────────
 
 console.log('Slots (V3 additions)');

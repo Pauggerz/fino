@@ -13,6 +13,12 @@
  * sub-month views" deferral. Parameterized ranges (a specific month / weekday /
  * quarter) share a key (`namedMonth` / `weekday` / `quarter`) and carry the
  * specifics in `label` + `start`/`end`.
+ *
+ * V3.1: explicit calendar dates ("June 3", "3 June", "the 15th" → `calendarDate`)
+ * and relative "N weeks ago" (`weeksAgo`) / "N months ago" (reuses `namedMonth`)
+ * windows. A matched pattern may now `build` to `null` (e.g. an out-of-range day
+ * like "June 45") so `parseTimeRange` keeps scanning instead of returning a bogus
+ * range.
  */
 
 export type TimeRangeKey =
@@ -30,7 +36,9 @@ export type TimeRangeKey =
   | 'weekend'
   | 'last30Days'
   | 'lastNDays'
-  | 'daysAgo';
+  | 'daysAgo'
+  | 'weeksAgo'
+  | 'calendarDate';
 
 export type TimeRange = {
   key: TimeRangeKey;
@@ -270,6 +278,110 @@ function buildDaysAgo(now: Date, n: number): TimeRange {
   };
 }
 
+const MONTHS_FULL = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/** Days in a given calendar month (handles leap Februaries). */
+const daysInMonth = (y: number, m: number): number =>
+  new Date(y, m + 1, 0).getDate();
+
+/** A month name/abbreviation ("june", "jun", "sept") → 0..11, or -1. */
+function monthIndexFromToken(token: string): number {
+  const code = token.slice(0, 3).toLowerCase();
+  return MONTHS_SHORT.findIndex((m) => m.toLowerCase() === code);
+}
+
+/** A single explicit calendar day ("June 3", "3 June", "the 15th"). The year is
+ *  resolved to the most recent occurrence that has already happened — "June 20"
+ *  asked on June 15 means *last* year's June 20, mirroring `buildNamedMonth`. */
+function buildCalendarDate(
+  now: Date,
+  monthIndex: number,
+  day: number
+): TimeRange | null {
+  if (monthIndex < 0 || monthIndex > 11 || day < 1 || day > 31) return null;
+  // Month-level year guess (a future month belongs to last year)…
+  let year =
+    monthIndex > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
+  let d = new Date(year, monthIndex, day, 12, 0, 0, 0);
+  // …then step back a year if the exact day is still in the future.
+  if (d.getTime() > now.getTime()) {
+    year -= 1;
+    d = new Date(year, monthIndex, day, 12, 0, 0, 0);
+  }
+  if (day > daysInMonth(year, monthIndex)) return null;
+  return {
+    key: 'calendarDate',
+    label: fmtShortDate(d),
+    start: startOfDay(d),
+    end: endOfDay(d),
+  };
+}
+
+/** A bare day-of-month ("the 15th", "on the 3rd") → its most recent occurrence
+ *  on or before today, walking back month by month until the day exists and is
+ *  not in the future. */
+function buildOrdinalDay(now: Date, day: number): TimeRange | null {
+  if (day < 1 || day > 31) return null;
+  let year = now.getFullYear();
+  let month = now.getMonth();
+  for (let i = 0; i < 24; i += 1) {
+    if (day <= daysInMonth(year, month)) {
+      const d = new Date(year, month, day, 12, 0, 0, 0);
+      if (d.getTime() <= now.getTime()) {
+        return {
+          key: 'calendarDate',
+          label: fmtShortDate(d),
+          start: startOfDay(d),
+          end: endOfDay(d),
+        };
+      }
+    }
+    month -= 1;
+    if (month < 0) {
+      month = 11;
+      year -= 1;
+    }
+  }
+  return null;
+}
+
+/** The Monday–Sunday week containing the day N weeks before today. */
+function buildWeeksAgo(now: Date, n: number): TimeRange {
+  const ref = addDays(now, -7 * Math.max(0, n));
+  const monday = addDays(ref, -mondayOffset(ref));
+  return {
+    key: 'weeksAgo',
+    label: `the week of ${fmtShortDate(monday)}`,
+    start: startOfDay(monday),
+    end: endOfDay(addDays(monday, 6)),
+  };
+}
+
+/** The calendar month N months before today ("3 months ago"). Reuses the
+ *  `namedMonth` key — once resolved it's just a specific month range. */
+function buildMonthsAgo(now: Date, n: number): TimeRange {
+  const d = new Date(now.getFullYear(), now.getMonth() - Math.max(0, n), 1);
+  return {
+    key: 'namedMonth',
+    label: MONTHS_FULL[d.getMonth()],
+    start: startOfMonth(d.getFullYear(), d.getMonth()),
+    end: endOfMonth(d.getFullYear(), d.getMonth()),
+  };
+}
+
 const MONTH_DEFS: { re: RegExp; index: number; label: string }[] = [
   { re: /\bjan(uary)?\b/, index: 0, label: 'January' },
   { re: /\bfeb(ruary)?\b/, index: 1, label: 'February' },
@@ -303,18 +415,35 @@ const QUARTER_DEFS: { re: RegExp; q: number }[] = [
   { re: /\b(q4|fourth quarter|4th quarter|quarter 4)\b/, q: 4 },
 ];
 
-// Relative rolling windows + "N days ago". The N is captured and read in
-// parseTimeRange; these sit AFTER the fixed "last 30 days" rule so that exact
-// phrase keeps its dedicated `last30Days` key.
+// Relative rolling windows + "N days/weeks/months ago". The N is captured and
+// read in parseTimeRange; these sit AFTER the fixed "last 30 days" rule so that
+// exact phrase keeps its dedicated `last30Days` key.
 const LAST_N_DAYS_RE =
   /\b(?:last|past|previous|nakaraang|huling)\s+(\d{1,3})\s+(?:days?|araw)\b/;
 const LAST_N_WEEKS_RE =
   /\b(?:last|past|previous|nakaraang|huling)\s+(\d{1,3})\s+(?:weeks?|linggo)\b/;
 const N_DAYS_AGO_RE = /\b(\d{1,3})\s+(?:days?|araw)\s+ago\b/;
+const N_WEEKS_AGO_RE = /\b(\d{1,3})\s+(?:weeks?|linggo)\s+ago\b/;
+const N_MONTHS_AGO_RE = /\b(\d{1,3})\s+(?:months?|buwan|bulan)\s+ago\b/;
+
+// Explicit calendar dates. The month alternation captures the name; the day is a
+// 1–2 digit number with an optional ordinal suffix. `\d{1,2}` + `\b` keeps these
+// off 3-4 digit amounts/years ("june 3000" never reads as a date).
+const MONTH_ALT =
+  '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const MONTH_DAY_RE = new RegExp(
+  `\\b${MONTH_ALT}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`
+);
+const DAY_MONTH_RE = new RegExp(
+  `\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH_ALT}\\b`
+);
+// Bare day-of-month — requires the ordinal suffix + a leading "the"/"on the" so
+// it never swallows a count ("the 15th" yes; "15 transactions" no).
+const ORDINAL_DAY_RE = /\b(?:on\s+)?the\s+(\d{1,2})(?:st|nd|rd|th)\b/;
 
 type Pattern = {
   re: RegExp;
-  build: (now: Date, m: RegExpMatchArray) => TimeRange;
+  build: (now: Date, m: RegExpMatchArray) => TimeRange | null;
 };
 
 const simple = (key: SimpleKey, re: RegExp): Pattern => ({
@@ -351,6 +480,18 @@ const PATTERNS: Pattern[] = [
     re: /\b(this year|current year|ngayong taon|karong tuig|year to date|ytd)\b/,
     build: (now) => buildYear(now, 0),
   },
+  // Explicit calendar dates ("june 3", "3 june") — BEFORE bare month names so a
+  // day-qualified month resolves to the single day, not the whole month.
+  {
+    re: MONTH_DAY_RE,
+    build: (now, m) =>
+      buildCalendarDate(now, monthIndexFromToken(m[1]), parseInt(m[2], 10)),
+  },
+  {
+    re: DAY_MONTH_RE,
+    build: (now, m) =>
+      buildCalendarDate(now, monthIndexFromToken(m[2]), parseInt(m[1], 10)),
+  },
   // Named months ("march", "in april", "for q1" already handled above).
   ...MONTH_DEFS.map(
     ({ re, index, label }): Pattern => ({
@@ -386,8 +527,21 @@ const PATTERNS: Pattern[] = [
     build: (now, m) => buildLastNDays(now, parseInt(m[1], 10)),
   },
   {
+    re: N_WEEKS_AGO_RE,
+    build: (now, m) => buildWeeksAgo(now, parseInt(m[1], 10)),
+  },
+  {
+    re: N_MONTHS_AGO_RE,
+    build: (now, m) => buildMonthsAgo(now, parseInt(m[1], 10)),
+  },
+  {
     re: N_DAYS_AGO_RE,
     build: (now, m) => buildDaysAgo(now, parseInt(m[1], 10)),
+  },
+  // Bare day-of-month ("the 15th") → most recent occurrence of that day.
+  {
+    re: ORDINAL_DAY_RE,
+    build: (now, m) => buildOrdinalDay(now, parseInt(m[1], 10)),
   },
   // Days (explicit today/yesterday before weekday names).
   simple('yesterday', /\b(yesterday|kahapon|gahapon)\b/),
@@ -413,7 +567,12 @@ export function parseTimeRange(
   if (!text) return null;
   for (const { re, build } of PATTERNS) {
     const m = re.exec(text);
-    if (m) return build(now, m);
+    if (m) {
+      const range = build(now, m);
+      // A matched pattern can still reject (e.g. an out-of-range day like
+      // "june 45") → keep scanning so a later pattern can claim the phrase.
+      if (range) return range;
+    }
   }
   return null;
 }

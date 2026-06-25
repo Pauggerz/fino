@@ -32,7 +32,7 @@ export default function SettingsScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, mode, setMode, accent, setAccent, isDark } = useTheme();
-  const { user, profile } = useAuth();
+  const { user, profile, isLocal } = useAuth();
   const { meta: currencyMeta, privacyMode, setPrivacyMode } = useCurrency();
   const { enabled: appLockEnabled, setEnabled: setAppLockEnabled } =
     useAppLock();
@@ -247,29 +247,48 @@ export default function SettingsScreen() {
 
         {/* ── Account ── */}
         <SectionTitle>{t('settings.section.account')}</SectionTitle>
-        <Group>
-          <Row
-            icon="person-outline"
-            title={t('settings.account.edit')}
-            subtitle={t('settings.account.editSub')}
-            showChevron
-            onPress={() => navigation.navigate('AccountSettings')}
-          />
-          <Row
-            icon="mail-outline"
-            title={t('settings.account.email')}
-            subtitle={email || '—'}
-            showChevron
-            onPress={() => navigation.navigate('AccountSettings', { focus: 'email' })}
-          />
-          <Row
-            icon="lock-closed-outline"
-            title={t('settings.account.password')}
-            showChevron
-            onPress={() => navigation.navigate('AccountSettings', { focus: 'password' })}
-            isLast
-          />
-        </Group>
+        {isLocal ? (
+          // Offline-first: no cloud account yet. Surface sign-up as the only
+          // account action — it's optional and only enables online sync.
+          <Group>
+            <Row
+              icon="cloud-upload-outline"
+              title="Create an account to sync online"
+              subtitle="Back up your data and access it on all your devices. You can keep using Fino offline without one."
+              showChevron
+              onPress={() => navigation.navigate('Auth')}
+              isLast
+            />
+          </Group>
+        ) : (
+          <Group>
+            <Row
+              icon="person-outline"
+              title={t('settings.account.edit')}
+              subtitle={t('settings.account.editSub')}
+              showChevron
+              onPress={() => navigation.navigate('AccountSettings')}
+            />
+            <Row
+              icon="mail-outline"
+              title={t('settings.account.email')}
+              subtitle={email || '—'}
+              showChevron
+              onPress={() =>
+                navigation.navigate('AccountSettings', { focus: 'email' })
+              }
+            />
+            <Row
+              icon="lock-closed-outline"
+              title={t('settings.account.password')}
+              showChevron
+              onPress={() =>
+                navigation.navigate('AccountSettings', { focus: 'password' })
+              }
+              isLast
+            />
+          </Group>
+        )}
 
         {/* ── Notifications ── */}
         <SectionTitle>{t('settings.section.notifications')}</SectionTitle>

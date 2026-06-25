@@ -27,7 +27,6 @@ import {
   ACCOUNT_LOGOS,
   ACCOUNT_AVATAR_OVERRIDE,
 } from '@/constants/accountLogos';
-import { supabase } from '@/services/supabase';
 import { database } from '@/db';
 import type BillReminderModel from '@/db/models/BillReminder';
 import {
@@ -124,6 +123,7 @@ export function AddAccountModal({
     ACCOUNT_CATEGORIES[0].key,
   );
   const [saving, setSaving] = useState(false);
+  const { currentUserId } = useAuth();
 
   const reset = () => {
     setName('');
@@ -138,10 +138,7 @@ export function AddAccountModal({
       return;
     }
     setSaving(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+    if (!currentUserId) {
       setSaving(false);
       return;
     }
@@ -152,7 +149,7 @@ export function AddAccountModal({
     const letter = savedName[0].toUpperCase();
 
     await createAccount({
-      userId: user.id,
+      userId: currentUserId,
       name: savedName,
       type: selectedCategory,
       brandColour: selectedColor,
@@ -557,8 +554,8 @@ function BillRemindersModal({
     () => createStepperStyles(colors, isDark),
     [colors, isDark]
   );
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { currentUserId } = useAuth();
+  const userId = currentUserId;
 
   const [bills, setBills] = useState<BillReminder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -618,10 +615,7 @@ function BillRemindersModal({
       return;
     }
     setSaving(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+    if (!userId) {
       setSaving(false);
       return;
     }
@@ -633,7 +627,7 @@ function BillRemindersModal({
     // Optimistic: add a placeholder to the list immediately, then close
     const optimisticBill: BillReminder = {
       id: `optimistic-${Date.now()}`,
-      user_id: user.id,
+      user_id: userId,
       title: newTitle.trim(),
       amount: newAmount ? parseFloat(newAmount) : null,
       due_date: dueDateISO,
@@ -654,7 +648,7 @@ function BillRemindersModal({
 
     try {
       await createBillReminder({
-        userId: user.id,
+        userId,
         title: optimisticBill.title,
         amount: optimisticBill.amount ?? undefined,
         dueDate: dueDateISO,

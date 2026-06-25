@@ -217,5 +217,19 @@ export default schemaMigrations({
         }),
       ],
     },
+    {
+      // v11 — debts.direction: the Debt Tracker now models both receivables
+      // ('owed_to_me') and the user's own payables ('i_owe'). Optional column;
+      // existing rows come in as null and are treated as receivables (the
+      // pre-migration meaning). Server backfills to 'owed_to_me' via
+      // supabase/add_debt_direction.sql; the next sync pull fills it in.
+      toVersion: 11,
+      steps: [
+        addColumns({
+          table: 'debts',
+          columns: [{ name: 'direction', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
   ],
 });

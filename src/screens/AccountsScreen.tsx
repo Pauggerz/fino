@@ -34,13 +34,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useAccounts } from '../hooks/useAccounts';
 import {
   createAccount,
   deleteAccount,
   updateAccount,
 } from '../services/localMutations';
-import { supabase } from '../services/supabase';
 import {
   ACCOUNT_AVATAR_OVERRIDE,
   ACCOUNT_LOGOS,
@@ -107,6 +107,7 @@ export default function AccountsScreen() {
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   const { accounts, totalBalance, loading } = useAccounts();
+  const { currentUserId } = useAuth();
 
   const [editing, setEditing] = useState<Account | null>(null);
   const [adding, setAdding] = useState(false);
@@ -120,10 +121,7 @@ export default function AccountsScreen() {
       Alert.alert('Required', 'Account name cannot be empty.');
       return;
     }
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!currentUserId) return;
 
     const startBal = parseFloat(draft.balance) || 0;
     const canonical = getCanonicalBrandName(name);
@@ -131,7 +129,7 @@ export default function AccountsScreen() {
     const letter = savedName[0].toUpperCase();
 
     await createAccount({
-      userId: user.id,
+      userId: currentUserId,
       name: savedName,
       type: draft.category || DEFAULT_CATEGORY,
       brandColour: draft.color,
@@ -140,7 +138,7 @@ export default function AccountsScreen() {
       sortOrder: 99,
     });
     setAdding(false);
-  }, []);
+  }, [currentUserId]);
 
   const handleSaveEdit = useCallback(
     async (id: string, draft: DraftState) => {

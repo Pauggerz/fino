@@ -843,6 +843,7 @@ function whenPhrase(tr: TimeRange): string {
   switch (tr.key) {
     case 'weekday':
     case 'daysAgo':
+    case 'calendarDate':
       return `on ${tr.label}`;
     case 'weekend':
       return 'over the weekend';
@@ -854,6 +855,7 @@ function whenPhrase(tr: TimeRange): string {
     case 'lastMonth':
     case 'thisYear':
     case 'lastYear':
+    case 'weeksAgo':
       return tr.label;
     default:
       // quarter / namedMonth / lastNDays / last30Days
@@ -2207,6 +2209,7 @@ function answerDebt(
       target: 'utangTracker',
       params: {
         debtorName: debtor,
+        direction: 'owed_to_me',
         ...(stmt.amount ? { amount: stmt.amount } : {}),
       },
     };

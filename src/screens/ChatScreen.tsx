@@ -16,11 +16,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { Q } from '@nozbe/watermelondb';
 import { Icon } from '../components/icons/Icon';
 import { FinoIntelIcon } from '../components/icons/FinoIntelIcon';
 import ProfileSidebar from '../components/ProfileSidebar';
-import { useNavigation } from '@react-navigation/native';
-import { Q } from '@nozbe/watermelondb';
 import { spacing } from '../constants/theme';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -67,13 +67,37 @@ import { saveChatMessage, loadChatHistory } from '@/services/chatMutations';
 const WORK_STAGE_MS = 430;
 
 const STEP_SETS: Record<string, string[]> = {
-  spend:      ['Fetching your transactions', 'Calculating totals', 'Identifying top categories'],
-  category:   ['Fetching transactions', 'Grouping by category', 'Comparing to last month'],
-  budget:     ['Loading spending history', 'Running 3-month baseline', 'Building recommendation'],
-  bills:      ['Checking recurring bills', 'Scanning upcoming due dates', 'Mapping to accounts'],
-  save:       ['Fetching income & expenses', 'Calculating savings rate', 'Comparing to your goal'],
-  income:     ['Fetching income records', 'Summing this month', 'Checking vs last month'],
-  default:    ['Fetching your data', 'Analyzing', 'Generating response'],
+  spend: [
+    'Fetching your transactions',
+    'Calculating totals',
+    'Identifying top categories',
+  ],
+  category: [
+    'Fetching transactions',
+    'Grouping by category',
+    'Comparing to last month',
+  ],
+  budget: [
+    'Loading spending history',
+    'Running 3-month baseline',
+    'Building recommendation',
+  ],
+  bills: [
+    'Checking recurring bills',
+    'Scanning upcoming due dates',
+    'Mapping to accounts',
+  ],
+  save: [
+    'Fetching income & expenses',
+    'Calculating savings rate',
+    'Comparing to your goal',
+  ],
+  income: [
+    'Fetching income records',
+    'Summing this month',
+    'Checking vs last month',
+  ],
+  default: ['Fetching your data', 'Analyzing', 'Generating response'],
 };
 
 function pickSteps(text: string): string[] {
@@ -121,7 +145,10 @@ type RecentTx = {
 };
 
 function nowTime() {
-  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date().toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 /** Build a status-card ChatCard from legacy TxData so old persisted messages
@@ -180,31 +207,61 @@ function rowToMessage(row: ChatMessageModel): Message {
 
 type StepStatus = 'active' | 'done';
 
-function StepRow({ text, status, colors }: { text: string; status: StepStatus; colors: any }) {
+function StepRow({
+  text,
+  status,
+  colors,
+}: {
+  text: string;
+  status: StepStatus;
+  colors: any;
+}) {
   const opacity = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // Fade in on mount
-    Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
     // Spin (always running; spinner view is only rendered when active)
     Animated.loop(
-      Animated.timing(spinAnim, { toValue: 1, duration: 750, useNativeDriver: true })
+      Animated.timing(spinAnim, {
+        toValue: 1,
+        duration: 750,
+        useNativeDriver: true,
+      })
     ).start();
   }, []);
 
   useEffect(() => {
     if (status === 'done') {
-      Animated.timing(opacity, { toValue: 0.42, duration: 280, useNativeDriver: true }).start();
+      Animated.timing(opacity, {
+        toValue: 0.42,
+        duration: 280,
+        useNativeDriver: true,
+      }).start();
     }
   }, [status]);
 
-  const rotate = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const rotate = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   return (
-    <Animated.View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, opacity }}>
+    <Animated.View
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 9, opacity }}
+    >
       {status === 'done' ? (
-        <Ionicons name="checkmark" size={13} color={colors.chatAILabel} style={{ width: 13 }} />
+        <Ionicons
+          name="checkmark"
+          size={13}
+          color={colors.chatAILabel}
+          style={{ width: 13 }}
+        />
       ) : (
         <Animated.View
           style={{
@@ -212,7 +269,7 @@ function StepRow({ text, status, colors }: { text: string; status: StepStatus; c
             height: 13,
             borderRadius: 7,
             borderWidth: 1.5,
-            borderColor: colors.chatAILabel + '30',
+            borderColor: `${colors.chatAILabel}30`,
             borderTopColor: colors.chatAILabel,
             transform: [{ rotate }],
           }}
@@ -226,7 +283,8 @@ function StepRow({ text, status, colors }: { text: string; status: StepStatus; c
           lineHeight: 18,
         }}
       >
-        {text}{status === 'active' ? '…' : ''}
+        {text}
+        {status === 'active' ? '…' : ''}
       </Text>
     </Animated.View>
   );
@@ -257,13 +315,14 @@ function ThinkingSteps({
     // parent unmounts this on the reply.
     steps.slice(0, -1).forEach((_, i) => {
       timeouts.push(
-        setTimeout(() => {
-          setStatuses((prev) => {
-            const next = [...prev];
-            next[i] = 'done';
-            next.push('active');
-            return next;
-          });
+        setTimeout(
+          () => {
+            setStatuses((prev) => {
+              const next = [...prev];
+              next[i] = 'done';
+              next.push('active');
+              return next;
+            });
           },
           (i + 1) * stageMs
         )
@@ -274,10 +333,14 @@ function ThinkingSteps({
   }, []);
 
   const bubbleBg = isDark ? 'rgba(124,101,200,0.12)' : 'rgba(124,101,200,0.07)';
-  const borderColor = isDark ? 'rgba(124,101,200,0.35)' : 'rgba(124,101,200,0.2)';
+  const borderColor = isDark
+    ? 'rgba(124,101,200,0.35)'
+    : 'rgba(124,101,200,0.2)';
 
   return (
-    <View style={{ alignItems: 'flex-start', marginBottom: 20, maxWidth: '85%' }}>
+    <View
+      style={{ alignItems: 'flex-start', marginBottom: 20, maxWidth: '85%' }}
+    >
       <View
         style={{
           backgroundColor: bubbleBg,
@@ -294,7 +357,12 @@ function ThinkingSteps({
         }}
       >
         {statuses.map((status, i) => (
-          <StepRow key={i} text={steps[i] ?? ''} status={status} colors={colors} />
+          <StepRow
+            key={i}
+            text={steps[i] ?? ''}
+            status={status}
+            colors={colors}
+          />
         ))}
       </View>
     </View>
@@ -303,15 +371,29 @@ function ThinkingSteps({
 
 // ─── ANIMATED MESSAGE WRAPPER ────────────────────────────────────────────────
 
-function AnimatedMessage({ children, isNew }: { children: React.ReactNode; isNew?: boolean }) {
+function AnimatedMessage({
+  children,
+  isNew,
+}: {
+  children: React.ReactNode;
+  isNew?: boolean;
+}) {
   const opacity = useRef(new Animated.Value(isNew ? 0 : 1)).current;
   const translateY = useRef(new Animated.Value(isNew ? 12 : 0)).current;
 
   useEffect(() => {
     if (!isNew) return;
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 0, duration: 300, useNativeDriver: true }),
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
     ]).start();
   }, []);
 
@@ -327,7 +409,13 @@ function AnimatedMessage({ children, isNew }: { children: React.ReactNode; isNew
 
 // ─── ACCOUNT PICKER MODAL ────────────────────────────────────────────────────
 
-type AccountItem = { id: string; name: string; letter_avatar: string; brand_colour: string; balance: number };
+type AccountItem = {
+  id: string;
+  name: string;
+  letter_avatar: string;
+  brand_colour: string;
+  balance: number;
+};
 
 function AccountPickerModal({
   visible,
@@ -357,13 +445,30 @@ function AccountPickerModal({
     if (visible) {
       setRendered(true);
       Animated.parallel([
-        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 65, useNativeDriver: true }),
-        Animated.timing(backdropOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 65,
+          useNativeDriver: true,
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
       ]).start();
     } else {
       Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 300, duration: 220, useNativeDriver: true }),
-        Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
+        Animated.timing(slideAnim, {
+          toValue: 300,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
       ]).start(({ finished }) => {
         if (finished) setRendered(false);
       });
@@ -376,7 +481,12 @@ function AccountPickerModal({
     n.toLocaleString('en-PH', { minimumFractionDigits: 2 });
 
   return (
-    <Modal transparent visible={visible} animationType="none" onRequestClose={onDismiss}>
+    <Modal
+      transparent
+      visible={visible}
+      animationType="none"
+      onRequestClose={onDismiss}
+    >
       {/* Backdrop */}
       <Animated.View
         style={{
@@ -444,12 +554,25 @@ function AccountPickerModal({
             }}
           >
             Logging{' '}
-            <Text style={{ fontFamily: 'Inter_600SemiBold', color: colors.textPrimary }}>
+            <Text
+              style={{
+                fontFamily: 'Inter_600SemiBold',
+                color: colors.textPrimary,
+              }}
+            >
               {pendingTx.displayName ?? 'transaction'}
             </Text>{' '}
             for{' '}
-            <Text style={{ fontFamily: 'DMMono_500Medium', color: colors.expenseRed }}>
-              ₱{pendingTx.amount?.toLocaleString('en-PH', { minimumFractionDigits: 2 }) ?? '—'}
+            <Text
+              style={{
+                fontFamily: 'DMMono_500Medium',
+                color: colors.expenseRed,
+              }}
+            >
+              ₱
+              {pendingTx.amount?.toLocaleString('en-PH', {
+                minimumFractionDigits: 2,
+              }) ?? '—'}
             </Text>
           </Text>
         )}
@@ -464,9 +587,13 @@ function AccountPickerModal({
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                backgroundColor: isDark
+                  ? 'rgba(255,255,255,0.05)'
+                  : 'rgba(0,0,0,0.03)',
                 borderWidth: 1,
-                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)',
+                borderColor: isDark
+                  ? 'rgba(255,255,255,0.08)'
+                  : 'rgba(0,0,0,0.07)',
                 borderRadius: 14,
                 padding: 14,
                 gap: 14,
@@ -517,7 +644,11 @@ function AccountPickerModal({
                 </Text>
               </View>
 
-              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={colors.textSecondary}
+              />
             </TouchableOpacity>
           ))}
         </View>
@@ -554,8 +685,8 @@ export default function ChatScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
 
   const { colors, isDark } = useTheme();
-  const { user, profile } = useAuth();
-  const userId = user?.id;
+  const { currentUserId, profile } = useAuth();
+  const userId = currentUserId;
   const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
 
   const { totalBalance, accounts } = useAccounts();
@@ -653,18 +784,28 @@ export default function ChatScreen() {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const showSub = Keyboard.addListener(showEvent, () => {
       setIsKeyboardVisible(true);
       scrollViewRef.current?.scrollToEnd({ animated: true });
     });
-    const hideSub = Keyboard.addListener(hideEvent, () => setIsKeyboardVisible(false));
-    return () => { showSub.remove(); hideSub.remove(); };
+    const hideSub = Keyboard.addListener(hideEvent, () =>
+      setIsKeyboardVisible(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, []);
 
   useEffect(() => {
-    if (!userId) { setRecentTxns([]); return; }
+    if (!userId) {
+      setRecentTxns([]);
+      return;
+    }
     const query = database
       .get<TransactionModel>('transactions')
       .query(Q.where('user_id', userId), Q.sortBy('date', Q.desc), Q.take(10));
@@ -694,7 +835,11 @@ export default function ChatScreen() {
     }
     const now = new Date();
     const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const thirteenMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 13, 1);
+    const thirteenMonthsAgo = new Date(
+      now.getFullYear(),
+      now.getMonth() - 13,
+      1
+    );
     const windowStart = (
       startOfYear < thirteenMonthsAgo ? startOfYear : thirteenMonthsAgo
     ).toISOString();
@@ -706,10 +851,18 @@ export default function ChatScreen() {
         Q.where('account_deleted', false),
         Q.where('date', Q.gte(windowStart)),
         Q.sortBy('date', Q.desc),
-        Q.take(2000),
+        Q.take(2000)
       );
     const sub = query
-      .observeWithColumns(['amount', 'type', 'category', 'merchant_name', 'display_name', 'date', 'account_id'])
+      .observeWithColumns([
+        'amount',
+        'type',
+        'category',
+        'merchant_name',
+        'display_name',
+        'date',
+        'account_id',
+      ])
       .subscribe((records) => {
         setTxSnapshot(
           records.map((r) => ({
@@ -721,14 +874,14 @@ export default function ChatScreen() {
             name: r.displayName ?? null,
             date: r.date,
             accountId: r.accountId,
-          })),
+          }))
         );
         // When the row cap truncated the window, coverage only reaches the
         // oldest row actually loaded (records are date-desc, so that's last).
         setTxSnapshotStart(
           records.length >= 2000
             ? records[records.length - 1].date
-            : windowStart,
+            : windowStart
         );
       });
     return () => sub.unsubscribe();
@@ -736,7 +889,10 @@ export default function ChatScreen() {
 
   // Active recurring income → "did my salary hit yet?" expectation.
   useEffect(() => {
-    if (!userId) { setRecurringIncome([]); return undefined; }
+    if (!userId) {
+      setRecurringIncome([]);
+      return undefined;
+    }
     const sub = database
       .get<RecurringIncomeModel>('recurring_incomes')
       .query(Q.where('user_id', userId), Q.where('is_active', true))
@@ -752,7 +908,7 @@ export default function ChatScreen() {
               dayOfMonth:
                 d && !Number.isNaN(d.getTime()) ? d.getDate() : undefined,
             };
-          }),
+          })
         );
       });
     return () => sub.unsubscribe();
@@ -775,7 +931,7 @@ export default function ChatScreen() {
             amount: r.amount,
             cadence: r.cadence,
             nextDueAt: r.nextDueAt || undefined,
-          })),
+          }))
         );
       });
     return () => sub.unsubscribe();
@@ -784,20 +940,34 @@ export default function ChatScreen() {
   // Utang receivables → "how much do I owe / who owes me" answers. Money owed
   // TO the user; remaining = total_amount − amount_paid.
   useEffect(() => {
-    if (!userId) { setDebts([]); return undefined; }
+    if (!userId) {
+      setDebts([]);
+      return undefined;
+    }
     const sub = database
       .get<DebtModel>('debts')
       .query(Q.where('user_id', userId))
-      .observeWithColumns(['debtor_name', 'total_amount', 'amount_paid', 'due_date'])
+      .observeWithColumns([
+        'debtor_name',
+        'total_amount',
+        'amount_paid',
+        'direction',
+        'due_date',
+      ])
       .subscribe((records) => {
         setDebts(
-          records.map((r) => ({
-            debtor: r.debtorName,
-            total: r.totalAmount,
-            paid: r.amountPaid,
-            remaining: Math.max(0, r.totalAmount - r.amountPaid),
-            dueDate: r.dueDate,
-          })),
+          records
+            // The brain answers "who owes me" from receivables only. Payables
+            // ('i_owe') are the user's own debts and must not be counted here;
+            // anything that isn't explicitly 'i_owe' is a receivable.
+            .filter((r) => r.direction !== 'i_owe')
+            .map((r) => ({
+              debtor: r.debtorName,
+              total: r.totalAmount,
+              paid: r.amountPaid,
+              remaining: Math.max(0, r.totalAmount - r.amountPaid),
+              dueDate: r.dueDate,
+            }))
         );
       });
     return () => sub.unsubscribe();
@@ -817,7 +987,7 @@ export default function ChatScreen() {
     const startOfLastMonth = new Date(
       now.getFullYear(),
       now.getMonth() - 1,
-      1,
+      1
     ).toISOString();
     const endOfThisMonth = new Date(
       now.getFullYear(),
@@ -826,7 +996,7 @@ export default function ChatScreen() {
       23,
       59,
       59,
-      999,
+      999
     ).toISOString();
 
     const query = database
@@ -835,7 +1005,7 @@ export default function ChatScreen() {
         Q.where('user_id', userId),
         Q.where('date', Q.gte(startOfLastMonth)),
         Q.where('date', Q.lte(endOfThisMonth)),
-        Q.where('account_deleted', false),
+        Q.where('account_deleted', false)
       );
 
     const sub = query
@@ -925,7 +1095,10 @@ export default function ChatScreen() {
     };
   }, [userId]);
 
-  const categoryNames = useMemo(() => categories.map((c) => c.name), [categories]);
+  const categoryNames = useMemo(
+    () => categories.map((c) => c.name),
+    [categories]
+  );
 
   // Context the brain queries (V3): account balances, per-category budgets, and
   // the tx snapshot enriched with account names. Memoized so the per-send ctx
@@ -1038,7 +1211,10 @@ export default function ChatScreen() {
     setInputText('');
 
     const userMsgId = Date.now().toString();
-    setMessages((prev) => [...prev, { id: userMsgId, type: 'user', text: trimmed, timestamp: nowTime() }]);
+    setMessages((prev) => [
+      ...prev,
+      { id: userMsgId, type: 'user', text: trimmed, timestamp: nowTime() },
+    ]);
     setLastMsgId(userMsgId);
     if (userId) {
       saveChatMessage({ userId, role: 'user', text: trimmed }).catch(() => {});
@@ -1058,11 +1234,11 @@ export default function ChatScreen() {
         looksLikeQuestion(trimmed) || looksLikeCommand(trimmed)
           ? null
           : parseChatTransaction(
-            trimmed,
-            accounts.map((a) => ({ id: a.id, name: a.name })),
-            categoryNames,
-            incomeCategories
-          );
+              trimmed,
+              accounts.map((a) => ({ id: a.id, name: a.name })),
+              categoryNames,
+              incomeCategories
+            );
 
       // A parsed transaction is acknowledged by a status card — logged
       // inline when the account is known, or after the account picker resolves.
@@ -1096,7 +1272,11 @@ export default function ChatScreen() {
           lastMonthSpent: insight.lastMonthSpent,
           topCategories: insight.topCategories,
           dayOfMonth: now.getDate(),
-          daysInMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
+          daysInMonth: new Date(
+            now.getFullYear(),
+            now.getMonth() + 1,
+            0
+          ).getDate(),
           now: now.toISOString(),
           insights: engineInsights ?? undefined,
           transactions: txForBrain,
@@ -1229,6 +1409,7 @@ export default function ChatScreen() {
         navigation.navigate('UtangTracker', {
           debtorName: p.debtorName as string | undefined,
           amount: p.amount as number | undefined,
+          direction: p.direction as 'owed_to_me' | 'i_owe' | undefined,
         });
         break;
       case 'billSplitter':
@@ -1322,11 +1503,11 @@ export default function ChatScreen() {
         }
         case 'setBudget': {
           const target = categories.find(
-            (c) => c.name.toLowerCase() === mut.category.toLowerCase(),
+            (c) => c.name.toLowerCase() === mut.category.toLowerCase()
           );
           if (!target) {
             appendAiNote(
-              `I couldn't find a category named ${mut.category} — set it up in Categories and I'll budget it from there.`,
+              `I couldn't find a category named ${mut.category} — set it up in Categories and I'll budget it from there.`
             );
             break;
           }
@@ -1394,9 +1575,16 @@ export default function ChatScreen() {
       </View>
       <Text style={styles.emptyHeading}>Start your journey</Text>
       <Text style={styles.emptyBody}>
-        Fino needs some data to work its magic. Log your first expense or income to get personalized insights.
+        Fino needs some data to work its magic. Log your first expense or income
+        to get personalized insights.
       </Text>
-      <TouchableOpacity style={styles.emptyBtn} activeOpacity={0.8} onPress={() => navigation.navigate('AddTransaction', { mode: 'expense' })}>
+      <TouchableOpacity
+        style={styles.emptyBtn}
+        activeOpacity={0.8}
+        onPress={() =>
+          navigation.navigate('AddTransaction', { mode: 'expense' })
+        }
+      >
         <Text style={styles.emptyBtnText}>Log your first expense</Text>
       </TouchableOpacity>
     </View>
@@ -1408,7 +1596,11 @@ export default function ChatScreen() {
   const renderLanding = () => {
     const hour = new Date().getHours();
     const greet =
-      hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+      hour < 12
+        ? 'Good morning'
+        : hour < 18
+          ? 'Good afternoon'
+          : 'Good evening';
     const firstName = (profile?.name ?? '').trim().split(/\s+/)[0];
     const saved = Math.max(0, totalIncome - monthlySpent);
     const suggestions: {
@@ -1470,13 +1662,16 @@ export default function ChatScreen() {
         >
           <View style={styles.glanceDot} />
           <Text style={styles.glanceAmt}>
-            ₱{totalBalance.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+            ₱
+            {totalBalance.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
           </Text>
           {saved > 0 ? (
             <>
               <Text style={styles.glanceSep}>·</Text>
               <Text style={styles.glanceSave}>
-                saving ₱{saved.toLocaleString('en-PH', { maximumFractionDigits: 0 })} this month
+                saving ₱
+                {saved.toLocaleString('en-PH', { maximumFractionDigits: 0 })}{' '}
+                this month
               </Text>
             </>
           ) : null}
@@ -1496,7 +1691,9 @@ export default function ChatScreen() {
               activeOpacity={0.8}
               onPress={() => handleSend(s.prompt)}
             >
-              <View style={[styles.suggTile, { backgroundColor: `${s.tint}22` }]}>
+              <View
+                style={[styles.suggTile, { backgroundColor: `${s.tint}22` }]}
+              >
                 <Ionicons name={s.icon} size={18} color={s.tint} />
               </View>
               <View style={{ flex: 1 }}>
@@ -1562,9 +1759,7 @@ export default function ChatScreen() {
             <View style={styles.aiBubble}>
               <Text style={styles.aiLabelText}>Fino</Text>
 
-              {msg.text ? (
-                <Text style={styles.aiText}>{msg.text}</Text>
-              ) : null}
+              {msg.text ? <Text style={styles.aiText}>{msg.text}</Text> : null}
 
               {msg.card ? (
                 <ChatCardView
@@ -1574,8 +1769,6 @@ export default function ChatScreen() {
                   animateIn={isNew}
                 />
               ) : null}
-
-
             </View>
 
             <Text style={styles.timestampAi}>{msg.timestamp}</Text>
@@ -1618,7 +1811,11 @@ export default function ChatScreen() {
                     onPress={() => handleCardAction(a)}
                   >
                     <Text style={styles.replyActionText}>{a.label}</Text>
-                    <Ionicons name="arrow-forward" size={14} color={colors.primary} />
+                    <Ionicons
+                      name="arrow-forward"
+                      size={14}
+                      color={colors.primary}
+                    />
                   </TouchableOpacity>
                 ))}
               </Reveal>
@@ -1631,7 +1828,11 @@ export default function ChatScreen() {
                 style={styles.followupWrapper}
               >
                 {msg.followUps.map((prompt) => (
-                  <TouchableOpacity key={prompt} style={styles.followupChip} onPress={() => handleSend(prompt)}>
+                  <TouchableOpacity
+                    key={prompt}
+                    style={styles.followupChip}
+                    onPress={() => handleSend(prompt)}
+                  >
                     <Text style={styles.followupChipText}>{prompt}</Text>
                   </TouchableOpacity>
                 ))}
@@ -1658,12 +1859,16 @@ export default function ChatScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
-        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        onContentSizeChange={() =>
+          scrollViewRef.current?.scrollToEnd({ animated: true })
+        }
         onLayout={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
       >
         {renderProactiveCard()}
         {messages.map(renderMessage)}
-        {isTyping ? <ThinkingSteps steps={currentSteps} colors={colors} isDark={isDark} /> : null}
+        {isTyping ? (
+          <ThinkingSteps steps={currentSteps} colors={colors} isDark={isDark} />
+        ) : null}
       </ScrollView>
     );
   };
@@ -1681,9 +1886,19 @@ export default function ChatScreen() {
         behavior="padding"
       >
         {/* ─── HEADER ─── */}
-        <View style={[styles.chatHeader, { paddingTop: Math.max(insets.top, 12) }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={8}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+        <View
+          style={[styles.chatHeader, { paddingTop: Math.max(insets.top, 12) }]}
+        >
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            hitSlop={8}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={24}
+              color={colors.textPrimary}
+            />
           </TouchableOpacity>
 
           <View style={styles.headerWordmarkWrap}>
@@ -1705,7 +1920,11 @@ export default function ChatScreen() {
         <View
           style={[
             styles.inputContainer,
-            { paddingBottom: isKeyboardVisible ? 14 : Math.max(insets.bottom, 14) },
+            {
+              paddingBottom: isKeyboardVisible
+                ? 14
+                : Math.max(insets.bottom, 14),
+            },
           ]}
         >
           <View style={styles.composerInner}>
@@ -1738,7 +1957,11 @@ export default function ChatScreen() {
               >
                 {isSendDisabled ? (
                   <View style={[styles.sendBtn, styles.sendBtnDisabled]}>
-                    <Ionicons name="arrow-up" size={18} color={colors.textSecondary} />
+                    <Ionicons
+                      name="arrow-up"
+                      size={18}
+                      color={colors.textSecondary}
+                    />
                   </View>
                 ) : (
                   <LinearGradient
@@ -1769,7 +1992,10 @@ export default function ChatScreen() {
       />
 
       {/* ─── PROFILE DRAWER ─── */}
-      <ProfileSidebar visible={sidebarVisible} onClose={() => setSidebarVisible(false)} />
+      <ProfileSidebar
+        visible={sidebarVisible}
+        onClose={() => setSidebarVisible(false)}
+      />
     </View>
   );
 }
@@ -1818,13 +2044,39 @@ const createStyles = (colors: any, isDark: boolean) =>
     },
     bodyScroll: { flex: 1 },
     scrollContent: { padding: spacing.screenPadding, paddingBottom: 24 },
-    emptyStateContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+    emptyStateContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 40,
+    },
     emptyEmoji: { fontSize: 48, marginBottom: 16 },
     emptyIconWrap: { marginBottom: 16 },
-    emptyHeading: { fontFamily: 'Nunito_800ExtraBold', fontSize: 20, color: colors.chatAILabel, marginBottom: 12 },
-    emptyBody: { fontFamily: 'Inter_400Regular', fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
-    emptyBtn: { backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 16, borderRadius: 16 },
-    emptyBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#FFF' },
+    emptyHeading: {
+      fontFamily: 'Nunito_800ExtraBold',
+      fontSize: 20,
+      color: colors.chatAILabel,
+      marginBottom: 12,
+    },
+    emptyBody: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 22,
+      marginBottom: 32,
+    },
+    emptyBtn: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: 24,
+      paddingVertical: 16,
+      borderRadius: 16,
+    },
+    emptyBtnText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 15,
+      color: '#FFF',
+    },
     aiRow: {
       flexDirection: 'row',
       alignItems: 'flex-start',
@@ -1858,8 +2110,19 @@ const createStyles = (colors: any, isDark: boolean) =>
       color: colors.chatAILabel,
       marginBottom: 6,
     },
-    aiText: { fontFamily: 'Inter_400Regular', fontSize: 14, color: colors.chatAIText, lineHeight: 20 },
-    timestampAi: { fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary, marginTop: 6, marginLeft: 4 },
+    aiText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: colors.chatAIText,
+      lineHeight: 20,
+    },
+    timestampAi: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 10,
+      color: colors.textSecondary,
+      marginTop: 6,
+      marginLeft: 4,
+    },
     userMsgWrapper: { alignItems: 'flex-end', marginBottom: 20 },
     userBubble: {
       backgroundColor: colors.chatUserBg,
@@ -1870,8 +2133,19 @@ const createStyles = (colors: any, isDark: boolean) =>
       padding: 14,
       maxWidth: '80%',
     },
-    userText: { fontFamily: 'Inter_400Regular', fontSize: 14, color: '#FFF', lineHeight: 20 },
-    timestampUser: { fontFamily: 'Inter_400Regular', fontSize: 10, color: colors.textSecondary, marginTop: 6, marginRight: 4 },
+    userText: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 14,
+      color: '#FFF',
+      lineHeight: 20,
+    },
+    timestampUser: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 10,
+      color: colors.textSecondary,
+      marginTop: 6,
+      marginRight: 4,
+    },
 
     // ─── Proactive coach card (live, unpersisted) ───
     proactiveWrap: { marginBottom: 16 },
@@ -1923,10 +2197,27 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingVertical: 8,
       paddingHorizontal: 12,
     },
-    glanceDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.incomeGreen },
-    glanceAmt: { fontFamily: 'DMMono_500Medium', fontSize: 13, color: colors.textPrimary },
-    glanceSep: { fontFamily: 'Inter_400Regular', fontSize: 12, color: colors.textSecondary },
-    glanceSave: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.incomeGreen },
+    glanceDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: colors.incomeGreen,
+    },
+    glanceAmt: {
+      fontFamily: 'DMMono_500Medium',
+      fontSize: 13,
+      color: colors.textPrimary,
+    },
+    glanceSep: {
+      fontFamily: 'Inter_400Regular',
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    glanceSave: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.incomeGreen,
+    },
     suggestions: { marginTop: 26, gap: 11 },
     suggCard: {
       flexDirection: 'row',
@@ -1946,10 +2237,24 @@ const createStyles = (colors: any, isDark: boolean) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    suggLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14.5, color: colors.textPrimary },
-    suggSub: { fontFamily: 'Inter_500Medium', fontSize: 11.5, color: colors.textSecondary, marginTop: 1 },
+    suggLabel: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 14.5,
+      color: colors.textPrimary,
+    },
+    suggSub: {
+      fontFamily: 'Inter_500Medium',
+      fontSize: 11.5,
+      color: colors.textSecondary,
+      marginTop: 1,
+    },
 
-    followupWrapper: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+    followupWrapper: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 10,
+    },
     followupChip: {
       backgroundColor: colors.chatAIBubbleBg,
       borderWidth: 1,
@@ -1958,10 +2263,19 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingHorizontal: 12,
       paddingVertical: 8,
     },
-    followupChipText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.chatAILabel },
+    followupChipText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.chatAILabel,
+    },
     // Reply-level action buttons (V3) — slightly more prominent than follow-up
     // chips since they navigate / pre-fill a screen.
-    replyActionWrapper: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+    replyActionWrapper: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 10,
+    },
     replyActionBtn: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1973,10 +2287,19 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingHorizontal: 13,
       paddingVertical: 8,
     },
-    replyActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.primary },
+    replyActionText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.primary,
+    },
     // Confirm/Cancel row for a brain-proposed mutation (recategorize). Confirm is
     // filled (it commits a write); Cancel is a quiet text button.
-    mutationWrapper: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+    mutationWrapper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 10,
+    },
     mutationConfirmBtn: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1986,7 +2309,11 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingHorizontal: 16,
       paddingVertical: 9,
     },
-    mutationConfirmText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: '#FFF' },
+    mutationConfirmText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: '#FFF',
+    },
     mutationCancelBtn: {
       borderWidth: 1,
       borderColor: colors.border,
@@ -1994,7 +2321,11 @@ const createStyles = (colors: any, isDark: boolean) =>
       paddingHorizontal: 16,
       paddingVertical: 9,
     },
-    mutationCancelText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.textSecondary },
+    mutationCancelText: {
+      fontFamily: 'Inter_600SemiBold',
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
     inputContainer: {
       backgroundColor: colors.background,
       paddingHorizontal: spacing.screenPadding,

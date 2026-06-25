@@ -40,7 +40,7 @@ type TableName =
   | 'recurring_bills'
   | 'notification_prefs';
 
-const SYNCED_TABLES: TableName[] = [
+export const SYNCED_TABLES: TableName[] = [
   'accounts',
   'transactions',
   'categories',
@@ -211,10 +211,23 @@ function rawToRemoteRow(table: TableName, raw: Record<string, unknown>): Record<
   return body;
 }
 
+// While a local→cloud "claim" is re-stamping local rows and de-duping the
+// server-seeded defaults, automatic syncs must not run — a mid-claim push/pull
+// would create duplicates. The claim sets this true for its short critical
+// section (see services/claimLocalData.ts).
+let syncPaused = false;
+export function setSyncPaused(value: boolean): void {
+  syncPaused = value;
+}
+
 export async function syncDatabase(): Promise<void> {
+  if (syncPaused) return;
   const { data: sessionData } = await supabase.auth.getSession();
   const userId = sessionData.session?.user?.id;
-  if (!userId) throw new Error('Not authenticated — cannot sync.');
+  // Offline-first: before the user creates a cloud account they run on a
+  // device-local identity with no session. There's nothing to sync — resolve
+  // quietly rather than throwing (which would surface a false sync error).
+  if (!userId) return;
 
   await synchronize({
     database,

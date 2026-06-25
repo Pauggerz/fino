@@ -7,14 +7,22 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Alert, AppState, AppStateStatus, InteractionManager } from 'react-native';
+import {
+  Alert,
+  AppState,
+  AppStateStatus,
+  InteractionManager,
+} from 'react-native';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { hasUnsyncedChanges } from '@nozbe/watermelondb/sync';
 
 import { database } from '@/db';
 import { triggerSync as runSync } from '@/services/watermelonSync';
+import { useAuth } from './AuthContext';
 
-export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
+// 'local' = running on the device-local identity (no cloud account) — there is
+// nothing to sync, which is distinct from a sync 'error'.
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error' | 'local';
 
 interface SyncStatusContextValue {
   status: SyncStatus;
@@ -41,50 +49,70 @@ const checkIsOnline = (state: NetInfoState) =>
 
 const SYNC_INTERVAL_MS = 30_000;
 
-export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const { session } = useAuth();
   const [status, setStatus] = useState<SyncStatus>('synced');
   const [syncVersion, setSyncVersion] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const failStreak = useRef(0);
   const lastSyncedAtRef = useRef<number>(0);
+  // Read inside the stable `triggerSync` callback without recreating it.
+  const hasSessionRef = useRef(!!session);
+  useEffect(() => {
+    hasSessionRef.current = !!session;
+    // Reflect the local/synced state immediately on auth change.
+    setStatus((prev) =>
+      session ? (prev === 'local' ? 'synced' : prev) : 'local'
+    );
+  }, [session]);
 
-  const triggerSync = useCallback(async (isConnected: boolean, force = false) => {
-    if (!isConnected) {
-      setStatus('offline');
-      return;
-    }
-    // Skip redundant ticks — three triggers fire on startup (mount + NetInfo
-    // event + interval) and the single-flight wrapper only dedupes concurrent
-    // calls, not sequential ones a few ms apart.
-    if (!force && Date.now() - lastSyncedAtRef.current < SYNC_INTERVAL_MS) {
-      return;
-    }
+  const triggerSync = useCallback(
+    async (isConnected: boolean, force = false) => {
+      // No cloud account → nothing to sync. Surface a distinct 'local' state.
+      if (!hasSessionRef.current) {
+        setStatus('local');
+        return;
+      }
+      if (!isConnected) {
+        setStatus('offline');
+        return;
+      }
+      // Skip redundant ticks — three triggers fire on startup (mount + NetInfo
+      // event + interval) and the single-flight wrapper only dedupes concurrent
+      // calls, not sequential ones a few ms apart.
+      if (!force && Date.now() - lastSyncedAtRef.current < SYNC_INTERVAL_MS) {
+        return;
+      }
 
-    setStatus('syncing');
-    try {
-      await runSync();
-      failStreak.current = 0;
-      setStatus('synced');
-      const now = new Date();
-      lastSyncedAtRef.current = now.getTime();
-      setLastSyncedAt(now);
-      setSyncVersion((v) => v + 1);
-    } catch (err) {
-      failStreak.current += 1;
-      setStatus('error');
-      if (__DEV__) console.warn('[SyncContext] sync failed:', err);
-      if (failStreak.current === 2) {
-        const pending = await hasUnsyncedChanges({ database });
-        if (pending) {
-          Alert.alert(
-            'Sync failed',
-            'Some changes could not reach the server. They are stored locally and will retry automatically.',
-            [{ text: 'OK' }],
-          );
+      setStatus('syncing');
+      try {
+        await runSync();
+        failStreak.current = 0;
+        setStatus('synced');
+        const now = new Date();
+        lastSyncedAtRef.current = now.getTime();
+        setLastSyncedAt(now);
+        setSyncVersion((v) => v + 1);
+      } catch (err) {
+        failStreak.current += 1;
+        setStatus('error');
+        if (__DEV__) console.warn('[SyncContext] sync failed:', err);
+        if (failStreak.current === 2) {
+          const pending = await hasUnsyncedChanges({ database });
+          if (pending) {
+            Alert.alert(
+              'Sync failed',
+              'Some changes could not reach the server. They are stored locally and will retry automatically.',
+              [{ text: 'OK' }]
+            );
+          }
         }
       }
-    }
-  }, []);
+    },
+    []
+  );
 
   // Wrap every automatic sync invocation in runAfterInteractions so the pull
   // never competes with an in-progress gesture for JS-thread time.
@@ -94,7 +122,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
         triggerSync(isConnected, force);
       });
     },
-    [triggerSync],
+    [triggerSync]
   );
 
   useEffect(() => {
@@ -145,11 +173,11 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // consumers from re-rendering every time syncVersion bumps.
   const statusValue = useMemo<SyncStatusContextValue>(
     () => ({ status, lastSyncedAt, forceSync }),
-    [status, lastSyncedAt, forceSync],
+    [status, lastSyncedAt, forceSync]
   );
   const versionValue = useMemo<SyncVersionContextValue>(
     () => ({ syncVersion }),
-    [syncVersion],
+    [syncVersion]
   );
 
   return (

@@ -23,7 +23,6 @@ import {
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { RootStackParamList } from '@/navigation/RootNavigator';
-import { supabase } from '../services/supabase';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { database } from '@/db';
@@ -576,8 +575,8 @@ function DateStepper({
 
 export default function SavingsGoalScreen() {
   const { colors, isDark } = useTheme();
-  const { user } = useAuth();
-  const userId = user?.id;
+  const { currentUserId } = useAuth();
+  const userId = currentUserId;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const route = useRoute<RouteProp<RootStackParamList, 'SavingsGoal'>>();
@@ -750,12 +749,9 @@ export default function SavingsGoalScreen() {
           color: form.color,
         });
       } else {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) throw new Error('Not signed in');
+        if (!currentUserId) throw new Error('Could not determine your account.');
         await createSavingsGoal({
-          userId: user.id,
+          userId: currentUserId,
           name,
           description: form.description.trim() || undefined,
           targetAmount: amount,
