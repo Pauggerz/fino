@@ -16,6 +16,7 @@ import {
   scheduleReconcile,
   cancelScheduledForEntity,
 } from './localPushScheduler';
+import { STARTER_EXPENSE_CATEGORIES } from '../constants/categoryMappings';
 
 const accounts = () => database.get<AccountModel>('accounts');
 const transactions = () => database.get<TransactionModel>('transactions');
@@ -344,6 +345,11 @@ export async function createAccount(input: {
   letterAvatar: string;
   startingBalance: number;
   sortOrder?: number;
+  /**
+   * The mandatory default "Cash" account is non-deletable (mirrors the server
+   * `seed_user_defaults` trigger). User-created accounts pass true (the default).
+   */
+  isDeletable?: boolean;
 }): Promise<string> {
   const id = uuidv4();
   await database.write(async () => {
@@ -357,7 +363,7 @@ export async function createAccount(input: {
       a.balance = toCents(input.startingBalance);
       a.startingBalance = toCents(input.startingBalance);
       a.isActive = true;
-      a.isDeletable = true;
+      a.isDeletable = input.isDeletable ?? true;
       a.sortOrder = input.sortOrder ?? 0;
     });
   });
@@ -418,6 +424,86 @@ export async function createCategory(input: {
   });
   syncInBackground();
   return id;
+}
+
+// Neutral fallback colours for custom-named categories created during
+// onboarding — mirrors the "Others" tile so they look neutral until styled.
+const CUSTOM_CATEGORY_TILE = '#F2EFEC';
+const CUSTOM_CATEGORY_TEXT = '#5C5550';
+
+/**
+ * Seed the local DB with what the server `seed_user_defaults` trigger would
+ * create for a brand-new user, plus the categories chosen during onboarding.
+ * Offline-first: runs against the device-local `userId` with no network. Used
+ * by OnboardingScreen so a never-signed-in user still gets a working setup.
+ *
+ *  - the mandatory non-deletable **Cash** account
+ *  - the mandatory **"Others"** catch-all category (is_default)
+ *  - the selected starter categories + any custom names
+ */
+export async function seedOnboardingDefaults(input: {
+  userId: string;
+  selectedStarterKeys: string[];
+  customCategoryNames: string[];
+  startingCashBalance?: number;
+}): Promise<void> {
+  const {
+    userId,
+    selectedStarterKeys,
+    customCategoryNames,
+    startingCashBalance = 0,
+  } = input;
+
+  await createAccount({
+    userId,
+    name: 'Cash',
+    type: 'Cash',
+    brandColour: '#1C9E4B',
+    letterAvatar: 'P',
+    startingBalance: startingCashBalance,
+    sortOrder: 0,
+    isDeletable: false,
+  });
+
+  await createCategory({
+    userId,
+    name: 'Others',
+    categoryType: 'expense',
+    emoji: 'others',
+    tileBgColour: CUSTOM_CATEGORY_TILE,
+    textColour: CUSTOM_CATEGORY_TEXT,
+    sortOrder: 999,
+    isDefault: true,
+  });
+
+  const selected = new Set(selectedStarterKeys);
+  for (const def of STARTER_EXPENSE_CATEGORIES) {
+    if (!selected.has(def.key)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await createCategory({
+      userId,
+      name: def.name,
+      categoryType: 'expense',
+      emoji: def.key,
+      tileBgColour: def.tileBg,
+      textColour: def.textColor,
+      sortOrder: def.sortOrder,
+    });
+  }
+
+  let sortOrder = STARTER_EXPENSE_CATEGORIES.length;
+  for (const name of customCategoryNames) {
+    // eslint-disable-next-line no-await-in-loop
+    await createCategory({
+      userId,
+      name,
+      categoryType: 'expense',
+      emoji: 'others',
+      tileBgColour: CUSTOM_CATEGORY_TILE,
+      textColour: CUSTOM_CATEGORY_TEXT,
+      sortOrder: sortOrder++,
+    });
+  }
 }
 
 export async function updateCategory(
