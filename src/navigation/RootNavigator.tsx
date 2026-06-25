@@ -5,7 +5,7 @@ import React, {
   useEffect,
   useState,
 } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Alert, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   NavigationContainer,
@@ -27,7 +27,6 @@ import AddTransactionSheet from '../screens/AddTransactionSheet';
 import TabBar, { TabRoute } from '../components/TabBar';
 import AccountDetailScreen from '../screens/AccountDetailScreen';
 import MoreScreen from '../screens/MoreScreen';
-import LoginScreen from '../screens/LoginScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -74,6 +73,7 @@ const CurrencySettingsScreen = lazy(
 const LanguageSettingsScreen = lazy(
   () => import('../screens/LanguageSettingsScreen')
 );
+const AuthModalScreen = lazy(() => import('../screens/AuthModalScreen'));
 
 function ModalLoadingShim() {
   const { colors } = useTheme();
@@ -118,6 +118,9 @@ export type TabStackParamList = {
 
 export type RootStackParamList = {
   Onboarding: undefined;
+  // Sign-in / sign-up modal — opened from Settings when running on the
+  // device-local identity (offline-first; no account required to use the app).
+  Auth: undefined;
   Tabs: NavigatorScreenParams<TabStackParamList>;
   FABActionSheet: undefined;
   AddTransaction: {
@@ -205,6 +208,22 @@ function MoreNavigator() {
 
 const Tab = createBottomTabNavigator<TabStackParamList>();
 function TabNavigator() {
+  // Receipt OCR needs the authed backend, so it's online-only. On the local
+  // identity, prompt the user to create an account instead of opening a
+  // scanner whose save would fail.
+  const { isLocal } = useAuth();
+
+  const requireAccountForScan = (navigate: () => void) => {
+    Alert.alert(
+      'Sign in to scan receipts',
+      'Receipt scanning needs an account. Create one to sync online and unlock scanning — your offline data comes with you.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Create account', onPress: navigate },
+      ]
+    );
+  };
+
   return (
     <Tab.Navigator
       tabBar={(props) => (
@@ -228,16 +247,24 @@ function TabNavigator() {
           onAddManual={() =>
             props.navigation.navigate('AddTransaction', { mode: 'expense' })
           }
-          onScan={() =>
-            props.navigation.navigate('ScreenshotScreen', {
-              initialSource: 'camera',
-            })
-          }
-          onUpload={() =>
-            props.navigation.navigate('ScreenshotScreen', {
-              initialSource: 'upload',
-            })
-          }
+          onScan={() => {
+            const go = () =>
+              props.navigation.navigate('ScreenshotScreen', {
+                initialSource: 'camera',
+              });
+            if (isLocal)
+              requireAccountForScan(() => props.navigation.navigate('Auth'));
+            else go();
+          }}
+          onUpload={() => {
+            const go = () =>
+              props.navigation.navigate('ScreenshotScreen', {
+                initialSource: 'upload',
+              });
+            if (isLocal)
+              requireAccountForScan(() => props.navigation.navigate('Auth'));
+            else go();
+          }}
         />
       )}
       screenOptions={{
@@ -284,7 +311,7 @@ function ShareIntentHandler() {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
-  const { session, isLoading } = useAuth();
+  const { isLoading } = useAuth();
   const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -316,17 +343,19 @@ export default function RootNavigator() {
                 />
               )}
             </Stack.Screen>
-          ) : !session ? (
-            // ── Unauthenticated ───────────────────────────────────────────────
-            <Stack.Screen
-              name={'Login' as any}
-              component={LoginScreen}
-              options={{ animation: 'fade' }}
-            />
           ) : (
-            // ── Authenticated ─────────────────────────────────────────────────
+            // ── App (offline-first) ───────────────────────────────────────────
+            // Once onboarded the app is always available — a cloud session is
+            // optional and only enables sync. Sign-in lives in the `Auth` modal,
+            // opened from Settings.
             <>
               <Stack.Screen name="Tabs" component={TabNavigator} />
+
+              <Stack.Screen
+                name="Auth"
+                component={AuthModalScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
 
               <Stack.Screen
                 name="FABActionSheet"
