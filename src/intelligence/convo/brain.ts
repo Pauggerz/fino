@@ -44,11 +44,12 @@ import {
   type Prediction,
 } from './classifier/naiveBayes';
 import modelJson from './classifier/model.json';
-import type { BrainContext, BrainResponse } from './types';
+import type { BrainContext, BrainResponse, BrainResponseMeta } from './types';
 
 export type {
   BrainContext,
   BrainResponse,
+  BrainResponseMeta,
   ChatCard,
   ChatCardKind,
   BreakdownCard,
@@ -301,6 +302,16 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   );
   const { intent, slots } = merged;
 
+  // Classification metadata for the host: drives the intent-accurate working
+  // steps and the miss-telemetry log. `source: 'none'` means a true fallback
+  // (rules silent + classifier abstained + nothing inherited).
+  const meta: BrainResponseMeta = {
+    source: intent === null ? 'none' : c.source,
+    intent,
+    ruleMargin: c.ruleMargin,
+    mlMatched: c.ml.matched,
+  };
+
   // Stamp the updated memory window onto whatever response we return, so even a
   // clarify/fallback turn advances the conversation state. `at` is the resolve
   // time so ChatScreen / the continuation TTL can age turns out.
@@ -310,7 +321,7 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
       ctx?.memory,
       turnFromResolved(intent, slots, atIso)
     );
-    return { ...res, memory };
+    return { ...res, memory, meta };
   };
 
   // Nothing matched (rules silent + classifier abstained, nothing inherited) →

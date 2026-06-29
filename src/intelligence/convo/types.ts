@@ -440,6 +440,25 @@ export type ConversationMemory = {
 
 // ─── Brain I/O ───────────────────────────────────────────────────────────────
 
+/**
+ * Diagnostic metadata about how a turn was classified — attached to every
+ * `routeMessage` result so the impure host (ChatScreen) can (a) pick the
+ * intent-accurate "working" steps and skip the beat for chit-chat, and (b) log
+ * a genuine miss (`intent === null`) to the local miss-telemetry buffer that
+ * grows the training corpus. Purely informational; the brain stays pure.
+ */
+export type BrainResponseMeta = {
+  /** Which layer decided: 'rules' / 'classifier', or 'none' for a true
+   *  fallback (rules silent + classifier abstained + nothing inherited). */
+  source: 'rules' | 'classifier' | 'none';
+  /** The intent finally answered (after memory carry-over); null on fallback. */
+  intent: string | null;
+  /** Winning rule margin (top-1 − top-2 weight). */
+  ruleMargin: number;
+  /** In-vocabulary classifier feature count (0 = no signal at all). */
+  mlMatched: number;
+};
+
 export type BrainResponse = {
   text: string;
   /** Optional graphical payload, rendered inside the bubble (§3). Back-compatible. */
@@ -458,6 +477,9 @@ export type BrainResponse = {
    *  appended, oldest trimmed). ChatScreen stores it and threads it back in on
    *  the next call. Absent when the turn carried nothing worth remembering. */
   memory?: ConversationMemory;
+  /** Diagnostic classification metadata (see {@link BrainResponseMeta}). The
+   *  host reads it for UI steps + miss-telemetry; never persisted. */
+  meta?: BrainResponseMeta;
 };
 
 /**
