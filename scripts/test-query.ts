@@ -291,6 +291,36 @@ console.log('Slots (V3 additions)');
   );
 }
 
+// ─── Amount-slot hygiene: date / window / limit numbers must NOT leak in ──────
+// A calendar day, a rolling-window count, or a result limit are TIME/LIMIT
+// signals — they must never surface as a peso amount and become a bogus
+// budget/goal/reminder figure.
+console.log('Amount-slot hygiene (date/limit masking)');
+{
+  const amts = (raw: string) => extractSlots(normalize(raw), { now: NOW }).amounts;
+  const has = (raw: string, n: number) => amts(raw).includes(n);
+
+  check('"june 3" day-number not an amount', !has('what did i spend on june 3', 3));
+  check('"3 june" day-number not an amount', !has('what did i spend 3 june', 3));
+  check('"last 7 days" count not an amount', !has('spend in the last 7 days', 7));
+  check('"3 days ago" count not an amount', !has('what did i spend 3 days ago', 3));
+  check('"top 5 expenses" limit not an amount', !has('top 5 expenses', 5));
+  check('"last 10 transactions" limit not an amount', !has('last 10 transactions', 10));
+  // The real amount alongside a date survives (the reminder/budget figure).
+  eq(
+    'real amount survives next to a date',
+    amts('remind me to pay my electric bill on june 3 2000').join(','),
+    '2000'
+  );
+  eq(
+    'budget amount survives next to a date',
+    amts('set a budget for food on the 15th 2000').join(','),
+    '2000'
+  );
+  // 4+-digit amounts are never masked by the ≤3-digit limit/date rules.
+  check('"over 5000" amount kept', has('transactions over 5000 this year', 5000));
+}
+
 // ─── Needs vs wants heuristic (V3, Category 2) ───────────────────────────────
 
 console.log('Needs vs wants (V3 additions)');
@@ -353,6 +383,12 @@ console.log('Relative windows + vague time (Phase 0)');
 
   // Back-compat: the fixed "last 30 days" rule keeps its dedicated key.
   eq('last 30 days still last30Days', t('last 30 days')?.key, 'last30Days');
+
+  // "30 days ago" is a single past day — the bare "30 days" rolling-window rule
+  // must NOT steal it (precedence fix). May 16 is 30 days before Jun 15.
+  eq('30 days ago key', t('what did i spend 30 days ago')?.key, 'daysAgo');
+  eq('30 days ago month', t('30 days ago')?.start.getMonth(), 4); // May
+  eq('30 days ago day', t('30 days ago')?.start.getDate(), 16);
 
   // Vague temporal → unresolved flag (clarify), never a silent range.
   const s = (raw: string) => extractSlots(normalize(raw), { now: NOW });
