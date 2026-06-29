@@ -29,6 +29,10 @@ const QUERY_CUE_RE = new RegExp(
     String.raw`\b(cut back|where can i|save (up )?for|saving for|free up|help me|how do i|how can i)\b`,
     // Specific-charge lookup: "the/that ₱1,500 charge|transaction|payment|…".
     String.raw`\b(the|that)\s+₱?\d[\d,]*\s*(charge|transaction|payment|expense|purchase|bill)\b`,
+    // Evaluative affordability framing without a pronoun ("is ₱5,000 too much
+    // for food?", "is that worth it?"). The cue word is the discriminator — a
+    // plain log never says "too much / worth it / a rip-off".
+    String.raw`\b(too (much|expensive|pricey|steep)|worth it|a (rip ?off|good deal|fair price)|reasonable (price|amount))\b`,
   ].join('|'),
   'i'
 );

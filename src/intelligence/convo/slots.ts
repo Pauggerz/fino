@@ -14,9 +14,13 @@
 
 import { analyzeTransactionText } from '../categorize/categorize';
 import type { MasterCategory } from '../taxonomy/taxonomy';
-import { expandNumberWords } from '../core/normalize';
+import { expandNumberWords, expandKSuffix } from '../core/normalize';
 import { extractAmounts } from '../core/amounts';
-import { parseTimeRange, type TimeRange } from '../core/time';
+import {
+  parseTimeRange,
+  stripTemporalNumbers,
+  type TimeRange,
+} from '../core/time';
 
 const MASTER_LABELS: Record<MasterCategory, string> = {
   food: 'Food',
@@ -36,6 +40,12 @@ export type CategorySlot = {
   /** Best display label — the user's own category name when known, else the
    *  master label. */
   label: string;
+  /** True when `label` is one of the user's own category names; false when it
+   *  fell back to the bare master-bucket label (no user category matched along
+   *  the taxonomy path). Lets snapshot slices broaden a master bucket to its
+   *  granular siblings ("food" → Groceries + Dining) only when the user didn't
+   *  name a specific category. */
+  userNamed: boolean;
 };
 
 export type Slots = {
@@ -101,6 +111,27 @@ const LIMIT_RE =
   /\b(?:last|latest|recent|top|first|previous|show(?: me)?|give me)\s+(\d{1,3})\b/;
 const LIMIT_TRAILING_RE =
   /\b(\d{1,3})\s+(?:transactions?|txns?|expenses?|purchases?|entries|items|charges?)\b/;
+
+/** Blank a result count out of the amount surface so "last 5" / "10
+ *  transactions" never reads as a peso amount. Capped at 3 digits, so a
+ *  4+-digit real amount is never masked. The trailing-noun twin deliberately
+ *  omits charge/expense/purchase — "the 500 charge" is an AMOUNT lookup, not a
+ *  count; a count phrasing of those nouns is caught by the leading cue instead
+ *  ("top 3 expenses"). */
+const LIMIT_NUMBER_RES: RegExp[] = [
+  /\b(?:last|latest|recent|top|first|previous|show(?: me)?|give me)\s+\d{1,3}\b/gi,
+  /\b\d{1,3}\s+(?:transactions?|txns?|entries|items)\b/gi,
+];
+
+/** Drop time- and limit-phrase digits before amount extraction. A date day
+ *  ("June 3"), a rolling window ("last 7 days"), or a result count ("last 5")
+ *  must never surface as `slots.amounts` and become a bogus budget/goal figure.
+ *  The over/under/between and limit cue words still read the unmasked surface. */
+function amountSurface(normalized: string): string {
+  let out = stripTemporalNumbers(normalized);
+  for (const re of LIMIT_NUMBER_RES) out = out.replace(re, ' ');
+  return expandKSuffix(out);
+}
 
 /** "my Spotify payment", "the internet bill", "that grab charge" → the noun.
  *  Generic nouns (expense / purchase / transaction) are deliberately NOT
@@ -187,13 +218,19 @@ function resolveCategoryWord(
   if (byName) {
     const master =
       masterKey ?? (a.suggestedCategory as MasterCategory | null) ?? 'other';
-    return { master, keyword: byName.toLowerCase(), label: byName };
+    return {
+      master,
+      keyword: byName.toLowerCase(),
+      label: byName,
+      userNamed: true,
+    };
   }
   if (masterKey) {
     return {
       master: masterKey,
       keyword: masterKey,
       label: MASTER_LABELS[masterKey],
+      userNamed: false,
     };
   }
   if (a.matchedKeyword && a.suggestedCategory && a.confidence !== 'low') {
@@ -201,6 +238,7 @@ function resolveCategoryWord(
       master: a.suggestedCategory,
       keyword: a.matchedKeyword,
       label: a.resolvedCategory ?? MASTER_LABELS[a.suggestedCategory],
+      userNamed: a.resolvedCategory != null,
     };
   }
   return undefined;
@@ -232,6 +270,7 @@ function resolveSideCategory(
       master: a.suggestedCategory,
       keyword: a.matchedKeyword,
       label: a.resolvedCategory ?? MASTER_LABELS[a.suggestedCategory],
+      userNamed: a.resolvedCategory != null,
     };
   }
   return undefined;
@@ -295,7 +334,14 @@ export function extractSlots(
   if (timeRange) slots.timeRange = timeRange;
   else if (VAGUE_TIME_RE.test(normalized)) slots.timeRangeUnresolved = true;
 
-  slots.amounts = extractAmounts(expanded);
+  // Amounts use the k-only expansion: "5k" → 5000, but a spelled-out count
+  // ("five transactions") must NOT become a ₱5 amount. We also blank the digits
+  // owned by a TIME or LIMIT phrase ("June 3", "last 7 days", "last 5", "10
+  // transactions") so a date day-number or result count can't leak into the
+  // amount slot and surface as a bogus budget/goal/reminder figure. The
+  // over/under/between bounds and the result limit below still read the full
+  // `expanded` surface, where the cue words keep those numbers meaningful.
+  slots.amounts = extractAmounts(amountSurface(normalized));
 
   // Amount bounds: "between A and B" wins, else over/under comparators.
   const between = BETWEEN_RE.exec(expanded);
@@ -341,6 +387,7 @@ export function extractSlots(
       keyword: analysis.matchedKeyword,
       label:
         analysis.resolvedCategory ?? MASTER_LABELS[analysis.suggestedCategory],
+      userNamed: analysis.resolvedCategory != null,
     };
   }
 

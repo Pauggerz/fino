@@ -13,6 +13,37 @@ export function peso(n: number): string {
   return `₱${Math.round(n).toLocaleString('en-PH')}`;
 }
 
+/** Capitalize the first letter (single source for the brain's many `cap`/
+ *  `capWord` helpers — they were byte-identical copies across modules). */
+export function cap(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+/** Alias kept so call sites reading "capWord" stay literal. */
+export const capWord = cap;
+
+/** Short month labels, shared by the date formatters below. */
+export const MONTHS_ABBR = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/** "Jun 15" — empty string for an unparseable ISO date. */
+export function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${MONTHS_ABBR[d.getMonth()]} ${d.getDate()}`;
+}
+
 /** Percent of `part` relative to `whole`, rounded, guarded against /0. */
 export function pctOf(part: number, whole: number): number {
   if (!whole) return 0;

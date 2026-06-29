@@ -52,6 +52,12 @@ const cases: Case[] = [
   { text: 'help me save 50000 for a trip', want: 'brain' },
   { text: 'which expense was the 1200 payment', want: 'brain' },
 
+  // ── Evaluative affordability questions (no pronoun) — must reach the brain ──
+  { text: 'is 5000 too much for food', want: 'brain' },
+  { text: 'is ₱2000 too expensive for dinner', want: 'brain' },
+  { text: 'is that worth it', want: 'brain' },
+  { text: 'is 300 a good deal', want: 'brain' },
+
   // ── Mutation COMMANDS (amount-bearing) — must reach the brain, not logged ───
   { text: 'recategorize the 1500 charge as coffee', want: 'brain' },
   { text: 'move my grab ride to transport', want: 'brain' },

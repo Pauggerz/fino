@@ -18,7 +18,7 @@ import type {
   CardStatus,
 } from './types';
 import type { Slots } from './slots';
-import { peso, pctOf } from './nlg';
+import { peso, pctOf, cap } from './nlg';
 
 const SET_BUDGETS: CardAction = {
   kind: 'navigate',
@@ -30,10 +30,6 @@ const REVIEW_SUBSCRIPTIONS: CardAction = {
   label: 'Review subscriptions',
   target: 'recurringBills',
 };
-
-function cap(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-}
 
 /** Assemble a coach-style advice card (theme-free) with optional action chips. */
 function adviceCard(args: {
@@ -194,7 +190,7 @@ export function answerGoalPlan(
 ): BrainResponse {
   const followUps = ADVICE_FOLLOWUPS;
   let name = parseGoalName(norm);
-  let amounts = slots.amounts;
+  let { amounts } = slots;
   // A small number right after the goal name ("iphone 17", "switch 2") is a
   // model number, not a price — fold it into the name and never use it as the
   // target, or "buy iPhone 17" becomes a ₱17 goal.

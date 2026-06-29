@@ -32,7 +32,6 @@ import {
   answerGreeting,
   answerThanks,
   answerHelp,
-  answerCount,
   answerFallback,
   answerClarify,
   answerTimeClarify,
@@ -44,11 +43,12 @@ import {
   type Prediction,
 } from './classifier/naiveBayes';
 import modelJson from './classifier/model.json';
-import type { BrainContext, BrainResponse } from './types';
+import type { BrainContext, BrainResponse, BrainResponseMeta } from './types';
 
 export type {
   BrainContext,
   BrainResponse,
+  BrainResponseMeta,
   ChatCard,
   ChatCardKind,
   BreakdownCard,
@@ -87,6 +87,17 @@ export { CONVERSATION_MEMORY_MAX } from './memory';
 
 const MODEL = modelJson as unknown as NbModel;
 
+/** Meta for a deterministic decline — empty/punctuation-only input, or abusive
+ *  input short-circuited before classification. Marked 'declined' (not 'none')
+ *  so the host renders it instantly and never feeds it to the miss-telemetry
+ *  corpus (we don't want a slur growing the training set). */
+const DECLINED_META: BrainResponseMeta = {
+  source: 'declined',
+  intent: null,
+  ruleMargin: 0,
+  mlMatched: 0,
+};
+
 /** Intents that need `BrainContext` numbers to answer. */
 const DATA_INTENTS = new Set<IntentId>([
   'balance',
@@ -96,6 +107,7 @@ const DATA_INTENTS = new Set<IntentId>([
   'topCategory',
   'compare',
   'cut',
+  'count',
   'savings',
   'coach',
   'overspend',
@@ -145,6 +157,7 @@ const TIME_SCOPED_INTENTS = new Set<IntentId>([
   'topCategory',
   'summary',
   'transactions',
+  'count',
   'needsVsWants',
   'dowPattern',
   'upcomingBills',
@@ -266,12 +279,13 @@ export function classifyMessage(
  */
 export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   const norm = normalize(raw);
-  if (!norm) return answerFallback();
+  if (!norm) return { ...answerFallback(), meta: DECLINED_META };
 
   // Clearly abusive/obscene input is declined outright — never run through the
   // classifier (which could otherwise force a finance answer onto a slur). An
-  // abusive turn also resets nothing and is never remembered.
-  if (isAbusive(norm)) return answerFallback();
+  // abusive turn also resets nothing and is never remembered. The 'declined'
+  // meta keeps it out of the miss-telemetry corpus and renders instantly.
+  if (isAbusive(norm)) return { ...answerFallback(), meta: DECLINED_META };
 
   const nowMs = ctx?.now ? Date.parse(ctx.now) : Date.now();
   const c = classifyMessage(raw, {
@@ -301,6 +315,16 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   );
   const { intent, slots } = merged;
 
+  // Classification metadata for the host: drives the intent-accurate working
+  // steps and the miss-telemetry log. `source: 'none'` means a true fallback
+  // (rules silent + classifier abstained + nothing inherited).
+  const meta: BrainResponseMeta = {
+    source: intent === null ? 'none' : c.source,
+    intent,
+    ruleMargin: c.ruleMargin,
+    mlMatched: c.ml.matched,
+  };
+
   // Stamp the updated memory window onto whatever response we return, so even a
   // clarify/fallback turn advances the conversation state. `at` is the resolve
   // time so ChatScreen / the continuation TTL can age turns out.
@@ -310,7 +334,7 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
       ctx?.memory,
       turnFromResolved(intent, slots, atIso)
     );
-    return { ...res, memory };
+    return { ...res, memory, meta };
   };
 
   // Nothing matched (rules silent + classifier abstained, nothing inherited) →
@@ -331,9 +355,9 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   if (intent === 'greeting') return withMemory(answerGreeting(norm));
   if (intent === 'thanks') return withMemory(answerThanks(norm));
   if (intent === 'help') return withMemory(answerHelp());
-  if (intent === 'count') return withMemory(answerCount());
 
-  // Data answers need the live context.
+  // Data answers (incl. count, which now tallies the snapshot) need the live
+  // context. Without it, fall back gently.
   if (!ctx) return withMemory(answerFallback());
 
   return withMemory(

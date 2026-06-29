@@ -441,6 +441,31 @@ const DAY_MONTH_RE = new RegExp(
 // it never swallows a count ("the 15th" yes; "15 transactions" no).
 const ORDINAL_DAY_RE = /\b(?:on\s+)?the\s+(\d{1,2})(?:st|nd|rd|th)\b/;
 
+// Number-bearing temporal phrases, used by {@link stripTemporalNumbers} to mask
+// a date day-number / window count BEFORE amount extraction so "June 3", "last
+// 7 days", or "3 days ago" never leaks its digits into the peso-amount slot.
+// Global so a single `.replace` clears every occurrence.
+const TEMPORAL_NUMBER_RES: RegExp[] = [
+  new RegExp(`\\b${MONTH_ALT}\\s+\\d{1,2}(?:st|nd|rd|th)?\\b`, 'gi'),
+  new RegExp(`\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH_ALT}\\b`, 'gi'),
+  /\b(?:last|past|previous|next|nakaraang|huling)\s+\d{1,3}\s+(?:days?|weeks?|months?|years?|araw|linggo|buwan|bulan)\b/gi,
+  /\b\d{1,3}\s+(?:days?|weeks?|months?|years?|araw|linggo|buwan|bulan)\s+ago\b/gi,
+  /\b\d{1,3}\s+(?:days?|weeks?|months?|years?|araw|linggo|buwan|bulan)\b/gi,
+];
+
+/**
+ * Blank out the digits that belong to a temporal phrase (a calendar date or a
+ * relative window) so a downstream amount extractor can't mistake them for a
+ * peso figure — "set a budget for food on june 3" must not yield a ₱3 budget,
+ * and "spend in the last 7 days" must not yield a ₱7 amount. Returns the text
+ * with those spans replaced by spaces (length-preserving enough for re-parsing).
+ */
+export function stripTemporalNumbers(text: string): string {
+  let out = text;
+  for (const re of TEMPORAL_NUMBER_RES) out = out.replace(re, ' ');
+  return out;
+}
+
 type Pattern = {
   re: RegExp;
   build: (now: Date, m: RegExpMatchArray) => TimeRange | null;
@@ -514,7 +539,9 @@ const PATTERNS: Pattern[] = [
     build: (now) => buildWeekend(now),
   },
   {
-    re: /\b(last 30 days|past 30 days|last thirty days|nakaraang 30 araw|huling 30 araw|30 days)\b/,
+    // Bare "30 days" guards against "30 days ago" (a single past day, claimed by
+    // N_DAYS_AGO_RE below) so the dedicated rolling-window key isn't stolen from it.
+    re: /\b(last 30 days|past 30 days|last thirty days|nakaraang 30 araw|huling 30 araw|30 days(?!\s+ago))\b/,
     build: (now) => buildLast30(now),
   },
   // Relative rolling windows ("last 7 days", "past 2 weeks") + "N days ago".

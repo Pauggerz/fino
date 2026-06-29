@@ -2064,6 +2064,95 @@ const CTX_PLAN: BrainContext = {
   );
 }
 
+// ─── count: frequency tally over the snapshot (was a flat "can't count") ─────
+{
+  // CTX_TX has two Food rows this month (Jollibee ₱120, Starbucks ₱300) and one
+  // Grab ride (₱60). "how many times did i buy food this month" → 2 × ₱420.
+  const food = routeMessage('how many times did i buy food this month', CTX_TX);
+  check(
+    food.card?.kind === 'txList' &&
+      food.card.data.matchCount === 2 &&
+      food.card.data.total === 420 &&
+      /\b2 Food purchases\b/.test(food.text),
+    '[count]  how many times … food → 2 purchases, ₱420',
+    `text "${food.text}"`
+  );
+  // Merchant-text path: "how often do i grab" → the single Grab ride.
+  const grab = routeMessage('how many times did i grab this month', CTX_TX);
+  check(
+    grab.card?.kind === 'txList' && grab.card.data.matchCount === 1,
+    '[count]  how many times … grab → 1 ride',
+    `matchCount ${grab.card?.kind === 'txList' ? grab.card.data.matchCount : '-'}`
+  );
+  // No subject → asks what to count, never a bogus tally.
+  const bare = routeMessage('how many times', CTX_TX);
+  check(
+    bare.card === undefined && /tally|count/i.test(bare.text),
+    '[count]  bare "how many times" → asks for a subject',
+    `text "${bare.text}"`
+  );
+}
+
+// ─── Category-scoped slice broadens a bare master bucket to its siblings ──────
+// The user tags granular Groceries / Dining (both map to the food master) but
+// has no literal "Food" category, so "how much on food this week" must sum BOTH,
+// not silently return ₱0.
+{
+  const granTx: TxLite[] = [
+    { id: 'gr1', amount: 1000, type: 'expense', category: 'Groceries', merchant: 'Puregold', name: 'Puregold', date: '2026-06-15', accountId: 'a1' },
+    { id: 'gr2', amount: 500, type: 'expense', category: 'Dining', merchant: 'Mang Inasal', name: 'Mang Inasal', date: '2026-06-15', accountId: 'a1' },
+    { id: 'gr3', amount: 200, type: 'expense', category: 'Transport', merchant: 'Grab', name: 'Grab ride', date: '2026-06-15', accountId: 'a1' },
+  ];
+  const CTX_GRAN: BrainContext = {
+    ...CTX,
+    now: NOW.toISOString(),
+    topCategories: [
+      { name: 'Groceries', amount: 1000 },
+      { name: 'Dining', amount: 500 },
+      { name: 'Transport', amount: 200 },
+    ],
+    transactions: granTx,
+  };
+  const food = routeMessage('how much did i spend on food this week', CTX_GRAN);
+  check(
+    /1,500/.test(food.text),
+    '[cat]    "food this week" sums granular Groceries+Dining (master expansion)',
+    `text "${food.text}"`
+  );
+}
+
+// ─── declined meta: abusive / empty input is marked, not logged as a miss ─────
+{
+  const abusive = routeMessage('fuck you', CTX);
+  check(
+    abusive.meta?.source === 'declined' && abusive.meta?.intent === null,
+    '[meta]   abusive input → declined meta (kept out of the miss corpus)',
+    `meta ${JSON.stringify(abusive.meta)}`
+  );
+  const clean = routeMessage('how much did i spend', CTX);
+  check(
+    clean.meta?.source !== 'declined',
+    '[meta]   a real question is never marked declined',
+    `meta ${JSON.stringify(clean.meta)}`
+  );
+}
+
+// ─── reminder amount hygiene: a date day-number never becomes the amount ──────
+{
+  const rem = routeMessage(
+    'remind me to pay my electric bill on the 3rd 2000',
+    CTX_PLAN
+  );
+  const nav = rem.card?.actions?.find(
+    (a) => a.kind === 'navigate' && a.target === 'recurringBills'
+  );
+  check(
+    nav?.kind === 'navigate' && nav.params?.amount === 2000,
+    '[hygiene] reminder w/ a date → amount is ₱2,000, not the day-number',
+    `nav ${JSON.stringify(nav)}`
+  );
+}
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 
