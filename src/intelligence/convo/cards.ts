@@ -33,7 +33,7 @@ import type {
   PatternCard,
   PatternBar,
 } from './types';
-import { peso, pctOf } from './nlg';
+import { peso, pctOf, cap } from './nlg';
 
 const MAX_SEGMENTS = 4;
 const MAX_COACH_REASONS = 3;
@@ -42,10 +42,6 @@ function dirOf(diff: number): DeltaDirection {
   if (diff > 0) return 'up';
   if (diff < 0) return 'down';
   return 'flat';
-}
-
-function cap(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 /** Sentiment → status role: negative → over, cautious → watch, else good. */

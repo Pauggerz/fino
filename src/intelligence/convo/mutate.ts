@@ -16,33 +16,8 @@
 import type { BrainContext, BrainResponse, TxLite } from './types';
 import type { Slots } from './slots';
 import { selectTx, sortByDateDesc, matchMerchant } from './query';
-import { peso } from './nlg';
+import { peso, capWord, fmtDate } from './nlg';
 import { analyzeTransactionText } from '../categorize/categorize';
-
-const MONTHS_ABBR = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${MONTHS_ABBR[d.getMonth()]} ${d.getDate()}`;
-}
-
-function capWord(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-}
 
 function txLabelOf(t: TxLite): string {
   return (
