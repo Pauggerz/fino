@@ -62,21 +62,35 @@ const WORD_NUMBERS: Record<string, number> = {
 };
 
 /**
- * Expand "k"-suffixed and English word numbers into plain digits so downstream
- * amount/count extraction sees a uniform numeric surface. "spent 5k" →
- * "spent 5000", "two coffees" → "2 coffees". Conservative: only standalone
- * tokens are rewritten, never substrings inside larger words.
+ * Expand only the "k"-suffix shorthand into plain digits ("spent 5k" →
+ * "spent 5000"). Kept separate from {@link expandNumberWords} so the amount
+ * extractor can get the numeric shorthand WITHOUT the English word-number
+ * expansion — otherwise a bare count ("show me five transactions", "two
+ * coffees") would be read as a peso amount (₱5 / ₱2). Conservative: only a
+ * digit token immediately followed by "k" is rewritten.
  */
-export function expandNumberWords(text: string): string {
-  let out = text.replace(
+export function expandKSuffix(text: string): string {
+  return text.replace(
     /(?<![A-Za-z\d])(\d+(?:\.\d+)?)\s*k\b/gi,
     (_, n: string) => String(Math.round(parseFloat(n) * 1000))
   );
-  out = out.replace(/\b[a-z]+\b/gi, (w) => {
+}
+
+/**
+ * Expand "k"-suffixed and English word numbers into plain digits so downstream
+ * count extraction sees a uniform numeric surface. "spent 5k" → "spent 5000",
+ * "two coffees" → "2 coffees". Conservative: only standalone tokens are
+ * rewritten, never substrings inside larger words.
+ *
+ * NOTE: the word-number half ("five" → "5") is for COUNT/limit slots only; the
+ * amount slot uses {@link expandKSuffix} instead so spelled-out counts aren't
+ * mistaken for pesos.
+ */
+export function expandNumberWords(text: string): string {
+  return expandKSuffix(text).replace(/\b[a-z]+\b/gi, (w) => {
     const v = WORD_NUMBERS[w.toLowerCase()];
     return v === undefined ? w : String(v);
   });
-  return out;
 }
 
 /**

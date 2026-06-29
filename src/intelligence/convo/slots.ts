@@ -14,7 +14,7 @@
 
 import { analyzeTransactionText } from '../categorize/categorize';
 import type { MasterCategory } from '../taxonomy/taxonomy';
-import { expandNumberWords } from '../core/normalize';
+import { expandNumberWords, expandKSuffix } from '../core/normalize';
 import { extractAmounts } from '../core/amounts';
 import { parseTimeRange, type TimeRange } from '../core/time';
 
@@ -295,7 +295,11 @@ export function extractSlots(
   if (timeRange) slots.timeRange = timeRange;
   else if (VAGUE_TIME_RE.test(normalized)) slots.timeRangeUnresolved = true;
 
-  slots.amounts = extractAmounts(expanded);
+  // Amounts use the k-only expansion: "5k" → 5000, but a spelled-out count
+  // ("five transactions") must NOT become a ₱5 amount. The over/under/between
+  // bounds and the result limit below still read the full `expanded` surface,
+  // where the comparison/limit cue words keep word-numbers from being a count.
+  slots.amounts = extractAmounts(expandKSuffix(normalized));
 
   // Amount bounds: "between A and B" wins, else over/under comparators.
   const between = BETWEEN_RE.exec(expanded);
