@@ -448,9 +448,12 @@ export type ConversationMemory = {
  * grows the training corpus. Purely informational; the brain stays pure.
  */
 export type BrainResponseMeta = {
-  /** Which layer decided: 'rules' / 'classifier', or 'none' for a true
-   *  fallback (rules silent + classifier abstained + nothing inherited). */
-  source: 'rules' | 'classifier' | 'none';
+  /** Which layer decided: 'rules' / 'classifier', 'none' for a true fallback
+   *  (rules silent + classifier abstained + nothing inherited), or 'declined'
+   *  for a deterministic short-circuit (empty/punctuation-only input or abusive
+   *  input) — the host renders 'declined' instantly and never logs it as a
+   *  trainable miss. */
+  source: 'rules' | 'classifier' | 'none' | 'declined';
   /** The intent finally answered (after memory carry-over); null on fallback. */
   intent: string | null;
   /** Winning rule margin (top-1 − top-2 weight). */

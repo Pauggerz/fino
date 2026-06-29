@@ -19,9 +19,10 @@ import type {
 } from './types';
 import type { IntentId } from './intents';
 import { CAPABILITY_BLURBS } from './intents';
-import type { Slots } from './slots';
+import type { Slots, CategorySlot } from './slots';
 import type { TimeRange } from '../core/time';
-import { peso, pctOf, pick } from './nlg';
+import { analyzeTransactionText } from '../categorize/categorize';
+import { peso, pctOf, pick, capWord, fmtDate, MONTHS_ABBR } from './nlg';
 import {
   buildBreakdownCard,
   buildCompareCard,
@@ -166,10 +167,73 @@ export function answerHelp(): BrainResponse {
   };
 }
 
-export function answerCount(): BrainResponse {
+/**
+ * "How many times did I buy coffee this month?" / "how often do I order Grab?"
+ * — a frequency tally over the snapshot. Prefers a merchant/keyword text match
+ * (so "coffee" catches Starbucks rows the category may not), then falls back to
+ * the category set. Defaults to this month; honours an explicit range.
+ */
+function answerCount(ctx: BrainContext, slots: Slots): BrainResponse {
+  const followUps = [
+    'Give me a spending breakdown',
+    "What's my biggest expense?",
+  ];
+  const txns = ctx.transactions ?? [];
+  const term = slots.merchant ?? slots.category?.keyword;
+
+  // Need a subject to count.
+  if (!term && !slots.category) {
+    return {
+      text: 'Tell me what to count — like "how many times did I buy coffee this month" — and I\'ll tally it up.',
+      followUps,
+    };
+  }
+  if (!txns.length) {
+    return {
+      text: "I don't have your transactions loaded yet, so I can't count those purchases. Give it a moment and try again.",
+      followUps,
+    };
+  }
+
+  const tr = slots.timeRange;
+  const range = slotRange(slots) ?? thisMonthRange(ctx);
+  const when = tr ? whenPhrase(tr) : 'this month';
+  const base = selectTx(txns, { range, type: 'expense' });
+
+  // Try the merchant/keyword text first (catches "coffee" → "Starbucks Coffee"),
+  // then fall back to the category set when the text match finds nothing.
+  let matched = term ? matchMerchant(base, term) : [];
+  let subj = term ? capWord(term) : '';
+  if (!matched.length && slots.category) {
+    const cats = (slotCats(slots, txns) ?? []).map((c) => c.toLowerCase());
+    matched = base.filter((t) =>
+      cats.includes((t.category ?? '').toLowerCase())
+    );
+    subj = slots.category.label;
+  }
+
+  const note = tr ? coverageNote(ctx, tr) : '';
+  const n = matched.length;
+  if (n === 0) {
+    return {
+      text: `I don't see any ${subj || 'matching'} purchases ${when}.${note}`,
+      followUps,
+    };
+  }
+  const total = sumAmount(matched);
   return {
-    text: "I can't count individual purchases here yet — but the Insights tab spots your repeat habits (how often a merchant shows up and what it costs you a month).",
-    followUps: ['Give me a spending breakdown', "What's my biggest expense?"],
+    text: `You have ${n} ${subj} purchase${n === 1 ? '' : 's'} ${when} — ${peso(
+      total
+    )} total.${note}`,
+    card: {
+      kind: 'txList',
+      data: buildTxListCard(
+        `${subj} · ${n}×`,
+        take(sortByDateDesc(matched), 5),
+        { total, matchCount: n }
+      ),
+    },
+    followUps,
   };
 }
 
@@ -282,7 +346,7 @@ function answerSpend(
         selectTx(txns, {
           range: { start: tr.start, end: tr.end },
           type: 'expense',
-          categories: slotCats(slots),
+          categories: slotCats(slots, txns),
         })
       );
       const note = coverageNote(ctx, tr);
@@ -400,7 +464,7 @@ function answerCompare(ctx: BrainContext, slots: Slots): BrainResponse {
           selectTx(txns, {
             range,
             type: 'expense',
-            categories: Array.from(new Set([cat.label, cat.keyword])),
+            categories: catNames(cat, txns),
           })
         );
       }
@@ -453,7 +517,7 @@ function answerCompare(ctx: BrainContext, slots: Slots): BrainResponse {
   // Category-scoped compare ("dining vs last month") when we have a snapshot to
   // pull both months from. Falls back to the total comparison below otherwise.
   if (slots.category && txns.length) {
-    const cats = slotCats(slots);
+    const cats = slotCats(slots, txns);
     const { label } = slots.category;
     const thisM = sumAmount(
       selectTx(txns, {
@@ -743,32 +807,10 @@ function anomalyClause(a: {
 
 // ─── Category 1: transaction info & mapping (V3) ─────────────────────────────
 
-const MONTHS_ABBR = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${MONTHS_ABBR[d.getMonth()]} ${d.getDate()}`;
-}
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
-}
-function capWord(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 function txLabelOf(t: TxLite): string {
   return (
@@ -793,10 +835,33 @@ function slotRange(slots: Slots): DateRange | undefined {
     ? { start: slots.timeRange.start, end: slots.timeRange.end }
     : undefined;
 }
-function slotCats(slots: Slots): string[] | undefined {
-  if (!slots.category) return undefined;
-  const { label, keyword } = slots.category;
-  return Array.from(new Set([label, keyword].filter(Boolean)));
+/**
+ * Concrete category names to filter a snapshot slice by for one category slot.
+ * A user-named category matches literally ([label, keyword]); a bare master
+ * bucket (the slot fell back to "Food"/"Transport" because the user has no
+ * category by that name) broadens to every granular sibling in the snapshot that
+ * maps to the same taxonomy master — so "how much on food last week" still
+ * catches the user's Groceries/Dining rows instead of silently returning ₱0.
+ */
+function catNames(cat: CategorySlot, txns?: TxLite[]): string[] {
+  const base = Array.from(new Set([cat.label, cat.keyword].filter(Boolean)));
+  if (cat.userNamed || !txns?.length) return base;
+  const seen = new Set(base.map((s) => s.toLowerCase()));
+  const out = [...base];
+  for (const t of txns) {
+    const name = (t.category ?? '').trim();
+    const lc = name.toLowerCase();
+    if (name && !seen.has(lc)) {
+      seen.add(lc);
+      if (analyzeTransactionText(name).suggestedCategory === cat.master)
+        out.push(name);
+    }
+  }
+  return out;
+}
+
+function slotCats(slots: Slots, txns?: TxLite[]): string[] | undefined {
+  return slots.category ? catNames(slots.category, txns) : undefined;
 }
 /** Human suffix for narration: " tagged Entertainment over ₱5,000 this year". */
 function scopeLabel(slots: Slots): string {
@@ -903,7 +968,7 @@ function expenseAggForSlots(ctx: BrainContext, slots: Slots): ExpenseAgg {
   const scoped = selectTx(txns, {
     range: { start: tr.start, end: tr.end },
     type: 'expense',
-    categories: slotCats(slots),
+    categories: slotCats(slots, txns),
   });
   const buckets = groupByCategory(scoped);
   return {
@@ -932,7 +997,7 @@ function answerTransactions(
   }
 
   const range = slotRange(slots);
-  const cats = slotCats(slots);
+  const cats = slotCats(slots, txns);
   const wantsIncome = /\b(income|earned|salary|deposit|received)\b/.test(norm);
   const wantsMax = /\b(highest|biggest|largest|most expensive)\b/.test(norm);
 
@@ -1629,7 +1694,7 @@ function answerIncomeShare(ctx: BrainContext, slots: Slots): BrainResponse {
         selectTx(txns, {
           range: thisMonthRange(ctx),
           type: 'expense',
-          categories: slotCats(slots),
+          categories: slotCats(slots, txns),
         })
       )
     : (ctx.topCategories.find((c) => c.name.toLowerCase() === cat.toLowerCase())
@@ -1744,7 +1809,7 @@ function answerTypicalSpend(
         selectTx(txns, {
           range: { start: tr.start, end: new Date(end) },
           type: 'expense',
-          categories: cat ? slotCats(slots) : undefined,
+          categories: cat ? slotCats(slots, txns) : undefined,
         })
       );
       days = Math.max(
@@ -2307,6 +2372,8 @@ export function answerDataIntent(
       return answerCompare(ctx, slots);
     case 'cut':
       return answerCut(ctx);
+    case 'count':
+      return answerCount(ctx, slots);
     case 'savings':
       return answerSavings(ctx, slots);
     case 'coach':
