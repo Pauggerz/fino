@@ -59,6 +59,7 @@ import {
 import { getInsights, type Insights } from '@/services/IntelligenceEngine';
 import { ChatCardView, Reveal, REVEAL_STAGGER_MS } from '@/components/chat';
 import { saveChatMessage, loadChatHistory } from '@/services/chatMutations';
+import { recordBrainMiss } from '@/services/brainTelemetry';
 
 /** Each "working" step (Fetching → Analyzing → Generating) holds for this long
  *  before the next one lights up; the parent waits steps×this so the indicator
@@ -111,6 +112,57 @@ function pickSteps(text: string): string[] {
   return STEP_SETS.default;
 }
 
+/** Intents whose "working" steps map to each STEP_SET. Driving the indicator off
+ *  the brain's *resolved* intent keeps the steps honest (the old text-regex
+ *  `pickSteps` drifted from the real answer); we fall back to the regex only
+ *  when the intent is unknown (a fallback turn). */
+const STEPS_BY_INTENT: Record<string, string[]> = {
+  spend: STEP_SETS.spend,
+  topCategory: STEP_SETS.spend,
+  transactions: STEP_SETS.spend,
+  typicalSpend: STEP_SETS.spend,
+  explainSpend: STEP_SETS.spend,
+  breakdown: STEP_SETS.category,
+  compare: STEP_SETS.category,
+  needsVsWants: STEP_SETS.category,
+  dowPattern: STEP_SETS.category,
+  incomeShare: STEP_SETS.category,
+  monthPattern: STEP_SETS.category,
+  trend: STEP_SETS.category,
+  categoryOf: STEP_SETS.category,
+  budgetStatus: STEP_SETS.budget,
+  setBudget: STEP_SETS.budget,
+  cut: STEP_SETS.budget,
+  cutAmount: STEP_SETS.budget,
+  overspend: STEP_SETS.budget,
+  safeToSpend: STEP_SETS.budget,
+  impulseTips: STEP_SETS.budget,
+  ruleOfThumb: STEP_SETS.budget,
+  billStatus: STEP_SETS.bills,
+  upcomingBills: STEP_SETS.bills,
+  subscriptionCut: STEP_SETS.bills,
+  reminder: STEP_SETS.bills,
+  savings: STEP_SETS.save,
+  goalPlan: STEP_SETS.save,
+  emergencyFund: STEP_SETS.save,
+  improveSavings: STEP_SETS.save,
+  runway: STEP_SETS.save,
+  afford: STEP_SETS.save,
+  bonusAdvice: STEP_SETS.save,
+  income: STEP_SETS.income,
+  salaryStatus: STEP_SETS.income,
+};
+
+/** Steps for the brain's resolved intent, falling back to the text heuristic
+ *  when the turn produced no intent (a fallback / clarify). */
+function stepsForIntent(intent: string | null, text: string): string[] {
+  return (intent && STEPS_BY_INTENT[intent]) || pickSteps(text);
+}
+
+/** Chit-chat / meta intents have no data to crunch, so they skip the staged
+ *  "working" beat and answer instantly. */
+const INSTANT_INTENTS = new Set(['greeting', 'thanks', 'help', 'count']);
+
 type TxData = {
   amount: number;
   displayName: string;
@@ -134,14 +186,6 @@ type Message = {
   followUps?: string[];
   timestamp: string;
   txData?: TxData;
-};
-
-type RecentTx = {
-  display_name: string | null;
-  amount: number;
-  type: string;
-  category: string | null;
-  date: string;
 };
 
 function nowTime() {
@@ -697,7 +741,6 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [recentTxns, setRecentTxns] = useState<RecentTx[]>([]);
   // Bounded transaction snapshot the offline brain queries for record-level
   // answers ("last 5", "the ₱1,500 charge", "over ₱5k this year"). Built from a
   // trailing analytical window and injected into BrainContext.transactions so the
@@ -800,28 +843,6 @@ export default function ChatScreen() {
       hideSub.remove();
     };
   }, []);
-
-  useEffect(() => {
-    if (!userId) {
-      setRecentTxns([]);
-      return;
-    }
-    const query = database
-      .get<TransactionModel>('transactions')
-      .query(Q.where('user_id', userId), Q.sortBy('date', Q.desc), Q.take(10));
-    const sub = query.observe().subscribe((records) => {
-      setRecentTxns(
-        records.map((r) => ({
-          display_name: r.displayName ?? null,
-          amount: r.amount,
-          type: r.type,
-          category: r.category ?? null,
-          date: r.date,
-        }))
-      );
-    });
-    return () => sub.unsubscribe();
-  }, [userId]);
 
   // Bounded analytical snapshot for the brain's transaction-query layer. Window:
   // the earlier of (start of this calendar year) and (13 months ago) → now, so
@@ -1138,7 +1159,9 @@ export default function ChatScreen() {
         : null,
     [engineInsights, proactiveDismissed]
   );
-  const hasTransactions = recentTxns.length > 0 || monthlySpent > 0;
+  // The snapshot is the brain's transaction source of truth, so "has any
+  // activity" derives from it (plus this month's spend) — no separate observer.
+  const hasTransactions = txSnapshot.length > 0 || monthlySpent > 0;
   const isSendDisabled = !inputText.trim() || isTyping;
   const profileInitial =
     (profile?.name ?? '').trim().charAt(0).toUpperCase() || 'U';
@@ -1254,12 +1277,10 @@ export default function ChatScreen() {
       }
 
       // Otherwise produce an offline reply via the local brain. The reply is
-      // computed synchronously; the ONLY wait is the deliberate "working" beat
-      // (Thinking → Analyzing → Generating) that signals Fino is on it.
-      const steps = pickSteps(trimmed);
-      setCurrentSteps(steps);
-      setIsTyping(true);
-
+      // computed synchronously up front (so the working steps can reflect the
+      // brain's *resolved* intent); the ONLY wait is the deliberate "working"
+      // beat (Thinking → Analyzing → Generating) that signals Fino is on it.
+      //
       // The brain is pure & synchronous, but a malformed snapshot row could
       // still throw inside a builder — never let that strand the spinner.
       let reply: ReturnType<typeof routeMessage>;
@@ -1300,11 +1321,29 @@ export default function ChatScreen() {
         };
       }
 
-      // Let the staged indicator work through to its final step, landing as the
-      // reply swaps in (ThinkingSteps advances one step per WORK_STAGE_MS).
-      await new Promise<void>((r) =>
-        setTimeout(r, steps.length * WORK_STAGE_MS)
-      );
+      // Log a genuine miss (rules silent + classifier abstained + nothing
+      // inherited) to the local, anonymized telemetry buffer so the corpus can
+      // grow against real misses. Fire-and-forget; only on a true fallback.
+      if (userId && reply.meta && reply.meta.intent === null) {
+        recordBrainMiss({
+          text: trimmed,
+          source: reply.meta.source,
+          mlMatched: reply.meta.mlMatched,
+        }).catch(() => {});
+      }
+
+      // Chit-chat (hi / thanks / help / count) has no data to crunch, so it
+      // answers instantly. Everything else shows the staged indicator and lands
+      // on its final step as the reply swaps in (one step per WORK_STAGE_MS).
+      const replyIntent = reply.meta?.intent ?? null;
+      if (!replyIntent || !INSTANT_INTENTS.has(replyIntent)) {
+        const steps = stepsForIntent(replyIntent, trimmed);
+        setCurrentSteps(steps);
+        setIsTyping(true);
+        await new Promise<void>((r) =>
+          setTimeout(r, steps.length * WORK_STAGE_MS)
+        );
+      }
 
       // Render the full reply at once — the bubble fades in as a block
       // (AnimatedMessage) and any card assembles itself (ChatCardView reveal).
