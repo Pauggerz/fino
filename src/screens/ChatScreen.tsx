@@ -151,6 +151,7 @@ const STEPS_BY_INTENT: Record<string, string[]> = {
   bonusAdvice: STEP_SETS.save,
   income: STEP_SETS.income,
   salaryStatus: STEP_SETS.income,
+  count: STEP_SETS.spend,
 };
 
 /** Steps for the brain's resolved intent, falling back to the text heuristic
@@ -161,7 +162,7 @@ function stepsForIntent(intent: string | null, text: string): string[] {
 
 /** Chit-chat / meta intents have no data to crunch, so they skip the staged
  *  "working" beat and answer instantly. */
-const INSTANT_INTENTS = new Set(['greeting', 'thanks', 'help', 'count']);
+const INSTANT_INTENTS = new Set(['greeting', 'thanks', 'help']);
 
 type TxData = {
   amount: number;
@@ -1323,8 +1324,15 @@ export default function ChatScreen() {
 
       // Log a genuine miss (rules silent + classifier abstained + nothing
       // inherited) to the local, anonymized telemetry buffer so the corpus can
-      // grow against real misses. Fire-and-forget; only on a true fallback.
-      if (userId && reply.meta && reply.meta.intent === null) {
+      // grow against real misses. Fire-and-forget; only on a true fallback. A
+      // 'declined' source (abusive / empty input) is intentionally excluded so a
+      // slur never seeds the training corpus.
+      if (
+        userId &&
+        reply.meta &&
+        reply.meta.intent === null &&
+        reply.meta.source !== 'declined'
+      ) {
         recordBrainMiss({
           text: trimmed,
           source: reply.meta.source,
@@ -1333,10 +1341,13 @@ export default function ChatScreen() {
       }
 
       // Chit-chat (hi / thanks / help / count) has no data to crunch, so it
-      // answers instantly. Everything else shows the staged indicator and lands
-      // on its final step as the reply swaps in (one step per WORK_STAGE_MS).
+      // answers instantly — as does a deterministic decline (abusive / empty
+      // input), which shouldn't show a fake "analyzing your spending" beat.
+      // Everything else shows the staged indicator and lands on its final step
+      // as the reply swaps in (one step per WORK_STAGE_MS).
       const replyIntent = reply.meta?.intent ?? null;
-      if (!replyIntent || !INSTANT_INTENTS.has(replyIntent)) {
+      const declined = reply.meta?.source === 'declined';
+      if (!declined && (!replyIntent || !INSTANT_INTENTS.has(replyIntent))) {
         const steps = stepsForIntent(replyIntent, trimmed);
         setCurrentSteps(steps);
         setIsTyping(true);
