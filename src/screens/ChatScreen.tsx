@@ -1171,7 +1171,6 @@ export default function ChatScreen() {
 
   const doLogTransaction = async (tx: ChatTx, accountId: string) => {
     if (!userId) return;
-    const account = accounts.find((a) => a.id === accountId);
     try {
       await createTransaction({
         userId,

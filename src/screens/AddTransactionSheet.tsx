@@ -226,11 +226,6 @@ export default function AddTransactionSheet({ route }: Props) {
     aiText.trim().length > 0;
 
   // ─── Derived ──────────────────────────────────────────────────────────────
-  const selectedAccount = useMemo(
-    () => accounts.find((a) => a.id === accountId),
-    [accounts, accountId]
-  );
-
   const allCategories = useMemo(
     () => (type === 'inc' ? incomeCategories : categories),
     [type, categories, incomeCategories]
@@ -310,8 +305,6 @@ export default function AddTransactionSheet({ route }: Props) {
   );
 
   // ─── Effects ──────────────────────────────────────────────────────────────
-  const [recentsLoaded, setRecentsLoaded] = useState(false);
-
   useEffect(() => {
     Promise.all([
       AsyncStorage.getItem('@fino/recent_accounts'),
@@ -319,7 +312,6 @@ export default function AddTransactionSheet({ route }: Props) {
     ]).then(([acctJson, catJson]) => {
       if (acctJson) setRecentAccountIds(JSON.parse(acctJson));
       if (catJson) setRecentCategoryNames(JSON.parse(catJson));
-      setRecentsLoaded(true);
     });
   }, []);
 

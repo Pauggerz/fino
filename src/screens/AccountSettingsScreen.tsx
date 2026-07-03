@@ -11,7 +11,6 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../contexts/ThemeContext';
@@ -31,7 +30,7 @@ export default function AccountSettingsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const {
     user,
     profile,
@@ -41,11 +40,9 @@ export default function AccountSettingsScreen() {
   const { t } = useTranslation();
 
   const initialFocus = (route.params?.focus as FocusArea) ?? null;
-  const [focus, setFocus] = useState<FocusArea>(initialFocus);
 
   const [name, setName] = useState(profile?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -137,7 +134,6 @@ export default function AccountSettingsScreen() {
       Alert.alert(t('account.alert.updateFailed'), error.message);
       return;
     }
-    setCurrentPassword('');
     setNewPassword('');
     Alert.alert(
       t('account.alert.passwordChanged.title'),
