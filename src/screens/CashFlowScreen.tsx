@@ -23,7 +23,6 @@ import { database } from '@/db';
 import type TransactionModel from '@/db/models/Transaction';
 import { useAccounts } from '@/hooks/useAccounts';
 import fmtPeso from '@/utils/format';
-import { CATEGORY_COLOR } from '@/constants/categoryMappings';
 import {
   CashFlowCard,
   type MonthTrendPoint,
@@ -45,11 +44,6 @@ const MONTHS_SHORT = [
   'Nov',
   'Dec',
 ];
-
-function categoryColor(cat: string | null): string {
-  if (!cat) return CATEGORY_COLOR.default;
-  return CATEGORY_COLOR[cat.toLowerCase()] ?? CATEGORY_COLOR.default;
-}
 
 function isTransferRow(t: TransactionModel): boolean {
   return t.isTransfer || (t.category ?? '').toLowerCase() === 'transfer';

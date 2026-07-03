@@ -18,15 +18,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Q } from '@nozbe/watermelondb';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAccounts } from '@/hooks/useAccounts';
-import {
-  ACCOUNT_LOGOS,
-  ACCOUNT_AVATAR_OVERRIDE,
-} from '@/constants/accountLogos';
 import { database } from '@/db';
 import type BillReminderModel from '@/db/models/BillReminder';
 import {
@@ -36,7 +31,6 @@ import {
   deleteBillReminder,
 } from '@/services/localMutations';
 import { getCanonicalBrandName } from '@/components/WalletCard';
-import { Skeleton } from '@/components/Skeleton';
 import { ToolsCarousel } from '@/components/ToolsCarousel';
 import ProfileSidebar from '@/components/ProfileSidebar';
 import { spacing } from '../constants/theme';
@@ -987,7 +981,7 @@ function MoreScreen() {
     else if (id === 'recurring') setRecurringExpanded((v) => !v);
     else if (id === 'recurring-income') navigation.navigate('RecurringIncome');
     else if (id === 'recurring-bills') navigation.navigate('RecurringBills');
-    else if (id === 'settings') setShowAppSettings(true);
+    else if (id === 'settings') navigation.navigate('Settings');
     else if (id === 'splitter') navigation.navigate('BillSplitter');
     else if (id === 'utang') navigation.navigate('UtangTracker');
     else if (id === 'savings') navigation.navigate('SavingsGoal');
@@ -2164,8 +2158,5 @@ const createBillStyles = (colors: any, isDark: boolean) =>
       color: colors.primary,
     },
   });
-function setShowAppSettings(arg0: boolean) {
-  throw new Error('Function not implemented.');
-}
 
 export default React.memo(MoreScreen);

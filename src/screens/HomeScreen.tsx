@@ -29,7 +29,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSync } from '@/contexts/SyncContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { CategoryIcon } from '@/components/CategoryIcon';
 import { Icon, type IconName } from '@/components/icons/Icon';
 import { FinoIntelIcon } from '@/components/icons/FinoIntelIcon';
 import { Skeleton } from '@/components/Skeleton';
@@ -42,7 +41,7 @@ import {
   CARD_SCALE,
 } from '@/components/home/ScaledWalletCard';
 import { useAccounts } from '@/hooks/useAccounts';
-import { useCategories, CategoryWithSpend } from '@/hooks/useCategories';
+import { useCategories } from '@/hooks/useCategories';
 import { useMonthlyTotals } from '@/hooks/useMonthlyTotals';
 import { generatePeriodicInsights } from '@/hooks/useNotifications';
 import { getLastSaved, clearLastSaved } from '@/services/lastSavedStore';
@@ -356,10 +355,6 @@ function HomeScreen() {
   const [toastSubtitle, setToastSubtitle] = useState('');
   const [toastIsUndo, setToastIsUndo] = useState(false);
   const [undoTxId, setUndoTxId] = useState<string | null>(null);
-  const [undoAccountId, setUndoAccountId] = useState<string | null>(null);
-  const [undoPreviousBalance, setUndoPreviousBalance] = useState<number | null>(
-    null
-  );
 
   const hasAnimated = useRef(false);
 
@@ -398,8 +393,6 @@ function HomeScreen() {
         );
         setToastIsUndo(false);
         setUndoTxId(last.id);
-        setUndoAccountId(last.accountId);
-        setUndoPreviousBalance(last.previousBalance);
         setToastVisible(true);
       }
 
@@ -436,8 +429,6 @@ function HomeScreen() {
       if (__DEV__) console.warn('[HomeScreen] undo failed:', err);
     }
     setUndoTxId(null);
-    setUndoAccountId(null);
-    setUndoPreviousBalance(null);
     setToastTitle('Removed');
     setToastSubtitle('Transaction undone');
     setToastIsUndo(true);
