@@ -50,6 +50,48 @@ export function extractAmounts(text: string): number[] {
   return out;
 }
 
+// ─── Glued-amount recovery ──────────────────────────────────────────────────
+
+// A fast-typed log often glues the amount to the item ("ice crwam20",
+// "chicken200", "grab5k"). The main AMOUNT_REGEX rejects those on purpose (its
+// lookbehind is what keeps "5kg"/"5km" from reading as money), so the glued
+// form extracts NOTHING and the whole message misroutes to the brain as a
+// "question". This splitter recovers the amount by inserting a space at the
+// letter→digit boundary — conservatively:
+//   · the alpha run must be ≥ 3 letters (protects "mp3", "ps5", "a4"),
+//   · the digit run must be ≥ 2 digits, a decimal, or carry a k/m magnitude
+//     suffix (protects model numbers like "usb3" from becoming ₱3),
+//   · the token must end there (no "abc123def").
+const GLUED_AMOUNT_RE =
+  /(?<![A-Za-z0-9])([A-Za-z]{3,})(\d{2,7}(?:\.\d+)?|\d\.\d+|\d{1,4}(?:\.\d+)?[km])(?![A-Za-z0-9])/gi;
+
+/** Insert a space at glued letter→digit boundaries ("crwam20" → "crwam 20"). */
+export function splitGluedAmounts(text: string): string {
+  if (!text) return text;
+  return text.replace(GLUED_AMOUNT_RE, '$1 $2');
+}
+
+/**
+ * Amount extraction with glued-token recovery. Behaves exactly like
+ * {@link extractAmounts} whenever the text already yields amounts; ONLY when it
+ * yields none does it try the glue-split surface. Callers that also need the
+ * recovered surface for categorization/display get it back alongside.
+ */
+export function extractAmountsRecovered(text: string): {
+  amounts: number[];
+  /** The surface amounts were read from — `text`, or the glue-split rewrite. */
+  surface: string;
+} {
+  const direct = extractAmounts(text);
+  if (direct.length > 0) return { amounts: direct, surface: text };
+  const split = splitGluedAmounts(text);
+  if (split !== text) {
+    const recovered = extractAmounts(split);
+    if (recovered.length > 0) return { amounts: recovered, surface: split };
+  }
+  return { amounts: [], surface: text };
+}
+
 // ─── Calculator-state population ────────────────────────────────────────────
 
 export type CalculatorState = {
