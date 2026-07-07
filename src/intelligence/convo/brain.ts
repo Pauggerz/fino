@@ -24,6 +24,8 @@
 
 import { normalize } from '../core/normalize';
 import { isAbusive } from './safety';
+import { spellNormalize } from './spell';
+import { looksLikeLogStatement } from './route';
 import { canonicalize } from './canonicalize';
 import { scoreIntents, type IntentId, type IntentScore } from './intents';
 import { extractSlots, type Slots } from './slots';
@@ -35,7 +37,10 @@ import {
   answerFallback,
   answerClarify,
   answerTimeClarify,
+  answerLowConfidence,
+  answerLogClarify,
   answerDataIntent,
+  withMediumClarify,
 } from './intelligenceBridge';
 import {
   predict,
@@ -81,7 +86,12 @@ export type {
 } from './types';
 export type { IntentId } from './intents';
 export { selectProactiveCoach } from './coach';
-export { looksLikeQuestion, looksLikeCommand } from './route';
+export {
+  looksLikeQuestion,
+  looksLikeCommand,
+  looksLikeLogStatement,
+} from './route';
+export { spellNormalize } from './spell';
 export { isAbusive } from './safety';
 export { CONVERSATION_MEMORY_MAX } from './memory';
 
@@ -96,6 +106,7 @@ const DECLINED_META: BrainResponseMeta = {
   intent: null,
   ruleMargin: 0,
   mlMatched: 0,
+  confidence: 1, // deterministic short-circuit — nothing uncertain about it
 };
 
 /** Intents that need `BrainContext` numbers to answer. */
@@ -179,6 +190,46 @@ const ML_MIN_MARGIN = MODEL.gate?.minMargin ?? 1;
 /** How the winning intent was decided. */
 export type ClassificationSource = 'rules' | 'classifier' | 'none';
 
+// ─── Unified confidence (INTELLIGENCE_UPGRADE.md, Phase B1) ─────────────────
+//
+// One number ∈ [0,1] per turn, combining the deciding layer's separation with
+// how much of the message the winner actually consumed. NB softmax is NOT an
+// input — it saturates at 1.0 on this model (measured: "I bought ice crwam20"
+// scored softmax 1.0 for `transactions`). Coverage is the discriminator: a
+// real paraphrase shares most of its features with the corpus; an accidental
+// match shares a sliver.
+
+/** Below this, a classifier-sourced win is offered as a chip, not answered. */
+export const LOW_CONFIDENCE = 0.45;
+
+/** Below this (but ≥ LOW), a classifier-sourced win still answers, but the
+ *  reply is guaranteed to carry clarify chips (Phase B2's MEDIUM band) so a
+ *  near-miss guess is a one-tap correction. Rules are exempt — they're
+ *  precise by construction at margin ≥ 1. */
+export const MEDIUM_CONFIDENCE = 0.6;
+
+export function computeConfidence(
+  c: Classification,
+  finalIntent: IntentId | string | null,
+  inherited: boolean
+): number {
+  if (finalIntent === null) return 0;
+  // A continuation that inherited the prior turn's intent — trusted (the user
+  // is building on an answer they just accepted) but soft.
+  if (inherited) return 0.66;
+  if (c.needsClarify) return 0.4;
+  if (c.source === 'rules') {
+    // Rules are precise by construction; margin is the whole story.
+    return Math.min(0.95, 0.62 + 0.09 * Math.min(c.ruleMargin, 4));
+  }
+  if (c.source === 'classifier') {
+    const ratio = c.ml.total > 0 ? c.ml.matched / c.ml.total : 0;
+    const base = Math.min(0.9, 0.45 + 0.02 * c.ml.margin);
+    return Math.max(0, Math.min(1, base * (0.55 + 0.45 * ratio)));
+  }
+  return 0.5;
+}
+
 export type Classification = {
   /** Winning intent, or null when nothing in scope matched → fallback. */
   intent: IntentId | null;
@@ -215,9 +266,15 @@ export function classifyMessage(
   opts: ClassifyOptions = {}
 ): Classification {
   const norm = normalize(raw);
-  const canonical = canonicalize(norm);
+  // Typo pass (Phase A3): snap OOV tokens to known words so the DETERMINISTIC
+  // layers fire on "how mcuh did i spnd" — without this, a one-letter slip
+  // silently demotes an explainable rule win into a classifier guess. The NB
+  // predict below still reads the RAW text; its char n-grams are typo-robust
+  // by construction and shouldn't compound with a correction.
+  const fixed = spellNormalize(norm);
+  const canonical = canonicalize(fixed);
   const scores = scoreIntents(canonical);
-  const slots = extractSlots(norm, opts);
+  const slots = extractSlots(fixed, opts);
 
   const ruleTop = scores[0];
   const second = scores[1] ?? null;
@@ -287,6 +344,24 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   // meta keeps it out of the miss-telemetry corpus and renders instantly.
   if (isAbusive(norm)) return { ...answerFallback(), meta: DECLINED_META };
 
+  // A first-person purchase STATEMENT ("I bought ice crwam20" whose amount the
+  // logger couldn't parse) must never be force-answered as a query — the NB
+  // classifier shares too much vocabulary with "what did i buy" to reject it
+  // (Phase A2). Ask for the missing amount instead. Deterministic: high
+  // confidence, no memory update (a clarify shouldn't seed follow-up carry).
+  if (looksLikeLogStatement(norm)) {
+    return {
+      ...answerLogClarify(norm),
+      meta: {
+        source: 'rules',
+        intent: 'logClarify',
+        ruleMargin: 0,
+        mlMatched: 0,
+        confidence: 0.9,
+      },
+    };
+  }
+
   const nowMs = ctx?.now ? Date.parse(ctx.now) : Date.now();
   const c = classifyMessage(raw, {
     now: ctx?.now ? new Date(ctx.now) : undefined,
@@ -315,6 +390,14 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   );
   const { intent, slots } = merged;
 
+  // Unified confidence for the turn (Phase B1). `inherited` = memory carried
+  // an intent the message didn't classify to on its own.
+  const inherited = intent !== null && intent !== c.intent;
+  const confidence = computeConfidence(c, intent, inherited);
+  const assistEligible =
+    intent === null ||
+    (c.source === 'classifier' && !inherited && confidence < LOW_CONFIDENCE);
+
   // Classification metadata for the host: drives the intent-accurate working
   // steps and the miss-telemetry log. `source: 'none'` means a true fallback
   // (rules silent + classifier abstained + nothing inherited).
@@ -323,6 +406,8 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
     intent,
     ruleMargin: c.ruleMargin,
     mlMatched: c.ml.matched,
+    confidence,
+    ...(assistEligible ? { assistEligible: true } : {}),
   };
 
   // Stamp the updated memory window onto whatever response we return, so even a
@@ -340,6 +425,14 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   // Nothing matched (rules silent + classifier abstained, nothing inherited) →
   // gentle fallback. A bare continuation that inherited an intent skips this.
   if (intent === null) return withMemory(answerFallback());
+
+  // LOW-confidence classifier win (Phase B2): the guess consumed too little of
+  // the message to trust — offer it as a one-tap chip instead of answering.
+  // Rules stay trusted at margin ≥ 1; only the recall layer is gated. No
+  // memory update: a hedged guess must not seed follow-up carry-over.
+  if (c.source === 'classifier' && !inherited && confidence < LOW_CONFIDENCE) {
+    return { ...answerLowConfidence(intent), meta };
+  }
 
   // Genuine tie the classifier couldn't break → ask instead of guessing. (Only
   // possible from a self-resolved turn; an inherited intent is unambiguous.)
@@ -360,7 +453,11 @@ export function routeMessage(raw: string, ctx?: BrainContext): BrainResponse {
   // context. Without it, fall back gently.
   if (!ctx) return withMemory(answerFallback());
 
-  return withMemory(
-    answerDataIntent(intent, slots, ctx, norm) ?? answerFallback()
-  );
+  // MEDIUM band (Phase B2): a classifier-sourced win in [LOW, MEDIUM) still
+  // answers, but the reply must carry clarify chips so a near-miss guess is a
+  // one-tap correction rather than a retype. Rules stay untouched.
+  const mediumBand =
+    c.source === 'classifier' && !inherited && confidence < MEDIUM_CONFIDENCE;
+  const answer = answerDataIntent(intent, slots, ctx, norm) ?? answerFallback();
+  return withMemory(mediumBand ? withMediumClarify(answer, intent) : answer);
 }

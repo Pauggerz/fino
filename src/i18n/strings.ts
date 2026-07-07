@@ -73,6 +73,9 @@ const en = {
   'settings.currency.firstDay': 'First day of week',
   'settings.currency.privacyMode': 'Hide amounts',
   'settings.currency.privacyModeSub': 'Privacy mode replaces values with ●●●',
+  'settings.privacy.assist': 'Ask online when unsure',
+  'settings.privacy.assistSub':
+    'If Fino can’t understand a chat message, send just that sentence online to figure it out. Amounts and balances never leave your phone.',
 
   // Language
   'settings.language.app': 'App language',
@@ -223,6 +226,9 @@ const fil: Partial<typeof en> = {
   'settings.currency.privacyMode': 'Itago ang halaga',
   'settings.currency.privacyModeSub':
     'Pinapalitan ng privacy mode ang mga halaga ng ●●●',
+  'settings.privacy.assist': 'Magtanong online kapag hindi sigurado',
+  'settings.privacy.assistSub':
+    'Kapag hindi maintindihan ni Fino ang chat mo, ipapadala online ang pangungusap na iyon lang. Hindi kailanman aalis sa telepono mo ang mga halaga at balanse.',
   'common.save': 'I-save',
   'common.cancel': 'Kanselahin',
   'common.done': 'Tapos',
@@ -351,6 +357,9 @@ const es: Partial<typeof en> = {
   'settings.currency.privacyMode': 'Ocultar importes',
   'settings.currency.privacyModeSub':
     'El modo privado reemplaza los valores con ●●●',
+  'settings.privacy.assist': 'Consultar en línea si hay dudas',
+  'settings.privacy.assistSub':
+    'Si Fino no entiende un mensaje del chat, envía solo esa frase en línea para interpretarla. Los importes y saldos nunca salen de tu teléfono.',
   'common.save': 'Guardar',
   'common.cancel': 'Cancelar',
   'common.done': 'Listo',

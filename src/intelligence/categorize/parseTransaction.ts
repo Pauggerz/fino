@@ -6,6 +6,11 @@ import {
 } from './categorize';
 import { matchIncomeKeyword, looksLikeIncome } from './income';
 import { parseTimeRange } from '../core/time';
+import { extractAmountsRecovered } from '../core/amounts';
+// Chat-only dependency on the convo layer's vocabulary — acceptable here
+// because `parseChatTransaction` is exclusively the ChatScreen logger; the
+// Add Transaction sheet path (`analyzeTransactionText`) stays untouched.
+import { spellNormalize } from '../convo/spell';
 
 export type ChatTx = {
   amount: number;
@@ -37,27 +42,37 @@ export function parseChatTransaction(
   const trimmed = text?.trim() ?? '';
   if (!trimmed) return null;
 
-  const isIncome = looksLikeIncome(trimmed);
+  // Typo-hardened surface (INTELLIGENCE_UPGRADE.md, Phase A1+A4): recover a
+  // glued amount ("ice crwam20" → "ice crwam 20") when the text yields none
+  // as-is, then snap OOV tokens to known words ("crwam" → "cream") so the
+  // categorizer and display name see clean input. One missing space or slip
+  // must not turn a log into a misrouted "question".
+  const { amounts: recovered, surface: glued } =
+    extractAmountsRecovered(trimmed);
+  if (recovered.length === 0) return null;
+  const surface = spellNormalize(glued);
+
+  const isIncome = looksLikeIncome(surface);
   const activeCategoryNames = isIncome
     ? incomeCategoryList.map((c) => c.name)
     : expenseCategoryNames;
 
-  const analysis = analyzeTransactionText(trimmed, activeCategoryNames);
+  const analysis = analyzeTransactionText(surface, activeCategoryNames);
   if (analysis.extractedAmounts.length === 0) return null;
 
   const amount =
     Math.round(analysis.extractedAmounts.reduce((s, n) => s + n, 0) * 100) /
     100;
-  const acctMatch = detectAccount(trimmed, accounts);
+  const acctMatch = detectAccount(surface, accounts);
 
   const category = isIncome
-    ? matchIncomeKeyword(trimmed, incomeCategoryList)
+    ? matchIncomeKeyword(surface, incomeCategoryList)
     : analysis.resolvedCategory;
 
   const master = analysis.suggestedCategory;
   const displayName = isIncome
     ? (category ?? 'Income')
-    : buildDisplayName(trimmed, master, {
+    : buildDisplayName(surface, master, {
         accountSurface: acctMatch?.matchedKeyword ?? null,
       });
 
@@ -68,7 +83,7 @@ export function parseChatTransaction(
 
   // Back-date the log only for an unambiguous single past day ("yesterday",
   // "3 days ago"). Weeks/months/future or vague phrases stay undefined → "now".
-  const tr = parseTimeRange(trimmed);
+  const tr = parseTimeRange(surface);
   const date =
     tr && (tr.key === 'yesterday' || tr.key === 'daysAgo')
       ? tr.start.toISOString()

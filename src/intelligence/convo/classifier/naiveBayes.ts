@@ -54,6 +54,11 @@ export type Prediction = {
   margin: number;
   /** How many query features were in-vocabulary (0 → no signal). */
   matched: number;
+  /** Total features extracted from the query — `matched / total` is the
+   *  coverage ratio the brain's unified confidence score reads. Softmax
+   *  saturates on this model; coverage is what actually separates "a real
+   *  paraphrase" from "shares a few grams with the corpus by accident". */
+  total: number;
 };
 
 const UNKNOWN: Prediction = {
@@ -61,6 +66,7 @@ const UNKNOWN: Prediction = {
   confidence: 0,
   margin: 0,
   matched: 0,
+  total: 0,
 };
 
 /**
@@ -93,7 +99,7 @@ export function predict(model: NbModel, text: string): Prediction {
     }
   }
 
-  if (matched === 0) return UNKNOWN;
+  if (matched === 0) return { ...UNKNOWN, total: feats.size };
 
   // argmax + runner-up for the margin.
   let bestLabel = model.labels[0];
@@ -120,5 +126,6 @@ export function predict(model: NbModel, text: string): Prediction {
     confidence,
     margin: Number.isFinite(second) ? best - second : best,
     matched,
+    total: feats.size,
   };
 }

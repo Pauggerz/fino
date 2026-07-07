@@ -1,0 +1,167 @@
+/**
+ * Conservative typo normalization — the shared spell pass in front of the
+ * rules/canonicalize/slot layers (INTELLIGENCE_UPGRADE.md, Phase A3).
+ *
+ * The NB classifier's char n-grams already absorb typos, but everything ELSE
+ * in the pipeline is exact-match: the weighted rule triggers, the canonicalize
+ * regexes, the route.ts question/command cues, and the slot regexes all go
+ * silent on "how mcuh did i spnd". That silently demotes explainable rule wins
+ * into classifier guesses (or misses). This pass snaps out-of-vocabulary
+ * tokens back to a known word so the deterministic layers fire again.
+ *
+ * Deliberately conservative — it would rather miss a fix than invent one:
+ *   · only OOV tokens are touched (an in-vocab word is NEVER rewritten);
+ *   · only tokens of ≥ 4 letters, containing no digits;
+ *   · bounded OSA distance (adjacent transposition = 1 edit): tolerance 1 for
+ *     4–5 letter tokens, 2 for longer;
+ *   · the best candidate must be UNIQUE at its distance — a tie means
+ *     ambiguity, and ambiguity means keep the user's word.
+ *
+ * Vocabulary is everything the system already knows: the NB model's word
+ * vocab (the whole training corpus), the taxonomy keywords, the intent trigger
+ * terms, and a small function-word list. Pure TS, built once at module load —
+ * no model weights, no network, tsx-harness safe.
+ */
+
+import modelJson from './classifier/model.json';
+import { TRIGGER_TERMS } from './intents';
+import { aiMappings } from '../categorize/categorize';
+import { osaDistance } from '../core/editDistance';
+
+// Function/aux words that must survive as anchors even if a future corpus drops
+// them — cheap insurance, mostly redundant with the corpus vocab.
+//
+// ⚠️ The second block protects words that appear ONLY inside the route.ts /
+// canonicalize.ts cue REGEXES (they aren't intent triggers or corpus words, so
+// nothing else puts them in the vocab). Without protection the corrector can
+// rewrite them into a near neighbour and silently kill the cue — measured:
+// "is 300 a good deal" became "…a good meal", flipping the message from a
+// brain question into a ₱300 Food log. If you add cue words to those regexes,
+// add any uncommon ones here; `npm run test:typo` + `test:route` guard drift.
+const COMMON_WORDS = [
+  'how', 'much', 'many', 'what', 'where', 'which', 'when', 'why', 'who',
+  'did', 'does', 'have', 'has', 'was', 'were', 'will', 'would', 'could',
+  'should', 'can', 'this', 'that', 'last', 'next', 'yesterday', 'today',
+  'tomorrow', 'week', 'month', 'year', 'daily', 'weekly', 'monthly',
+  'spend', 'spent', 'spending', 'bought', 'buy', 'paid', 'pay', 'money',
+  'cash', 'balance', 'budget', 'income', 'salary', 'savings', 'save',
+  'expenses', 'expense', 'transactions', 'transaction', 'account', 'between',
+  'over', 'under', 'more', 'less', 'than', 'about', 'show', 'give', 'list',
+  'received', 'earned', 'ordered', 'purchased', 'because', 'please',
+  // route.ts / canonicalize.ts cue words with no other vocab source:
+  'deal', 'worth', 'fair', 'rip', 'ripoff', 'reasonable', 'pricey', 'steep',
+  'cheap', 'cheaper', 'expensive', 'above', 'below', 'least', 'most',
+  'greater', 'exceed', 'minimum', 'maximum', 'charge', 'charges', 'payment',
+  'payments', 'purchase', 'purchases', 'entry', 'entries', 'remind',
+  'reminder', 'forget', 'dutch', 'owes', 'owed', 'owe', 'borrowed', 'lent',
+  'loaned', 'back', 'goal', 'goals', 'wanna', 'plan', 'planning', 'split',
+  'divide', 'move', 'change', 'switch', 'mark', 'file', 'delete', 'remove',
+  'erase', 'scrap', 'undo', 'single', 'unusual', 'spikes', 'anomaly',
+  'anomalies', 'portion', 'weekend', 'weekends', 'weekday', 'weekdays',
+  'soon', 'due', 'bigger', 'lower', 'higher', 'availed', 'anywhere',
+  // core/time.ts grammar words — a month or weekday must never be
+  // "corrected" into a taxonomy merchant ("june" → "tune", "friday" →
+  // "fridays" the restaurant, "thursday" → "tuesday"):
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+  'september', 'october', 'november', 'december',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct',
+  'nov', 'dec',
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+  'sunday', 'mon', 'tue', 'tues', 'wed', 'thu', 'thur', 'thurs', 'fri',
+  'sat', 'sun', 'quarter', 'tonight', 'morning', 'evening', 'afternoon',
+  'ago', 'past', 'since', 'until', 'from', 'earlier', 'later', 'recent',
+  'recently', 'lately', 'nowadays',
+];
+
+function buildVocab(): Set<string> {
+  const vocab = new Set<string>();
+  const add = (term: string): void => {
+    for (const w of term.toLowerCase().split(/[^a-z']+/)) {
+      if (w.length >= 2) vocab.add(w);
+    }
+  };
+  // 1) The classifier's word vocabulary — the entire training corpus.
+  const idf = (modelJson as { idf: Record<string, number> }).idf;
+  for (const key of Object.keys(idf)) {
+    if (key.startsWith('w:')) add(key.slice(2));
+  }
+  // 2) Taxonomy keywords/aliases (flattened dict — includes multi-word keys).
+  for (const key of Object.keys(aiMappings)) add(key);
+  // 3) Intent trigger terms.
+  for (const term of TRIGGER_TERMS) add(term);
+  // 4) Function words.
+  for (const w of COMMON_WORDS) add(w);
+  return vocab;
+}
+
+const VOCAB = buildVocab();
+
+// Length-bucketed candidate lists so a correction only scans plausible words.
+const BUCKETS = new Map<number, string[]>();
+for (const w of VOCAB) {
+  const arr = BUCKETS.get(w.length);
+  if (arr) arr.push(w);
+  else BUCKETS.set(w.length, [w]);
+}
+
+const toleranceFor = (len: number): number => (len <= 5 ? 1 : 2);
+
+/**
+ * Correct one lowercase token, or return null to keep it. Exported for the
+ * typo harness; app code goes through {@link spellNormalize}.
+ */
+export function correctToken(lower: string): string | null {
+  if (lower.length < 4) return null;
+  if (VOCAB.has(lower)) return null;
+  const tol = toleranceFor(lower.length);
+
+  let best: string | null = null;
+  let bestDist = tol + 1;
+  let bestCount = 0;
+  for (let len = lower.length - tol; len <= lower.length + tol; len++) {
+    const bucket = BUCKETS.get(len);
+    if (!bucket) continue;
+    for (const cand of bucket) {
+      const d = osaDistance(lower, cand, tol);
+      if (d < bestDist) {
+        bestDist = d;
+        best = cand;
+        bestCount = 1;
+      } else if (d === bestDist && cand !== best) {
+        bestCount += 1;
+      }
+    }
+  }
+  // Unique best within tolerance, or nothing. A tie means two known words are
+  // equally close — guessing between them is exactly the failure mode this
+  // module exists to avoid.
+  if (best !== null && bestDist <= tol && bestCount === 1) return best;
+  return null;
+}
+
+// Tokens are letter runs (with in-word apostrophes/hyphens); digits and mixed
+// alphanumerics ("crwam20" pre-split, "5k") are never touched here.
+const TOKEN_RE = /[A-Za-z][A-Za-z'-]*[A-Za-z]/g;
+
+// Single-entry memo: ChatScreen runs the question/command gates, the parser,
+// and the brain on the SAME message back-to-back — no need to re-correct.
+let lastIn: string | null = null;
+let lastOut: string | null = null;
+
+/**
+ * Return `text` with out-of-vocabulary tokens snapped to their unique nearest
+ * known word ("how mcuh did i spnd" → "how much did i spend"). Corrections
+ * come out lowercase; untouched tokens keep the user's casing. Idempotent —
+ * corrected output passes through unchanged.
+ */
+export function spellNormalize(text: string): string {
+  if (!text) return text;
+  if (text === lastIn && lastOut !== null) return lastOut;
+  const out = text.replace(TOKEN_RE, (w) => {
+    if (w.length < 4 || w.includes("'")) return w;
+    return correctToken(w.toLowerCase()) ?? w;
+  });
+  lastIn = text;
+  lastOut = out;
+  return out;
+}

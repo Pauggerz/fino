@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import {
   ThemedSwitch,
 } from '../components/settings/SettingsPrimitives';
 import { SUPPORTED_LANGUAGES } from '../i18n/strings';
+import { getAssistEnabled, setAssistEnabled } from '../services/assistPrefs';
 
 const APP_VERSION = '1.4.2';
 
@@ -49,6 +50,17 @@ export default function SettingsScreen() {
             : 'Authentication failed. App lock was not enabled.';
       Alert.alert('Biometric lock', msg);
     }
+  };
+
+  // Chat "ask online when unsure" toggle (INTELLIGENCE_UPGRADE.md, Phase C5).
+  // Device-local pref; ChatScreen reads it on each open.
+  const [assistOn, setAssistOn] = useState(true);
+  useEffect(() => {
+    getAssistEnabled().then(setAssistOn);
+  }, []);
+  const toggleAssist = (on: boolean) => {
+    setAssistOn(on);
+    setAssistEnabled(on);
   };
 
   const langMeta = useMemo(
@@ -323,6 +335,14 @@ export default function SettingsScreen() {
                 value={privacyMode}
                 onValueChange={(v) => setPrivacyMode(v)}
               />
+            }
+          />
+          <Row
+            icon="cloud-outline"
+            title={t('settings.privacy.assist')}
+            subtitle={t('settings.privacy.assistSub')}
+            trailing={
+              <ThemedSwitch value={assistOn} onValueChange={toggleAssist} />
             }
             isLast
           />
