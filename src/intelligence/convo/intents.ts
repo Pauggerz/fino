@@ -665,6 +665,13 @@ export const CAPABILITY_BLURBS: string[] = INTENT_DEFS.filter(
   (d) => d.blurb
 ).map((d) => d.blurb);
 
+/** Every trigger surface term, flattened — one of the vocab sources for the
+ *  typo-normalization pass (`convo/spell.ts`), so a slip like "balanse" can
+ *  snap back to a word the rules actually trigger on. */
+export const TRIGGER_TERMS: string[] = INTENT_DEFS.flatMap((d) =>
+  d.triggers.map((tr) => tr.term)
+);
+
 // Precompile each trigger into a word-boundary regex once at module load.
 const escapeRe = (s: string): string =>
   s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
