@@ -40,6 +40,9 @@ type Case = {
   intent: IntentId;
   time?: TimeRangeKey;
   category?: MasterCategory;
+  /** Assert that NO category slot was extracted (guards alias leaks like the
+   *  bare-"fast" → Food bug). */
+  noCategory?: boolean;
   /** Assert which layer decided — used to prove the classifier fallback fires
    *  on rule-silent paraphrases. */
   source?: 'rules' | 'classifier';
@@ -543,9 +546,17 @@ const cases: Case[] = [
   },
 
   // ── afford + misroute regressions (English sweep, 2026-06-08) ────────────────
-  { desc: 'EN afford w/ price', text: 'can i afford a 2000 dinner', intent: 'afford' },
+  {
+    desc: 'EN afford w/ price',
+    text: 'can i afford a 2000 dinner',
+    intent: 'afford',
+  },
   { desc: 'EN can i buy X', text: 'can i buy a phone', intent: 'afford' },
-  { desc: 'EN afford big', text: 'can i afford a 50000 laptop', intent: 'afford' },
+  {
+    desc: 'EN afford big',
+    text: 'can i afford a 50000 laptop',
+    intent: 'afford',
+  },
   { desc: 'EN broke → balance', text: 'am i broke', intent: 'balance' },
   { desc: 'EN rich → balance', text: 'am i rich', intent: 'balance' },
   {
@@ -724,6 +735,61 @@ const cases: Case[] = [
     text: 'i want to buy a phone for 25000',
     intent: 'afford',
   },
+
+  // ── Human-like probe review misroutes (2026-07-08) ───────────────────────────
+  // "remind me <interrogative>" is a RECALL question, not a reminder to stage.
+  {
+    desc: 'EN remind-recall lent',
+    text: 'remind me who i lent money to',
+    intent: 'debt',
+  },
+  {
+    desc: 'EN remind-recall owe',
+    text: 'remind me how much i owe',
+    intent: 'debt',
+  },
+  // A WHEN question about pay landing → salaryStatus (its answer carries the
+  // date); a plain income total would not answer the "when".
+  {
+    desc: 'EN when last paid',
+    text: 'when did i last get paid',
+    intent: 'salaryStatus',
+  },
+  // A WHY about money draining → explain, not a balance listing ("am i broke"
+  // stays balance — asserted above).
+  {
+    desc: 'EN why always broke',
+    text: 'why am i always broke',
+    intent: 'explainSpend',
+  },
+  // Self-assessment → coach.
+  {
+    desc: 'EN bad with money',
+    text: 'am i bad with money',
+    intent: 'coach',
+  },
+  // Budget-SIZING guidance → ruleOfThumb, not the status of budgets they
+  // haven't set.
+  {
+    desc: 'EN what should budget be',
+    text: 'what should my monthly budget be',
+    intent: 'ruleOfThumb',
+  },
+  // "what's in my bank account" is a balance question, not a transfer (the
+  // corpus over-associates "bank account" with transfers).
+  {
+    desc: 'EN whats in bank account',
+    text: 'whats in my bank account',
+    intent: 'balance',
+  },
+  // Bare "fast" must NOT tag Food (it was a fast_food alias) — "spending too
+  // fast" is an overall pacing question, not a Food-scoped one.
+  {
+    desc: 'EN spending too fast (no Food tag)',
+    text: 'am i spending too fast',
+    intent: 'spend',
+    noCategory: true,
+  },
 ];
 
 // Out-of-scope utterances: the classifier's `unknown` class must reject them
@@ -742,6 +808,16 @@ const FALLBACK_CASES: { desc: string; text: string }[] = [
   { desc: 'OOS offtopic', text: 'order me a pizza' },
   { desc: 'OOS terminator', text: 'stop' },
   { desc: 'OOS distrust', text: 'you lied' },
+  // Anchor-gate regressions (2026-07-08): grammatical off-topic English used to
+  // leak into finance answers because the char-gram NB over-matches function
+  // words. The finance domain-anchor gate must reject all of these.
+  { desc: 'OOS trivia everest', text: 'how tall is mount everest' },
+  { desc: 'OOS trivia president', text: 'who is the president' },
+  { desc: 'OOS cooking', text: 'how do i cook adobo' },
+  { desc: 'OOS health', text: 'my head hurts' },
+  { desc: 'OOS alarm', text: 'set an alarm for 7am' },
+  { desc: 'OOS movie', text: 'recommend me a movie' },
+  { desc: 'OOS tired', text: 'i am tired' },
 ];
 
 // ─── Sample context for routeMessage smoke test ──────────────────────────────
@@ -850,6 +926,13 @@ for (const c of cases) {
       cls.slots.category?.master === c.category,
       `[cat]    ${c.desc}`,
       `"${c.text}" → got ${cls.slots.category?.master ?? 'none'}, expected ${c.category}`
+    );
+  }
+  if (c.noCategory) {
+    check(
+      cls.slots.category === undefined,
+      `[nocat]  ${c.desc}`,
+      `"${c.text}" → unexpectedly tagged ${cls.slots.category?.master}`
     );
   }
   // Smoke: every fixture must produce a non-empty reply without throwing.
@@ -1410,7 +1493,9 @@ const CTX_TX: BrainContext = {
   // ₱149 = ₱449 fall in it, narrated "the week of Jun 1".
   const wa = routeMessage('how much did i spend 2 weeks ago', CTX_TX);
   check(
-    /spent/i.test(wa.text) && /week of Jun 1/.test(wa.text) && /449/.test(wa.text),
+    /spent/i.test(wa.text) &&
+      /week of Jun 1/.test(wa.text) &&
+      /449/.test(wa.text),
     '[grammar] spend 2 weeks ago → ₱449 the week of Jun 1',
     `text "${wa.text}"`
   );
@@ -1768,9 +1853,24 @@ const CTX_PLAN: BrainContext = {
   budgets: [{ category: 'Food', limit: 10000 }],
   recurringIncome: [{ label: 'Salary', amount: 30000, dayOfMonth: 1 }],
   recurringBills: [
-    { label: 'internet', amount: 1500, cadence: 'monthly', nextDueAt: '2026-06-18' },
-    { label: 'rent', amount: 8000, cadence: 'monthly', nextDueAt: '2026-07-01' },
-    { label: 'netflix', amount: 549, cadence: 'monthly', nextDueAt: '2026-06-20' },
+    {
+      label: 'internet',
+      amount: 1500,
+      cadence: 'monthly',
+      nextDueAt: '2026-06-18',
+    },
+    {
+      label: 'rent',
+      amount: 8000,
+      cadence: 'monthly',
+      nextDueAt: '2026-07-01',
+    },
+    {
+      label: 'netflix',
+      amount: 549,
+      cadence: 'monthly',
+      nextDueAt: '2026-06-20',
+    },
   ],
 };
 
@@ -1796,7 +1896,10 @@ const CTX_PLAN: BrainContext = {
 
 // explainSpend: month-over-month delta + the top category drivers.
 {
-  const better = routeMessage('why is my spending so high this month', CTX_PLAN);
+  const better = routeMessage(
+    'why is my spending so high this month',
+    CTX_PLAN
+  );
   check(
     /trending better/i.test(better.text) &&
       better.card?.kind === 'coach' &&
@@ -1818,7 +1921,10 @@ const CTX_PLAN: BrainContext = {
 
 // monthPattern: Feb ₱12,000 vs Apr ₱2,000; current month never crowned.
 {
-  const cheap = routeMessage('whats the cheapest month i had this year', CTX_PLAN);
+  const cheap = routeMessage(
+    'whats the cheapest month i had this year',
+    CTX_PLAN
+  );
   check(
     /cheapest month was Apr at ₱2,000/.test(cheap.text) &&
       /Feb at ₱12,000/.test(cheap.text) &&
@@ -1883,7 +1989,10 @@ const CTX_PLAN: BrainContext = {
 
 // Weekend-vs-weekday: per-day averages decide, not raw totals.
 {
-  const wknd = routeMessage('did i spend more on weekends or weekdays', CTX_PLAN);
+  const wknd = routeMessage(
+    'did i spend more on weekends or weekdays',
+    CTX_PLAN
+  );
   check(
     /more on weekdays/.test(wknd.text) &&
       wknd.card?.kind === 'pattern' &&
@@ -1895,7 +2004,10 @@ const CTX_PLAN: BrainContext = {
 
 // Saved-so-far honors the range: income − expense over this year.
 {
-  const saved = routeMessage('how much have i saved so far this year', CTX_PLAN);
+  const saved = routeMessage(
+    'how much have i saved so far this year',
+    CTX_PLAN
+  );
   check(
     /7,971/.test(saved.text) &&
       /30,000/.test(saved.text) &&
@@ -2042,7 +2154,8 @@ const CTX_PLAN: BrainContext = {
     accounts: [{ id: 'a1', name: 'GCash', balance: 8000 }],
   });
   check(
-    oneAcct.mutation === undefined && /at least two accounts/i.test(oneAcct.text),
+    oneAcct.mutation === undefined &&
+      /at least two accounts/i.test(oneAcct.text),
     '[plan]   transfer w/ one account → explains, no mutation',
     `text "${oneAcct.text}"`
   );
@@ -2099,9 +2212,36 @@ const CTX_PLAN: BrainContext = {
 // not silently return ₱0.
 {
   const granTx: TxLite[] = [
-    { id: 'gr1', amount: 1000, type: 'expense', category: 'Groceries', merchant: 'Puregold', name: 'Puregold', date: '2026-06-15', accountId: 'a1' },
-    { id: 'gr2', amount: 500, type: 'expense', category: 'Dining', merchant: 'Mang Inasal', name: 'Mang Inasal', date: '2026-06-15', accountId: 'a1' },
-    { id: 'gr3', amount: 200, type: 'expense', category: 'Transport', merchant: 'Grab', name: 'Grab ride', date: '2026-06-15', accountId: 'a1' },
+    {
+      id: 'gr1',
+      amount: 1000,
+      type: 'expense',
+      category: 'Groceries',
+      merchant: 'Puregold',
+      name: 'Puregold',
+      date: '2026-06-15',
+      accountId: 'a1',
+    },
+    {
+      id: 'gr2',
+      amount: 500,
+      type: 'expense',
+      category: 'Dining',
+      merchant: 'Mang Inasal',
+      name: 'Mang Inasal',
+      date: '2026-06-15',
+      accountId: 'a1',
+    },
+    {
+      id: 'gr3',
+      amount: 200,
+      type: 'expense',
+      category: 'Transport',
+      merchant: 'Grab',
+      name: 'Grab ride',
+      date: '2026-06-15',
+      accountId: 'a1',
+    },
   ];
   const CTX_GRAN: BrainContext = {
     ...CTX,
