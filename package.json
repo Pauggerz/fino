@@ -14,6 +14,7 @@
     "test:query": "npx --yes tsx scripts/test-query.ts",
     "test:route": "npx --yes tsx scripts/test-route.ts",
     "test:memory": "npx --yes tsx scripts/test-memory.ts",
+    "test:typo": "npx --yes tsx scripts/test-typo.ts",
     "train:brain": "npx --yes tsx scripts/train-brain.ts",
     "check:copy-sync": "npx --yes tsx scripts/check-copy-sync.ts"
   },
