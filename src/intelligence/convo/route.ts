@@ -16,6 +16,7 @@
  */
 
 import { normalize } from '../core/normalize';
+import { spellNormalize } from './spell';
 
 const QUERY_CUE_RE = new RegExp(
   [
@@ -43,7 +44,7 @@ const QUERY_CUE_RE = new RegExp(
  * so a query is answered by the brain instead of creating a bogus transaction.
  */
 export function looksLikeQuestion(raw: string): boolean {
-  const t = normalize(raw);
+  const t = spellNormalize(normalize(raw));
   if (!t) return false;
   return QUERY_CUE_RE.test(t);
 }
@@ -99,7 +100,44 @@ const COMMAND_CUE_RE = new RegExp(
  * proposes a confirm) instead of creating a bogus transaction.
  */
 export function looksLikeCommand(raw: string): boolean {
-  const t = normalize(raw);
+  const t = spellNormalize(normalize(raw));
   if (!t) return false;
   return COMMAND_CUE_RE.test(t);
+}
+
+// ─── Statement gate (INTELLIGENCE_UPGRADE.md, Phase A2) ─────────────────────
+//
+// A first-person purchase STATEMENT that failed to parse ("I bought ice
+// crwam20" before glue recovery, "i paid my electric bill" with no amount)
+// used to fall into the brain, which force-answered it as a QUERY — the NB
+// classifier shares too much vocabulary with "what did i buy" to reject it.
+// This gate catches the statement shape so the brain can ask for the missing
+// amount (a log-clarify) instead of ever answering a question nobody asked.
+//
+// Question and command cues win: "what did i buy" / "i spent too much" (an
+// evaluative query cue) / "i paid Paul back" (a debt command cue) are NOT
+// log statements. The `(?!…)` tail keeps laments ("i spent a lot") out — a
+// lament has no item to log and should reach the brain's overspend/coach path.
+const LOG_STATEMENT_RE = new RegExp(
+  [
+    String.raw`\b(?:i|we)\s+(?:just\s+|also\s+|already\s+)?(?:bought|purchased|ordered|availed|spent|paid)(?!\s+(?:a lot|lots|so much|too much|everything|nothing|it all|all))\b`,
+    String.raw`^(?:bought|purchased|ordered|availed)\b`,
+    // Tagalog/Bisaya purchase statements ("bumili ako ng…", "mipalit kog…").
+    String.raw`\b(?:bumili|binili|nagbayad|mipalit)\b`,
+  ].join('|'),
+  'i'
+);
+
+/**
+ * True when a message reads as a first-person purchase STATEMENT — something
+ * the user is telling us they did, not asking. ChatScreen's parse path handles
+ * the amount-bearing ones; the brain consults this to turn the amountless rest
+ * into a log-clarify instead of a force-answered query.
+ */
+export function looksLikeLogStatement(raw: string): boolean {
+  const t = spellNormalize(normalize(raw));
+  if (!t) return false;
+  if (QUERY_CUE_RE.test(t)) return false;
+  if (COMMAND_CUE_RE.test(t)) return false;
+  return LOG_STATEMENT_RE.test(t);
 }
