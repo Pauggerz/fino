@@ -49,6 +49,7 @@ import {
   looksLikeCommand,
   type ChatTx,
   type BrainContext,
+  type BrainResponseMeta,
   type ChatCard,
   type CardAction,
   type BrainMutation,
@@ -60,6 +61,8 @@ import { getInsights, type Insights } from '@/services/IntelligenceEngine';
 import { ChatCardView, Reveal, REVEAL_STAGGER_MS } from '@/components/chat';
 import { saveChatMessage, loadChatHistory } from '@/services/chatMutations';
 import { recordBrainMiss } from '@/services/brainTelemetry';
+import { requestBrainAssist } from '@/intelligence/assist/assistClient';
+import { getAssistEnabled } from '@/services/assistPrefs';
 
 /** Each "working" step (Fetching → Analyzing → Generating) holds for this long
  *  before the next one lights up; the parent waits steps×this so the indicator
@@ -161,8 +164,18 @@ function stepsForIntent(intent: string | null, text: string): string[] {
 }
 
 /** Chit-chat / meta intents have no data to crunch, so they skip the staged
- *  "working" beat and answer instantly. */
-const INSTANT_INTENTS = new Set(['greeting', 'thanks', 'help']);
+ *  "working" beat and answer instantly. `logClarify` (a purchase statement
+ *  missing its amount) is a deterministic ask-back — a fake "analyzing your
+ *  spending" beat would be dishonest there. */
+const INSTANT_INTENTS = new Set(['greeting', 'thanks', 'help', 'logClarify']);
+
+/** Extra "working" step shown while a low-confidence turn consults the online
+ *  router (Phase C) — the honest indicator that this one went to the network. */
+const ASSIST_STEPS = [
+  'Checking my understanding online',
+  'Re-reading your message',
+  'Generating response',
+];
 
 type TxData = {
   amount: number;
@@ -185,6 +198,10 @@ type Message = {
    *  (see handleSend), so a stale proposal can't be re-confirmed after reopen. */
   mutation?: BrainMutation;
   followUps?: string[];
+  /** True when the online assist router shaped this reply (Phase C4) — the
+   *  bubble is marked "used online help" so network-touched turns are always
+   *  visibly distinct from pure-offline ones. Persisted in payload. */
+  viaAssist?: boolean;
   timestamp: string;
   txData?: TxData;
 };
@@ -241,6 +258,7 @@ function rowToMessage(row: ChatMessageModel): Message {
       if (parsed.card) base.card = parsed.card;
       if (parsed.actions) base.actions = parsed.actions;
       if (parsed.followUps) base.followUps = parsed.followUps;
+      if (parsed.viaAssist) base.viaAssist = true;
     } catch {
       // Corrupt payload — fall back to a plain text bubble.
     }
@@ -815,6 +833,16 @@ export default function ChatScreen() {
     undefined
   );
 
+  // "Ask online when unsure" preference (Phase C5) — read once per mount into
+  // a ref (checked synchronously inside handleSend; a Settings change applies
+  // on next chat open). Default ON; the assist only ever sends message text.
+  const assistEnabledRef = useRef(true);
+  useEffect(() => {
+    getAssistEnabled().then((v) => {
+      assistEnabledRef.current = v;
+    });
+  }, []);
+
   // Transaction logging state
   const [pendingTx, setPendingTx] = useState<ChatTx | null>(null);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
@@ -1284,6 +1312,12 @@ export default function ChatScreen() {
       // The brain is pure & synchronous, but a malformed snapshot row could
       // still throw inside a builder — never let that strand the spinner.
       let reply: ReturnType<typeof routeMessage>;
+      // Assist bookkeeping (Phase C): the meta of the ORIGINAL offline turn
+      // (telemetry must describe the miss, not the assisted recovery), plus
+      // the resolution the online router produced, if any.
+      let preAssistMeta: BrainResponseMeta | undefined;
+      let assistResolvedIntent: string | undefined;
+      let assistResolvedQuery: string | undefined;
       try {
         const now = new Date();
         const brainCtx: BrainContext = {
@@ -1314,6 +1348,54 @@ export default function ChatScreen() {
         // returns the updated window (with this turn folded in); a turn that
         // carried no signal passes the window through unchanged.
         if (reply.memory) conversationMemoryRef.current = reply.memory;
+        preAssistMeta = reply.meta;
+
+        // ── Online assist (INTELLIGENCE_UPGRADE.md, Phase C4). One attempt,
+        // only when the brain flagged the turn (true fallback or a low-
+        // confidence classifier win) AND the user's "ask online when unsure"
+        // toggle is on. The LLM only ROUTES — it returns an intent + a
+        // canonical rewrite of the user's sentence; every number, card, and
+        // confirm still comes from the offline pipeline re-run below. The
+        // request body is the message text alone. Fail-quiet: offline, slow
+        // (>4s), or invalid replies keep the offline clarify already in
+        // `reply`.
+        if (reply.meta?.assistEligible && assistEnabledRef.current) {
+          // Surface the wait honestly — this is the one beat that goes online.
+          setCurrentSteps(ASSIST_STEPS);
+          setIsTyping(true);
+          const decision = await requestBrainAssist(trimmed);
+          if (decision && decision.intent === 'log' && decision.query) {
+            // A purchase statement the offline gates missed. NEVER write from
+            // an LLM interpretation — offer the rewrite as a one-tap chip that
+            // re-enters the normal deterministic log path (parse → account →
+            // status card), where the user is the one confirming.
+            assistResolvedIntent = 'log';
+            assistResolvedQuery = decision.query;
+            reply = {
+              text: 'Looks like you meant to log a purchase. Tap to confirm and I\'ll log it:',
+              followUps: [decision.query],
+              meta: preAssistMeta,
+            };
+          } else if (decision && decision.intent !== 'none' && decision.query) {
+            const rerouted = routeMessage(decision.query, brainCtx);
+            // Adopt the reroute only when the offline brain confidently
+            // understood the rewrite — a shaky reroute would just launder the
+            // original guess through prettier words.
+            if (
+              rerouted.meta &&
+              rerouted.meta.intent !== null &&
+              !rerouted.meta.assistEligible &&
+              rerouted.meta.confidence >= 0.6
+            ) {
+              assistResolvedIntent = rerouted.meta.intent ?? undefined;
+              assistResolvedQuery = decision.query;
+              reply = rerouted;
+              if (rerouted.memory) {
+                conversationMemoryRef.current = rerouted.memory;
+              }
+            }
+          }
+        }
       } catch (err) {
         console.error('[Fino AI] routeMessage error:', err);
         reply = {
@@ -1321,21 +1403,27 @@ export default function ChatScreen() {
         };
       }
 
-      // Log a genuine miss (rules silent + classifier abstained + nothing
-      // inherited) to the local, anonymized telemetry buffer so the corpus can
-      // grow against real misses. Fire-and-forget; only on a true fallback. A
-      // 'declined' source (abusive / empty input) is intentionally excluded so a
-      // slur never seeds the training corpus.
+      // Log a trainable miss to the local, anonymized telemetry buffer: a true
+      // fallback (intent null) OR a low-confidence turn (`assistEligible`) —
+      // the force-answer failure class Phase B made visible. `preAssistMeta`
+      // describes the ORIGINAL offline decision even when the online assist
+      // recovered the turn; the assist's intent + rewrite ride along as a
+      // ready-made labeled corpus pair (Phase C6). Fire-and-forget. A
+      // 'declined' source (abusive / empty input) is intentionally excluded so
+      // a slur never seeds the training corpus.
       if (
         userId &&
-        reply.meta &&
-        reply.meta.intent === null &&
-        reply.meta.source !== 'declined'
+        preAssistMeta &&
+        preAssistMeta.source !== 'declined' &&
+        (preAssistMeta.intent === null || preAssistMeta.assistEligible)
       ) {
         recordBrainMiss({
           text: trimmed,
-          source: reply.meta.source,
-          mlMatched: reply.meta.mlMatched,
+          source: preAssistMeta.source,
+          mlMatched: preAssistMeta.mlMatched,
+          confidence: preAssistMeta.confidence,
+          resolvedIntent: assistResolvedIntent,
+          resolvedQuery: assistResolvedQuery,
         }).catch(() => {});
       }
 
@@ -1359,17 +1447,22 @@ export default function ChatScreen() {
       // (AnimatedMessage) and any card assembles itself (ChatCardView reveal).
       // No typewriter: the text arrives instantly instead of crawling.
       const aiMsgId = `ai-${Date.now()}`;
+      // The online router shaped this reply (log-confirm chip or an adopted
+      // reroute) → mark the bubble "used online help" (Phase C4). The marker
+      // persists so the distinction survives reopen.
+      const viaAssist = assistResolvedIntent !== undefined;
       if (userId) {
         // Snapshot the card + actions + follow-ups into payload so the reply
         // renders identically on reopen — frozen as-of-asked (CARDS.md §6).
         // Persist BEFORE the mount guard so a reply computed during the working
         // beat survives a reopen even if the user already left the screen.
         const payload =
-          reply.card || reply.actions || reply.followUps
+          reply.card || reply.actions || reply.followUps || viaAssist
             ? JSON.stringify({
                 card: reply.card,
                 actions: reply.actions,
                 followUps: reply.followUps,
+                ...(viaAssist ? { viaAssist: true } : {}),
               })
             : null;
         saveChatMessage({
@@ -1393,6 +1486,7 @@ export default function ChatScreen() {
           // Confirm/Cancel row is gone on reopen — a stale change can't re-run.
           mutation: reply.mutation,
           followUps: reply.followUps,
+          ...(viaAssist ? { viaAssist: true } : {}),
           timestamp: nowTime(),
         },
       ]);
@@ -1820,7 +1914,11 @@ export default function ChatScreen() {
               ) : null}
             </View>
 
-            <Text style={styles.timestampAi}>{msg.timestamp}</Text>
+            <Text style={styles.timestampAi}>
+              {msg.viaAssist
+                ? `${msg.timestamp} · used online help`
+                : msg.timestamp}
+            </Text>
 
             {msg.mutation && !resolvedMutations.has(msg.id) ? (
               <Reveal
