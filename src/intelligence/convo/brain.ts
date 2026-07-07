@@ -187,6 +187,45 @@ const TIME_SCOPED_INTENTS = new Set<IntentId>([
 const ML_MIN_MATCHED = MODEL.gate?.minMatched ?? 6;
 const ML_MIN_MARGIN = MODEL.gate?.minMargin ?? 1;
 
+// ─── Open-set domain anchor (review fix, 2026-07-07) ────────────────────────
+//
+// The char-gram Naive-Bayes over-matches grammatical off-topic English: a
+// sentence made of ordinary function words shares most of its n-grams with the
+// finance corpus, so "how tall is mount everest" scored `safeToSpend` at
+// matched 31/42, and "who is the president" scored `debt`. The matched/margin
+// gate can't tell these from a real rule-silent paraphrase — both look dense.
+//
+// The discriminator is DOMAIN VOCABULARY. Every genuine finance question names
+// money in some form (spend / save / pay / cash / bills / afford / a category)
+// or uses the first-person "how much did I …" quantity frame. Off-topic chatter
+// does not. So a PURE classifier guess (rules fully silent) at a data intent is
+// trusted only when at least one finance anchor is present; otherwise it falls
+// through to the gentle fallback. Chit-chat intents (greeting/thanks/help) are
+// exempt — they're safe redirects, not answers that expose the user's numbers.
+const FINANCE_ANCHOR_RE = new RegExp(
+  [
+    String.raw`\b(money|cash|pera|kwarta|kuwarta|peso|pesos|php|wallet|funds?|balance|broke|rich|net worth)\b`,
+    String.raw`\b(spend|spent|spending|expenses?|gastos|ginastos|nagastos|budgets?)\b`,
+    String.raw`\b(save|saved|saving|savings|ipon|naiipon|naimpon|nest egg|emergenc\w*|rainy day|safety net)\b`,
+    String.raw`\b(income|earn(?:ed|ings)?|salary|sweldo|suweldo|sahod|paycheck|paid|pay|kita|kumita|bonus|windfall)\b`,
+    String.raw`\b(bills?|subscri\w*|recurring|debts?|owe[ds]?|utang|lent|loaned|borrowed|loan)\b`,
+    String.raw`\b(transactions?|purchases?|bought|buy(?:ing)?|buys|charges?|receipts?|accounts?|bank|gcash|maya|bpi|transfer)\b`,
+    String.raw`\b(financ\w*|afford|categor(?:y|ies))\b`,
+    // First-person money-quantity frame ("how much did i blow this month").
+    // Deliberately first-person: "how much does a car cost" / "how many
+    // countries" do NOT match, so third-person trivia stays out of scope.
+    String.raw`\bhow (?:much|many) (?:did|do|have|has|am|are|can|could|should|will|would) (?:i|we)\b`,
+  ].join('|'),
+  'i'
+);
+
+/** True when the text carries at least one finance-domain word / frame. Used to
+ *  gate pure classifier guesses so off-topic chatter can't be force-answered as
+ *  a finance query. Exported for the review probe / test harness. */
+export function hasFinanceAnchor(text: string): boolean {
+  return FINANCE_ANCHOR_RE.test(text);
+}
+
 /** How the winning intent was decided. */
 export type ClassificationSource = 'rules' | 'classifier' | 'none';
 
@@ -283,12 +322,24 @@ export function classifyMessage(
   const runnerUp = second && second.score > 0 ? second.id : null;
 
   const ml = predict(MODEL, raw);
-  const mlIntent: IntentId | null =
+  let mlIntent: IntentId | null =
     ml.label !== 'unknown' &&
     ml.matched >= ML_MIN_MATCHED &&
     ml.margin >= ML_MIN_MARGIN
       ? ml.label
       : null;
+
+  // Open-set domain gate: a PURE classifier guess (rules fully silent) at a
+  // data intent must be anchored by a finance-domain word, or we reject it as
+  // off-topic. Tie-break guesses (ruleScore > 0) are exempt — the rules already
+  // found finance signal there. See FINANCE_ANCHOR_RE above.
+  // Check BOTH the raw-normalized and spell-fixed text: spell correction can
+  // corrupt a valid domain word ("safety net" → "safely net"), while a genuine
+  // typo ("mony") only anchors after the fix — accept either.
+  const anchored = FINANCE_ANCHOR_RE.test(norm) || FINANCE_ANCHOR_RE.test(fixed);
+  if (mlIntent && ruleScore === 0 && DATA_INTENTS.has(mlIntent) && !anchored) {
+    mlIntent = null;
+  }
 
   let intent: IntentId | null;
   let source: ClassificationSource;
