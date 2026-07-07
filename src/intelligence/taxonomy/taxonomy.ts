@@ -125,7 +125,7 @@ const food: TaxonomyNode = {
       key: 'fast_food',
       name: 'Fast Food',
       master: 'food',
-      aliases: ['fastfood', 'fast food', 'fast', 'food court'],
+      aliases: ['fastfood', 'fast food', 'food court'],
       keywords: [
         // Generic items
         'burger', 'pizza',
