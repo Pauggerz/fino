@@ -460,6 +460,21 @@ export type BrainResponseMeta = {
   ruleMargin: number;
   /** In-vocabulary classifier feature count (0 = no signal at all). */
   mlMatched: number;
+  /**
+   * Unified confidence ∈ [0, 1] for THIS turn's routing decision — the single
+   * number the host can act on (INTELLIGENCE_UPGRADE.md, Phase B). Combines
+   * the deciding layer's separation (rule margin / NB margin) with feature
+   * coverage (how much of the message the winner actually consumed). NB
+   * softmax is deliberately NOT used — it saturates at 1.0 on this model.
+   * Deterministic paths (chit-chat, declines, log-clarify) report high
+   * confidence; a genuine fallback reports 0.
+   */
+  confidence: number;
+  /** True when this turn is a candidate for the online assist tier: the brain
+   *  either fell back or answered at low confidence, and a cheap LLM router
+   *  MAY be able to map the phrasing onto a known intent. The host checks the
+   *  user's toggle + connectivity; the brain only flags eligibility. */
+  assistEligible?: boolean;
 };
 
 export type BrainResponse = {
