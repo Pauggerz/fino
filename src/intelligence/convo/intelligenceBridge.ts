@@ -21,7 +21,9 @@ import type { IntentId } from './intents';
 import { CAPABILITY_BLURBS } from './intents';
 import type { Slots, CategorySlot } from './slots';
 import type { TimeRange } from '../core/time';
-import { analyzeTransactionText } from '../categorize/categorize';
+import { analyzeTransactionText, extractItems } from '../categorize/categorize';
+import { splitGluedAmounts } from '../core/amounts';
+import { spellNormalize } from './spell';
 import { peso, pctOf, pick, capWord, fmtDate, MONTHS_ABBR } from './nlg';
 import {
   buildBreakdownCard,
@@ -2180,6 +2182,41 @@ export function answerClarify(a: IntentId, b: IntentId): BrainResponse {
 }
 
 /**
+ * The classifier picked an intent but the unified confidence came in LOW —
+ * the message shares too little vocabulary with the winner to trust a full
+ * answer (Phase B2). Offer the guess as a one-tap chip instead of answering:
+ * a wrong card is worse than one extra tap, and the host may escalate this
+ * turn to the online assist tier (meta.assistEligible).
+ */
+export function answerLowConfidence(guess: IntentId | null): BrainResponse {
+  const chip = guess ? EXAMPLE_PROMPTS[guess] : undefined;
+  const chips = chip
+    ? [chip, ...FALLBACK_FOLLOWUPS.filter((f) => f !== chip)]
+    : [...FALLBACK_FOLLOWUPS];
+  return {
+    text: "I'm not fully sure what you're after — closest I've got is below. Tap one, or rephrase it for me:",
+    followUps: chips.slice(0, 3),
+  };
+}
+
+/**
+ * MEDIUM confidence band (INTELLIGENCE_UPGRADE.md, Phase B2): the classifier's
+ * guess was strong enough to answer but not strong enough to answer *silently*.
+ * The answer stands as-is; this only guarantees the bubble carries clarify
+ * chips, so a near-miss guess costs the user one tap instead of a retype.
+ * Answers that already ship their own follow-ups keep them unchanged.
+ */
+export function withMediumClarify(
+  res: BrainResponse,
+  guess: IntentId | null
+): BrainResponse {
+  if (res.followUps && res.followUps.length > 0) return res;
+  const own = guess ? EXAMPLE_PROMPTS[guess] : undefined;
+  const chips = FALLBACK_FOLLOWUPS.filter((f) => f !== own).slice(0, 2);
+  return { ...res, followUps: chips };
+}
+
+/**
  * Clarify when a clearly-temporal phrase ("lately", "the past few days") was
  * used but didn't resolve to a concrete range — offer common windows as one-tap
  * chips instead of silently assuming "this month" and answering the wrong span.
@@ -2191,6 +2228,35 @@ export function answerTimeClarify(): BrainResponse {
       'How much did I spend this week?',
       'How much did I spend in the last 7 days?',
       'How much did I spend this month?',
+    ],
+  };
+}
+
+/**
+ * A first-person purchase statement with no extractable amount ("I bought ice
+ * crwam", "i paid my electric bill") — ask for the amount instead of ever
+ * force-answering it as a query (INTELLIGENCE_UPGRADE.md, Phase A2). The item
+ * is read off the typo-corrected, glue-split surface so the reply echoes
+ * "Ice Cream", not "crwam20".
+ */
+export function answerLogClarify(norm: string): BrainResponse {
+  const surface = spellNormalize(splitGluedAmounts(norm));
+  const items = extractItems(surface);
+  const item = items[0] ?? null;
+  const pretty = item
+    ? item.replace(/\b[a-z]/g, (c) => c.toUpperCase())
+    : null;
+  return {
+    text: pretty
+      ? `Sounds like you're logging ${pretty} — I just couldn't find the amount. Send "${item} 120"-style (item then price) and I'll log it right away.`
+      : 'Sounds like a purchase — I just couldn\'t find the amount. Send it like "coffee 120" and I\'ll log it right away.',
+    actions: [
+      {
+        kind: 'navigate',
+        label: 'Log it manually',
+        target: 'addTransaction',
+        params: { mode: 'expense' },
+      },
     ],
   };
 }
