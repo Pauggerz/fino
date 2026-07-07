@@ -25,11 +25,20 @@ const CAP = 200;
 export type BrainMiss = {
   /** The user's message (the phrasing to learn from). */
   text: string;
-  /** How the brain bailed — currently always 'none' (a true fallback). */
+  /** How the brain bailed — 'none' (a true fallback) or 'classifier' (it
+   *  answered/clarified at LOW confidence — the force-answer failure class). */
   source: string;
   /** In-vocabulary classifier feature count (0 = the text shared no vocab at
    *  all → likely gibberish/out-of-scope rather than a real miss). */
   mlMatched: number;
+  /** Unified turn confidence when available (Phase B) — lets triage rank the
+   *  buffer: 0 = hard fallback, 0.3–0.45 = answered-but-shaky. */
+  confidence?: number;
+  /** Intent the ONLINE assist resolved this miss to (Phase C6), when it ran
+   *  and succeeded — a labeled training pair for the corpus, for free. */
+  resolvedIntent?: string;
+  /** The assist's canonical rewrite (the corpus-ready phrasing pair). */
+  resolvedQuery?: string;
   /** ISO timestamp of the miss. */
   at: string;
 };
