@@ -53,6 +53,14 @@ export default function FABActionSheet() {
         title: 'Upload receipt',
         sub: 'Pick a screenshot from gallery',
       },
+      {
+        key: 'voice' as const,
+        icon: '🎙',
+        iconBg: isDark ? 'rgba(45,106,79,0.15)' : '#e8f5ee',
+        iconColor: isDark ? colors.incomeGreen : '#27500A',
+        title: 'Voice entry',
+        sub: 'Speak a transaction',
+      },
     ],
     [colors, isDark]
   );
@@ -74,6 +82,8 @@ export default function FABActionSheet() {
         navigation.replace('ScreenshotScreen', { initialSource: 'camera' });
       } else if (key === 'upload') {
         navigation.replace('ScreenshotScreen', { initialSource: 'upload' });
+      } else if (key === 'voice') {
+        navigation.replace('VoiceEntryScreen');
       }
     },
     [navigation]
