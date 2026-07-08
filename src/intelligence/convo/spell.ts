@@ -167,6 +167,13 @@ export function correctToken(lower: string): string | null {
     const bucket = BUCKETS.get(len);
     if (!bucket) continue;
     for (const cand of bucket) {
+      // Never correct a token INTO a calendar word (REVIEW_2026-07-08 P0.1):
+      // months/weekdays are the nearest vocab neighbours of people's names
+      // ("marco" → "march", "frida" → "friday"), and that rewrite makes the
+      // brain answer a different question at high confidence. Calendar words
+      // still live in VOCAB (a correctly-spelled month returns null early), so
+      // this only forbids them as correction TARGETS.
+      if (CALENDAR_TARGETS.has(cand)) continue;
       const d = osaDistance(lower, cand, tol);
       if (d < bestDist) {
         bestDist = d;
@@ -188,6 +195,21 @@ export function correctToken(lower: string): string | null {
 // alphanumerics ("crwam20" pre-split, "5k") are never touched here.
 const TOKEN_RE = /[A-Za-z][A-Za-z'-]*[A-Za-z]/g;
 
+/**
+ * True when the token at `offset` opens a sentence — nothing but whitespace
+ * precedes it, or the last non-space character was a sentence terminator. Used
+ * to tell a leading Capital (normal casing) from a mid-sentence Capital (likely
+ * a proper noun) so the corrector leaves people/brand names alone.
+ */
+function isSentenceStart(text: string, offset: number): boolean {
+  for (let i = offset - 1; i >= 0; i -= 1) {
+    const ch = text[i];
+    if (ch === ' ' || ch === '\t' || ch === '\n') continue;
+    return ch === '.' || ch === '!' || ch === '?';
+  }
+  return true;
+}
+
 // Single-entry memo: ChatScreen runs the question/command gates, the parser,
 // and the brain on the SAME message back-to-back — no need to re-correct.
 let lastIn: string | null = null;
@@ -202,8 +224,14 @@ let lastOut: string | null = null;
 export function spellNormalize(text: string): string {
   if (!text) return text;
   if (text === lastIn && lastOut !== null) return lastOut;
-  const out = text.replace(TOKEN_RE, (w) => {
+  const out = text.replace(TOKEN_RE, (w, offset: number) => {
     if (w.length < 4 || w.includes("'")) return w;
+    // A capitalized token mid-sentence is almost always a proper noun (a
+    // person or brand — "…did i pay Marco"); "correcting" it into a vocab word
+    // makes the brain answer a different question (REVIEW_2026-07-08 P0.1).
+    // A leading Capital (normal casing) is not a signal, so only skip when the
+    // token isn't at a sentence start.
+    if (/^[A-Z]/.test(w) && !isSentenceStart(text, offset)) return w;
     return correctToken(w.toLowerCase()) ?? w;
   });
   lastIn = text;

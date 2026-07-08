@@ -91,7 +91,7 @@ export {
   looksLikeCommand,
   looksLikeLogStatement,
 } from './route';
-export { spellNormalize } from './spell';
+export { spellNormalize, extendSpellVocab } from './spell';
 export { isAbusive } from './safety';
 export { CONVERSATION_MEMORY_MAX } from './memory';
 
