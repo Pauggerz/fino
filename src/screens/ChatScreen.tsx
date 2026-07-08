@@ -44,6 +44,8 @@ import { useIncomeCategories } from '@/hooks/useIncomeCategories';
 import {
   parseChatTransaction,
   routeMessage,
+  extendSpellVocab,
+  MEDIUM_CONFIDENCE,
   selectProactiveCoach,
   looksLikeQuestion,
   looksLikeCommand,
@@ -1272,6 +1274,16 @@ export default function ChatScreen() {
     }
 
     try {
+      // Fold the user's own account + category names into the spell vocab
+      // (INTELLIGENCE_UPGRADE.md A3; REVIEW_2026-07-08 P0.1) so the corrector
+      // never rewrites a custom "Marco fund"/"Groceries" into a vocab word and
+      // a typo'd name can snap back to the real one. Idempotent + cheap; runs
+      // before both the parse-log and brain paths below correct this message.
+      extendSpellVocab([
+        ...accountsForBrain.map((a) => a.name),
+        ...categoryNames,
+      ]);
+
       // Offline transaction parse + log, using the same taxonomy the Add
       // Transaction sheet uses. Multi-amount inputs ("chicken 50 and rice 50")
       // sum into one transaction. This never touches the network.
@@ -1380,12 +1392,18 @@ export default function ChatScreen() {
             const rerouted = routeMessage(decision.query, brainCtx);
             // Adopt the reroute only when the offline brain confidently
             // understood the rewrite — a shaky reroute would just launder the
-            // original guess through prettier words.
+            // original guess through prettier words. Reject a `logClarify`
+            // reroute (REVIEW_2026-07-08 P0.3): it isn't a trainable answer, and
+            // adopting it would answer a question with "couldn't find the
+            // amount" (the amount is right there) and poison the miss buffer
+            // with a non-intent label. Gate on the brain's own MEDIUM_CONFIDENCE
+            // so this stays in lockstep with a future recalibration (B4).
             if (
               rerouted.meta &&
               rerouted.meta.intent !== null &&
+              rerouted.meta.intent !== 'logClarify' &&
               !rerouted.meta.assistEligible &&
-              rerouted.meta.confidence >= 0.6
+              rerouted.meta.confidence >= MEDIUM_CONFIDENCE
             ) {
               assistResolvedIntent = rerouted.meta.intent ?? undefined;
               assistResolvedQuery = decision.query;
@@ -1422,7 +1440,13 @@ export default function ChatScreen() {
           source: preAssistMeta.source,
           mlMatched: preAssistMeta.mlMatched,
           confidence: preAssistMeta.confidence,
-          resolvedIntent: assistResolvedIntent,
+          // `logClarify` is a pseudo-intent, not a trainable label — never let
+          // it seed the corpus as a resolved pair (REVIEW_2026-07-08 P0.3). The
+          // reroute gate above already excludes it; this is belt-and-suspenders.
+          resolvedIntent:
+            assistResolvedIntent === 'logClarify'
+              ? undefined
+              : assistResolvedIntent,
           resolvedQuery: assistResolvedQuery,
         }).catch(() => {});
       }
