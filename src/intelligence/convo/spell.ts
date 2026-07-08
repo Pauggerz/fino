@@ -38,6 +38,28 @@ import { osaDistance } from '../core/editDistance';
 // "is 300 a good deal" became "…a good meal", flipping the message from a
 // brain question into a ₱300 Food log. If you add cue words to those regexes,
 // add any uncommon ones here; `npm run test:typo` + `test:route` guard drift.
+// core/time.ts calendar words. Two invariants hang off this list:
+//   · a month/weekday must never be "corrected" into a taxonomy merchant
+//     ("june" → "tune", "friday" → "fridays" the restaurant), so they live in
+//     the vocab as protected anchors;
+//   · nothing may ever be corrected INTO one (REVIEW_2026-07-08 P0.1) —
+//     calendar words are the nearest vocab neighbours of PEOPLE'S NAMES
+//     ("marco" → "march", "frida" → "friday"), and that rewrite makes the
+//     brain answer a different question at high confidence. The cost — a
+//     typo'd month stays unfixed — is absorbed by the classifier char-grams.
+const CALENDAR_WORDS = [
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+  'september', 'october', 'november', 'december',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct',
+  'nov', 'dec',
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+  'sunday', 'mon', 'tue', 'tues', 'wed', 'thu', 'thur', 'thurs', 'fri',
+  'sat', 'sun',
+];
+
+/** Correction TARGETS that are forbidden — see CALENDAR_WORDS above. */
+const CALENDAR_TARGETS = new Set(CALENDAR_WORDS);
+
 const COMMON_WORDS = [
   'how', 'much', 'many', 'what', 'where', 'which', 'when', 'why', 'who',
   'did', 'does', 'have', 'has', 'was', 'were', 'will', 'would', 'could',
@@ -59,16 +81,8 @@ const COMMON_WORDS = [
   'erase', 'scrap', 'undo', 'single', 'unusual', 'spikes', 'anomaly',
   'anomalies', 'portion', 'weekend', 'weekends', 'weekday', 'weekdays',
   'soon', 'due', 'bigger', 'lower', 'higher', 'availed', 'anywhere',
-  // core/time.ts grammar words — a month or weekday must never be
-  // "corrected" into a taxonomy merchant ("june" → "tune", "friday" →
-  // "fridays" the restaurant, "thursday" → "tuesday"):
-  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
-  'september', 'october', 'november', 'december',
-  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct',
-  'nov', 'dec',
-  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
-  'sunday', 'mon', 'tue', 'tues', 'wed', 'thu', 'thur', 'thurs', 'fri',
-  'sat', 'sun', 'quarter', 'tonight', 'morning', 'evening', 'afternoon',
+  ...CALENDAR_WORDS,
+  'quarter', 'tonight', 'morning', 'evening', 'afternoon',
   'ago', 'past', 'since', 'until', 'from', 'earlier', 'later', 'recent',
   'recently', 'lately', 'nowadays',
 ];
@@ -102,6 +116,37 @@ for (const w of VOCAB) {
   const arr = BUCKETS.get(w.length);
   if (arr) arr.push(w);
   else BUCKETS.set(w.length, [w]);
+}
+
+/**
+ * Fold the user's own words — account and category names — into the vocab at
+ * runtime (INTELLIGENCE_UPGRADE.md A3; wired per REVIEW_2026-07-08 P0.1).
+ * An in-vocab word is never rewritten, so "Wallet"/"Groceries"/a custom
+ * "Marco fund" survive the corrector, and a typo'd account name can snap TO
+ * the real one. Idempotent and cheap — callers pass names on every message.
+ */
+export function extendSpellVocab(
+  terms: readonly (string | null | undefined)[] | undefined
+): void {
+  if (!terms || terms.length === 0) return;
+  let added = false;
+  for (const term of terms) {
+    if (!term) continue;
+    for (const w of term.toLowerCase().split(/[^a-z']+/)) {
+      if (w.length < 2 || VOCAB.has(w)) continue;
+      VOCAB.add(w);
+      const arr = BUCKETS.get(w.length);
+      if (arr) arr.push(w);
+      else BUCKETS.set(w.length, [w]);
+      added = true;
+    }
+  }
+  // The memo below caches text → corrected text; a vocab change can change
+  // the correction, so a grown vocab invalidates it.
+  if (added) {
+    lastIn = null;
+    lastOut = null;
+  }
 }
 
 const toleranceFor = (len: number): number => (len <= 5 ? 1 : 2);
