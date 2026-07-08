@@ -91,6 +91,13 @@
           "androidMode": "default",
           "androidCollapsedTitle": "Fino"
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Fino uses your microphone to log transactions by voice.",
+          "speechRecognitionPermission": "Fino uses speech recognition to turn what you say into a transaction."
+        }
       ]
     ],
     "extra": {

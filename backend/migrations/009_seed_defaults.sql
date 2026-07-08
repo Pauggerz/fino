@@ -19,7 +19,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 DROP TRIGGER IF EXISTS trigger_seed_user_defaults ON users;
 CREATE TRIGGER trigger_seed_user_defaults

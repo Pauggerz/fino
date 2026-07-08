@@ -47,6 +47,7 @@ const RecurringBillsScreen = lazy(
   () => import('../screens/RecurringBillsScreen')
 );
 const ScreenshotScreen = lazy(() => import('../screens/ScreenshotScreen'));
+const VoiceEntryScreen = lazy(() => import('../screens/VoiceEntryScreen'));
 const OnboardingScreen = lazy(() => import('../screens/OnboardingScreen'));
 const CashFlowScreen = lazy(() => import('../screens/CashFlowScreen'));
 const CategoryScreen = lazy(() => import('../screens/CategoryScreen'));
@@ -136,6 +137,7 @@ export type RootStackParamList = {
   ScreenshotScreen:
     | { sharedImageUri?: string; initialSource?: 'camera' | 'upload' }
     | undefined;
+  VoiceEntryScreen: undefined;
   ChatScreen: undefined;
   BillSplitter: undefined;
   // Optional prefill so the chatbot's "Add to Utang Tracker" action can stage
@@ -378,6 +380,11 @@ export default function RootNavigator() {
               <Stack.Screen
                 name="ScreenshotScreen"
                 component={ScreenshotScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="VoiceEntryScreen"
+                component={VoiceEntryScreen}
                 options={{ headerShown: false, presentation: 'modal' }}
               />
               <Stack.Screen

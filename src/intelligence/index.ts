@@ -46,3 +46,6 @@ export type {
   SplitLineItem,
   SplitResolution,
 } from './ocr/postprocess';
+
+// ─── Voice (on-device speech-to-transaction) ─────────────────────────────────
+export * from './voice/voiceClient';
