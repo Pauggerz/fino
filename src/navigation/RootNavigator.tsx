@@ -267,6 +267,7 @@ function TabNavigator() {
               requireAccountForScan(() => props.navigation.navigate('Auth'));
             else go();
           }}
+          onVoice={() => props.navigation.navigate('VoiceEntryScreen')}
         />
       )}
       screenOptions={{

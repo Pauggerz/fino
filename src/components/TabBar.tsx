@@ -30,6 +30,7 @@ interface TabBarProps {
   onAddManual: () => void;
   onScan: () => void;
   onUpload: () => void;
+  onVoice: () => void;
 }
 
 const TAB_ICONS: Record<TabRoute, [string, string]> = {
@@ -123,6 +124,7 @@ export default function TabBar({
   onAddManual,
   onScan,
   onUpload,
+  onVoice,
 }: TabBarProps) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -171,14 +173,15 @@ export default function TabBar({
     else openMenu();
   };
 
-  const pickAction = (which: 'manual' | 'scan' | 'upload') => {
+  const pickAction = (which: 'manual' | 'scan' | 'upload' | 'voice') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     closeMenu();
     // small delay so the close animation reads visually before nav slide-up
     setTimeout(() => {
       if (which === 'manual') onAddManual();
       else if (which === 'scan') onScan();
-      else onUpload();
+      else if (which === 'upload') onUpload();
+      else onVoice();
     }, 80);
   };
 
@@ -207,6 +210,13 @@ export default function TabBar({
     opacity: progress.value,
     transform: [
       { translateY: interpolate(progress.value, [0, 1], [90, 0]) },
+      { scale: interpolate(progress.value, [0, 1], [0.6, 1]) },
+    ],
+  }));
+  const voiceStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [
+      { translateY: interpolate(progress.value, [0, 1], [120, 0]) },
       { scale: interpolate(progress.value, [0, 1], [0.6, 1]) },
     ],
   }));
@@ -296,10 +306,42 @@ export default function TabBar({
       >
         {/* ── Speed-dial action pills (anchored to FAB column) ── */}
         {menuOpen && (
-          <View
-            style={styles.dialColumn}
-            pointerEvents="box-none"
-          >
+          <View style={styles.dialColumn} pointerEvents="box-none">
+            <Reanimated.View
+              style={[
+                styles.actionPill,
+                { backgroundColor: actionPillBg, shadowColor: '#000' },
+                voiceStyle,
+              ]}
+            >
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => pickAction('voice')}
+                style={styles.actionPillInner}
+                accessibilityLabel="Voice entry"
+              >
+                <View
+                  style={[
+                    styles.actionIcon,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(91,140,110,0.22)'
+                        : '#EBF2EE',
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="mic-outline"
+                    size={18}
+                    color={colors.primary}
+                  />
+                </View>
+                <Text style={[styles.actionLabel, { color: actionPillText }]}>
+                  Voice entry
+                </Text>
+              </TouchableOpacity>
+            </Reanimated.View>
+
             <Reanimated.View
               style={[
                 styles.actionPill,
@@ -329,9 +371,7 @@ export default function TabBar({
                     color={isDark ? colors.lavender : '#4B2DA3'}
                   />
                 </View>
-                <Text
-                  style={[styles.actionLabel, { color: actionPillText }]}
-                >
+                <Text style={[styles.actionLabel, { color: actionPillText }]}>
                   Upload receipt
                 </Text>
               </TouchableOpacity>
@@ -366,9 +406,7 @@ export default function TabBar({
                     color={isDark ? colors.lavender : '#4B2DA3'}
                   />
                 </View>
-                <Text
-                  style={[styles.actionLabel, { color: actionPillText }]}
-                >
+                <Text style={[styles.actionLabel, { color: actionPillText }]}>
                   Scan receipt
                 </Text>
               </TouchableOpacity>
@@ -403,9 +441,7 @@ export default function TabBar({
                     color={colors.primary}
                   />
                 </View>
-                <Text
-                  style={[styles.actionLabel, { color: actionPillText }]}
-                >
+                <Text style={[styles.actionLabel, { color: actionPillText }]}>
                   Add manually
                 </Text>
               </TouchableOpacity>
