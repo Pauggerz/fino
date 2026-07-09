@@ -247,7 +247,6 @@ const INTENT_DEFS: IntentDef[] = [
       t('how am i doing', 4),
       t('any tips', 3),
       t('tips', 2),
-      t('recommend', 2),
       t('coach', 2),
       t('payo', 3),
     ],

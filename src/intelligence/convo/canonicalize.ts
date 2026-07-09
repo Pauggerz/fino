@@ -36,6 +36,14 @@ const RULES: Rule[] = [
     canon: 'balance',
   },
   { re: /\bnet worth\b/, canon: 'balance' },
+  // "what's in my bank account" / "how much is in my account" — a balance
+  // question, NOT a transfer (the corpus over-associates "bank account" with
+  // "transfer … to my bank account"). Requires a quantity/possession frame so
+  // "transfer 500 to my bank account" (uses "to", not "in") is unaffected.
+  {
+    re: /\b(?:how much|what'?s|what is|whats|money|left)\b[^.]{0,24}\bin (?:my|the) (?:bank )?account\b/,
+    canon: 'balance',
+  },
 
   // ── breakdown ────────────────────────────────────────────────────────────
   {
@@ -80,6 +88,12 @@ const RULES: Rule[] = [
   },
   { re: /\bforecast|project(ion|ed)?\b/, canon: 'savings' },
 
+  // ── coach (self-assessment: "am i bad with money?") ──────────────────────
+  {
+    re: /\b(?:am i|are we) (?:so |really |that |pretty )?(?:bad|terrible|awful|hopeless|good|great|smart|dumb) with (?:my )?money\b/,
+    canon: 'how am i doing',
+  },
+
   // ── help / capabilities ──────────────────────────────────────────────────
   {
     re: /\bwhat can you (do|help)|what do you do|how (can|do) you help\b/,
@@ -121,6 +135,13 @@ const RULES: Rule[] = [
   },
   { re: /\b(sweldo|sahod) na\b/, canon: 'sahod na' },
   { re: /\bdid i get paid\b/, canon: 'did i get paid' },
+  // "when did i last get paid" / "when was i paid" — a WHEN question about pay
+  // landing; the salaryStatus answer carries the latest income date, so it
+  // answers the "when" (a plain `income` total would not).
+  {
+    re: /\bwhen (?:did|was|do|will) i (?:last |just )?(?:get |got |getting |being )?paid\b/,
+    canon: 'did i get paid',
+  },
 
   // ── billStatus ────────────────────────────────────────────────────────────
   { re: /\bdid i (already )?pay\b/, canon: 'did i pay' },
@@ -232,6 +253,13 @@ const RULES: Rule[] = [
   // ruleOfThumb.
   { re: /\brule of thumb\b/, canon: 'rule of thumb' },
   { re: /\b50[ /-]?30[ /-]?20\b/, canon: 'rule of thumb' },
+  // "what should my (monthly) budget be" / "how much should i budget" — asking
+  // for GUIDANCE on sizing a budget, not the status of one they've set.
+  {
+    re: /\bwhat should (?:my|our|the) [^.]{0,20}\bbudget be\b/,
+    canon: 'rule of thumb',
+  },
+  { re: /\bhow much should (?:i|we) budget\b/, canon: 'rule of thumb' },
   // impulseTips.
   { re: /\bimpulse\b/, canon: 'impulse tips' },
 
@@ -273,6 +301,16 @@ const RULES: Rule[] = [
   },
   { re: /\bgo dutch\b/, canon: 'split bill' },
 
+  // ── debt (receivables recall: "who i lent money to", "how much i owe") ────
+  {
+    re: /\bwho (?:i |did i )?(?:lent|lend|loaned|loan|borrowed|owes?)\b/,
+    canon: 'who owes me',
+  },
+  {
+    re: /\bhow much (?:do |did |does )?i (?:still )?owe\b/,
+    canon: 'how much do i owe',
+  },
+
   // ── runway ("how long will my money last") ───────────────────────────────
   {
     re: /\bhow long (?:will|can|would|does) (?:my )?(?:money|cash|balance|funds?|savings?) (?:last|stretch|hold|carry)\b/,
@@ -296,6 +334,12 @@ const RULES: Rule[] = [
     canon: 'explain spending',
   },
   { re: /\bwhat(?: has| s|s)? changed\b/, canon: 'explain spending' },
+  // "why am i always broke" — a WHY about money draining, not a balance check
+  // (plain "am i broke" stays `balance`). Answer with what's driving spend.
+  {
+    re: /\bwhy (?:am i|are we) (?:always |still |so |constantly )?(?:broke|poor|out of (?:money|cash)|low on (?:money|cash))\b/,
+    canon: 'explain spending',
+  },
 
   // ── monthPattern ("cheapest / most expensive month") ─────────────────────
   {
@@ -374,7 +418,14 @@ const RULES: Rule[] = [
   { re: /\btransfer\b[^.]{0,20}\b(?:from|to|into)\b/, canon: 'transfer funds' },
 
   // ── reminder ──────────────────────────────────────────────────────────────
-  { re: /\bremind me\b/, canon: 'set reminder' },
+  // "remind me to pay…" is a task to stage; "remind me who/what/how much…" is a
+  // RECALL question wrapping a query ("remind me who i lent money to") — the
+  // lookahead keeps those from staging a reminder so the inner question's own
+  // intent (debt/spend/…) can win.
+  {
+    re: /\bremind me(?! (?:who|whom|what|whats|when|where|which|why|how)\b)/,
+    canon: 'set reminder',
+  },
   { re: /\bset (?:a |an )?reminder\b/, canon: 'set reminder' },
   { re: /\bdon ?t let me forget\b/, canon: 'set reminder' },
 

@@ -3,7 +3,7 @@
 > Living tracker for the offline-first intelligence hardening plan (2026-07-07).
 > Check items off as they land. Gates at the bottom must be green before merge.
 
-## WhyYour first task is to clean the whole code for the Fino Intelligence , remove all MD, make sure there are no unecessary lines of code (it means remove thos test scripts).
+## Why
 
 The offline brain misroutes on basic typos. Reproduced end-to-end:
 
