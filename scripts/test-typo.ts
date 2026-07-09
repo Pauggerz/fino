@@ -24,7 +24,7 @@ import {
   splitGluedAmounts,
   extractAmounts,
 } from '../src/intelligence/core/amounts';
-import { spellNormalize } from '../src/intelligence/convo/spell';
+import { spellNormalize, correctToken } from '../src/intelligence/convo/spell';
 import {
   looksLikeQuestion,
   looksLikeCommand,
@@ -209,6 +209,61 @@ for (const msg of [
     `got ${conf}`
   );
 }
+
+// ── 6. REVIEW_2026-07-08 P0 regression guards ────────────────────────────────
+// P0.1 — the spell corrector must never rewrite a person's name INTO a calendar
+// word ("marco" → "march"), which flipped a question about a person into a
+// high-confidence billStatus (subscriptions) answer.
+check(
+  'spellNormalize keeps "marco" (never corrected into a month)',
+  spellNormalize('how much did i pay marco') === 'how much did i pay marco',
+  `got "${spellNormalize('how much did i pay marco')}"`
+);
+// The guard is on the correction TARGET: a name that is one edit from a
+// calendar word must not snap TO it ("marco"→"march", "frida"→"friday").
+check(
+  'correctToken never rewrites "marco" into the month "march"',
+  correctToken('marco') === null,
+  `got ${correctToken('marco')}`
+);
+check(
+  'correctToken never rewrites "frida" into the weekday "friday"',
+  correctToken('frida') === null,
+  `got ${correctToken('frida')}`
+);
+// P0.1 — a capitalized mid-sentence token (a proper noun) is left alone even
+// when a near vocab neighbour exists, so "i paid Marco" never logs "March".
+check(
+  'spellNormalize skips a capitalized proper noun mid-sentence',
+  spellNormalize('i paid Marco 200') === 'i paid Marco 200',
+  `got "${spellNormalize('i paid Marco 200')}"`
+);
+
+// P0.2 — a product/model token glued to a short model number must NOT be split
+// into a bogus price ("iphone15" ≠ ₱15), while a real glued price still splits.
+check(
+  'splitGluedAmounts keeps "iphone15" whole (model number, not ₱15)',
+  splitGluedAmounts('bought iphone15') === 'bought iphone15'
+);
+check(
+  '"bought iphone15" does NOT parse a ₱15 log',
+  parse('bought iphone15') === null,
+  `got ${JSON.stringify(parse('bought iphone15'))}`
+);
+check(
+  'splitGluedAmounts still splits a real glued price ("chicken200")',
+  splitGluedAmounts('chicken200') === 'chicken 200'
+);
+
+// P0.3 — the statement-shaped rewrite the assist gate must REJECT: a purchase
+// statement routes to the `logClarify` pseudo-intent, which is not a trainable
+// label. ChatScreen's adoption gate now refuses to adopt it (and never records
+// it as a resolved miss); this documents the shape the gate keys off.
+check(
+  '"bought coffee 100" routes to the logClarify pseudo-intent',
+  routeMessage('bought coffee 100').meta?.intent === 'logClarify',
+  `got ${routeMessage('bought coffee 100').meta?.intent}`
+);
 
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);

@@ -61,14 +61,39 @@ export function extractAmounts(text: string): number[] {
 //   · the alpha run must be ≥ 3 letters (protects "mp3", "ps5", "a4"),
 //   · the digit run must be ≥ 2 digits, a decimal, or carry a k/m magnitude
 //     suffix (protects model numbers like "usb3" from becoming ₱3),
-//   · the token must end there (no "abc123def").
+//   · the token must end there (no "abc123def"),
+//   · the alpha run must not be a known product/model stem glued to a short
+//     model number ("iphone15" ≠ ₱15) — see PRODUCT_STEMS below.
 const GLUED_AMOUNT_RE =
   /(?<![A-Za-z0-9])([A-Za-z]{3,})(\d{2,7}(?:\.\d+)?|\d\.\d+|\d{1,4}(?:\.\d+)?[km])(?![A-Za-z0-9])/gi;
+
+// Product/brand lines that are routinely written glued to a short MODEL number
+// ("iphone15", "covid19", "galaxy24"). These are structurally identical to a
+// real glued price ("crwam20" → ₱20) — the only thing that separates them is
+// that the alpha run names a known product, so a denylist is the right tool
+// (REVIEW_2026-07-08 P0.2). Kept to unambiguous stems (no everyday English
+// words) so a genuine glued log is never wrongly withheld.
+const PRODUCT_STEMS = new Set([
+  'iphone', 'ipad', 'ipod', 'imac', 'macbook', 'airpods', 'airpod', 'ios',
+  'ipados', 'macos', 'galaxy', 'pixel', 'redmi', 'poco', 'realme', 'infinix',
+  'tecno', 'oppo', 'vivo', 'huawei', 'honor', 'oneplus', 'motorola', 'nokia',
+  'xbox', 'playstation', 'nintendo', 'covid', 'sars', 'gtx', 'rtx', 'ryzen',
+  'snapdragon',
+]);
+
+// A short bare integer (no decimal, no k/m magnitude): a model number, not a
+// peso price. "iphone15" hits this; "iphone1500" / "grab5k" / "case12.50" do
+// not, so a genuinely glued price still splits even on a product stem.
+const MODEL_NUMBER_RE = /^\d{1,3}$/;
 
 /** Insert a space at glued letter→digit boundaries ("crwam20" → "crwam 20"). */
 export function splitGluedAmounts(text: string): string {
   if (!text) return text;
-  return text.replace(GLUED_AMOUNT_RE, '$1 $2');
+  return text.replace(GLUED_AMOUNT_RE, (match, alpha: string, digits: string) =>
+    PRODUCT_STEMS.has(alpha.toLowerCase()) && MODEL_NUMBER_RE.test(digits)
+      ? match
+      : `${alpha} ${digits}`
+  );
 }
 
 /**
