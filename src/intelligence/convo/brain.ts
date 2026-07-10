@@ -44,6 +44,8 @@ import {
 } from './intelligenceBridge';
 import {
   predict,
+  rawClassifierScore,
+  calibratedConfidence,
   type NbModel,
   type Prediction,
 } from './classifier/naiveBayes';
@@ -230,14 +232,16 @@ export function hasFinanceAnchor(text: string): boolean {
 /** How the winning intent was decided. */
 export type ClassificationSource = 'rules' | 'classifier' | 'none';
 
-// ─── Unified confidence (INTELLIGENCE_UPGRADE.md, Phase B1) ─────────────────
+// ─── Unified confidence (INTELLIGENCE_UPGRADE.md, Phase B1 + B4) ────────────
 //
-// One number ∈ [0,1] per turn, combining the deciding layer's separation with
-// how much of the message the winner actually consumed. NB softmax is NOT an
-// input — it saturates at 1.0 on this model (measured: "I bought ice crwam20"
-// scored softmax 1.0 for `transactions`). Coverage is the discriminator: a
-// real paraphrase shares most of its features with the corpus; an accidental
-// match shares a sliver.
+// One number ∈ [0,1] per turn. For rule wins it is still the B1 heuristic
+// (rules are precise by construction; margin is the whole story). For
+// classifier wins the B1 composite (margin + coverage — NB softmax is NOT an
+// input; it saturates at 1.0 on this model) is since B4 only a RANKING
+// signal: it is mapped through the train-time isotonic margin→accuracy curve
+// shipped in `model.json` (`calibratedConfidence`), so the reported number is
+// the measured held-out accuracy of predictions that scored like this one.
+// The raw composite remains the fallback for an older model with no curve.
 
 /** Below this, a classifier-sourced win is offered as a chip, not answered. */
 export const LOW_CONFIDENCE = 0.45;
@@ -263,9 +267,8 @@ export function computeConfidence(
     return Math.min(0.95, 0.62 + 0.09 * Math.min(c.ruleMargin, 4));
   }
   if (c.source === 'classifier') {
-    const ratio = c.ml.total > 0 ? c.ml.matched / c.ml.total : 0;
-    const base = Math.min(0.9, 0.45 + 0.02 * c.ml.margin);
-    return Math.max(0, Math.min(1, base * (0.55 + 0.45 * ratio)));
+    const raw = rawClassifierScore(c.ml);
+    return calibratedConfidence(MODEL, raw) ?? raw;
   }
   return 0.5;
 }

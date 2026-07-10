@@ -69,9 +69,19 @@ rate decays (LLM = teacher, on-device model = student).
 - [x] **B3. Telemetry** — record low-confidence _answered_ turns (not just
       `intent === null` fallbacks) in `brainTelemetry.ts`, with `confidence` +
       the assist resolution when one ran.
-- [ ] **B4 (follow-up). Train-time margin→accuracy calibration** emitted into
+- [x] **B4 (follow-up). Train-time margin→accuracy calibration** emitted into
       `model.json` by `train-brain.ts` (replaces the heuristic mapping in B1).
-      Still open — `train-brain.ts` calibrates only the open-set gate today.
+      Landed 2026-07-10: stratified 5-fold CV over the corpus collects held-out
+      gate-passing predictions, scored by the B1 composite
+      (`rawClassifierScore` — now purely a ranking signal, moved next to the
+      model type in `classifier/naiveBayes.ts`); quantile bins + PAV pooling
+      emit an isotonic `calibration.bins` curve into `model.json`, and
+      `computeConfidence` maps classifier wins through it
+      (`calibratedConfidence`; the raw composite stays the fallback for an
+      older model with no curve). Held-out `unknown` rows that sneak past the
+      gate count as wrong, so weak scores now land honestly in the LOW/MEDIUM
+      bands. Gated by four `[B4]` cases in `test:brain` (curve present,
+      ascending, isotonic + clamped, live `routeMessage` reads it).
 
 ## Phase C — LLM assist tier (cheap, token-lean, router-only)
 
