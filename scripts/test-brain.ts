@@ -28,6 +28,8 @@ import {
   type TxLite,
 } from '../src/intelligence/convo/brain';
 import type { TimeRangeKey } from '../src/intelligence/core/time';
+import modelJson from '../src/intelligence/convo/classifier/model.json';
+import type { NbModel } from '../src/intelligence/convo/classifier/naiveBayes';
 import type { MasterCategory } from '../src/intelligence/taxonomy/taxonomy';
 // Type-only — erased by tsx, never eval-loads IntelligenceEngine (RN-coupled).
 import type { Insights, Sentiment } from '../src/services/IntelligenceEngine';
@@ -2291,6 +2293,44 @@ const CTX_PLAN: BrainContext = {
     '[hygiene] reminder w/ a date → amount is ₱2,000, not the day-number',
     `nav ${JSON.stringify(nav)}`
   );
+}
+
+// ─── B4: train-time confidence calibration shipped in model.json ─────────────
+// The classifier's reported confidence must come from the isotonic
+// margin→accuracy curve `train-brain.ts` emits, not the old B1 heuristic. Guard
+// the curve's invariants (a broken retrain should fail HERE, not in the app)
+// and that `routeMessage` actually reads it.
+{
+  const cal = (modelJson as unknown as NbModel).calibration;
+  check(
+    cal !== undefined && cal.bins.length >= 2,
+    '[B4]     model.json carries a calibration curve (≥ 2 bins)',
+    `calibration ${JSON.stringify(cal?.method)} bins ${cal?.bins.length ?? 0}`
+  );
+  if (cal) {
+    const upTos = cal.bins.map((b) => b.upTo);
+    const accs = cal.bins.map((b) => b.acc);
+    check(
+      upTos.every((u, i) => i === 0 || u > upTos[i - 1]) &&
+        upTos[upTos.length - 1] === 1,
+      '[B4]     bins ascend in raw score and cover the full [0,1] range',
+      `upTos ${JSON.stringify(upTos)}`
+    );
+    check(
+      accs.every(
+        (a, i) => (i === 0 || a >= accs[i - 1]) && a >= 0.05 && a <= 0.95
+      ),
+      '[B4]     accuracies are isotonic and inside the [0.05, 0.95] clamp',
+      `accs ${JSON.stringify(accs)}`
+    );
+    // A live classifier-sourced turn reports a bin accuracy, not the heuristic.
+    const turn = routeMessage('do i still have money', CTX);
+    check(
+      turn.meta?.source === 'classifier' && accs.includes(turn.meta.confidence),
+      '[B4]     classifier-sourced confidence comes off the calibration curve',
+      `meta ${JSON.stringify(turn.meta)}`
+    );
+  }
 }
 
 console.log(`\nPassed: ${passed}`);

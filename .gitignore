@@ -58,3 +58,6 @@ TODO.local.md
 /ios
 /android
 
+
+# supabase CLI local state
+supabase/.temp/

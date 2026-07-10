@@ -15,8 +15,10 @@
     "test:route": "npx --yes tsx scripts/test-route.ts",
     "test:memory": "npx --yes tsx scripts/test-memory.ts",
     "test:typo": "npx --yes tsx scripts/test-typo.ts",
+    "test:assist": "npx --yes tsx scripts/test-assist.ts",
     "train:brain": "npx --yes tsx scripts/train-brain.ts",
-    "check:copy-sync": "npx --yes tsx scripts/check-copy-sync.ts"
+    "check:copy-sync": "npx --yes tsx scripts/check-copy-sync.ts",
+    "check:intents-sync": "npx --yes tsx scripts/check-intents-sync.ts"
   },
   "dependencies": {
     "@babel/plugin-proposal-decorators": "^7.29.0",

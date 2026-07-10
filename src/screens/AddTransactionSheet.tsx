@@ -56,6 +56,7 @@ import {
   detectAccount,
   buildAmountState,
   buildDisplayName,
+  extractAmountsRecovered,
   matchIncomeKeyword,
   type AIAnalysisResult,
 } from '@/intelligence';
@@ -571,6 +572,15 @@ export default function AddTransactionSheet({ route }: Props) {
     // discarded if the user has since edited the field.
     const tokenText = trimmed;
 
+    // Glued-amount parity with the chat logger (REVIEW_2026-07-08 P2.3): a
+    // missed space ("chicken200") yields no amount from the raw text, so all
+    // the analyzers below read the recovered surface ("chicken 200") instead.
+    // Only the split applies here — deliberately NOT the chat path's spell
+    // normalization: this runs mid-typing where half-typed words are OOV by
+    // construction, and analyzeTransactionText carries its own fuzzy keyword
+    // layer for finished typos. The description field keeps the user's text.
+    const { surface: analyzedText } = extractAmountsRecovered(trimmed);
+
     // 1) Immediate keyword analyzer — fast UI feedback.
     //    Pass the user's active category names so the analyzer's bubble-up
     //    resolver can pick the most-specific match (e.g. "starbucks" →
@@ -583,7 +593,7 @@ export default function AddTransactionSheet({ route }: Props) {
     //    further down instead.
     const isIncome = type === 'inc';
     const userCategoryNames = categories.map((c) => c.name);
-    analyzer.analyze(text, userCategoryNames, (result) => {
+    analyzer.analyze(analyzedText, userCategoryNames, (result) => {
       if (tokenText !== aiTextRef.current) return;
       setAiResult(result);
       if (!isIncome) {
@@ -612,7 +622,7 @@ export default function AddTransactionSheet({ route }: Props) {
         // Income mode: use the inline income keyword map against the user's
         // actual income categories (matches the expense bubble-up's "only
         // apply if the user has this category" guarantee).
-        const incomeHit = matchIncomeKeyword(tokenText, incomeCategories);
+        const incomeHit = matchIncomeKeyword(analyzedText, incomeCategories);
         if (incomeHit) {
           setCategory(incomeHit);
           setSignalSource('ai_description');
@@ -650,7 +660,7 @@ export default function AddTransactionSheet({ route }: Props) {
       // "from BPI", etc.). Honour any manual chip tap by leaving accountAutoSet
       // false there.
       const acctHit = detectAccount(
-        tokenText,
+        analyzedText,
         accounts.map((a) => ({ id: a.id, name: a.name }))
       );
       if (
@@ -677,7 +687,7 @@ export default function AddTransactionSheet({ route }: Props) {
       const catNames = activeList.map((c) => c.name);
       suggestCategory(
         currentUserId,
-        tokenText,
+        analyzedText,
         catNames,
         isIncome ? 'income' : 'expense'
       )
@@ -696,7 +706,6 @@ export default function AddTransactionSheet({ route }: Props) {
           /* silent — keyword fallback already applied */
         });
     }
-
   };
 
   const handleSave = async () => {
@@ -750,9 +759,11 @@ export default function AddTransactionSheet({ route }: Props) {
     // Expenses use the category-aware formatter; income transactions stay with
     // the user's note (or fall back to category) so "Salary - Payday" reads OK.
     const masterCat = aiResult?.suggestedCategory ?? null;
+    // Same glue-recovered surface the analyzers read (P2.3): "chicken200"
+    // names the transaction "Food - Chicken", not "Food - Chicken200".
     const structuredName =
       txType === 'expense' && masterCat
-        ? buildDisplayName(aiText, masterCat, {
+        ? buildDisplayName(extractAmountsRecovered(aiText).surface, masterCat, {
             accountSurface: aiAccountSurface,
             label: category || undefined,
           })

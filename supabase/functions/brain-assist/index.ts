@@ -35,6 +35,46 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 
+// Client-facing failures are GENERIC on purpose (REVIEW_2026-07-08 P1.3): the
+// app treats any non-2xx as "keep the offline clarify", so detail only helps
+// an attacker map the backend. Specifics go to the function logs instead.
+const fail = (status: number, logMsg: string, detail?: unknown) => {
+  console.error(`[brain-assist] ${logMsg}`, detail ?? '');
+  return json({ error: 'assist_unavailable' }, status);
+};
+
+// ─── Per-caller throttle (REVIEW_2026-07-08 P1.3) ───────────────────────────
+//
+// One turn of assist per send is the legitimate ceiling, so a caller burning
+// more than a handful of requests a minute is a loop or abuse. Sliding window
+// in instance memory: resets on cold start and isn't shared across instances —
+// fine for a cost/abuse damper (the 280-char cap bounds per-request cost; this
+// bounds request COUNT). Keyed by the Authorization header (the user's JWT —
+// kept in-process only), falling back to the caller IP.
+const RATE_LIMIT = 10;
+const RATE_WINDOW_MS = 60_000;
+const hits = new Map<string, number[]>();
+
+function throttled(req: Request): boolean {
+  const key =
+    req.headers.get('authorization') ??
+    req.headers.get('x-forwarded-for') ??
+    'anon';
+  const now = Date.now();
+  // Coarse memory guard — a flood of distinct keys just resets everyone.
+  if (hits.size > 5_000) hits.clear();
+  const recent = (hits.get(key) ?? []).filter(
+    (t) => now - t < RATE_WINDOW_MS
+  );
+  if (recent.length >= RATE_LIMIT) {
+    hits.set(key, recent);
+    return true;
+  }
+  recent.push(now);
+  hits.set(key, recent);
+  return false;
+}
+
 const CATALOG = `
 help — "what can you do"
 balance — "what's my balance"
@@ -98,6 +138,10 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    if (throttled(req)) {
+      return json({ error: 'rate_limited' }, 429);
+    }
+
     const { message } = await req.json();
     if (typeof message !== 'string' || !message.trim()) {
       return json({ error: 'message is required' }, 400);
@@ -108,13 +152,19 @@ Deno.serve(async (req: Request) => {
 
     const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
     if (!GEMINI_API_KEY) {
-      return json({ error: 'GEMINI_API_KEY not configured' }, 500);
+      return fail(500, 'GEMINI_API_KEY not configured');
     }
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+    // Key rides the request HEADER, not the URL query string — URLs end up in
+    // proxy/access logs; headers don't (REVIEW_2026-07-08 P1.3).
+    const geminiUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
     const geminiResponse = await fetch(geminiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': GEMINI_API_KEY,
+      },
       body: JSON.stringify({
         contents: [{ parts: [{ text: `${SYSTEM}\n\nUser message: ${trimmed}` }] }],
         generationConfig: {
@@ -127,8 +177,11 @@ Deno.serve(async (req: Request) => {
     });
 
     if (!geminiResponse.ok) {
-      const details = await geminiResponse.text();
-      return json({ error: 'Gemini API error', details }, 502);
+      return fail(
+        502,
+        `Gemini API error ${geminiResponse.status}`,
+        await geminiResponse.text()
+      );
     }
 
     const data = await geminiResponse.json();
@@ -145,9 +198,9 @@ Deno.serve(async (req: Request) => {
         query: typeof parsed.query === 'string' ? parsed.query : '',
       });
     } catch {
-      return json({ error: 'Unparseable model reply', raw: rawText }, 502);
+      return fail(502, 'unparseable model reply', rawText);
     }
   } catch (err) {
-    return json({ error: 'brain-assist failed', details: String(err) }, 500);
+    return fail(500, 'unhandled error', err);
   }
 });

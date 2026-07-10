@@ -47,7 +47,8 @@ import {
   parseChatTransaction,
   routeMessage,
   extendSpellVocab,
-  MEDIUM_CONFIDENCE,
+  requestBrainAssist,
+  shouldAdoptAssistReroute,
   selectProactiveCoach,
   looksLikeQuestion,
   looksLikeCommand,
@@ -65,7 +66,6 @@ import { getInsights, type Insights } from '@/services/IntelligenceEngine';
 import { ChatCardView, Reveal, REVEAL_STAGGER_MS } from '@/components/chat';
 import { saveChatMessage, loadChatHistory } from '@/services/chatMutations';
 import { recordBrainMiss } from '@/services/brainTelemetry';
-import { requestBrainAssist } from '@/intelligence/assist/assistClient';
 import { getAssistEnabled } from '@/services/assistPrefs';
 
 /** Each "working" step (Fetching → Analyzing → Generating) holds for this long
@@ -1122,21 +1122,10 @@ export default function ChatScreen() {
             };
           } else if (decision && decision.intent !== 'none' && decision.query) {
             const rerouted = routeMessage(decision.query, brainCtx);
-            // Adopt the reroute only when the offline brain confidently
-            // understood the rewrite — a shaky reroute would just launder the
-            // original guess through prettier words. Reject a `logClarify`
-            // reroute (REVIEW_2026-07-08 P0.3): it isn't a trainable answer, and
-            // adopting it would answer a question with "couldn't find the
-            // amount" (the amount is right there) and poison the miss buffer
-            // with a non-intent label. Gate on the brain's own MEDIUM_CONFIDENCE
-            // so this stays in lockstep with a future recalibration (B4).
-            if (
-              rerouted.meta &&
-              rerouted.meta.intent !== null &&
-              rerouted.meta.intent !== 'logClarify' &&
-              !rerouted.meta.assistEligible &&
-              rerouted.meta.confidence >= MEDIUM_CONFIDENCE
-            ) {
+            // Adoption logic lives in `shouldAdoptAssistReroute` (pure,
+            // unit-gated by `npm run test:assist`): confident non-logClarify
+            // resolve at ≥ MEDIUM_CONFIDENCE (REVIEW_2026-07-08 P0.3 + P1.2).
+            if (shouldAdoptAssistReroute(rerouted.meta)) {
               assistResolvedIntent = rerouted.meta.intent ?? undefined;
               assistResolvedQuery = decision.query;
               reply = rerouted;

@@ -4,3 +4,5 @@
 npm run lint
 npx tsc --noEmit
 npm run check:copy-sync
+npm run check:intents-sync
+npm run test:assist

@@ -44,6 +44,20 @@ export type NbModel = {
     /** Minimum top-1 − top-2 log-score separation. */
     minMargin: number;
   };
+  /** Confidence calibration (INTELLIGENCE_UPGRADE.md B4), fit at train time by
+   *  stratified cross-validation: the raw B1 composite (`rawClassifierScore`)
+   *  is only a RANKING signal; each bin maps a raw-score interval to the
+   *  empirical held-out accuracy inside it (isotonic — accuracies are
+   *  non-decreasing). Optional so older models still load (the brain then
+   *  reports the raw composite as before). */
+  calibration?: {
+    /** How the curve was fit, e.g. 'isotonic-cv5' (provenance / debugging). */
+    method: string;
+    /** Held-out predictions the curve was fit on (provenance / debugging). */
+    points: number;
+    /** Ascending by `upTo`; the last bin's `upTo` is 1 (raw is clamped). */
+    bins: { upTo: number; acc: number }[];
+  };
 };
 
 export type Prediction = {
@@ -68,6 +82,39 @@ const UNKNOWN: Prediction = {
   matched: 0,
   total: 0,
 };
+
+// ─── Confidence calibration (INTELLIGENCE_UPGRADE.md B4) ────────────────────
+//
+// The raw composite below was Phase B1's heuristic confidence: NB softmax
+// saturates on this model, so it blends the log-score margin with feature
+// coverage (matched/total — the signal that actually separates a real
+// paraphrase from an accidental gram overlap). Since B4 it is only the
+// RANKING signal the calibration curve is indexed by; the number the brain
+// reports is the held-out accuracy measured at train time for this score's
+// bin. It lives here — next to the model type — so `train-brain.ts` (which
+// fits the curve) and `brain.ts` (which reads it) can never disagree on it.
+
+/** Phase-B1 composite score ∈ [0,1] for a classifier prediction. Monotone in
+ *  both margin and coverage; NOT a probability — feed it through
+ *  `calibratedConfidence` to get one. */
+export function rawClassifierScore(p: Prediction): number {
+  const ratio = p.total > 0 ? p.matched / p.total : 0;
+  const base = Math.min(0.9, 0.45 + 0.02 * p.margin);
+  return Math.max(0, Math.min(1, base * (0.55 + 0.45 * ratio)));
+}
+
+/** Map a raw composite score through the model's train-time calibration curve
+ *  → empirical accuracy ∈ [0,1]. Returns null when the model carries no curve
+ *  (older model.json) so the caller can fall back to the raw score. */
+export function calibratedConfidence(
+  model: NbModel,
+  raw: number
+): number | null {
+  const bins = model.calibration?.bins;
+  if (!bins || bins.length === 0) return null;
+  for (const bin of bins) if (raw <= bin.upTo) return bin.acc;
+  return bins[bins.length - 1].acc;
+}
 
 /**
  * Classify a message. Returns `unknown`/confidence 0 when the text shares no

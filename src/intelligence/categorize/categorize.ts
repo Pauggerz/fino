@@ -4,13 +4,19 @@ import { levenshtein, maxEditsFor } from '../core/editDistance';
 import { tokenize } from '../core/normalize';
 import {
   extractAmounts,
+  extractAmountsRecovered,
   buildAmountState,
   type CalculatorState,
 } from '../core/amounts';
 
 // Re-export the relocated primitives so the `@/intelligence` public surface
 // stays unchanged after the core/ extraction (see FINO_INTELLIGENCE_V2.md §3).
-export { extractAmounts, buildAmountState, type CalculatorState };
+export {
+  extractAmounts,
+  extractAmountsRecovered,
+  buildAmountState,
+  type CalculatorState,
+};
 
 export type Category = MasterCategory;
 
