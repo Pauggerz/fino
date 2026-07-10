@@ -17,6 +17,8 @@
  */
 
 import type { IntentId } from './intents';
+import type { BrainResponseMeta } from './types';
+import { MEDIUM_CONFIDENCE } from './brain';
 
 /** Non-intent decisions the assist may return. */
 export type AssistSpecial = 'log' | 'none';
@@ -105,4 +107,31 @@ export function validateAssistDecision(raw: unknown): AssistDecision | null {
   if (/https?:|www\.|[<>{}[\]`]/i.test(query)) return null;
 
   return { intent: intent as IntentId | AssistSpecial, query };
+}
+
+/**
+ * Should the host adopt the offline brain's re-run of an assist rewrite as the
+ * turn's answer? (REVIEW_2026-07-08 P1.2 — extracted from ChatScreen so the
+ * adoption logic is unit-testable; `npm run test:assist` gates it.)
+ *
+ * Adopt only when the offline brain confidently understood the rewrite — a
+ * shaky reroute would just launder the original guess through prettier words:
+ *   · a resolved intent (not a fallback),
+ *   · not `logClarify` (a pseudo-intent, not an answer: adopting it would
+ *     reply "couldn't find the amount" to a question, and it must never seed
+ *     the miss buffer as a trainable label — P0.3),
+ *   · not itself assist-eligible (the rewrite can't need another assist),
+ *   · at or above MEDIUM_CONFIDENCE, so this stays in lockstep with a future
+ *     recalibration (B4) instead of a hardcoded threshold.
+ */
+export function shouldAdoptAssistReroute(
+  meta: BrainResponseMeta | undefined
+): meta is BrainResponseMeta {
+  return Boolean(
+    meta &&
+    meta.intent !== null &&
+    meta.intent !== 'logClarify' &&
+    !meta.assistEligible &&
+    meta.confidence >= MEDIUM_CONFIDENCE
+  );
 }
