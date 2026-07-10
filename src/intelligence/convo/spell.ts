@@ -129,7 +129,6 @@ export function extendSpellVocab(
   terms: readonly (string | null | undefined)[] | undefined
 ): void {
   if (!terms || terms.length === 0) return;
-  let added = false;
   for (const term of terms) {
     if (!term) continue;
     for (const w of term.toLowerCase().split(/[^a-z']+/)) {
@@ -138,14 +137,7 @@ export function extendSpellVocab(
       const arr = BUCKETS.get(w.length);
       if (arr) arr.push(w);
       else BUCKETS.set(w.length, [w]);
-      added = true;
     }
-  }
-  // The memo below caches text → corrected text; a vocab change can change
-  // the correction, so a grown vocab invalidates it.
-  if (added) {
-    lastIn = null;
-    lastOut = null;
   }
 }
 
@@ -210,21 +202,20 @@ function isSentenceStart(text: string, offset: number): boolean {
   return true;
 }
 
-// Single-entry memo: ChatScreen runs the question/command gates, the parser,
-// and the brain on the SAME message back-to-back — no need to re-correct.
-let lastIn: string | null = null;
-let lastOut: string | null = null;
-
 /**
  * Return `text` with out-of-vocabulary tokens snapped to their unique nearest
  * known word ("how mcuh did i spnd" → "how much did i spend"). Corrections
  * come out lowercase; untouched tokens keep the user's casing. Idempotent —
  * corrected output passes through unchanged.
+ *
+ * Stateless on purpose (REVIEW_2026-07-08 P1.5 — a module-global memo used to
+ * live here, thrashing on interleaved inputs). Re-correcting the same short
+ * message a few times per send is cheap: in-vocab tokens are one Set lookup,
+ * and `correctToken` only scans buckets for OOV tokens of ≥ 4 letters.
  */
 export function spellNormalize(text: string): string {
   if (!text) return text;
-  if (text === lastIn && lastOut !== null) return lastOut;
-  const out = text.replace(TOKEN_RE, (w, offset: number) => {
+  return text.replace(TOKEN_RE, (w, offset: number) => {
     if (w.length < 4 || w.includes("'")) return w;
     // A capitalized token mid-sentence is almost always a proper noun (a
     // person or brand — "…did i pay Marco"); "correcting" it into a vocab word
@@ -234,7 +225,4 @@ export function spellNormalize(text: string): string {
     if (/^[A-Z]/.test(w) && !isSentenceStart(text, offset)) return w;
     return correctToken(w.toLowerCase()) ?? w;
   });
-  lastIn = text;
-  lastOut = out;
-  return out;
 }

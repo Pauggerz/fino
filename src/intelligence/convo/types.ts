@@ -18,6 +18,16 @@
 import type { Insights } from '../../services/IntelligenceEngine';
 import type { TimeRange } from '../core/time';
 import type { CategorySlot } from './slots';
+import type { IntentId } from './intents';
+
+/**
+ * Deterministic pseudo-intents that ride `meta.intent` but are NOT members of
+ * the trainable `IntentId` union (REVIEW_2026-07-08 P1.5 — previously a bare
+ * string handled by convention). `logClarify` marks a purchase statement whose
+ * amount couldn't be parsed: consumers must treat it as a clarify — never a
+ * corpus label, never an adoptable assist reroute (P0.3).
+ */
+export type PseudoIntentId = 'logClarify';
 
 // ─── Card contract (FINO_CHATBOT_CARDS.md §3) ────────────────────────────────
 
@@ -455,7 +465,7 @@ export type BrainResponseMeta = {
    *  trainable miss. */
   source: 'rules' | 'classifier' | 'none' | 'declined';
   /** The intent finally answered (after memory carry-over); null on fallback. */
-  intent: string | null;
+  intent: IntentId | PseudoIntentId | null;
   /** Winning rule margin (top-1 − top-2 weight). */
   ruleMargin: number;
   /** In-vocabulary classifier feature count (0 = no signal at all). */

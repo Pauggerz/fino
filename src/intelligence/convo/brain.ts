@@ -54,6 +54,7 @@ export type {
   BrainContext,
   BrainResponse,
   BrainResponseMeta,
+  PseudoIntentId,
   ChatCard,
   ChatCardKind,
   BreakdownCard,
@@ -335,9 +336,16 @@ export function classifyMessage(
   // found finance signal there. See FINANCE_ANCHOR_RE above.
   // Check BOTH the raw-normalized and spell-fixed text: spell correction can
   // corrupt a valid domain word ("safety net" → "safely net"), while a genuine
-  // typo ("mony") only anchors after the fix — accept either.
-  const anchored = FINANCE_ANCHOR_RE.test(norm) || FINANCE_ANCHOR_RE.test(fixed);
-  if (mlIntent && ruleScore === 0 && DATA_INTENTS.has(mlIntent) && !anchored) {
+  // typo ("mony") only anchors after the fix — accept either. The ~1KB regex
+  // only runs when the gate actually applies (REVIEW_2026-07-08 P1.5) — on a
+  // rule win or a classifier abstain it is never evaluated.
+  if (
+    mlIntent &&
+    ruleScore === 0 &&
+    DATA_INTENTS.has(mlIntent) &&
+    !FINANCE_ANCHOR_RE.test(norm) &&
+    !FINANCE_ANCHOR_RE.test(fixed)
+  ) {
     mlIntent = null;
   }
 
