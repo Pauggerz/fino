@@ -31,6 +31,13 @@ export * from './taxonomy/taxonomy';
 // ─── Convo (the offline chatbot brain) ───────────────────────────────────────
 export * from './convo/brain';
 
+// ─── Assist (the online LLM router tier) ─────────────────────────────────────
+// The contract/validator (assistCatalog) is pure; the client boundary
+// (assistClient) pulls in the supabase client — same rule as ocr/: app code
+// imports this barrel, tsx harnesses import the pure sub-paths.
+export * from './convo/assistCatalog';
+export * from './assist/assistClient';
+
 // ─── OCR (client wrappers for the server-side receipt parsing) ───────────────
 // The Gemini vision call stays server-side (edge functions + Express); this is
 // only the client boundary. `postprocess` re-exports AccountLite, which already
